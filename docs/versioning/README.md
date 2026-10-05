@@ -5,30 +5,50 @@ DSPy's versioned documentation is one static site managed by
 
 - `/` redirects to `/current/`.
 - `/current/` is the mutable documentation built from `main`.
-- `/X.Y.Z/` and `/X.Y.ZbN/` are release snapshots built from their tags while importing the
-  exact released DSPy wheel.
+- `/X.Y.Z/` and prerelease paths such as `/X.Y.ZbN/` are snapshots built from
+  their tags while importing the exact released DSPy wheel.
 - `/X.Y/` redirects to the newest imported patch in that minor line.
 
 The picker lists Current and every stable or prerelease snapshot. Prereleases
 do not claim the stable minor alias. Minor aliases are navigation conveniences
 and are hidden from the picker. Mike owns `versions.json`, the
 default redirect, aliases, and version directories on the generated
-`versioned-docs` branch in `krypticmouse/dspy-docs`.
+`master` branch in `krypticmouse/dspy-docs`.
 
-Historical snapshots use Material for MkDocs. Current records its renderer in
-`versions.json`; stored static versions do not need to share a renderer.
+Historical snapshots use Material for MkDocs, while Current and future release
+snapshots use Zensical. Stored static versions do not need to share a renderer.
 
-## Deployment and promotion
+## Deployment
 
-Generated candidates are written to the `versioned-docs` branch and promoted
-to production `master` through reviewed pull requests in
-`krypticmouse/dspy-docs`. Production's `versions.json` is the activation marker
-for Mike publication; a candidate branch alone never changes production.
+Current and release publication update production `master` in
+`krypticmouse/dspy-docs`. Both paths require Mike metadata identifying Current
+as Zensical before they write, so an unversioned or unexpected deployment fails
+closed. Corrections use reviewed pull requests in that repository.
 
 Existing unversioned page URLs remain valid. Publishing Current generates root
 redirect pages such as `/api/` → `/current/api/`, and each build scopes
 hand-authored root-relative links to its own version so an old page cannot
 silently jump into Current. Query strings and fragments survive redirects.
+
+## Production publication
+
+Current publication follows the renderer state described above. Release
+publication fails closed unless production's Mike metadata identifies Zensical
+as the reviewed Current renderer.
+
+After a stable or prerelease `dspy` wheel reaches PyPI, the release workflow
+preserves that exact wheel, builds its versioned path from the tag, and
+publishes it through Mike after the existing package release job succeeds.
+Only stable releases advance `/X.Y/`. Release-tag jobs never use GitHub's lossy
+pending-concurrency slot. Mutable Current keeps latest-wins serialization
+because a newer `main` build includes the superseded commit. Deployment writes
+retry optimistic Git pushes; every release rechecks the Zensical promotion
+marker after refetching, and a delayed older patch cannot move an `/X.Y/` alias
+backward.
+
+Corrections and rollbacks use reviewed pull requests in the deployment
+repository. Restore a known-good tree with a new commit rather than rewriting
+production history.
 
 ## Historical fidelity
 
@@ -72,3 +92,29 @@ Minor aliases contain redirects rather than duplicate assets. Production
 builds remove source maps. Git deduplicates byte-identical objects in the
 deployment repository. Browsers request only the selected page and its assets;
 they do not download the aggregate repository.
+
+## Zensical feature ownership
+
+Zensical owns rendering, navigation, search, minification, API reference, and
+sitemap generation through its native configuration. The small compatibility
+builder owns only features Zensical does not provide:
+
+| Existing feature | Implementation |
+| --- | --- |
+| Notebooks | pre-render with `nbconvert` in a disposable source tree |
+| Redirects | emit static redirects from the configured route map |
+| Social cards | generate per-page cards and inject matching metadata |
+| `llms.txt` | generate from the same configured source inventory |
+| Build-time statistics | run the existing fetcher into the disposable config |
+| Compressed sitemap | gzip Zensical's generated `sitemap.xml` |
+
+Redirect sources that overlap legacy pages are removed only from the disposable
+tree before the static redirects are emitted. Source files in the repository
+are unchanged.
+
+Unit tests exercise each compatibility transform directly. The documentation
+pull-request job then builds the complete site, making the native Zensical
+configuration and all compatibility steps executable review evidence. Visual
+review covers representative desktop and mobile pages; typography, spacing,
+wrapping, search ranking, and card appearance may change without dropping a
+feature.

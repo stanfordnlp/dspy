@@ -14,6 +14,12 @@ import sys
 import tempfile
 from pathlib import Path
 
+if __package__:
+    from .zensical_build import HeadParser, build_zensical_site
+else:  # Direct script execution from the deployed docs repository.
+    from zensical_build import HeadParser, build_zensical_site
+
+
 RELEASE_VERSION = re.compile(
     r"^(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)(?:(?:a|b|rc)\d+)?$"
 )
@@ -23,7 +29,10 @@ ROOT_URL_ATTRIBUTE = re.compile(
     re.IGNORECASE,
 )
 VERSIONED_PATH = re.compile(r"^/(?:current|\d+\.\d+(?:\.\d+(?:(?:a|b|rc)\d+)?)?)(?:/|$)")
-SHARED_HEADER_STYLES = Path(__file__).parent.parent / "versioning" / "header.css"
+RELEASE_BADGE_VERSION = re.compile(
+    r'(?s)(<div class=(?:"hp-hero-badge"|hp-hero-badge)>.*?\bDSPy )(\S+)(\s+&mdash;)'
+)
+SHARED_HEADER_ASSETS = Path(__file__).parent.parent / "versioning"
 
 
 def release_version(value: str) -> str:
@@ -54,8 +63,7 @@ def patched_config(config: Path, identifier: str, *, edit_ref: str | None = None
         text, edit_count = re.subn(r"(?m)^edit_uri:\s*.*$", f"edit_uri: blob/{edit_ref}/docs/docs/", text, count=1)
         if edit_count != 1:
             raise RuntimeError(f"could not patch edit_uri in {config}")
-        # Release API reference must import the installed release artifact, not
-        # preferentially resolve the source checkout through mkdocstrings.
+        # Release API docs must import the installed wheel, not this checkout.
         text = re.sub(r'(?m)^[ \t]+paths:\s*\[\s*["\x27]?\.\.["\x27]?\s*\][ \t]*\n', "", text, count=1)
     if not re.search(r"(?m)^\s+provider:\s*mike\s*$", text):
         version_config = "    version:\n        provider: mike\n        alias: true\n"
@@ -71,7 +79,7 @@ def patched_config(config: Path, identifier: str, *, edit_ref: str | None = None
 
 
 def remove_source_maps(site: Path) -> dict[str, int]:
-    """Remove browser source maps from the generated site."""
+    """Remove browser source maps after Zensical performs native minification."""
     before = sum(path.stat().st_size for path in site.rglob("*") if path.is_file())
     source_maps = list(site.rglob("*.map"))
     for path in source_maps:
@@ -86,17 +94,25 @@ def remove_source_maps(site: Path) -> dict[str, int]:
     return {"before": before, "after": after, "source_maps": len(source_maps)}
 
 
-def install_shared_header_styles(site: Path, source: Path = SHARED_HEADER_STYLES) -> None:
+def install_shared_header(site: Path, source: Path = SHARED_HEADER_ASSETS) -> None:
     """Give every renderer and historical snapshot the same header controls."""
-    destination = site / "_static" / "dspy-header.css"
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_bytes(source.read_bytes())
+    destination = site / "_static"
+    destination.mkdir(parents=True, exist_ok=True)
+    styles = destination / "dspy-header.css"
+    script = destination / "dspy-header.js"
+    styles.write_bytes((source / "header.css").read_bytes())
+    script.write_bytes((source / "header.js").read_bytes())
     for page in site.rglob("*.html"):
-        relative = Path(os.path.relpath(destination, page.parent)).as_posix()
-        tag = f'<link rel="stylesheet" href="{relative}">'
+        relative_styles = Path(os.path.relpath(styles, page.parent)).as_posix()
+        relative_script = Path(os.path.relpath(script, page.parent)).as_posix()
+        style_tag = f'<link rel="stylesheet" href="{relative_styles}">'
+        script_tag = f'<script src="{relative_script}" defer></script>'
         html = page.read_text()
-        if tag not in html:
-            page.write_text(html.replace("</head>", f"{tag}</head>", 1))
+        if style_tag not in html:
+            html = html.replace("</head>", f"{style_tag}</head>", 1)
+        if script_tag not in html:
+            html = html.replace("</head>", f"{script_tag}</head>", 1)
+        page.write_text(html)
 
 
 def scope_root_relative_urls(site: Path, identifier: str) -> None:
@@ -116,6 +132,19 @@ def scope_root_relative_urls(site: Path, identifier: str) -> None:
             page.write_text(scoped)
 
 
+def set_release_badge_version(site: Path, version: str) -> None:
+    """Keep a historical home page from advertising the latest live release."""
+    home = site / "index.html"
+    html = home.read_text()
+    updated, count = RELEASE_BADGE_VERSION.subn(
+        lambda match: f"{match.group(1)}{version}{match.group(3)}",
+        html,
+        count=1,
+    )
+    if count:
+        home.write_text(updated)
+
+
 def installed_packages() -> dict[str, str]:
     return dict(
         sorted(
@@ -127,18 +156,20 @@ def installed_packages() -> dict[str, str]:
 
 
 def renderer_version() -> str:
-    return importlib.metadata.version("mkdocs-material")
+    return importlib.metadata.version("zensical")
 
 
 def validate_release_site(site: Path, config: Path, version: str) -> None:
-    expected = (site / "index.html", site / "api" / "index.html", site / "search" / "search_index.json")
+    expected = (site / "index.html", site / "api" / "index.html", site / "search.json", site / "llms.txt")
     missing = [str(path.relative_to(site)) for path in expected if not path.exists()]
     if missing:
         raise RuntimeError(f"release site is missing required output: {', '.join(missing)}")
 
     home = (site / "index.html").read_text()
-    canonical = f'<link rel="canonical" href="https://dspy.ai/{version}/">'
-    if canonical not in home:
+    metadata = HeadParser()
+    metadata.feed(home)
+    canonical = f"https://dspy.ai/{version}/"
+    if metadata.metadata.get("canonical") != canonical:
         raise RuntimeError(f"release home page is missing canonical URL {canonical}")
 
     docs_dir = config.parent / "docs"
@@ -154,13 +185,9 @@ def validate_release_site(site: Path, config: Path, version: str) -> None:
     if missing_notebooks:
         raise RuntimeError(f"notebooks were not rendered: {', '.join(missing_notebooks)}")
 
-    config_text = config.read_text()
-    if re.search(r"(?m)^\s*- social\s*$", config_text):
-        cards = site / "assets" / "images" / "social"
-        if not cards.exists() or not any(cards.rglob("*.png")) or 'property="og:image"' not in home:
-            raise RuntimeError("social cards or Open Graph metadata were not generated")
-    if re.search(r"(?m)^\s*- llmstxt:\s*$", config_text) and not (site / "llms.txt").exists():
-        raise RuntimeError("mkdocs-llmstxt was configured but llms.txt was not generated")
+    cards = site / "assets" / "images" / "social-zensical"
+    if not cards.exists() or not any(cards.rglob("*.png")) or "og:image" not in metadata.metadata:
+        raise RuntimeError("social cards or Open Graph metadata were not generated")
 
     try:
         dspy_version = importlib.metadata.version("dspy")
@@ -183,31 +210,18 @@ def build(
     identifier = version or "current"
     effective_config = patched_config(config, identifier, edit_ref=version)
     try:
-        subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "mkdocs",
-                "build",
-                "--clean",
-                "--config-file",
-                str(effective_config),
-                "--site-dir",
-                str(output),
-            ],
-            cwd=config.parent,
-            check=True,
-        )
+        build_zensical_site(config=effective_config, output=output, python=Path(sys.executable))
     finally:
         effective_config.unlink(missing_ok=True)
 
     if version:
         if artifact is None or package_source is None:
             raise ValueError("release builds require an artifact and package source")
+        set_release_badge_version(output, version)
     scope_root_relative_urls(output, identifier)
     if version:
         validate_release_site(output, config, version)
-    install_shared_header_styles(output)
+    install_shared_header(output)
     optimization = remove_source_maps(output)
     if version:
         repository = config.parent.parent
@@ -217,7 +231,7 @@ def build(
             "source_tag": version,
             "source_commit": source_commit,
             "source_commit_time": git_value(repository, "show", "-s", "--format=%cI", source_commit),
-            "renderer": "material",
+            "renderer": "zensical",
             "renderer_version": renderer_version(),
             "package_source": package_source,
             "package_artifact": artifact.name,
@@ -228,8 +242,7 @@ def build(
             "intentional_differences": [
                 "The renderer's Mike version selector is enabled in a transient build configuration.",
                 "Build provenance metadata added under _meta/build.json.",
-                "Browser source maps are omitted from production snapshots.",
-                "Original deployment dependencies were not locked; non-DSPy dependencies are reconstructed as of the tag date.",
+                "Generated HTML is minified and source maps are omitted from production snapshots.",
             ],
         }
         metadata_dir = output / "_meta"

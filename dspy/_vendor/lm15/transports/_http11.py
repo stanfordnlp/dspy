@@ -8,9 +8,13 @@ decoded body chunks + a completion flag.
 
 This is deliberately minimal:
     - HTTP/1.1 only (no HTTP/2, no HTTP/1.0 write side)
-    - No Content-Encoding handling (gzip/deflate/br/zstd) — LLM APIs don't
-      compress responses in practice, and we'd rather not pull in zlib paths
-      until we need them.  Set Accept-Encoding: identity to be explicit.
+    - Requests advertise ``Accept-Encoding: identity`` (a compressed SSE
+      stream sits in a proxy's buffer until the window fills, which defeats
+      streaming).  Responses that arrive compressed anyway — gateways and
+      CDNs ignore the header routinely — are decoded: ``gzip``/``x-gzip``
+      and ``deflate`` through the stdlib ``zlib``, incrementally, so a
+      compressed stream still streams.  ``br`` and ``zstd`` have no stdlib
+      codec and raise a ProtocolError that names the coding.
     - No trailers, no pipelining, no 100-continue.
     - Chunk extensions (RFC 7230 §4.1.1) are parsed and discarded.
 """
@@ -180,7 +184,17 @@ class ResponseHeadParser:
     # ─── Framing decision ───
 
     def body_decoder(self, request_method: str) -> "_BodyDecoder":
-        """Pick the right decoder based on headers (RFC 7230 §3.3.3)."""
+        """Pick the right decoder based on headers (RFC 7230 §3.3.3), wrapped
+        in a content decoder when the reply is compressed."""
+        framing = self._framing_decoder(request_method)
+        if framing.complete:
+            return framing
+        codings = content_codings(self.headers_all("content-encoding"))
+        if not codings:
+            return framing
+        return ContentDecoder(framing, codings)
+
+    def _framing_decoder(self, request_method: str) -> "_BodyDecoder":
         # No body on 1xx, 204, 304, or HEAD
         if (
             self.status // 100 == 1
@@ -230,7 +244,8 @@ class ResponseHeadParser:
 
 
 class _BodyDecoder:
-    """Interface: feed(data) -> iter of decoded chunks, eof() to signal close."""
+    """Interface: feed(data) -> iter of decoded chunks, eof() to signal close,
+    drain() for any bytes an EOF-delimited body releases at close."""
     complete: bool
     leftover: bytes
 
@@ -239,6 +254,10 @@ class _BodyDecoder:
 
     def eof(self) -> None:
         raise NotImplementedError
+
+    def drain(self) -> bytes:
+        """Bytes released by eof() (a content decoder's final flush)."""
+        return b""
 
 
 class NoBodyDecoder(_BodyDecoder):
@@ -414,3 +433,172 @@ class EOFDecoder(_BodyDecoder):
 
     def eof(self) -> None:
         self.complete = True
+
+
+# ─── Content decoding (Content-Encoding) ─────────────────────────────
+
+
+_SUPPORTED_CODINGS = frozenset({"gzip", "x-gzip", "deflate"})
+
+
+def content_codings(values: list[str]) -> list[str]:
+    """The codings applied to a body, in the order they must be UNDONE
+    (RFC 9110 §8.4: the header lists them in the order applied, so the
+    last one listed is the outermost).  ``identity`` is a no-op and is
+    dropped.  Anything lm15 cannot undo raises a ProtocolError naming it —
+    the alternative is handing compressed bytes to a JSON parser, which
+    surfaces as a baffling decode error far from the cause."""
+    codings: list[str] = []
+    for value in values:
+        for token in value.split(","):
+            coding = token.strip().lower()
+            if not coding or coding == "identity":
+                continue
+            if coding not in _SUPPORTED_CODINGS:
+                raise ProtocolError(
+                    f"response is Content-Encoding: {coding!r}, which lm15 cannot decode "
+                    "(it asked for identity; gzip and deflate are decoded, br and zstd are not)"
+                )
+            codings.append(coding)
+    codings.reverse()
+    return codings
+
+
+class _Inflater:
+    """One content coding, possibly containing several gzip members.
+
+    Deflate normally has a two-byte zlib header (RFC 1950). Wait for
+    both bytes before selecting wrapped or legacy raw deflate, regardless
+    of how the transport split them. Never reinterpret a checksum failure
+    as another format after output has already been delivered.
+    """
+
+    __slots__ = ("_coding", "_obj", "_started", "_prefix")
+
+    def __init__(self, coding: str) -> None:
+        import zlib
+
+        self._coding = coding
+        self._started = False
+        self._prefix = b""
+        self._obj = None if coding == "deflate" else zlib.decompressobj(16 + zlib.MAX_WBITS)
+
+    def decompress(self, data: bytes) -> bytes:
+        import zlib
+
+        if not data:
+            return b""
+        self._started = True
+        if self._obj is None:
+            needed = 2 - len(self._prefix)
+            self._prefix += data[:needed]
+            data = data[needed:]
+            if len(self._prefix) < 2:
+                return b""
+            cmf, flg = self._prefix
+            wrapped = (cmf & 0x0F) == 8 and (cmf >> 4) <= 7 and ((cmf << 8) | flg) % 31 == 0
+            self._obj = zlib.decompressobj(zlib.MAX_WBITS if wrapped else -zlib.MAX_WBITS)
+            data = self._prefix + data
+            self._prefix = b""
+
+        output: list[bytes] = []
+        while data:
+            if self._obj.eof:
+                if self._coding == "deflate":
+                    raise ProtocolError("malformed deflate body: data after the compressed stream")
+                # Match stdlib gzip's allowance for zero padding between
+                # members or after the last member. Other trailing bytes
+                # must form a valid member; they are never silently lost.
+                data = data.lstrip(b"\x00")
+                if not data:
+                    break
+                self._obj = zlib.decompressobj(16 + zlib.MAX_WBITS)
+            try:
+                output.append(self._obj.decompress(data))
+            except zlib.error as exc:
+                raise ProtocolError(f"malformed {self._coding} body: {exc}") from exc
+            # zlib stops at ONE gzip member. Carry the remaining bytes
+            # into a fresh member decoder, including a split next header.
+            data = self._obj.unused_data
+        return b"".join(output)
+
+    def finish(self) -> bytes:
+        import zlib
+
+        if not self._started:
+            return b""
+        if self._obj is None or not self._obj.eof:
+            raise ProtocolError(
+                f"{self._coding} body ended before the compressed stream did (truncated)"
+            )
+        try:
+            return self._obj.flush()
+        except zlib.error as exc:
+            raise ProtocolError(f"malformed {self._coding} body: {exc}") from exc
+
+
+class ContentDecoder(_BodyDecoder):
+    """Undo Content-Encoding on top of a framing decoder.
+
+    The framing decoder (chunked / content-length / to-EOF) decides where
+    the body ends; this decoder turns each framed chunk back into the
+    bytes the origin produced.  Incremental, so a compressed SSE stream
+    still yields events as they arrive.  ``complete`` and ``leftover``
+    mirror the framing decoder's — the framing decides connection reuse,
+    not the compression.
+    """
+
+    def __init__(self, framing: _BodyDecoder, codings: list[str]) -> None:
+        self._framing = framing
+        self._inflaters = [_Inflater(c) for c in codings]
+        self._finished = False
+        self._drain = b""
+
+    @property
+    def complete(self) -> bool:  # type: ignore[override]
+        return self._framing.complete
+
+    @property
+    def leftover(self) -> bytes:  # type: ignore[override]
+        return self._framing.leftover
+
+    def _inflate(self, data: bytes) -> bytes:
+        for inflater in self._inflaters:
+            data = inflater.decompress(data)
+            if not data:
+                return b""
+        return data
+
+    def _finish(self) -> bytes:
+        if self._finished:
+            return b""
+        self._finished = True
+        # Flush each layer and push the tail through the layers above it.
+        out = b""
+        for index, inflater in enumerate(self._inflaters):
+            tail = inflater.finish()
+            for outer in self._inflaters[index + 1:]:
+                tail = outer.decompress(tail)
+            out += tail
+        return out
+
+    def feed(self, data: bytes) -> Iterator[bytes]:
+        for framed in self._framing.feed(data):
+            out = self._inflate(framed)
+            if out:
+                yield out
+        if self._framing.complete:
+            tail = self._finish()
+            if tail:
+                yield tail
+
+    def eof(self) -> None:
+        self._framing.eof()
+        # An EOF-delimited body finishes here (a framed one already did in
+        # feed).  The flush may release bytes; the transport collects them
+        # through drain() since there is no further feed call to carry them.
+        self._drain += self._finish()
+
+    def drain(self) -> bytes:
+        out, self._drain = self._drain, b""
+        return out

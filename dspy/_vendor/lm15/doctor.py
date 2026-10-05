@@ -86,6 +86,15 @@ class AuthReport:
     steps: tuple[AuthStep, ...]
     configured: bool
     settings: tuple[tuple[str, str], ...] = ()  # resolved host settings (AUTH-7: printed by name and value)
+    # AUTH-1 named credential (amended 2026-09-19): the name and what it
+    # means on this cloud, when the config pins one; the steps are then
+    # only the rungs it covers.
+    named: str | None = None
+    named_meaning: str | None = None
+    # The base URL the door will send to, and where it came from
+    # (``"base_urls"``, an env variable name, or ``"template"``).
+    base_url: str | None = None
+    base_url_source: str | None = None
 
     @property
     def selected(self) -> AuthStep | None:
@@ -96,6 +105,8 @@ class AuthReport:
 
     def describe(self) -> str:
         lines = [f"auth for provider {self.provider!r}:"]
+        if self.named:
+            lines.append(f'  named credential "{self.named}": {self.named_meaning} — the chain is not walked')
         lines += [f"  {step.describe()}" for step in self.steps]
         unprobed = [step for step in self.steps if step.state == "unprobed"]
         if self.configured and self.selected is not None:
@@ -108,6 +119,9 @@ class AuthReport:
             lines.append("  configured: no")
         for name, value in self.settings:
             lines.append(f"  setting {name}: {value}")
+        if self.base_url:
+            origin = f" (from {self.base_url_source})" if self.base_url_source else ""
+            lines.append(f"  base url: {self.base_url}{origin}")
         return "\n".join(lines)
 
     def __str__(self) -> str:
@@ -178,6 +192,8 @@ def explain_auth(
     home: str | None = None,
     settings: Mapping[str, str] | None = None,
     config: RouterConfig | None = None,
+    credential: str | None = None,
+    base_url: str | None = None,
 ) -> AuthReport:
     """Explain, rung by rung, how ``provider``'s credential resolves.
 
@@ -191,10 +207,14 @@ def explain_auth(
     prints secret values, and performs no network I/O.
 
     ``config`` is the router's own ``RouterConfig`` (``router.config``): its
-    ``env``, ``api_keys`` and the provider's ``settings`` entry are read, so
-    the report describes the router that will send the request.  An
-    explicit ``env=``/``api_keys=``/``settings=`` argument wins over the
-    config's field.
+    ``env``, ``api_keys``, ``credentials``, ``base_urls`` and the provider's
+    ``settings`` entry are read, so the report describes the router that
+    will send the request.  An explicit ``env=``/``api_keys=``/``settings=``
+    /``credential=``/``base_url=`` argument wins over the config's field.
+
+    On a cloud door the report also carries the base URL the door will
+    send to and where it came from, and, under a named credential
+    (``credential="platform"`` …), only the rungs that name covers.
     """
     import os
 
@@ -210,6 +230,14 @@ def explain_auth(
             api_keys = config.api_keys
         if settings is None and config.settings is not None:
             settings = config.settings.get(canonical) or config.settings.get(provider)
+        if credential is None:
+            from .router import _credentials_entry
+
+            credential = _credentials_entry(config, canonical)
+        if base_url is None:
+            from .router import _base_url_entry
+
+            base_url = _base_url_entry(config, canonical)
     if not _routable(canonical, ADAPTERS):
         from .registry import PROVIDERS
 
@@ -220,7 +248,13 @@ def explain_auth(
     if policy in ("aws-chain", "azure-chain", "gcp-chain") or (
         _bound_definition(canonical) is not None and _bound_definition(canonical).hosted
     ):
-        return _explain_cloud(canonical, env=env, api_keys=api_keys, files=files, home=home, settings=settings)
+        return _explain_cloud(canonical, env=env, api_keys=api_keys, files=files, home=home, settings=settings,
+                              credential=credential, base_url=base_url)
+    if credential is not None:
+        raise NotConfiguredError(
+            f"{canonical}: credential={credential!r} names a cloud identity, and this is not a cloud door",
+            provider=canonical,
+        )
     if policy == "oauth":
         override = claude_credentials_path if canonical == "claude-code" else codex_auth_path
         step = _oauth_step(canonical, override)
@@ -311,19 +345,26 @@ def _explain_cloud(
     files: Mapping[str, str] | None,
     home: str | None,
     settings: Mapping[str, str] | None,
+    credential: str | None = None,
+    base_url: str | None = None,
 ) -> AuthReport:
     """The cloud-chain walk (AUTH-1 aws/azure/gcp chains) through
     ``lm15.cloud.chains.explain``: offline, files from ``files`` when the
-    harness materialized them, host settings resolved and printed."""
+    harness materialized them, host settings resolved and printed, the
+    base URL and its origin named."""
     import os
 
-    from .cloud.chains import ChainContext, explain, profile_settings
-    from .cloud.hosts import resolve_settings
+    from .cloud.chains import ChainContext, explain, named_meaning, profile_settings
+    from .cloud.hosts import endpoint_from_env, render_base_url, resolve_settings
 
     definition = _bound_definition(canonical)
     policy = definition.access
     environment = env if env is not None else os.environ
-    config = RouterConfig(env=env, api_keys=api_keys)
+    config = RouterConfig(env=env, api_keys=api_keys, credentials={canonical: credential} if credential else None)
+    if credential is not None:
+        from .router import _check_named_credential
+
+        _check_named_credential(config, canonical, credential, ADAPTERS)
     entry = _api_keys_source(config, canonical)
     has_entry = entry is not None
     resolved: dict[str, str] = {}
@@ -333,13 +374,28 @@ def _explain_cloud(
         home=Path(home).expanduser() if home else (Path(environment["HOME"]) if environment.get("HOME") else Path.home()),
         files=files,
     )
+    endpoint_source: str | None = None
+    if base_url is not None:
+        endpoint_source = "base_urls"
+    elif policy.host is not None:
+        base_url = endpoint_from_env(policy.host, environment)
+        if base_url is not None:
+            endpoint_source = next(var for var in policy.host.endpoint_env if (environment.get(var) or "").strip())
+            endpoint_source = f"env ${endpoint_source}"
     try:
-        resolved = resolve_settings(policy.host, settings, environment, provider=canonical, profile=profile_settings(policy, ctx))
+        resolved = resolve_settings(policy.host, settings, environment, provider=canonical,
+                                    profile=profile_settings(policy, ctx), endpoint=base_url)
     except NotConfiguredError as exc:
         setting_error = str(exc).splitlines()[0]
     ctx.settings = resolved
+    rendered: str | None = None
+    if policy.host is not None and setting_error is None:
+        try:
+            rendered = render_base_url(policy.host, resolved, base_url, provider=canonical)
+        except NotConfiguredError as exc:
+            setting_error = str(exc).splitlines()[0]
     if policy.cloud_chain:
-        steps, configured = explain(policy, ctx, explicit=has_entry)
+        steps, configured = explain(policy, ctx, explicit=has_entry, named=credential)
         out = [AuthStep(kind=s.kind, source=_entry_source(canonical, entry) if s.kind == "api_keys" else s.source,
                         detail=s.detail, state=s.state) for s in steps]
     else:
@@ -357,4 +413,8 @@ def _explain_cloud(
     shown = tuple(sorted(resolved.items()))
     if setting_error:
         shown = shown + (("error", setting_error),)
-    return AuthReport(provider=canonical, steps=tuple(out), configured=configured, settings=shown)
+    return AuthReport(
+        provider=canonical, steps=tuple(out), configured=configured, settings=shown,
+        named=credential, named_meaning=named_meaning(policy, credential) if credential else None,
+        base_url=rendered, base_url_source=(endpoint_source or "template") if rendered else None,
+    )

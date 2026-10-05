@@ -105,14 +105,19 @@ def _provider_names(provider):
     }.get(provider, (provider,))
 
 
-def model_info(provider, model):
+def model_info(provider, model, *, namespaces=None):
     """Return a copy of the most specific matching entry, or an empty dict.
 
     Missing capability fields may inherit from a provider-matched bare entry;
     explicit false values do not. Prices never inherit from another entry.
+    ``namespaces`` names the snapshot namespaces to read for a declared
+    provider (its registration's ``metadata_namespaces``); an empty tuple
+    reads nothing. Without it the provider's own namespace table applies.
     """
     data = _load()
-    names = _provider_names(provider)
+    names = tuple(namespaces) if namespaces is not None else _provider_names(provider)
+    if not names:
+        return {}
     keys = [f"{name}/{model}" for name in names]
     bare = data.get(model)
     if isinstance(bare, dict) and bare.get("litellm_provider") in names:
@@ -135,6 +140,9 @@ def model_info(provider, model):
     rules = data.get("fallback_generalizations", {}).get("rules", [])
     for rule in rules if isinstance(rules, list) else []:
         if not isinstance(rule, dict) or not isinstance(rule.get("pattern"), str):
+            continue
+        providers = rule.get("fill_missing_for_providers")
+        if found is not None and providers is not None and found.get("litellm_provider") not in providers:
             continue
         try:
             matches = re.search(rule["pattern"], model) is not None

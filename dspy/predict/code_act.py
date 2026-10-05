@@ -30,7 +30,7 @@ class CodeAct(ReAct, ProgramOfThought):
         interpreter_factory: Callable[[], CodeInterpreter] = PythonInterpreter,
     ):
         """
-        Initializes the CodeAct class with the specified model, temperature, and max tokens.
+        Initializes the CodeAct class with the specified signature, tools, and max iterations.
 
         Args:
             signature (Union[str, Type[Signature]]): The signature of the module.

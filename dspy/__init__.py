@@ -18,6 +18,7 @@ from dspy.utils.exceptions import (
     DSPyError,
     LMAuthError,
     LMBillingError,
+    LMCollectionLimitError,
     LMConfigurationError,
     LMError,
     LMInvalidRequestError,

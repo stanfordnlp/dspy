@@ -235,7 +235,7 @@ def test_execution_timeout_does_not_wait_for_blocked_host_tool():
         interpreter.execute("blocked()")
     elapsed = time.monotonic() - started
 
-    assert tool_started.is_set()
+    assert tool_started.wait(timeout=1)
     assert elapsed < 0.5
     with pytest.raises(CodeInterpreterError, match="shut down"):
         interpreter.execute("1")

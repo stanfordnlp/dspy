@@ -92,28 +92,12 @@ class _LazyModule(types.ModuleType):
         self.__package__ = spec.parent
         if spec.submodule_search_locations is not None:
             self.__path__ = spec.submodule_search_locations
-        self._dspy_lazy_spec = spec
         self._dspy_lazy_lock = lock
 
     def _load(self) -> types.ModuleType:
-        # The proxy starts in sys.modules, then the first attribute access swaps in and executes the real module under
-        # the per-module lock. If import fails, restore the proxy so later accesses can retry and still share the lock.
-        # Return sys.modules after execution because a module may replace itself while importing.
-        module_name = self.__name__
+        # Keep proxies out of sys.modules so Python owns package initialization and submodule imports.
         with self._dspy_lazy_lock:
-            loaded = sys.modules.get(module_name)
-            if loaded is not None and loaded is not self:
-                return loaded
-
-            spec = self._dspy_lazy_spec
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[module_name] = module
-            try:
-                spec.loader.exec_module(module)
-            except Exception:
-                sys.modules[module_name] = self
-                raise
-            return sys.modules.get(module_name, module)
+            return importlib.import_module(self.__name__)
 
     def __getattr__(self, attr: str) -> Any:
         return getattr(self._load(), attr)
@@ -185,6 +169,4 @@ def require(module: str, *, extra: str | None = None, feature: str | None = None
         if module in sys.modules:
             return sys.modules[module]
 
-        mod = _LazyModule(module, spec, lock)
-        sys.modules[module] = mod
-        return mod
+        return _LazyModule(module, spec, lock)

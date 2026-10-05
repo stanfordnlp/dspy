@@ -8,13 +8,13 @@ from dspy.adapters._legacy_type_markers import (
     _expand_legacy_custom_type_markers_in_chat_message,
 )
 from dspy.adapters.types import History, Type
+from dspy.adapters.types.citation import Citations
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls
 from dspy.adapters.utils import apply_output_field_defaults, serialize_for_json
 from dspy.clients._deprecation import adapter_message_call
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.capabilities import with_capability_planning
-from dspy.experimental import Citations
 from dspy.primitives.repl_types import ExtractFallbackMarker, REPLEntry, is_repl_event, split_repl_event
 from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import Signature
@@ -311,11 +311,12 @@ class Adapter:
             # In order to format the conversation history, we need to remove the history field from the signature.
             signature_without_history = signature.delete(history_field_name)
             conversation_history = self.format_conversation_history(
-                signature_without_history, history_field_name, inputs_copy
+                signature_without_history,
+                history_field_name,
+                inputs_copy,
             )
 
         messages = []
-
         system_message = self.format_system_message(signature)
         messages.append({"role": "system", "content": system_message})
         messages.extend(self.format_demos(signature, demos))
@@ -564,7 +565,10 @@ class Adapter:
                         messages.append({"role": "assistant", "content": assistant_content})
                     continue
 
-                user_content = self.format_user_message_content(signature, repl_inputs)
+                # Replay the step's inputs the way they were sent, reminder included (see the generic path below).
+                user_content = self.format_user_message_content(
+                    signature, repl_inputs, main_request=any(name in repl_inputs for name in signature.input_fields)
+                )
                 if user_content:
                     messages.append({"role": "user", "content": user_content})
 
@@ -593,7 +597,11 @@ class Adapter:
                 messages.append({"role": "user", "content": content})
                 continue
 
-            user_content = self.format_user_message_content(signature, message)
+            # Preserve the format reminder from the original request for prompt-cache reuse.
+            # Output-only events must not acquire a synthetic user message containing just the reminder.
+            user_content = self.format_user_message_content(
+                signature, message, main_request=any(name in message for name in signature.input_fields)
+            )
             if user_content:
                 messages.append({"role": "user", "content": user_content})
 

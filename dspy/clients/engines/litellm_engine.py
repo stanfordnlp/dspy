@@ -3,6 +3,7 @@
 import json
 from dataclasses import replace
 
+from dspy._vendor.lm15.result import apply_client_side_stop
 from dspy._vendor.lm15.sse import SSEEvent
 from dspy.clients._litellm import get_litellm
 from dspy.clients.call_context import completed_legacy
@@ -12,6 +13,7 @@ from dspy.clients.engines.litellm_errors import litellm_errors
 from dspy.clients.legacy_outputs import plain
 from dspy.clients.lm15_boundary import request_kwargs, response_value
 from dspy.lm15 import (
+    Adaptation,
     ConfigurationError,
     OpenAIChatLM,
     ProviderError,
@@ -95,7 +97,7 @@ class _ChatStream:
 
 
 class _LiteLLMConfig:
-    def __init__(self, *, model_type="chat", **client_options):
+    def __init__(self, *, model_type="chat", wire_model=None, **client_options):
         if model_type not in {"chat", "responses", "text"}:
             raise UnsupportedFeatureError(
                 "Typed LiteLLM engines support chat and Responses APIs. Use ordinary LM calls for text completions."
@@ -110,6 +112,10 @@ class _LiteLLMConfig:
             raise TypeError(f"Unknown engine client options: {sorted(unknown)}. Generation options belong in Request.config.")
         self.model_type = model_type
         self.client_options = dict(client_options)
+        # The model string LiteLLM receives when it differs from the LM's
+        # (a declared provider reached through LiteLLM's generic door). The
+        # LM's own string stays on the request, the history and the cache key.
+        self.wire_model = wire_model
         self._closed = False
 
     def _arguments(self, request, *, streaming=False):
@@ -123,15 +129,46 @@ class _LiteLLMConfig:
                 "LiteLLMEngine streaming currently requires model_type='chat'. "
                 "Use the native Responses engine for Responses streaming.",
             )
-        data = request_kwargs(request, self.model_type)
+        # This engine receives a completed Responses reply, not lm15's
+        # provider stream. Own the stop operation explicitly: remove it
+        # only here, paired with _response's shared lm15 text cutter.
+        wire_request = request
+        if self.model_type == "responses" and request.config.stop:
+            wire_request = replace(request, config=replace(request.config, stop=()))
+        data = request_kwargs(wire_request, self.model_type)
+        if self.model_type == "chat" and request.config.top_k is not None:
+            # The conversion speaks OpenAI's chat dialect, which has no top_k
+            # field. LiteLLM translates top_k for providers that take it
+            # (Anthropic, Gemini, local servers), so the setting is forwarded
+            # as a LiteLLM argument rather than dropped by the conversion.
+            data["top_k"] = request.config.top_k
         data.update(self.client_options)
-        data.update(model=request.model, num_retries=0, cache={"no-cache": True, "no-store": True})
+        data.update(model=self.wire_model or request.model, num_retries=0, cache={"no-cache": True, "no-store": True})
         if self.model_type == "chat":
             data["n"] = 1
         if streaming:
             data["stream"] = True
             data["stream_options"] = {"include_usage": True}
         return data
+
+    def _response(self, raw, request):
+        response = response_value(raw, self.model_type, request)
+        if self.model_type == "responses" and request.config.top_k is not None:
+            note = Adaptation(
+                field="config.top_k", action="dropped", asked=request.config.top_k,
+                reason="The Responses API has no top_k field; the setting was not sent.",
+            )
+            response = replace(response, adaptations=(*response.adaptations, note))
+        if self.model_type == "responses" and request.config.stop:
+            response = apply_client_side_stop(response, request.config.stop)
+            note = Adaptation(
+                field="config.stop", action="client_side",
+                asked=list(request.config.stop), applied=list(request.config.stop),
+                reason="The Responses API has no stop field; DSPy trims the completed LiteLLM reply. "
+                       "Full provider usage is retained; generation is not stopped early.",
+            )
+            response = replace(response, adaptations=(*response.adaptations, note))
+        return response
 
     def __repr__(self):
         return f"{type(self).__name__}(model_type={self.model_type!r})"
@@ -147,6 +184,8 @@ class LiteLLMEngine(_LiteLLMConfig):
 
         fn = {"chat": lm_module.litellm_completion, "text": lm_module.litellm_text_completion,
               "responses": lm_module.litellm_responses_completion}[self.model_type]
+        if self.wire_model is not None:
+            request = {**request, "model": self.wire_model, **self.client_options}
         with litellm_errors(model=lm.model):
             raw = fn(request=request, num_retries=0)
         completed_legacy(raw)
@@ -159,7 +198,7 @@ class LiteLLMEngine(_LiteLLMConfig):
         fn = litellm.responses if self.model_type == "responses" else litellm.completion
         with litellm_errors(model=request.model):
             raw = fn(**data)
-        return response_value(raw, self.model_type, request)
+        return self._response(raw, request)
 
     def stream(self, request: Request):
         data = self._arguments(request, streaming=True)
@@ -191,6 +230,8 @@ class AsyncLiteLLMEngine(_LiteLLMConfig):
 
         fn = {"chat": lm_module.alitellm_completion, "text": lm_module.alitellm_text_completion,
               "responses": lm_module.alitellm_responses_completion}[self.model_type]
+        if self.wire_model is not None:
+            request = {**request, "model": self.wire_model, **self.client_options}
         with litellm_errors(model=lm.model):
             raw = await fn(request=request, num_retries=0)
         completed_legacy(raw)
@@ -203,7 +244,7 @@ class AsyncLiteLLMEngine(_LiteLLMConfig):
         fn = litellm.aresponses if self.model_type == "responses" else litellm.acompletion
         with litellm_errors(model=request.model):
             raw = await fn(**data)
-        return response_value(raw, self.model_type, request)
+        return self._response(raw, request)
 
     async def stream(self, request: Request):
         data = self._arguments(request, streaming=True)

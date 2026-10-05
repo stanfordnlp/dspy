@@ -8,9 +8,14 @@ Three pure functions, in the order an adapter calls them:
    adapter is given its settings explicitly, like its credential), then
    defaults.  A required setting with no value raises ``NotConfiguredError``
    naming the variable: ``region`` and ``resource`` have no default on
-   purpose (a wrong-region default is a residency bug).
-2. ``render_base_url(host, settings)`` — the base URL for the settings;
-   ``{location_host}`` is derived from ``location``.
+   purpose (a wrong-region default is a residency bug).  With an
+   ``endpoint`` (a full URL root) the settings the URL alone needed are
+   not required (``HostSpec.url_only_settings``).
+2. ``render_base_url(host, settings, endpoint=None)`` — the base URL for
+   the settings; ``{location_host}`` is derived from ``location``.  An
+   endpoint replaces the template's root; the door's path is appended
+   unless the endpoint already ends with it or with a leading part of it
+   (``join_endpoint``; spec/auth.md AUTH-10, amended 2026-09-19).
 3. ``finish_request(...)`` — the dialect built its request against that
    base URL; this applies the host's closed set of rewrites (endpoint path
    override, model into the path, ``anthropic_version`` into the body,
@@ -23,7 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import re
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from typing import Any, Callable, Mapping
 
 from ..credentials import ApiKey, AwsCredentials, CredentialValue
@@ -31,7 +36,8 @@ from ..errors import NotConfiguredError, UnsupportedFeatureError
 from ..features import AccessPolicy, HostSpec
 from . import sigv4
 
-__all__ = ["resolve_settings", "render_base_url", "location_host", "finish_request", "Clock", "utc_now"]
+__all__ = ["resolve_settings", "render_base_url", "join_endpoint", "endpoint_from_env", "location_host",
+           "finish_request", "Clock", "utc_now"]
 
 Clock = Callable[[], datetime]
 
@@ -47,14 +53,17 @@ def resolve_settings(
     *,
     provider: str = "",
     profile: Callable[[str], str | None] | None = None,
+    endpoint: str | None = None,
 ) -> dict[str, str]:
     """Explicit values, then ``env`` (when given), then the cloud profile
     (``profile(name)``: the AWS shared config's ``region`` for the active
-    profile, the ADC file's ``quota_project_id`` — AUTH-10), then defaults."""
+    profile, the ADC file's ``quota_project_id`` — AUTH-10), then defaults.
+    With ``endpoint`` the settings only the URL root needed are optional."""
     out: dict[str, str] = {}
     if host is None:
         return dict(given or {})
     given = dict(given or {})
+    relaxed = host.url_only_settings if endpoint else frozenset()
     for setting in host.settings:
         value = given.pop(setting.name, None)
         if not value and env is not None:
@@ -68,7 +77,11 @@ def resolve_settings(
         if not value:
             value = setting.default
         if not value:
+            if setting.name in relaxed:
+                continue
             hint = f"set {' or '.join(setting.env)}" if setting.env else f"pass settings={{'{setting.name}': ...}}"
+            if setting.name in host.url_only_settings and host.endpoint_env:
+                hint += f", or the endpoint: {' or '.join(host.endpoint_env)}"
             raise NotConfiguredError(
                 f"{provider or 'host'}: setting {setting.name!r} is required and has no default; {hint}",
                 provider=provider or None,
@@ -90,7 +103,48 @@ def location_host(location: str) -> str:
     return f"{location}-aiplatform.googleapis.com"
 
 
-def render_base_url(host: HostSpec, settings: Mapping[str, str]) -> str:
+def endpoint_from_env(host: HostSpec | None, env: Mapping[str, str] | None) -> str | None:
+    """The first non-empty vendor endpoint variable this door honours."""
+    if host is None or env is None:
+        return None
+    for var in host.endpoint_env:
+        value = (env.get(var) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def join_endpoint(endpoint: str, path: str, *, provider: str = "") -> str:
+    """``endpoint`` (a URL root the caller or the vendor's variable named)
+    joined with the door's ``path``.
+
+    The door's path is appended unless the endpoint already ends with it,
+    or with a leading part of it: the console shows an account root
+    (``https://acct.services.ai.azure.com``), Microsoft's own examples
+    show ``…/anthropic`` and ``…/openai/v1``, and all three must mean the
+    same door.  Stated trade-off: a gateway whose own path happens to end
+    with a leading part of the door's path (``…/openai`` meaning
+    ``…/openai/openai/v1``) cannot be spelled; no such gateway is known.
+    """
+    parts = urlsplit(endpoint.strip())
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        raise NotConfiguredError(f"{provider or 'host'}: endpoint must be an http(s) URL with a host, got {endpoint!r}",
+                                 provider=provider or None)
+    if parts.query or parts.fragment or "@" in parts.netloc:
+        raise NotConfiguredError(f"{provider or 'host'}: endpoint must not carry a query, fragment or userinfo",
+                                 provider=provider or None)
+    given = [segment for segment in parts.path.split("/") if segment]
+    door = [segment for segment in path.split("/") if segment]
+    base = given
+    for k in range(min(len(given), len(door)), 0, -1):
+        if given[-k:] == door[:k]:
+            base = given[:-k]
+            break
+    joined = "/".join(base + door)
+    return f"{parts.scheme}://{parts.netloc}" + (f"/{joined}" if joined else "")
+
+
+def render_base_url(host: HostSpec, settings: Mapping[str, str], endpoint: str | None = None, *, provider: str = "") -> str:
     values = dict(settings)
     for name in ("region", "resource", "location"):
         if name in values and not re.fullmatch(r"[A-Za-z0-9-]+", values[name]):
@@ -99,10 +153,14 @@ def render_base_url(host: HostSpec, settings: Mapping[str, str]) -> str:
         values["project"] = quote(values["project"], safe="")
     if "location" in values and "location_host" not in values:
         values["location_host"] = location_host(values["location"])
+    template = host.base_url if endpoint is None else host.path_template
     try:
-        return host.base_url.format(**values)
+        rendered = template.format(**values)
     except KeyError as exc:
         raise NotConfiguredError(f"host base URL needs setting {exc.args[0]!r}") from None
+    if endpoint is None:
+        return rendered
+    return join_endpoint(endpoint, rendered, provider=provider)
 
 
 @dataclass(frozen=True, slots=True, repr=False)

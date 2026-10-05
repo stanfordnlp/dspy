@@ -6,7 +6,7 @@ from typing import Any
 from dspy._vendor.lm15.serde import response_from_dict, response_to_dict
 from dspy.clients.legacy_outputs import plain, value
 from dspy.clients.lm15_boundary import response_value
-from dspy.lm15 import Request, Response, TextPart, ThinkingPart
+from dspy.lm15 import DataPart, Request, Response, TextPart, ThinkingPart
 
 CACHE_FORMAT = "dspy-lm15-result-v1"
 
@@ -35,7 +35,9 @@ def attributes(obj):
 def legacy_output(response: Response, *, logprobs=False):
     import json
 
-    texts = [part.text for part in response.message.parts if isinstance(part, TextPart)]
+    # Adapters still consume JSON text; typed callers keep the original DataPart.
+    texts = [part.text if isinstance(part, TextPart) else json.dumps(part.value, ensure_ascii=False)
+             for part in response.message.parts if isinstance(part, (TextPart, DataPart))]
     thinking = [part.text for part in response.message.parts if isinstance(part, ThinkingPart)]
     output = {"text": "".join(texts) if texts else None}
     if any(thinking):

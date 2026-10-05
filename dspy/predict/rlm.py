@@ -17,6 +17,7 @@ import inspect
 import keyword
 import logging
 import threading
+import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -25,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator
 import pydantic
 
 import dspy
+from dspy.adapters.types.decision import Choice, Noul, Score
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
 from dspy.primitives.code_interpreter import (
@@ -32,11 +34,11 @@ from dspy.primitives.code_interpreter import (
     CodeExecutionError,
     CodeInterpreter,
     FinalOutput,
-    _create_interpreter,
     _validate_interpreter,
     _validate_interpreter_factory,
     resolve_interpreter_factory,
 )
+from dspy.primitives.facade import CALL_TOOL, CONSTRUCT_TOOL, FacadeInvocation, is_reserved_sandbox_name
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -82,7 +84,39 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 
 You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
 
+# Appended to the interpreter rules whenever RLM installs the sandbox dspy facade (every factory-made interpreter).
+SUB_AGENT_INSTRUCTIONS = """
+Sub-agents (dspy):
+You may `import dspy` and build sub-agents in the REPL for subtasks that need structured inputs/outputs.
+- `dspy.Predict("question -> answer")(question=...)` or `dspy.ChainOfThought(...)` - single-step sub-agents.
+- `dspy.ReActV2("question -> answer", tools=[...])(question=...)` - a multi-step tool-using sub-agent.
+  Only the provided tools listed above may be passed; functions you define in the REPL cannot cross to the host.
+- `dspy.RLM("context, query -> answer")(context=..., query=...)` - a recursive sub-agent with its own
+  REPL on the same interpreter backend as yours; it cannot be given another `interpreter_factory`.
+  This is the heaviest option: reserve it for deep subtasks whose input is itself too large or
+  structured to prompt directly, and prefer Predict/ChainOfThought/ReActV2 for everything else.
+Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured, tool-using, or
+recursive subtasks.
+"""
 _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
+
+
+class _LLMCallBudget:
+    """Per-forward ceiling on sub-LLM calls, shared by every host path generated code can reach."""
+
+    def __init__(self, limit: int):
+        self._limit = limit
+        self._count = 0
+        self._lock = threading.Lock()
+
+    def reserve(self, n: int = 1) -> None:
+        with self._lock:
+            if self._count + n > self._limit:
+                raise RuntimeError(
+                    f"LLM call limit exceeded: {self._count} + {n} > {self._limit}. "
+                    f"Use Python code for aggregation instead of making more LLM calls."
+                )
+            self._count += n
 
 
 def _strip_code_fences(code: str) -> str:
@@ -147,9 +181,9 @@ class RLM(Module):
     ``dspy.configure(interpreter_factory=...)`` replaces that default. Either route
     accepts an adapter for a remote sandbox.
     RLM updates the interpreter's mutable ``tools`` dictionary with
-    invocation-scoped tools before execution. A caller-owned interpreter may be
-    reused sequentially with the same RLM instance, but must not be shared by
-    overlapping invocations.
+    invocation-scoped tools before execution. Pass a zero-argument factory via
+    ``interpreter_factory=`` at call time to override the runtime for one invocation.
+    RLM shuts down every interpreter it creates.
 
     Examples:
         ```python
@@ -177,7 +211,7 @@ class RLM(Module):
             signature: Defines inputs and outputs. String like "context, query -> answer"
                       or a Signature class.
             max_iters: Maximum REPL interaction iterations.
-            max_llm_calls: Maximum sub-LLM calls (llm_query/llm_query_batched) per execution.
+            max_llm_calls: Maximum sub-LLM calls (llm_query/llm_query_batched and sub-agent LM calls) per execution.
             max_output_chars: Maximum characters to include from REPL output.
             verbose: Whether to log detailed execution info.
             history_processor: Optional callable applied to the conversation history before each iteration
@@ -186,12 +220,14 @@ class RLM(Module):
                 If it raises, the error is logged and the iteration proceeds with the unprocessed history.
             tools: List of tool functions or dspy.Tool objects callable from interpreter code.
                   Built-in tools: llm_query(prompt), llm_query_batched(prompts).
-            sub_lm: LM for llm_query/llm_query_batched. Defaults to dspy.settings.lm.
+            sub_lm: LM for llm_query/llm_query_batched and sub-agents. Defaults to dspy.settings.lm.
                    Allows using a different (e.g., cheaper) model for sub-queries.
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
                 callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. RLM updates
                 the returned interpreter's mutable ``tools`` dictionary before execution. The callable may expose
-                an ``execution_instructions`` string describing its runtime for the action prompt. RLM applies the
+                an ``execution_instructions`` string describing its runtime for the action prompt. RLM installs the
+                sandbox dspy facade into every interpreter it creates, so the runtime must be able to host it
+                (see ``CodeInterpreter``). RLM applies the
                 active factory's instructions to each action call, so ``dspy.context`` can switch runtimes
                 without changing the shared predictor signature. Defaults to ``dspy.PythonInterpreter``;
                 ``dspy.configure(interpreter_factory=...)`` replaces the default.
@@ -200,6 +236,18 @@ class RLM(Module):
         _validate_interpreter_factory(interpreter_factory)
         self.history_processor = history_processor
         self.signature = ensure_signature(signature)
+        if any(
+            kind.extract_custom_type_from_annotation(field.rebuild_annotation())
+            for field in self.signature.output_fields.values()
+            for kind in (Noul, Choice, Score)
+        ):
+            warnings.warn(
+                "RLM support for Noul, Choice, and Score outputs is not implemented consistently: "
+                "decision evidence decoding is not guaranteed, including for nested output types. "
+                "Use Predict with top-level decision outputs instead.",
+                UserWarning,
+                stacklevel=2,
+            )
         self.max_iters = max_iters
         self.max_llm_calls = max_llm_calls
         self.max_output_chars = max_output_chars
@@ -255,15 +303,21 @@ class RLM(Module):
         return normalized
 
     def _validate_namespace(self, tools: dict[str, Tool]) -> None:
-        """Validate names owned by the RLM result and sandbox APIs."""
+        """Validate names owned by the RLM call, result, sandbox APIs, and the sandbox dspy facade."""
+        def is_reserved(name: str) -> bool:
+            return name in self._RESERVED_SANDBOX_NAMES or is_reserved_sandbox_name(name)
+
         for name in tools:
             if not name.isidentifier() or keyword.iskeyword(name):
                 raise ValueError(f"Invalid tool name '{name}': must be a valid Python identifier and not a keyword")
-            if name in self._RESERVED_SANDBOX_NAMES:
+            if is_reserved(name):
                 raise ValueError(f"Tool name '{name}' conflicts with built-in sandbox function")
 
         input_names = set(self.signature.input_fields)
-        reserved_sandbox_inputs = sorted(input_names & self._RESERVED_SANDBOX_NAMES)
+        if "interpreter_factory" in input_names:
+            raise ValueError("'interpreter_factory' is reserved for RLM runtime configuration, not a signature input.")
+
+        reserved_sandbox_inputs = sorted(name for name in input_names if is_reserved(name))
         if reserved_sandbox_inputs:
             raise ValueError(f"Input fields conflict with built-in sandbox functions: {reserved_sandbox_inputs}")
 
@@ -300,20 +354,10 @@ class RLM(Module):
 
         return "\n".join(lines)
 
-    def _make_llm_tools(self, max_workers: int = 8) -> dict[str, Callable]:
-        """Create llm_query and llm_query_batched tools with a fresh call counter."""
-        state = {"call_count": 0}
-        lock = threading.Lock()
+    def _make_llm_tools(self, budget: _LLMCallBudget | None = None, max_workers: int = 8) -> dict[str, Callable]:
+        """Create llm_query and llm_query_batched tools drawing on ``budget`` (fresh by default)."""
+        budget = budget if budget is not None else _LLMCallBudget(self.max_llm_calls)
         lm = self.sub_lm
-
-        def _check_and_increment(n: int = 1) -> None:
-            with lock:
-                if state["call_count"] + n > self.max_llm_calls:
-                    raise RuntimeError(
-                        f"LLM call limit exceeded: {state['call_count']} + {n} > {self.max_llm_calls}. "
-                        f"Use Python code for aggregation instead of making more LLM calls."
-                    )
-                state["call_count"] += n
 
         def _query_lm(prompt: str) -> str:
             target_lm = lm if lm is not None else dspy.settings.lm
@@ -339,14 +383,14 @@ class RLM(Module):
             """Query the LLM with a prompt string."""
             if not prompt:
                 raise ValueError("prompt cannot be empty")
-            _check_and_increment(1)
+            budget.reserve(1)
             return _query_lm(prompt)
 
         def llm_query_batched(prompts: list[str]) -> list[str]:
             """Query prompts concurrently, isolating LM failures while propagating contract errors."""
             if not prompts:
                 return []
-            _check_and_increment(len(prompts))
+            budget.reserve(len(prompts))
 
             results: dict[int, str] = {}
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -393,7 +437,10 @@ class RLM(Module):
         factory = resolve_interpreter_factory(self._interpreter_factory)
         execution_instructions = self._get_execution_instructions(factory)
         self._initial_execution_instructions = execution_instructions
-        self._initial_interpreter_rules = self._format_interpreter_rules(execution_instructions)
+        self._initial_sub_agent_rules = SUB_AGENT_INSTRUCTIONS
+        self._initial_interpreter_rules = self._format_interpreter_rules(
+            execution_instructions, self._initial_sub_agent_rules
+        )
         interpreter_rules = self._initial_interpreter_rules
 
         action_sig = (
@@ -459,8 +506,9 @@ class RLM(Module):
         return action_sig, extract_sig
 
     @staticmethod
-    def _format_interpreter_rules(execution_instructions: str) -> str:
-        return f"\nExecution environment:\n{execution_instructions}\n" if execution_instructions else ""
+    def _format_interpreter_rules(execution_instructions: str, sub_agent_rules: str) -> str:
+        rules = f"\nExecution environment:\n{execution_instructions}\n" if execution_instructions else ""
+        return rules + sub_agent_rules
 
     @staticmethod
     def _get_execution_instructions(factory: Callable[[], CodeInterpreter]) -> str:
@@ -469,9 +517,13 @@ class RLM(Module):
             raise TypeError("interpreter_factory.execution_instructions must be a string")
         return execution_instructions
 
-    def _action_signature_for_current_factory(self) -> type[Signature]:
-        """Return an action signature whose runtime guidance matches the active interpreter."""
-        factory = resolve_interpreter_factory(self._interpreter_factory)
+    def _action_signature_for_current_factory(
+        self, factory: Callable[[], CodeInterpreter], sub_agent_rules: str
+    ) -> type[Signature]:
+        """Return an action signature whose runtime guidance matches the active interpreter.
+
+        ``sub_agent_rules`` is the sub-agent guidance for this invocation's interpreter (see ``_setup_facade``).
+        """
         execution_instructions = self._get_execution_instructions(factory)
         # getattr, because generate_action may have been replaced by a predictor that
         # carries no signature of its own.
@@ -479,12 +531,15 @@ class RLM(Module):
 
         # Same runtime as at construction: no derived signature per iteration, and an
         # optimizer's revised instructions stay untouched.
-        if execution_instructions == self._initial_execution_instructions:
+        if (
+            execution_instructions == self._initial_execution_instructions
+            and sub_agent_rules == self._initial_sub_agent_rules
+        ):
             return current_signature
 
         # Replace only DSPy's own fragment, so an override cannot stack on stale guidance.
         current_instructions = current_signature.instructions
-        current_rules = self._format_interpreter_rules(execution_instructions)
+        current_rules = self._format_interpreter_rules(execution_instructions, sub_agent_rules)
         if self._initial_interpreter_rules and self._initial_interpreter_rules in current_instructions:
             instructions = current_instructions.replace(self._initial_interpreter_rules, current_rules, 1)
         elif current_rules:
@@ -530,14 +585,6 @@ class RLM(Module):
 
     def _validate_inputs(self, input_args: dict[str, Any]) -> None:
         """Validate call-time arguments against the signature's input namespace."""
-        if "interpreter" in input_args and "interpreter" not in self.signature.input_fields:
-            raise TypeError(
-                "To use a caller-owned interpreter, pass it as the first positional argument when calling the module."
-            )
-        if "history_processor" in input_args and "history_processor" not in self.signature.input_fields:
-            raise TypeError(
-                "To use a history_processor, pass it as the second positional argument when calling this module."
-            )
         input_names = set(self.signature.input_fields)
         unexpected = set(input_args) - input_names - self._CALL_TIME_ARGS
         if unexpected:
@@ -593,6 +640,28 @@ class RLM(Module):
 
         return regular_args
 
+    def _setup_facade(
+        self, repl: CodeInterpreter, budget: _LLMCallBudget, interpreter_factory: Callable[[], CodeInterpreter]
+    ) -> str:
+        """Install the sandbox dspy facade into this invocation's interpreter; return its sub-agent guidance.
+
+        Nested code-executing sub-agents get their interpreters from ``interpreter_factory``, the factory this
+        invocation runs on. The facade resolves ``sub_lm`` (else ``dspy.settings.lm``) per call, like
+        ``llm_query``, and charges ``max_llm_calls``.
+        """
+        invocation = FacadeInvocation(
+            self._user_tools, interpreter_factory, None, lm=self.sub_lm, reserve=budget.reserve
+        )
+        try:
+            invocation.install(repl)
+        except CodeExecutionError as e:
+            # The runtime cannot host the shim (e.g. it runs code in the host's memory): no sub-agents this call.
+            for name in (CONSTRUCT_TOOL, CALL_TOOL):
+                repl.tools.pop(name, None)
+            logger.warning("RLM sub-agents are unavailable on %s: %s", type(repl).__name__, e)
+            return ""
+        return SUB_AGENT_INSTRUCTIONS
+
     # =========================================================================
     # CodeInterpreter Lifecycle
     # =========================================================================
@@ -612,9 +681,10 @@ class RLM(Module):
         invoke.__signature__ = inspect.signature(tool.func)
         return invoke
 
-    def _prepare_execution_tools(self) -> dict[str, Callable]:
-        """Create fresh LLM tools and merge with user-provided tools."""
-        execution_tools = self._make_llm_tools()
+    def _prepare_execution_tools(self, budget: _LLMCallBudget | None = None) -> dict[str, Callable]:
+        """Create the LLM tools on ``budget`` (fresh by default) and merge with user-provided tools."""
+        budget = budget if budget is not None else _LLMCallBudget(self.max_llm_calls)
+        execution_tools = self._make_llm_tools(budget)
         execution_tools.update({name: self._make_interpreter_tool(tool) for name, tool in self._user_tools.items()})
         return execution_tools
 
@@ -636,16 +706,12 @@ class RLM(Module):
     def _interpreter_context(
         self,
         execution_tools: dict[str, Callable],
-        interpreter: CodeInterpreter | None,
+        factory: Callable[[], CodeInterpreter],
     ) -> Iterator[CodeInterpreter]:
-        """Yield a caller-owned interpreter or manage a factory-created one."""
-        if interpreter is not None:
-            _validate_interpreter(interpreter)
-            self._inject_execution_context(interpreter, execution_tools)
-            yield interpreter
-            return
-
-        interpreter = _create_interpreter(self._interpreter_factory)
+        """Create and close one interpreter for this invocation."""
+        _validate_interpreter_factory(factory)
+        interpreter = factory()
+        _validate_interpreter(interpreter)
         try:
             self._inject_execution_context(interpreter, execution_tools)
             yield interpreter
@@ -809,14 +875,16 @@ class RLM(Module):
         iteration: int,
         regular_args: dict[str, Any],
         output_field_names: list[str],
+        interpreter_factory: Callable[[], CodeInterpreter],
+        sub_agent_rules: str,
     ) -> tuple[REPLEntry, dict[str, Any] | None]:
-        """Execute one iteration. Returns Prediction if done, else updated dspy.History."""
+        """Execute one iteration. Returns the REPL entry and the final outputs once SUBMIT succeeds."""
         variables_info = [variable.format() for variable in variables]
         # A per-call signature, not a mutation of generate_action.signature, keeps a
         # dspy.context override local to this invocation.
         action = self.generate_action(
             history=history,
-            signature=self._action_signature_for_current_factory(),
+            signature=self._action_signature_for_current_factory(interpreter_factory, sub_agent_rules),
             variables_info=variables_info,
             iteration=self._iteration_label(iteration),
         )
@@ -840,17 +908,20 @@ class RLM(Module):
 
     def forward(
         self,
-        interpreter: CodeInterpreter | None = None,
+        *,
+        interpreter_factory: Callable[[], CodeInterpreter] | None = None,
         history_processor: Callable[[dspy.History], dspy.History | None] | None = None,
-        /,
         **input_args,
     ) -> Prediction:
         """Execute RLM to produce outputs from the given inputs.
 
         Args:
-            interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
-                output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
-                this RLM instance.
+            interpreter_factory: Optional zero-argument factory, passed by keyword. Overrides the constructor
+                and configured factories for this invocation. Must return a fresh interpreter; RLM injects tools
+                and output metadata and shuts it down on exit, including failures. Sub-agents built in the
+                sandbox run their own code on this factory too.
+            history_processor: Optional callable, passed by keyword. Overrides the constructor's processor for
+                this invocation; see the class docstring for the contract.
             **input_args: Input values matching the signature's input fields. An optional `history`
                 (`dspy.History`) is treated as read-only input; it is never mutated.
 
@@ -864,11 +935,14 @@ class RLM(Module):
             CodeInterpreterError: If interpreter setup, process, or protocol fails
         """
         self._validate_inputs(input_args)
+        if interpreter_factory is None:
+            interpreter_factory = resolve_interpreter_factory(self._interpreter_factory)
 
         history_processor = history_processor if history_processor else self.history_processor
 
         output_field_names = list(self.signature.output_fields.keys())
-        execution_tools = self._prepare_execution_tools()
+        budget = _LLMCallBudget(self.max_llm_calls)
+        execution_tools = self._prepare_execution_tools(budget)
 
         # The caller's history is input only; RLM appends iteration events to a private copy that is returned
         # as `result.history`.
@@ -876,7 +950,8 @@ class RLM(Module):
 
         variables = self._build_variables(**input_args)
 
-        with self._interpreter_context(execution_tools, interpreter) as repl:
+        with self._interpreter_context(execution_tools, interpreter_factory) as repl:
+            sub_agent_rules = self._setup_facade(repl, budget, interpreter_factory)
             regular_args = self._prepare_serializable_vars(input_args, repl)
             turn_entries: list[REPLEntry] = []
             variables_info = [variable.format() for variable in variables]
@@ -893,6 +968,8 @@ class RLM(Module):
                     iteration,
                     regular_args,
                     output_field_names,
+                    interpreter_factory,
+                    sub_agent_rules,
                 )
                 turn_entries.append(repl_entry)
 
@@ -959,12 +1036,14 @@ class RLM(Module):
         iteration: int,
         regular_args: dict[str, Any],
         output_field_names: list[str],
+        interpreter_factory: Callable[[], CodeInterpreter],
+        sub_agent_rules: str,
     ) -> tuple[REPLEntry, dict[str, Any] | None]:
         """Async version: Execute one iteration."""
         variables_info = [variable.format() for variable in variables]
         pred = await self.generate_action.acall(
             history=history,
-            signature=self._action_signature_for_current_factory(),
+            signature=self._action_signature_for_current_factory(interpreter_factory, sub_agent_rules),
             variables_info=variables_info,
             iteration=self._iteration_label(iteration),
         )
@@ -984,17 +1063,20 @@ class RLM(Module):
 
     async def aforward(
         self,
-        interpreter: CodeInterpreter | None = None,
+        *,
+        interpreter_factory: Callable[[], CodeInterpreter] | None = None,
         history_processor: Callable[[dspy.History], dspy.History | None] | None = None,
-        /,
         **input_args,
     ) -> Prediction:
         """Async version of forward(). Execute RLM to produce outputs.
 
         Args:
-            interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
-                output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
-                this RLM instance.
+            interpreter_factory: Optional zero-argument factory, passed by keyword. Overrides the constructor
+                and configured factories for this invocation. Must return a fresh interpreter; RLM injects tools
+                and output metadata and shuts it down on exit, including failures. Sub-agents built in the
+                sandbox run their own code on this factory too.
+            history_processor: Optional callable, passed by keyword. Overrides the constructor's processor for
+                this invocation; see the class docstring for the contract.
             **input_args: Input values matching the signature's input fields. An optional `history`
                 (`dspy.History`) is treated as read-only input; it is never mutated.
 
@@ -1008,11 +1090,14 @@ class RLM(Module):
             CodeInterpreterError: If interpreter setup, process, or protocol fails
         """
         self._validate_inputs(input_args)
+        if interpreter_factory is None:
+            interpreter_factory = resolve_interpreter_factory(self._interpreter_factory)
 
         history_processor = history_processor if history_processor else self.history_processor
 
         output_field_names = list(self.signature.output_fields.keys())
-        execution_tools = self._prepare_execution_tools()
+        budget = _LLMCallBudget(self.max_llm_calls)
+        execution_tools = self._prepare_execution_tools(budget)
 
         # The caller's history is input only; RLM appends iteration events to a private copy that is returned
         # as `result.history`.
@@ -1020,7 +1105,8 @@ class RLM(Module):
 
         variables = self._build_variables(**input_args)
 
-        with self._interpreter_context(execution_tools, interpreter) as repl:
+        with self._interpreter_context(execution_tools, interpreter_factory) as repl:
+            sub_agent_rules = self._setup_facade(repl, budget, interpreter_factory)
             regular_args = self._prepare_serializable_vars(input_args, repl)
             turn_entries: list[REPLEntry] = []
             variables_info = [variable.format() for variable in variables]
@@ -1036,6 +1122,8 @@ class RLM(Module):
                     iteration,
                     regular_args,
                     output_field_names,
+                    interpreter_factory,
+                    sub_agent_rules,
                 )
                 turn_entries.append(repl_entry)
 

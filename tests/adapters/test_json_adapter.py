@@ -326,7 +326,9 @@ def test_json_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
             '["math", "machines"]}\n'
             "\n"
             "[[ ## question ## ]]\n"
-            "Who is Ada?",
+            "Who is Ada?\n\n"
+            "Respond with a JSON object in the following order of fields: `answer` "
+            "(must be formatted as a valid Python AnswerCard).",
         },
         {
             "role": "assistant",
@@ -1011,7 +1013,9 @@ def test_json_adapter_not_using_structured_outputs_when_not_supported_by_model()
     program = dspy.Predict(TestSignature)
 
     # Configure DSPy to use a model from a fake provider that doesn't support structured outputs
-    dspy.configure(lm=dspy.LM(engine="litellm", model="fakeprovider/fakemodel", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(
+        lm=dspy.LM(engine="litellm", model="fakeprovider/fakemodel", cache=False), adapter=dspy.JSONAdapter()
+    )
     with mock.patch("litellm.completion") as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[Choices(message=Message(content=("{'output1': 'Test output', 'output2': True}")))],
@@ -1468,9 +1472,10 @@ def test_json_adapter_formats_conversation_history():
     messages = adapter.format(MySignature, [], {"question": "What is the capital of France?", "history": history})
 
     assert len(messages) == 6
-    assert messages[1]["content"] == "[[ ## question ## ]]\nWhat is the capital of France?"
+    reminder = "\n\nRespond with a JSON object in the following order of fields: `answer`."
+    assert messages[1]["content"] == "[[ ## question ## ]]\nWhat is the capital of France?" + reminder
     assert messages[2]["content"] == '{\n  "answer": "Paris"\n}'
-    assert messages[3]["content"] == "[[ ## question ## ]]\nWhat is the capital of Germany?"
+    assert messages[3]["content"] == "[[ ## question ## ]]\nWhat is the capital of Germany?" + reminder
     assert messages[4]["content"] == '{\n  "answer": "Berlin"\n}'
 
 
@@ -1651,7 +1656,9 @@ async def test_json_adapter_does_not_fallback_to_json_mode_on_structured_output_
     with mock.patch("litellm.acompletion") as mock_acompletion:
         mock_acompletion.side_effect = RuntimeError("Structured output failed!")
 
-        with dspy.context(lm=dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
+        with dspy.context(
+            lm=dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()
+        ):
             with pytest.raises(dspy.LMUnexpectedError, match="Structured output failed"):
                 await program.acall(question="Dummy question!")
 
@@ -1693,7 +1700,9 @@ async def test_error_message_on_json_adapter_failure_async():
     program = dspy.Predict(TestSignature)
 
     with mock.patch("litellm.acompletion") as mock_acompletion:
-        with dspy.context(lm=dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
+        with dspy.context(
+            lm=dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()
+        ):
             mock_acompletion.side_effect = RuntimeError("RuntimeError!")
             with pytest.raises(dspy.LMUnexpectedError) as error:
                 await program.acall(question="Dummy question!")
@@ -1812,7 +1821,8 @@ def test_json_adapter_toolcalls_no_native_function_calling():
         assert call_kwargs["response_format"] == {"type": "json_object"}
 
 
-def test_json_adapter_native_reasoning():
+@mock.patch("litellm.supports_reasoning", return_value=True)
+def test_json_adapter_native_reasoning(_supports_reasoning):
     class MySignature(dspy.Signature):
         question: str = dspy.InputField()
         reasoning: dspy.Reasoning = dspy.OutputField()
@@ -1833,7 +1843,9 @@ def test_json_adapter_native_reasoning():
             model="anthropic/claude-3-7-sonnet-20250219",
         )
         modified_signature = adapter._call_preprocess(
-            dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
+            dspy.LM(
+                engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False
+            ),
             {},
             MySignature,
             {"question": "What is the capital of France?"},
@@ -1841,7 +1853,9 @@ def test_json_adapter_native_reasoning():
         assert "reasoning" not in modified_signature.output_fields
 
         result = adapter(
-            dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
+            dspy.LM(
+                engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False
+            ),
             {},
             MySignature,
             [],

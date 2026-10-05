@@ -849,7 +849,10 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
             "\n"
             "<question>\n"
             "Who is Ada?\n"
-            "</question>",
+            "</question>\n\n"
+            "Respond with the corresponding output fields wrapped in XML tags `<answer>`. "
+            "Use this nested XML structure: "
+            "<answer><answer>...</answer><sources><item>...</item></sources></answer>",
         },
         {
             "role": "assistant",

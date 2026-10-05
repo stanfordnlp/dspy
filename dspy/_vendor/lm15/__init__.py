@@ -88,6 +88,7 @@ from .types import (
     BinaryPart,
     ToolCallPart,
     ToolResultPart,
+    DataPart,
     # tools
     FunctionTool,
     BuiltinTool,
@@ -148,6 +149,8 @@ from .features import AccessPolicy, EndpointSupport
 from .errors import (
     LM15Error,
     StreamAssemblyError,
+    CollectionLimitError,
+    StreamCleanupWarning,
     TransportError,
     LockTimeoutError,
     ConfigurationError,
@@ -175,6 +178,7 @@ from .providers import (
     ClaudeCodeLM,
     OpenAICodexLM,
     XaiLM,
+    TypeSafeLM,
 )
 from .providers.openai_chat import request_from_openai_chat, response_from_openai_chat
 from .protocols import ProviderLM
@@ -186,6 +190,7 @@ from .providers.async_base import (
     AsyncClaudeCodeLM,
     AsyncOpenAICodexLM,
     AsyncXaiLM,
+    AsyncTypeSafeLM,
 )
 
 # ── Stream assembly ──────────────────────────────────────────────────
@@ -211,6 +216,12 @@ from .router import (
     UnknownModelError,
 )
 
+# ── Connection budget (lm15.transports) ───────────────────────────────
+from .transports import Timeouts
+
+# ── MAP-13 adaptations (lm15.adaptation) ──────────────────────────────
+from .adaptation import Adaptation, AdaptationPolicy
+
 # ── Tool derivation (lm15.tools) ─────────────────────────────────────
 from .tools import (
     DerivedParam,
@@ -221,13 +232,17 @@ from .tools import (
 )
 from .tools import derive as derive_tool
 
+# ── Judgments (changes/2026-09-17-judgments.md) ─────────────────────
+from .judgments import choice, judgments, score, yes_no
+from .types import data
+
 __all__ = [
     "__version__",
     # core
     "Request", "Response", "Message", "Usage", "Config", "CacheConfig",
     "Reasoning", "ToolChoice", "ErrorDetail", "ContinuationState",
     # parts
-    "TextPart", "ThinkingPart", "RefusalPart", "CitationPart", "ImagePart",
+    "TextPart", "ThinkingPart", "RefusalPart", "CitationPart", "DataPart", "ImagePart",
     "AudioPart", "VideoPart", "DocumentPart", "BinaryPart", "ToolCallPart",
     "ToolResultPart",
     # tools
@@ -251,14 +266,15 @@ __all__ = [
     "Role", "PartType", "FinishReason", "ReasoningEffort", "ErrorCode",
     "StreamEventType", "ROLE_VALUES", "FINISH_REASONS", "ERROR_CODES",
     # errors (the catchable taxonomy + the retry predicate)
-    "LM15Error", "TransportError", "LockTimeoutError", "StreamAssemblyError", "ConfigurationError", "CapabilityError",
+    "LM15Error", "TransportError", "LockTimeoutError", "StreamAssemblyError", "CollectionLimitError", "StreamCleanupWarning", "ConfigurationError", "CapabilityError",
     "ProviderError", "AuthError", "BillingError", "RateLimitError",
     "InvalidRequestError", "ContextLengthError", "TimeoutError",
     "ServerError", "UnsupportedModelError", "UnsupportedFeatureError",
     "NotConfiguredError", "RETRYABLE_ERRORS",
     "AccessPolicy", "EndpointSupport",
     # providers
-    "OpenAILM", "OpenAIChatLM", "AnthropicLM", "GeminiLM", "ClaudeCodeLM", "OpenAICodexLM", "XaiLM",
+    "choice", "judgments", "score", "yes_no", "data",
+    "OpenAILM", "OpenAIChatLM", "AnthropicLM", "GeminiLM", "ClaudeCodeLM", "OpenAICodexLM", "XaiLM", "TypeSafeLM", "AsyncTypeSafeLM",
     "ProviderLM",
     # the Chat Completions dialect read in: a request body -> Request (MAP-12), a response body -> Response
     "request_from_openai_chat", "response_from_openai_chat",
@@ -272,6 +288,8 @@ __all__ = [
     "ModelInfo", "ModelRegistry",
     # router (lm15.router; the rule/preset tables live there too)
     "LMRouter", "AsyncLMRouter", "RouterConfig", "Resolution",
+    "Timeouts",
+    "Adaptation", "AdaptationPolicy",
     "UnknownModelError",
     "AmbiguousModelError", "MissingCredentialError",
     # tool derivation (lm15.tools)

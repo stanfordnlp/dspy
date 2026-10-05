@@ -16,6 +16,7 @@ from dspy.clients.backend_selection import select_backend
 from dspy.clients.engines.litellm_errors import litellm_errors
 from dspy.clients.errors import error_boundary
 from dspy.clients.model_metadata import model_info
+from dspy.lm15 import UnsupportedFeatureError
 
 
 @dataclass(frozen=True)
@@ -28,9 +29,10 @@ class Capabilities:
 
 def resolve(lm):
     from dspy.clients.engines.lm15_engine import LM15Engine
-    from dspy.lm15 import RouterConfig
+    from dspy.lm15 import RouterConfig, _definitions
 
-    return LM15Engine(RouterConfig(env={}), model_type=lm.model_type).resolve(lm.model)
+    providers = _definitions(getattr(lm, "_providers", ()))
+    return LM15Engine(RouterConfig(env={}, providers=providers), model_type=lm.model_type).resolve(lm.model)
 
 
 @dataclass(repr=False)
@@ -128,9 +130,11 @@ def _capabilities(lm, options=None):
             frozenset(getattr(spec, "supported_params", ()) or ()),
         )
     selection = select_backend(lm, options)
-    if not selection.native:
-        return _litellm_capabilities(lm, selection)
     route = selection.resolution
+    if not selection.native and not (route is not None and route.declared):
+        return _litellm_capabilities(lm, selection)
+    # A declared provider is described by its declaration on either route:
+    # the LiteLLM fallback reaches the same server through the generic door.
     from dspy._vendor.lm15.compat import (
         AnthropicCompat,
         OpenAIChatCompat,
@@ -140,21 +144,44 @@ def _capabilities(lm, options=None):
         resolve_openai_responses_compat,
     )
     from dspy._vendor.lm15.registry import lookup
+    from dspy.lm15 import _binding_for
 
-    definition = lookup(route.provider)
-    info = model_info(route.provider, route.model)
-    tools = info.get("supports_function_calling") is True
-    reasoning = info.get("supports_reasoning") is True
-    schema = info.get("supports_response_schema") is True
+    binding = _binding_for(getattr(lm, "_providers", ()), route.provider) if route.declared else None
+    if binding is not None:
+        definition = binding.definition
+        # Only the namespaces the registration named may describe this model.
+        info = model_info(route.provider, route.model, namespaces=binding.metadata_namespaces)
+        stated = binding.support_for(route.model)
+    else:
+        definition = lookup(route.provider)
+        if definition is None:
+            raise UnsupportedFeatureError(f"{route.provider!r} is not a provider DSPy knows the capabilities of")
+        info = model_info(route.provider, route.model)
+        stated = None
+
+    def supported(key, statement):
+        # A snapshot entry is the more specific fact; the registration's own
+        # statement fills what the snapshot does not say; unknown is False.
+        value = info.get(key)
+        if value is None and statement is not None:
+            value = statement
+        return value is True
+
+    tools = supported("supports_function_calling", stated.function_calling if stated else None)
+    reasoning = supported("supports_reasoning", stated.reasoning if stated else None)
+    schema = supported("supports_response_schema", stated.response_schema if stated else None)
     params = {"temperature", "max_tokens", "top_p", "stream"}
     # These describe lm15's canonical mappings. Engine-specific refusal still
     # validates the complete request, including combinations and model limits.
     if definition.dialect == "openai-chat":
-        preset = definition.compat or ("xai" if route.provider == "xai" else "openai")
-        compat = resolve_openai_chat_compat(OpenAIChatCompat.preset(preset).for_model(route.model))
+        if isinstance(definition.compat, OpenAIChatCompat):
+            partial = definition.compat  # a declared provider carries its compat object
+        else:
+            partial = OpenAIChatCompat.preset(definition.compat or ("xai" if route.provider == "xai" else "openai"))
+        compat = resolve_openai_chat_compat(partial.for_model(route.model))
         params.update({"stop", "max_completion_tokens", "logprobs", "top_logprobs", "seed",
                        "presence_penalty", "frequency_penalty", "logit_bias", "user"})
-        if info.get("supports_response_schema") is True or info.get("supports_function_calling") is True:
+        if schema or tools:
             params.add("response_format")
         if compat.json_schema == "reject":
             schema = False
@@ -163,7 +190,10 @@ def _capabilities(lm, options=None):
         if route.provider == "xai":
             params.difference_update({"logprobs", "top_logprobs"})
     elif definition.dialect == "anthropic":
-        compat = resolve_anthropic_compat(AnthropicCompat.preset(definition.compat or "anthropic"))
+        if isinstance(definition.compat, AnthropicCompat):
+            compat = resolve_anthropic_compat(definition.compat)
+        else:
+            compat = resolve_anthropic_compat(AnthropicCompat.preset(definition.compat or "anthropic"))
         params.update({"stop", "top_k"})
         if schema and compat.structured_output != "reject":
             params.add("response_format")
@@ -174,7 +204,10 @@ def _capabilities(lm, options=None):
     elif definition.dialect == "gemini":
         params.update({"stop", "top_k", "logprobs", "top_logprobs", "response_format"})
     else:
-        compat = resolve_openai_responses_compat(OpenAIResponsesCompat.preset(definition.compat or "openai"))
+        if isinstance(definition.compat, OpenAIResponsesCompat):
+            compat = resolve_openai_responses_compat(definition.compat)
+        else:
+            compat = resolve_openai_responses_compat(OpenAIResponsesCompat.preset(definition.compat or "openai"))
         params.update({"response_format", "max_completion_tokens", "logprobs", "top_logprobs", "store"})
         if compat.reasoning_format == "none":
             reasoning = False
