@@ -130,3 +130,12 @@ def test_parse_value_optional_enum_and_literal_accept_the_bare_spellings():
     assert parse_value("null", Literal["red", "blue"] | None) is None
     with pytest.raises(ValueError):
         parse_value("green", Color | None)
+
+
+def test_parse_value_optional_literal_keeps_the_type_the_union_parsing_returned():
+    # A value the generic union handling already parsed keeps its type: "1" is the int member here,
+    # as it was before optional closed-set annotations got their own handling.
+    assert parse_value("1", Literal[1, "1"] | None) == 1
+    assert type(parse_value("1", Literal[1, "1"] | None)) is int
+    assert parse_value("2", Literal[1, 2, 3] | None) == 2
+    assert parse_value('"1"', Literal[1, "1"] | None) == "1"
