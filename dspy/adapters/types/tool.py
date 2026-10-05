@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
 
 import json_repair
@@ -523,9 +524,11 @@ def _normalize_tool_call_dict(data: dict[str, Any]) -> dict[str, Any]:
 
 def _to_json_default(value: Any) -> Any:
     """Convert a parameter default to its JSON form, e.g. an Enum member to its value."""
+    if isinstance(value, Decimal):
+        return value
     try:
         return pydantic_core.to_jsonable_python(value)
-    except pydantic_core.PydanticSerializationError:
+    except Exception:
         return value
 
 

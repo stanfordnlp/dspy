@@ -164,6 +164,18 @@ def test_tool_defaults_are_json_serializable():
     json.dumps(tool.format_as_litellm_function_call())
 
 
+def test_tool_defaults_without_json_form_are_kept():
+    from decimal import Decimal
+
+    def scale(data: bytes = b"\xff", factor: float = Decimal("0.1")) -> str:
+        return "ok"
+
+    tool = Tool(scale)
+    assert tool.args["data"]["default"] == b"\xff"
+    assert tool.args["factor"]["default"] == Decimal("0.1")
+    assert tool(factor=tool.args["factor"]["default"]) == "ok"
+
+
 def test_format_as_litellm_function_call_excludes_defaulted_args_from_required():
     # `x` has no default and must be required; `y` has a default and must be optional.
     tool = Tool(dummy_function)
