@@ -203,7 +203,7 @@ def _get_source(obj, fallback=None) -> str:
             return inspect.getsource(candidate)
         except (OSError, TypeError):
             continue
-    return f"<source unavailable for {getattr(obj, '__qualname__', repr(obj))}>"
+    return f"<source unavailable for {getattr(obj, '__qualname__', type(obj).__qualname__)}>"
 
 
 def recursive_mask(o):

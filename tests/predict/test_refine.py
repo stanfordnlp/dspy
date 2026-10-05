@@ -91,3 +91,21 @@ def test_refine_init_tolerates_unavailable_source(monkeypatch):
 
     assert "source unavailable" in refine.module_code
     assert "source unavailable" in refine.reward_fn_code
+
+
+def test_refine_init_placeholder_does_not_call_reward_repr(monkeypatch):
+    class BadRepr:
+        def __call__(self, args, pred):
+            return 1.0
+
+        def __repr__(self):
+            raise RuntimeError("repr should not be called")
+
+    def raise_oserror(obj):
+        raise OSError("could not get source code")
+
+    monkeypatch.setattr("dspy.predict.refine.inspect.getsource", raise_oserror)
+
+    refine = Refine(module=dspy.Predict("question -> answer"), N=3, reward_fn=BadRepr(), threshold=1.0)
+
+    assert "BadRepr" in refine.reward_fn_code
