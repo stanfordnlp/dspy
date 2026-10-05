@@ -1,6 +1,8 @@
 import json
+import logging
 import random
 import threading
+import types
 from typing import Any
 from unittest import mock
 
@@ -311,13 +313,127 @@ def test_metric_requires_feedback_signature():
 def test_reflection_prompt_template_in_gepa_kwargs_raises():
     """reflection_prompt_template via gepa_kwargs is unsupported: DspyAdapter owns propose_new_texts."""
     reflection_lm = DictDummyLM([])
-    with pytest.raises(ValueError, match="reflection_prompt_template"):
+    with pytest.raises(ValueError) as exc_info:
         dspy.GEPA(
             metric=simple_metric,
             reflection_lm=reflection_lm,
             max_metric_calls=1,
             gepa_kwargs={"reflection_prompt_template": "Instructions: <curr_param>\n\nExamples: <side_info>"},
         )
+
+    message = str(exc_info.value)
+    assert "reflection_prompt_template" in message
+    assert "reflection_instruction" in message
+    assert "instruction_proposer" in message
+
+
+@pytest.mark.parametrize("bad", [{"a": "b"}, ["a", "b"], 1, 0, True, False])
+def test_reflection_instruction_rejects_non_string(bad):
+    with pytest.raises(ValueError, match="reflection_instruction must be a string or None"):
+        dspy.GEPA(
+            metric=simple_metric,
+            reflection_lm=DictDummyLM([]),
+            max_metric_calls=1,
+            reflection_instruction=bad,
+        )
+
+
+@pytest.mark.parametrize("value", [None, "", "   ", "\n\t "])
+def test_reflection_instruction_accepts_blank(value):
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        reflection_lm=DictDummyLM([]),
+        max_metric_calls=1,
+        reflection_instruction=value,
+    )
+    assert optimizer.reflection_instruction == value
+
+
+def test_reflection_instruction_accepts_string():
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        reflection_lm=DictDummyLM([]),
+        max_metric_calls=1,
+        reflection_instruction="Be concise.",
+    )
+    assert optimizer.reflection_instruction == "Be concise."
+
+
+def test_reflection_instruction_with_custom_proposer_warns_once(caplog):
+    class NoopProposer:
+        def __call__(self, candidate, reflective_dataset, components_to_update):
+            return {}
+
+    with caplog.at_level(logging.WARNING, logger="dspy.teleprompt.gepa.gepa"):
+        dspy.GEPA(
+            metric=simple_metric,
+            reflection_lm=None,
+            max_metric_calls=1,
+            instruction_proposer=NoopProposer(),
+            reflection_instruction="Be concise.",
+        )
+
+    warnings = [r for r in caplog.records if "reflection_instruction is ignored" in r.getMessage()]
+    assert len(warnings) == 1
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_reflection_instruction_blank_does_not_warn_with_custom_proposer(blank, caplog):
+    class NoopProposer:
+        def __call__(self, candidate, reflective_dataset, components_to_update):
+            return {}
+
+    with caplog.at_level(logging.WARNING, logger="dspy.teleprompt.gepa.gepa"):
+        dspy.GEPA(
+            metric=simple_metric,
+            reflection_lm=None,
+            max_metric_calls=1,
+            instruction_proposer=NoopProposer(),
+            reflection_instruction=blank,
+        )
+    assert "reflection_instruction is ignored" not in caplog.text
+
+
+def test_reflection_instruction_without_custom_proposer_does_not_warn(caplog):
+    with caplog.at_level(logging.WARNING, logger="dspy.teleprompt.gepa.gepa"):
+        dspy.GEPA(
+            metric=simple_metric,
+            reflection_lm=DictDummyLM([]),
+            max_metric_calls=1,
+            reflection_instruction="Be concise.",
+        )
+    assert "reflection_instruction is ignored" not in caplog.text
+
+
+def test_reflection_instruction_in_gepa_kwargs_raises():
+    with pytest.raises(ValueError, match="reflection_instruction must be passed directly"):
+        dspy.GEPA(
+            metric=simple_metric,
+            reflection_lm=DictDummyLM([]),
+            max_metric_calls=1,
+            gepa_kwargs={"reflection_instruction": "Be concise."},
+        )
+
+
+def test_compile_threads_reflection_instruction_to_adapter(monkeypatch):
+    captured = {}
+
+    def fake_optimize(**kwargs):
+        captured["adapter"] = kwargs["adapter"]
+        return types.SimpleNamespace(best_candidate={})
+
+    monkeypatch.setattr("gepa.optimize", fake_optimize)
+
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        reflection_lm=DictDummyLM([]),
+        max_metric_calls=1,
+        reflection_instruction="Keep it under 150 words.",
+    )
+    example = Example(input="x", output="y").with_inputs("input")
+    optimizer.compile(SimpleModule("input -> output"), trainset=[example], valset=[example])
+
+    assert captured["adapter"].reflection_instruction == "Keep it under 150 words."
 
 
 def any_metric(
