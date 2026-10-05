@@ -122,7 +122,8 @@ def test_page_markdown_is_written_beside_rendered_pages(tmp_path):
     guide.write_text(
         "<html><body><nav>Navigation</nav><article>"
         '<h1 id="first">First<a class="headerlink" href="#first">¶</a></h1>'
-        '<p>See <a href="../second/#setup">Second</a>, <a href="../../learn/">Learn</a>'
+        '<p>See <a href="../second/#setup">Second</a>, <a href="../../learn/">Learn</a>,'
+        ' <a href="/learn#steps">Steps</a>, <a href="../../gone/">Gone</a>'
         ' and <a href="https://example.com/">elsewhere</a>.</p>'
         "<div class=\"highlight\"><pre><code>print('hi')</code></pre></div>"
         "</article></body></html>"
@@ -134,14 +135,16 @@ def test_page_markdown_is_written_beside_rendered_pages(tmp_path):
     redirect.parent.mkdir()
     redirect.write_text('<meta http-equiv="refresh" content="0; url=../guides/first/">')
 
-    write_page_markdown(tmp_path, "https://dspy.ai/current/")
+    write_page_markdown(tmp_path, "https://dspy.ai/current/", {"learn/index.md": "guides/second.md"})
 
     markdown = (tmp_path / "guides" / "first" / "index.md").read_text()
     assert markdown.startswith("# First\n")
     assert "Navigation" not in markdown
     assert "¶" not in markdown
     assert "[Second](https://dspy.ai/current/guides/second/index.md#setup)" in markdown
-    assert "[Learn](https://dspy.ai/current/learn/)" in markdown
+    assert "[Learn](https://dspy.ai/current/guides/second/index.md)" in markdown
+    assert "[Steps](https://dspy.ai/current/guides/second/index.md#steps)" in markdown
+    assert "[Gone](https://dspy.ai/current/gone/)" in markdown
     assert "[elsewhere](https://example.com/)" in markdown
     assert "```\nprint('hi')\n```" in markdown
     assert (tmp_path / "guides" / "second" / "index.md").read_text() == "# Second\n"

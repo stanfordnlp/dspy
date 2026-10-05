@@ -213,8 +213,11 @@ def generate_llms(docs: Path, output: Path, site_url: str, settings: dict[str, o
 MARKDOWN_EXCLUDED_CLASSES = {"headerlink", "twemoji", "tabbed-labels", "doc-labels"}
 
 
-def page_markdown(html: str, page_url: str, markdown_urls: set[str]) -> str | None:
-    """Convert a rendered page's article to Markdown, as mkdocs-llmstxt did for Material builds."""
+def page_markdown(html: str, page_url: str, site_url: str, markdown_urls: dict[str, str]) -> str | None:
+    """Convert a rendered page's article to Markdown, as mkdocs-llmstxt did for Material builds.
+
+    `markdown_urls` maps page URLs, including static redirects, to the Markdown copy they resolve to.
+    """
     import mdformat
     from bs4 import BeautifulSoup
     from markdownify import ATX, MarkdownConverter
@@ -233,14 +236,13 @@ def page_markdown(html: str, page_url: str, markdown_urls: set[str]) -> str | No
         element.replace_with(BeautifulSoup(f"<pre>{escape(code.get_text() if code else '')}</pre>", "html.parser"))
     for link in article.find_all("a", href=True):
         href = link["href"]
-        if href.startswith("#") or urlparse(href).scheme or href.startswith("/"):
+        if href.startswith(("#", "//")) or urlparse(href).scheme:
             continue
-        target = urljoin(page_url, href)
+        # Root-relative links stay within the version, as build_docs.py scopes them in HTML.
+        target = urljoin(site_url, href.lstrip("/")) if href.startswith("/") else urljoin(page_url, href)
         path, _, fragment = target.partition("#")
-        if f"{path}index.md" in markdown_urls:
-            link["href"] = f"{path}index.md{'#' + fragment if fragment else ''}"
-        else:
-            link["href"] = target
+        markdown_url = markdown_urls.get(path) or markdown_urls.get(f"{path}/")
+        link["href"] = f"{markdown_url}{'#' + fragment if fragment else ''}" if markdown_url else target
 
     def language(tag) -> str:
         classes = [*(tag.get("class") or ()), *((tag.parent.get("class") or ()) if tag.parent else ())]
@@ -252,7 +254,7 @@ def page_markdown(html: str, page_url: str, markdown_urls: set[str]) -> str | No
     return mdformat.text(converter.convert_soup(article), options={"wrap": "no"}, extensions=("tables",))
 
 
-def write_page_markdown(site: Path, site_url: str) -> None:
+def write_page_markdown(site: Path, site_url: str, redirects: dict[str, str]) -> None:
     """Write `<route>/index.md` beside every rendered page so llms.txt links resolve."""
     pages = {
         page: urljoin(site_url, "" if route == "." else f"{route}/")
@@ -260,9 +262,13 @@ def write_page_markdown(site: Path, site_url: str) -> None:
         if "<article" in page.read_text()
         for route in [page.parent.relative_to(site).as_posix()]
     }
-    markdown_urls = {f"{url}index.md" for url in pages.values()}
+    markdown_urls = {url: f"{url}index.md" for url in pages.values()}
+    for source, target in redirects.items():
+        target_url = urljoin(site_url, route_for_source(target.replace(".ipynb", ".md")).lstrip("/"))
+        if target_url in markdown_urls:
+            markdown_urls[urljoin(site_url, route_for_source(source).lstrip("/"))] = markdown_urls[target_url]
     for page, url in pages.items():
-        markdown = page_markdown(page.read_text(), url, markdown_urls)
+        markdown = page_markdown(page.read_text(), url, site_url, markdown_urls)
         if markdown is not None:
             page.with_suffix(".md").write_text(markdown)
 
@@ -462,7 +468,7 @@ def build_zensical_site(
             str(source_config["site_url"]),
             llms,
         )
-        write_page_markdown(output, str(source_config["site_url"]))
+        write_page_markdown(output, str(source_config["site_url"]), redirect_maps(prepared))
         social_cards(output, str(source_config["site_url"]), titles, project / "docs" / "static" / "img" / "logo.png")
         sitemap = output / "sitemap.xml"
         with gzip.open(output / "sitemap.xml.gz", "wb") as compressed:
