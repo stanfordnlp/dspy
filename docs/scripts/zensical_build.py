@@ -17,7 +17,7 @@ import textwrap
 from html import escape
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import yaml
 
@@ -210,6 +210,63 @@ def generate_llms(docs: Path, output: Path, site_url: str, settings: dict[str, o
     output.write_text("\n".join(parts))
 
 
+MARKDOWN_EXCLUDED_CLASSES = {"headerlink", "twemoji", "tabbed-labels", "doc-labels"}
+
+
+def page_markdown(html: str, page_url: str, markdown_urls: set[str]) -> str | None:
+    """Convert a rendered page's article to Markdown, as mkdocs-llmstxt did for Material builds."""
+    import mdformat
+    from bs4 import BeautifulSoup
+    from markdownify import ATX, MarkdownConverter
+
+    article = BeautifulSoup(html, "html.parser").find("article")
+    if article is None:
+        return None
+    for element in article.find_all(["img", "svg"]):
+        element.decompose()
+    for element in article.find_all(class_=lambda value: value in MARKDOWN_EXCLUDED_CLASSES):
+        element.decompose()
+    for element in article.find_all("div", class_="doc-md-description"):
+        element.replace_with(element.get_text().strip())
+    for element in article.find_all("table", class_="highlighttable"):
+        code = element.find("code")
+        element.replace_with(BeautifulSoup(f"<pre>{escape(code.get_text() if code else '')}</pre>", "html.parser"))
+    for link in article.find_all("a", href=True):
+        href = link["href"]
+        if href.startswith("#") or urlparse(href).scheme or href.startswith("/"):
+            continue
+        target = urljoin(page_url, href)
+        path, _, fragment = target.partition("#")
+        if f"{path}index.md" in markdown_urls:
+            link["href"] = f"{path}index.md{'#' + fragment if fragment else ''}"
+        else:
+            link["href"] = target
+
+    def language(tag) -> str:
+        classes = [*(tag.get("class") or ()), *((tag.parent.get("class") or ()) if tag.parent else ())]
+        return next((name.removeprefix("language-") for name in classes if name.startswith("language-")), "")
+
+    converter = MarkdownConverter(
+        bullets="-", code_language_callback=language, escape_underscores=False, heading_style=ATX
+    )
+    return mdformat.text(converter.convert_soup(article), options={"wrap": "no"}, extensions=("tables",))
+
+
+def write_page_markdown(site: Path, site_url: str) -> None:
+    """Write `<route>/index.md` beside every rendered page so llms.txt links resolve."""
+    pages = {
+        page: urljoin(site_url, "" if route == "." else f"{route}/")
+        for page in site.rglob("index.html")
+        if "<article" in page.read_text()
+        for route in [page.parent.relative_to(site).as_posix()]
+    }
+    markdown_urls = {f"{url}index.md" for url in pages.values()}
+    for page, url in pages.items():
+        markdown = page_markdown(page.read_text(), url, markdown_urls)
+        if markdown is not None:
+            page.with_suffix(".md").write_text(markdown)
+
+
 class HeadParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -320,7 +377,10 @@ def social_cards(site: Path, site_url: str, titles: dict[str, str], logo: Path) 
 HREF = re.compile(r"""href=["']?([^"'\s>]+)""")
 
 
-def validate_output(site: Path, notebook_routes: set[str], redirects: dict[str, str]) -> None:
+LLMS_LINK = re.compile(r"^- \[.*\]\((?P<url>[^)\s]+)\)(?::.*)?$", re.MULTILINE)
+
+
+def validate_output(site: Path, notebook_routes: set[str], redirects: dict[str, str], site_url: str) -> None:
     """Fail the build when an existing documentation feature has no output."""
     required = ("index.html", "api/index.html", "search.json", "llms.txt", "sitemap.xml", "sitemap.xml.gz")
     missing = [path for path in required if not (site / path).is_file()]
@@ -329,6 +389,11 @@ def validate_output(site: Path, notebook_routes: set[str], redirects: dict[str, 
         route_for_source(source).lstrip("/") + "index.html"
         for source in redirects
         if not (site / (route_for_source(source).lstrip("/") + "index.html")).is_file()
+    )
+    missing.extend(
+        url
+        for url in LLMS_LINK.findall((site / "llms.txt").read_text() if (site / "llms.txt").is_file() else "")
+        if not url.startswith(site_url) or not (site / url.removeprefix(site_url)).is_file()
     )
     if missing:
         raise RuntimeError(f"Zensical output is missing required files: {', '.join(sorted(missing))}")
@@ -397,13 +462,14 @@ def build_zensical_site(
             str(source_config["site_url"]),
             llms,
         )
+        write_page_markdown(output, str(source_config["site_url"]))
         social_cards(output, str(source_config["site_url"]), titles, project / "docs" / "static" / "img" / "logo.png")
         sitemap = output / "sitemap.xml"
         with gzip.open(output / "sitemap.xml.gz", "wb") as compressed:
             compressed.write(sitemap.read_bytes())
         home = output / "index.html"
         home.write_text(re.sub(r"<title>Index\s+-\s+DSPy</title>", "<title>DSPy</title>", home.read_text(), count=1))
-        validate_output(output, notebook_routes, redirect_maps(prepared))
+        validate_output(output, notebook_routes, redirect_maps(prepared), str(source_config["site_url"]))
         return notebook_routes
     finally:
         if temporary:
