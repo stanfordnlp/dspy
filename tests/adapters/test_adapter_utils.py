@@ -139,3 +139,15 @@ def test_parse_value_optional_literal_keeps_the_type_the_union_parsing_returned(
     assert type(parse_value("1", Literal[1, "1"] | None)) is int
     assert parse_value("2", Literal[1, 2, 3] | None) == 2
     assert parse_value('"1"', Literal[1, "1"] | None) == "1"
+
+
+def test_parse_value_optional_closed_set_keeps_a_null_member():
+    # "null" is a permitted member here, so it must not be read as None.
+    class Status(enum.Enum):
+        NULL = "null"
+        SET = "set"
+
+    assert parse_value("null", Literal["null", "set"] | None) == "null"
+    assert parse_value("null", Status | None) is Status.NULL
+    assert parse_value("None", Literal["null", "set"] | None) is None
+    assert parse_value("None", Status | None) is None
