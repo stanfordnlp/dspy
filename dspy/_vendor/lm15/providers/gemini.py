@@ -798,6 +798,10 @@ class GeminiLM(BaseProviderLM):
                       asked="off", applied=min_level, provider=self.provider)
                 reasoning = replace(reasoning, effort=min_level)
             if reasoning.is_off and is_pro:
+                adapt("config.reasoning.effort", "substituted",
+                      f"{request.model} cannot disable thinking (minimum budget is 128 tokens); "
+                      "thinkingBudget=128 was sent and the thinking spend is visible in usage",
+                      asked=reasoning.effort, applied=128, provider=self.provider)
                 generation_config["thinkingConfig"] = {"thinkingBudget": 128}
             elif reasoning.is_off:
                 generation_config["thinkingConfig"] = {"thinkingBudget": 0}
@@ -808,8 +812,8 @@ class GeminiLM(BaseProviderLM):
                           asked=reasoning.summary, applied="auto", provider=self.provider)
                     reasoning = replace(reasoning, summary="auto")
                 thinking: dict[str, Any] = {}
-                if not was_off and reasoning.summary != "none":
-                    thinking["includeThoughts"] = True
+                if not was_off and reasoning.summary not in (None, "none"):
+                    thinking["includeThoughts"] = True  # MAP-7 rule 7: only when asked
                 if reasoning.thinking_budget is not None:
                     thinking["thinkingBudget"] = reasoning.thinking_budget  # 3.x: accepted, docs warn
                 elif level_class:

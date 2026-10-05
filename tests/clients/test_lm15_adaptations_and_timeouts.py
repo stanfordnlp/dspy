@@ -303,30 +303,34 @@ def test_gemini_reasoning_off_and_clamping_for_pro_and_flash():
     assert cfg == {"thinkingLevel": "minimal"}
     assert len(adapts) == 1 and adapts[0].applied == "minimal"
 
-    # 3. reasoning="off" on Gemini 2.5 Pro -> thinkingBudget=128
-    cfg, _ = _build("au.gemini-2.5-pro", Reasoning(effort="off"))
+    # 3. reasoning="off" on Gemini 2.5 Pro -> thinkingBudget=128 with recorded substitution
+    cfg, adapts_25p = _build("au.gemini-2.5-pro", Reasoning(effort="off"))
     assert cfg == {"thinkingBudget": 128}
+    assert len(adapts_25p) == 1 and adapts_25p[0].action == "substituted" and adapts_25p[0].applied == 128
 
     # 4. reasoning="off" on Gemini 2.5 Flash -> thinkingBudget=0
     cfg, _ = _build("gemini-2.5-flash", Reasoning(effort="off"))
     assert cfg == {"thinkingBudget": 0}
 
-    # 5. effort="minimal" on Gemini 3.5 Pro clamped to "low"
+    # 5. effort="minimal" on Gemini 3.5 Pro clamped to "low" (includeThoughts omitted unless summary requested)
     cfg, adapts = _build("eu.gemini-3.5-pro", Reasoning(effort="minimal"))
-    assert cfg == {"includeThoughts": True, "thinkingLevel": "low"}
+    assert cfg == {"thinkingLevel": "low"}
     assert any(a.action == "clamped" and a.applied == "low" for a in adapts)
+
+    cfg_with_summary, _ = _build("eu.gemini-3.5-pro", Reasoning(effort="minimal", summary="auto"))
+    assert cfg_with_summary == {"includeThoughts": True, "thinkingLevel": "low"}
 
     # 6. effort="medium" clamped to "high" on gemini-3-pro, preserved on gemini-3.1-pro and gemini-3.5-pro
     cfg_30, adapts_30 = _build("gemini-3-pro", Reasoning(effort="medium"))
-    assert cfg_30 == {"includeThoughts": True, "thinkingLevel": "high"}
+    assert cfg_30 == {"thinkingLevel": "high"}
     assert any(a.action == "clamped" and a.applied == "high" for a in adapts_30)
 
     cfg_31, adapts_31 = _build("gemini-3.1-pro", Reasoning(effort="medium"))
-    assert cfg_31 == {"includeThoughts": True, "thinkingLevel": "medium"}
+    assert cfg_31 == {"thinkingLevel": "medium"}
     assert not adapts_31
 
     cfg_35, adapts_35 = _build("au.gemini-3.5-pro", Reasoning(effort="medium"))
-    assert cfg_35 == {"includeThoughts": True, "thinkingLevel": "medium"}
+    assert cfg_35 == {"thinkingLevel": "medium"}
     assert not adapts_35
 
 
