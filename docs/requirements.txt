@@ -1,3 +1,7 @@
+beautifulsoup4==4.15.0
+markdownify==1.2.3
+mdformat==0.7.22
+mdformat-tables==1.0.0
 mkdocstrings==1.0.6
 mkdocstrings-python==2.0.9
 nbconvert==7.17.1
