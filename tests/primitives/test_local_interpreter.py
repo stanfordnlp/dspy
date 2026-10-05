@@ -52,7 +52,8 @@ def test_guest_stdin_is_isolated_from_the_protocol():
     # Guest code must not be able to read protocol messages; fd 0 is os.devnull inside the
     # worker. Isolating it is also what lets guest subprocesses run on Windows, where a child
     # inheriting the protocol pipe as stdin blocks behind the worker's pending readline().
-    with dspy.LocalInterpreter() as interpreter:
+    # execution_timeout turns a regression of that hang into a prompt failure.
+    with dspy.LocalInterpreter(execution_timeout=10) as interpreter:
         assert interpreter.execute("import sys\nsys.stdin.read()") == ""
         assert interpreter.execute("import os\nos.read(0, 10).decode()") == ""
         started = time.monotonic()
