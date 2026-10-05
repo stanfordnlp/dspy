@@ -248,8 +248,6 @@ def test_valset_ratio_validation():
 def test_compile_requires_student_lms():
     """Student predictors without an LM must fail fast with a clear error.
 
-    Regression test for https://github.com/stanfordnlp/dspy/issues/10546.
-
     ``all_predictors_have_lms`` is a predicate, so calling it for its side
     effects validated nothing and compilation only failed later inside
     ``launch_lms`` with ``AttributeError: 'NoneType' object has no attribute
