@@ -31,8 +31,9 @@ def _strict_json_schema(schema: Any, *, root: dict | None = None) -> Any:
         out["properties"] = {name: _strict_json_schema(sub, root=root) for name, sub in out["properties"].items()}
     if isinstance(out.get("items"), dict):
         out["items"] = _strict_json_schema(out["items"], root=root)
-    if isinstance(out.get("anyOf"), list):
-        out["anyOf"] = [_strict_json_schema(item, root=root) for item in out["anyOf"]]
+    for key in ("items", "prefixItems", "anyOf", "oneOf"):
+        if isinstance(out.get(key), list):
+            out[key] = [_strict_json_schema(item, root=root) for item in out[key]]
     if isinstance(out.get("allOf"), list):
         if len(out["allOf"]) == 1:
             out.update(_strict_json_schema(out.pop("allOf")[0], root=root))
