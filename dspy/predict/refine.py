@@ -89,11 +89,8 @@ class Refine(Module):
         self.threshold = threshold
         self.N = N
         self.fail_count = fail_count or N  # default to N if fail_count is not provided
-        self.module_code = inspect.getsource(module.__class__)
-        try:
-            self.reward_fn_code = inspect.getsource(reward_fn)
-        except TypeError:
-            self.reward_fn_code = inspect.getsource(reward_fn.__class__)
+        self.module_code = _get_source(module.__class__)
+        self.reward_fn_code = _get_source(reward_fn, fallback=reward_fn.__class__)
 
     def forward(self, **kwargs):
         lm = self.module.get_lm() or dspy.settings.lm
@@ -195,6 +192,18 @@ def inspect_modules(program):
         output.append(separator)
 
     return "\n".join([o.strip("\n") for o in output])
+
+
+def _get_source(obj, fallback=None) -> str:
+    """Best-effort source lookup; code typed into a plain REPL (Python < 3.13) has no retrievable source."""
+    for candidate in (obj, fallback):
+        if candidate is None:
+            continue
+        try:
+            return inspect.getsource(candidate)
+        except (OSError, TypeError):
+            continue
+    return f"<source unavailable for {getattr(obj, '__qualname__', repr(obj))}>"
 
 
 def recursive_mask(o):

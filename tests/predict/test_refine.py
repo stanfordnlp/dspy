@@ -78,3 +78,16 @@ def test_refine_module_custom_fail_count():
     assert module_call_count[0] == 2, (
         "Module should have been called exactly 2 times, but was called %d times" % module_call_count[0]
     )
+
+
+def test_refine_init_tolerates_unavailable_source(monkeypatch):
+    # Code typed into a plain REPL (Python < 3.13) makes inspect.getsource raise OSError.
+    def raise_oserror(obj):
+        raise OSError("could not get source code")
+
+    monkeypatch.setattr("dspy.predict.refine.inspect.getsource", raise_oserror)
+
+    refine = Refine(module=dspy.Predict("question -> answer"), N=3, reward_fn=lambda args, pred: 1.0, threshold=1.0)
+
+    assert "source unavailable" in refine.module_code
+    assert "source unavailable" in refine.reward_fn_code
