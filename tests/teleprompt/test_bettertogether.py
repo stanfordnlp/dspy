@@ -10,7 +10,7 @@ import pytest
 import dspy
 from dspy import Example
 from dspy.predict import Predict
-from dspy.teleprompt import BetterTogether, BootstrapFewShotWithRandomSearch, BootstrapFinetune
+from dspy.teleprompt import BetterTogether, BootstrapFewShot, BootstrapFewShotWithRandomSearch, BootstrapFinetune
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.dummies import DummyLM
 
@@ -506,6 +506,42 @@ def test_compile_args_override_global_params():
         "Override trainset should differ from global trainset"
     assert mock_p.received_kwargs["valset"] != valset, \
         "Override valset should differ from global valset"
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+def test_teacher_passed_to_optimizer_in_given_shape(student_with_lm, mock_bt_dependencies, as_list):
+    """Test that a single teacher reaches the optimizer as a module and a list of teachers as a list."""
+    teacher = SimpleModule("input -> output")
+    teacher.set_lm(DummyLM([{"output": "test"}]))
+
+    mock_p = CapturingOptimizer()
+    optimizer = BetterTogether(metric=simple_metric, p=mock_p)
+    optimizer.compile(
+        student_with_lm,
+        trainset=trainset,
+        valset=valset,
+        teacher=[teacher] if as_list else teacher,
+        strategy="p",
+    )
+
+    if as_list:
+        assert mock_p.received_kwargs["teacher"] == [teacher]
+    else:
+        assert mock_p.received_kwargs["teacher"] is teacher
+
+
+def test_single_teacher_with_bootstrap_fewshot(student_with_lm, mock_bt_dependencies):
+    """Test that a single teacher works with an optimizer that expects one teacher module."""
+    teacher = SimpleModule("input -> output")
+    teacher.set_lm(DummyLM([{"output": "test"}]))
+
+    optimizer = BetterTogether(
+        metric=simple_metric,
+        p=BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=0),
+    )
+    compiled = optimizer.compile(student_with_lm, trainset=trainset, valset=valset, teacher=teacher, strategy="p")
+
+    assert compiled.flag_compilation_error_occurred is False
 
 
 def test_trainset_shuffling_between_steps():
