@@ -2849,17 +2849,11 @@ class TestHistoryProcessorHook:
         def process(history):
             raise RuntimeError("Compaction error")
 
-        dspy_logger = logging.getLogger("dspy")
-        original_propagate = dspy_logger.propagate
-        dspy_logger.propagate = True
-
-        try:
-            with caplog.at_level(logging.ERROR, logger="dspy.predict.rlm"):
-                with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
-                    rlm = RLM("query -> answer: int", max_iters=5, history_processor=process)
-                    result = rlm.forward(query="Double twenty", interpreter_factory=PythonInterpreter)
-        finally:
-            dspy_logger.propagate = original_propagate
+        # The `propagate_dspy_logs` fixture in tests/conftest.py makes these records reach caplog.
+        with caplog.at_level(logging.ERROR, logger="dspy.predict.rlm"):
+            with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+                rlm = RLM("query -> answer: int", max_iters=5, history_processor=process)
+                result = rlm.forward(query="Double twenty", interpreter_factory=PythonInterpreter)
 
         assert result.answer == 40
         assert result.final_reasoning == "Now compute and return"

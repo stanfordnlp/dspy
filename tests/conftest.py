@@ -1,4 +1,5 @@
 import copy
+import logging
 import os
 from collections.abc import Iterator
 from typing import Any
@@ -23,6 +24,26 @@ def _close_cache(cache: Any) -> None:
     disk_cache = getattr(cache, "disk_cache", None)
     if hasattr(disk_cache, "close"):
         disk_cache.close()
+
+
+@pytest.fixture(autouse=True)
+def propagate_dspy_logs() -> Iterator[None]:
+    """Let `caplog` see dspy's log records.
+
+    `configure_dspy_loggers` sets `propagate = False` on the `dspy` logger. Up to pytest 8.2 the
+    capture handler lives only on the root logger, so that flag stops `caplog` from seeing any dspy
+    record (pytest 9 also attaches it to the logger named in `caplog.at_level`, which is why these
+    assertions pass locally but fail under the minimum dependency profile). Without this fixture,
+    tests asserting on dspy log output instead depend on an earlier test having leaked
+    `propagate = True`, which is order-dependent under `-n auto --dist worksteal`.
+    """
+    logger = logging.getLogger("dspy")
+    original = logger.propagate
+    logger.propagate = True
+    try:
+        yield
+    finally:
+        logger.propagate = original
 
 
 @pytest.fixture(autouse=True)
