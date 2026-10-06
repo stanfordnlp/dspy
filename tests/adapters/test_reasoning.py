@@ -151,4 +151,15 @@ def test_gemini_native_reasoning_sets_include_thoughts_and_thinking_level():
     provider_lm = GeminiLM(api_key="fake")
     payload = provider_lm._payload(replace(req, model="au.gemini-3.5-flash"))
     thinking_cfg = payload["generationConfig"]["thinkingConfig"]
-    assert thinking_cfg == {"includeThoughts": True, "thinkingLevel": "low"}
+    assert thinking_cfg == {"thinkingLevel": "low"}
+
+    req_with_summary = replace(
+        req,
+        model="au.gemini-3.5-flash",
+        config=replace(req.config, reasoning=replace(req.config.reasoning, summary="auto")),
+    )
+    payload_with_summary = provider_lm._payload(req_with_summary)
+    assert payload_with_summary["generationConfig"]["thinkingConfig"] == {
+        "includeThoughts": True,
+        "thinkingLevel": "low",
+    }
