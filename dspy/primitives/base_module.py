@@ -7,6 +7,7 @@ from pathlib import Path
 import cloudpickle
 import orjson
 
+from dspy.utils.pickle_by_value import serialize_by_value
 from dspy.utils.saving import get_dependency_versions
 
 # NOTE: Note: It's important (temporary decision) to maintain named_parameters that's different in behavior from
@@ -213,11 +214,7 @@ class BaseModule:
             logger.warning("Loading untrusted .pkl files can run arbitrary code, which may be dangerous. To avoid "
                           'this, prefer saving using json format using module.save("module.json").')
             try:
-                modules_to_serialize = modules_to_serialize or []
-                for module in modules_to_serialize:
-                    cloudpickle.register_pickle_by_value(module)
-
-                with open(path / "program.pkl", "wb") as f:
+                with serialize_by_value(modules_to_serialize), open(path / "program.pkl", "wb") as f:
                     cloudpickle.dump(self, f)
             except Exception as e:
                 raise RuntimeError(

@@ -6,8 +6,8 @@ from pydantic import BaseModel, TypeAdapter
 
 import dspy
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls, convert_input_schema_to_tool_args
-from dspy.clients.openai_format import to_openai_chat_request
-from dspy.core.types import LMMessage, LMRequest, LMToolResultPart
+from dspy.clients.lm15_boundary import request_kwargs
+from dspy.lm15 import Message, Request, ToolResultPart, tool_result
 
 
 # Test fixtures
@@ -378,22 +378,23 @@ async def test_async_tool_with_kwargs():
 @pytest.mark.asyncio
 async def test_async_concurrent_calls():
     """Test that multiple async tools can run concurrently."""
-    tool = Tool(async_dummy_function)
+    all_started = asyncio.Event()
+    started = set()
 
-    # Create multiple concurrent calls
+    async def wait_for_peers(x: int, y: str) -> str:
+        started.add(x)
+        if len(started) == 5:
+            all_started.set()
+        await all_started.wait()
+        return f"{y} {x}"
+
+    tool = Tool(wait_for_peers)
     tasks = [tool.acall(x=i, y=f"hello{i}") for i in range(5)]
-
-    # Run them concurrently and measure time
-    start_time = asyncio.get_event_loop().time()
-    results = await asyncio.gather(*tasks)
-    end_time = asyncio.get_event_loop().time()
+    # No call can finish until all five have entered. The timeout only bounds a deadlock.
+    results = await asyncio.wait_for(asyncio.gather(*tasks), timeout=10)
 
     # Verify results, `asyncio.gather` returns results in the order of the tasks
     assert results == [f"hello{i} {i}" for i in range(5)]
-
-    # Check that it ran concurrently (should take ~0.1s, not ~0.5s)
-    # We use 0.3s as threshold to account for some overhead
-    assert end_time - start_time < 0.3
 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
@@ -566,17 +567,17 @@ def test_tool_call_results_can_round_trip_as_native_tool_result_message():
     results = ToolCallResults.from_tool_calls_and_values([tool_call], ['{"items": ["cat"]}'])
     result = results.tool_call_results[0]
 
-    message = LMMessage(role="tool", tool_call_id=result.call_id, name=result.name, content=result.value)
+    message = Message.tool(tool_result(result.call_id, result.value, name=result.name))
 
     assert len(message.parts) == 1
-    assert isinstance(message.parts[0], LMToolResultPart)
-    assert message.parts[0].call_id == "call_1"
+    assert isinstance(message.parts[0], ToolResultPart)
+    assert message.parts[0].id == "call_1"
     assert message.parts[0].name == "search"
     assert message.parts[0].content[0].text == '{"items": ["cat"]}'
 
-    request = LMRequest(model="test-model", messages=[message])
-    assert to_openai_chat_request(request)["messages"] == [
-        {"role": "tool", "content": '{"items": ["cat"]}', "tool_call_id": "call_1", "name": "search"}
+    request = Request(model="test-model", messages=[message])
+    assert request_kwargs(request, "chat")["messages"] == [
+        {"role": "tool", "content": '{"items": ["cat"]}', "tool_call_id": "call_1"}
     ]
 
 

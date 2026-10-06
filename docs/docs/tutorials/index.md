@@ -20,6 +20,7 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
     - [Building RAG as Agent](agents/index.ipynb)
     - [Entity Extraction](entity_extraction/index.ipynb)
     - [Classification](classification/index.md)
+    - [Decision-Making with Jev Types](jev_decisions/index.md)
     - [Multi-Hop RAG](multihop_search/index.ipynb)
     - [Privacy-Conscious Delegation](papillon/index.md)
     - [Program Of Thought](program_of_thought/index.ipynb)

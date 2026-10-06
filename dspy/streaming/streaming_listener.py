@@ -6,14 +6,15 @@ from collections import defaultdict
 from queue import Queue
 from typing import TYPE_CHECKING, Any
 
-import jiter
-
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.types import Type
 from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.dsp.utils.settings import settings
 from dspy.streaming.messages import StreamResponse
+from dspy.utils.lazy_import import require
+
+jiter = require("jiter")
 
 if TYPE_CHECKING:
     from litellm import ModelResponseStream
@@ -55,6 +56,8 @@ class StreamListener:
         self.allow_reuse = allow_reuse
 
         self.json_adapter_state = {"field_accumulated_messages": ""}
+        self.value_started = False
+        self.held_whitespace = ""
 
         self.adapter_identifiers = {
             "ChatAdapter": {
@@ -135,6 +138,8 @@ class StreamListener:
                 self.field_end_queue = Queue()
                 self.json_adapter_state["field_accumulated_messages"] = ""
                 self.stream_start = False
+                self.value_started = False
+                self.held_whitespace = ""
             else:
                 return
 
@@ -301,6 +306,20 @@ class StreamListener:
             token = token + last_token if token else last_token
             token = token.rstrip()  # Remove the trailing \n\n
 
+        # The parsed field value is stripped, so drop leading whitespace and hold back trailing whitespace until more
+        # text arrives. Otherwise the newlines around the field headers leak into the chunks depending on how the
+        # provider splits the stream.
+        if token and not self.value_started:
+            token = token.lstrip()
+        if token:
+            stripped = token.rstrip()
+            if stripped:
+                self.value_started = True
+                token, self.held_whitespace = self.held_whitespace + stripped, token[len(stripped) :]
+            else:
+                self.held_whitespace += token
+                token = ""
+
         if token or self.stream_end:
             return StreamResponse(
                 self.predict_name,
@@ -354,6 +373,7 @@ class StreamListener:
         if self.field_end_queue.qsize() > 0:
             token = self.flush()
             if token:
+                token = self.held_whitespace + token
                 return StreamResponse(
                     self.predict_name,
                     self.signature_field_name,
