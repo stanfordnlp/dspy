@@ -68,16 +68,19 @@ JSONRPC_APP_ERRORS = {
 
 
 def _sandbox_error_detail(error_message: str, error_data: dict) -> str:
-    """Prefer exception args; Pyodide leaves SyntaxError.message blank."""
+    """Prefer exception args; Pyodide leaves SyntaxError.message blank.
+
+    List args are rendered with ``str(args)`` so a single value keeps the
+    bracketed form the interpreter already reports (``ValueError: [123]``).
+    Joining the elements would change that contract and drop the brackets.
+    """
     if not isinstance(error_data, dict):
         return error_message
     args = error_data.get("args")
     if isinstance(args, str) and args:
         return args
     if isinstance(args, list) and args:
-        rendered = ", ".join(str(arg) for arg in args if arg is not None)
-        if rendered:
-            return rendered
+        return str(args)
     return error_message
 
 

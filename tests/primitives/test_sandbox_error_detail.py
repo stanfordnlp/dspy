@@ -16,4 +16,9 @@ def test_error_detail_falls_back_to_message():
 
 
 def test_error_detail_renders_repr_fallback_args():
-    assert _sandbox_error_detail("", {"args": ["<object object at 0x1>"]}) == "<object object at 0x1>"
+    assert _sandbox_error_detail("", {"args": ["<object object at 0x1>"]}) == "['<object object at 0x1>']"
+
+
+def test_error_detail_preserves_single_arg_brackets():
+    # PythonInterpreter reports ValueError args as str(args), e.g. "[123]".
+    assert _sandbox_error_detail("", {"args": [123]}) == "[123]"
