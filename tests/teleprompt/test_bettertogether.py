@@ -533,7 +533,7 @@ def test_teacher_passed_to_optimizer_in_given_shape(student_with_lm, mock_bt_dep
 def test_single_teacher_with_bootstrap_fewshot(student_with_lm, mock_bt_dependencies):
     """Test that a single teacher works with an optimizer that expects one teacher module."""
     teacher = SimpleModule("input -> output")
-    teacher.set_lm(DummyLM([{"output": "test"}]))
+    teacher.set_lm(DummyLM({example.input: {"output": example.output} for example in trainset}))
 
     optimizer = BetterTogether(
         metric=simple_metric,
@@ -542,6 +542,8 @@ def test_single_teacher_with_bootstrap_fewshot(student_with_lm, mock_bt_dependen
     compiled = optimizer.compile(student_with_lm, trainset=trainset, valset=valset, teacher=teacher, strategy="p")
 
     assert compiled.flag_compilation_error_occurred is False
+    optimized = next(c["program"] for c in compiled.candidate_programs if c["strategy"] == "p")
+    assert len(optimized.predictor.demos) == 1, "The teacher's trace should be bootstrapped into a demo"
 
 
 def test_trainset_shuffling_between_steps():
