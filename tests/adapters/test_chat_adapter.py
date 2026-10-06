@@ -3042,3 +3042,4 @@ def test_field_markers_false_multi_output_field_raises():
 
     with pytest.raises(ValueError, match="single output field"):
         adapter._validate_field_markers(MultiOutputSignature)
+        
