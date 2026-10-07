@@ -32,6 +32,22 @@ from ..types import (
 JsonPayload = dict[str, Any] | list[Any]
 
 
+def tool_description(description: str | None) -> dict[str, str]:
+    """MAP-17: a function tool's description field for any wire.
+
+    ``{"description": text}`` when the tool has one, ``{}`` when it does not.
+    An absent description is left off the wire, never sent as ``null``:
+    every tool wire documents the field as an optional *string*, and
+    Anthropic and Groq refuse ``null`` (400, receipts
+    lm15-contract/receipts/2026-10-02-tool-description/).  ``""`` is the
+    same value as ``None`` in canonical JSON (omit-empty, spec/types.md), so
+    it is left off too: two requests that serialize identically must build
+    the same wire.  Splat it between the name and the schema to keep the
+    documented key order: ``{"name": ..., **tool_description(d), ...}``.
+    """
+    return {"description": description} if description else {}
+
+
 # The FileReadiness fold for every OpenAI-shaped file object (api.openai.com,
 # Azure OpenAI v1, Meta): spec/vocabularies.md FileReadiness, ratified
 # 2026-09-06 (lm15-contract/changes/2026-09-06-decisions.md D6).  Azure says `pending` after

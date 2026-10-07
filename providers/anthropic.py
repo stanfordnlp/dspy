@@ -73,7 +73,7 @@ from .base import (
     batch_entry_request,
     default_transport,
 )
-from .common import check_message_media, EFFORT_THINKING_BUDGETS, MEDIA_KINDS, anthropic_source, check_tool_result_media, data_part_text, iso_utc, model_infos_from_entries, multipart_form_body, parts_to_text, path_id, unnamed_tool_call_error
+from .common import check_message_media, EFFORT_THINKING_BUDGETS, MEDIA_KINDS, anthropic_source, check_tool_result_media, data_part_text, iso_utc, model_infos_from_entries, multipart_form_body, parts_to_text, path_id, tool_description, unnamed_tool_call_error
 
 # Canonical builtin tool name → Anthropic tool format
 _ANTHROPIC_BUILTIN_MAP: dict[str, str] = {
@@ -778,7 +778,7 @@ class AnthropicLM(BaseProviderLM):
                 if allowed_subset is not None and tool.name not in allowed_subset:
                     continue
                 if isinstance(tool, FunctionTool):
-                    tools_wire.append({"name": tool.name, "description": tool.description, "input_schema": tool.parameters})
+                    tools_wire.append({"name": tool.name, **tool_description(tool.description), "input_schema": tool.parameters})
                 elif isinstance(tool, BuiltinTool):
                     tools_wire.append(_builtin_to_anthropic(tool))
             if allowed_subset is not None:

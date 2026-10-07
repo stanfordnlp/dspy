@@ -521,19 +521,10 @@ async def _aiter_lines(resp: AsyncTransportResponse) -> AsyncIterator[bytes]:
         async for line in aiter_lines():
             yield line
         return
-    buf = bytearray()
-    async for chunk in resp:
-        if not chunk:
-            continue
-        buf.extend(chunk)
-        while True:
-            idx = buf.find(b"\n")
-            if idx < 0:
-                break
-            yield bytes(buf[: idx + 1])
-            del buf[: idx + 1]
-    if buf:
-        yield bytes(buf)
+    from ..transports._types import LineSplitter
+
+    async for line in LineSplitter.aiterate(resp):
+        yield line
 
 
 # ─── Mirror classes ──────────────────────────────────────────────────
