@@ -90,7 +90,7 @@ The optimizer-authored code does not run against the real `dspy` package. Inside
 **Available**
 
 - `dspy.Module` — the base class the generated source subclasses. `__init__` assigns predictors; `forward` runs in the sandbox.
-- `dspy.Predict`, `dspy.ChainOfThought`, `dspy.ReAct`, `dspy.ReActV2`, `dspy.RLM` — constructed in the sandbox but *built on the host*, where the real LM calls happen. Constructor kwargs cross as JSON.
+- `dspy.Predict`, `dspy.ChainOfThought`, `dspy.ReAct`, `dspy.ReActV2`, `dspy.RLM` — constructed in the sandbox but *built on the host*, where the real LM calls happen. Constructor kwargs cross as JSON; generation parameters (`temperature`, `max_tokens`, `n`, …) apply to the bridged calls, while LM routing and credential options (`api_base`, `api_key`, headers, `model`) are rejected by the host.
 - `dspy.Signature("inputs -> outputs", "instructions")` — the string form only, used to give an inner predictor its instructions. It is a marker the host turns back into a real `Signature`, not the class: it has no methods, no `with_instructions()`, and no `dspy.InputField` / `dspy.OutputField` class form.
 - `dspy.Prediction(**fields)` — the return value of `forward`. Holds fields; it is not the host `Prediction` type.
 - `dspy.Tool(func)` — a pass-through wrapper. Only tools you passed to `dspy.Flex(tools=...)` can be handed to a bridged sub-predictor; they are already in scope by name, so wrapping is optional.
@@ -104,7 +104,7 @@ The optimizer-authored code does not run against the real `dspy` package. Inside
 - Class-based signatures and typed field declarations.
 - Host objects generally: values cross as JSON, so a tool you define inside `forward` cannot be passed to a bridged sub-predictor, and a predictor field that isn't JSON-serializable raises rather than silently degrading.
 
-Anything outside this surface fails when the candidate runs, and GEPA scores it at the failure score — a missing name costs a search step rather than crashing the run. The shim lives in `dspy/predict/flex/_sandbox_shim.py` and the proposer-facing version of this list is `dspy/predict/flex/primitives_doc.py`.
+Anything outside this surface fails when the candidate runs, and GEPA scores it at the failure score — a missing name costs a search step rather than crashing the run. The shim lives in `dspy/primitives/_facade_shim.py` and the proposer-facing version of this list is `dspy/predict/flex/primitives_doc.py`.
 
 ### Saving and loading
 

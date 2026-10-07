@@ -76,5 +76,5 @@ This guide is for contributors looking to make changes to the documentation in t
 
 ## LLMs.txt
 
-The build process generates an `/llms.txt` file for LLM consumption using [mkdocs-llmstxt](https://github.com/pawamoy/mkdocs-llmstxt). Configure sections in `mkdocs.yml` under the `llmstxt` plugin.
+The build process generates an `/llms.txt` file for LLM consumption, plus a Markdown copy of every rendered page at `<page>/index.md` for its links to point to. Configure sections in `build.yml` under `llms`; the generator lives in `scripts/zensical_build.py`.
 

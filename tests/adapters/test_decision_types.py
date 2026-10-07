@@ -257,6 +257,13 @@ def test_structured_descriptions_reject_non_json(kind, description):
             kind[True, description]
 
 
+def test_score_rejects_null_level_descriptions():
+    with pytest.raises(ValueError, match="null"):
+        Score[None, "fair", "great"]
+    module = dspy.Predict(dspy.Signature({"rating": (Score["bad", "fair", "great"], dspy.OutputField(desc="Rate."))}))
+    with pytest.raises(ValueError, match="rating"):
+        module.set_criteria("rating", [None, "fair", "great"])
+
 @pytest.mark.parametrize("rich", [False, True])
 @pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter()])
 def test_structured_criteria_reach_both_backends_and_survive_save_load(adapter, rich, tmp_path):
@@ -265,7 +272,7 @@ def test_structured_criteria_reach_both_backends_and_survive_save_load(adapter, 
     technical = {"what": "Product bug", "not_for": "Billing"}
     urgent = Noul[(True, yes), (False, no)]
     category = Choice[("billing", {}), ("technical", technical)]
-    severity = Score[None, ["Disruptive"], {"what": "Blocking"}]
+    severity = Score["", ["Disruptive"], {"what": "Blocking"}]
     sig = dspy.Signature(
         {
             "ticket": (str, dspy.InputField()),
@@ -281,7 +288,7 @@ def test_structured_criteria_reach_both_backends_and_survive_save_load(adapter, 
     expected = {
         "urgent": {"true": yes, "false": no},
         "category": {"billing": {}, "technical": technical},
-        "severity": [None, ["Disruptive"], {"what": "Blocking"}],
+        "severity": ["", ["Disruptive"], {"what": "Blocking"}],
     }
     evidence = {
         "urgent": {"noul": 0.8},
