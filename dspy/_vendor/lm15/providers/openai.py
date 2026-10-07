@@ -122,6 +122,7 @@ from .common import (
     parse_json_object,
     part_to_openai_input,
     path_id,
+    tool_description,
     unnamed_tool_call_error,
     parts_to_text,
 )
@@ -958,10 +959,10 @@ class OpenAILM(BaseProviderLM):
             tools_wire: list[dict[str, Any]] = []
             for tool in request.tools:
                 if isinstance(tool, FunctionTool):
-                    tool_payload = {
+                    tool_payload: dict[str, Any] = {
                         "type": "function",
                         "name": tool.name,
-                        "description": tool.description,
+                        **tool_description(tool.description),
                         "parameters": tool.parameters,
                     }
                     if compat.strict_tools == "include":
@@ -1613,7 +1614,7 @@ class OpenAILM(BaseProviderLM):
             session["audio"] = audio
         if config.tools:
             session["tools"] = [
-                {"type": "function", "name": t.name, "description": t.description, "parameters": t.parameters}
+                {"type": "function", "name": t.name, **tool_description(t.description), "parameters": t.parameters}
                 for t in config.tools
                 if isinstance(t, FunctionTool)
             ]

@@ -349,6 +349,25 @@ def op_resolve_model(msg: JsonObject) -> JsonObject:
     return {"provider": resolution.provider, "model": resolution.model, "source": resolution.source}
 
 
+def op_resolve_openai_chat_model(msg: JsonObject) -> JsonObject:
+    """PROTOCOL.md resolve_openai_chat_model: the router's
+    ``resolve_openai_chat`` (the OpenAI SDK and litellm spellings, read by
+    ``openai_chat_model_string``) over harness-supplied inputs only."""
+    from .router import LMRouter, RouterConfig
+
+    env = {str(k): str(v) for k, v in (msg.get("env") or {}).items()}
+    resolution = LMRouter(RouterConfig(env=env)).resolve_openai_chat(str(msg["model"]))
+    return {"provider": resolution.provider, "model": resolution.model, "source": resolution.source}
+
+
+def op_provider_tables(msg: JsonObject) -> JsonObject:
+    """PROTOCOL.md provider_tables (reference only): the registry, access
+    policies, compat presets and router tables, as data."""
+    from ._vet_tables import provider_tables
+
+    return provider_tables()
+
+
 def op_build_models_request(msg: JsonObject) -> JsonObject:
     lm = _adapter(msg)
     return normalize_transport_request(lm._models_request())
@@ -812,6 +831,8 @@ HANDLERS: dict[str, Callable[[JsonObject], JsonObject]] = {
     "surface_dump": op_surface_dump,
     "explain_auth": op_explain_auth,
     "resolve_model": op_resolve_model,
+    "resolve_openai_chat_model": op_resolve_openai_chat_model,
+    "provider_tables": op_provider_tables,
     "token_exchange_build": op_token_exchange_build,
     "token_exchange_parse": op_token_exchange_parse,
     "sigv4_sign": op_sigv4_sign,

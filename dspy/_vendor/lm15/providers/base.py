@@ -1465,19 +1465,8 @@ class UnsupportedLiveSession:
 
 
 def _iter_lines(chunks: Iterator[bytes]) -> Iterator[bytes]:
-    """Split arbitrary byte chunks into newline-terminated lines for SSE."""
+    """Split arbitrary byte chunks into newline-terminated lines for SSE
+    (linear in the bytes, however long a line is: INV-056)."""
+    from ..transports._types import LineSplitter
 
-    buf = bytearray()
-    for chunk in chunks:
-        if not chunk:
-            continue
-        buf.extend(chunk)
-        while True:
-            idx = buf.find(b"\n")
-            if idx < 0:
-                break
-            line = bytes(buf[: idx + 1])
-            del buf[: idx + 1]
-            yield line
-    if buf:
-        yield bytes(buf)
+    return LineSplitter.iterate(chunks)

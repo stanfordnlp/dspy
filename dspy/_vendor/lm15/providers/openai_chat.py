@@ -75,6 +75,7 @@ from .common import (
     model_infos_from_entries,
     openai_token_logprobs,
     parse_json_object,
+    tool_description,
     unnamed_tool_call_error,
     parts_to_text,
     data_part_text,
@@ -1417,7 +1418,7 @@ class OpenAIChatLM(BaseProviderLM):
                 if isinstance(tool, FunctionTool):
                     function_payload: dict[str, Any] = {
                         "name": tool.name,
-                        "description": tool.description,
+                        **tool_description(tool.description),
                         "parameters": tool.parameters,
                     }
                     if compat.strict_tools == "include":

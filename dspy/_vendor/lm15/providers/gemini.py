@@ -107,7 +107,7 @@ from .base import (
     default_transport,
     resolve_credential,
 )
-from .common import EFFORT_THINKING_BUDGETS, MEDIA_KINDS, build_url, data_part_text, iso_utc, media_base64, model_infos_from_entries, multipart_related_body, parts_to_text, path_id, unnamed_tool_call_error
+from .common import EFFORT_THINKING_BUDGETS, MEDIA_KINDS, build_url, data_part_text, iso_utc, media_base64, model_infos_from_entries, multipart_related_body, parts_to_text, path_id, tool_description, unnamed_tool_call_error
 
 # Canonical builtin tool name → Gemini tool key
 _GEMINI_BUILTIN_MAP: dict[str, str] = {
@@ -245,7 +245,7 @@ def _gemini_function_declaration(tool: FunctionTool) -> dict[str, Any]:
     Schema object, else ``parametersJsonSchema``.  The schema is verbatim
     either way (INV-002); only the field that carries it changes."""
     field = "parameters" if gemini_openapi_schema(tool.parameters) else "parametersJsonSchema"
-    return {"name": tool.name, "description": tool.description, field: tool.parameters}
+    return {"name": tool.name, **tool_description(tool.description), field: tool.parameters}
 
 
 def _gemini_number(value: float) -> float | int:
