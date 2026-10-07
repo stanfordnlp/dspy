@@ -491,6 +491,7 @@ def test_evaluate_raises_on_empty_devset():
         ev(program)
 
 
+@pytest.mark.extra
 def test_display_dataframe_does_not_crash_on_non_utf8_stdout():
     """display_dataframe must not raise UnicodeEncodeError on a non-UTF-8 stdout.
 
