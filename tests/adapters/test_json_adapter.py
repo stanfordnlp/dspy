@@ -1570,7 +1570,8 @@ def test_json_adapter_toolcalls_no_native_function_calling():
         assert call_kwargs["response_format"] == {"type": "json_object"}
 
 
-def test_json_adapter_native_reasoning():
+@mock.patch("litellm.supports_reasoning", return_value=True)
+def test_json_adapter_native_reasoning(_supports_reasoning):
     class MySignature(dspy.Signature):
         question: str = dspy.InputField()
         reasoning: dspy.Reasoning = dspy.OutputField()
