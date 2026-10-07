@@ -2,7 +2,7 @@ import logging
 import random
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
-from typing import Any, Callable, Protocol, TypedDict
+from typing import Any, Callable, Protocol
 
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.core.adapter import ProposalFn
@@ -14,7 +14,6 @@ from dspy.adapters.types.base_type import Type
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
 from dspy.primitives.code_interpreter import CodeInterpreterError
-from dspy.primitives.repl_types import REPLHistory
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
 from dspy.teleprompt.gepa.gepa_flex_utils import (
     code_reflective_records,
@@ -24,6 +23,7 @@ from dspy.teleprompt.gepa.gepa_flex_utils import (
     propose_code,
     rebind_flex_code,
 )
+from dspy.teleprompt.gepa.instruction_proposal import InstructionProposer, ReflectiveExample
 
 logger = logging.getLogger(__name__)
 
@@ -46,22 +46,6 @@ def format_history_for_reflection(history: History) -> str:
         s += f"  {i}: {message}\n"
     s += "```"
     return s
-
-
-ReflectiveExample = TypedDict(
-    "ReflectiveExample",
-    {
-        "Inputs": dict[str, Any],
-        "Generated Outputs": dict[str, Any] | str,
-        "Feedback": str,
-    },
-)
-
-ReflectiveExample.__doc__ = """
-Structure of individual examples in the reflective dataset.
-
-Each example contains the predictor inputs, generated outputs, and feedback from evaluation.
-"""
 
 
 class CodeProposalFn(Protocol):
@@ -145,8 +129,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
         self.rng = rng or random.Random(0)
         self.reflection_lm = reflection_lm
-
-        from dspy.teleprompt.gepa.instruction_proposal import InstructionProposer  # it imports this module
 
         if custom_instruction_proposer is None:
             custom_instruction_proposer = InstructionProposer()
@@ -421,8 +403,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                         assert history_key_name is None
                         history_key_name = input_key
 
-                # The built-in proposer receives History and REPLHistory objects, so it can compact them
-                # and render them itself. Custom proposers receive the same strings as before.
+                # The built-in proposer receives history objects for optional output truncation
+                # and adapter rendering. Custom proposers receive the same strings as before.
                 if contains_history:
                     history = inputs[history_key_name]
                     new_inputs["Context"] = (
@@ -433,10 +415,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     if contains_history and input_key == history_key_name:
                         continue
 
-                    if isinstance(input_val, Type):
+                    if self._builtin_instruction_proposer or isinstance(input_val, Type):
                         # Keep original object - will be properly formatted when sent to reflection LM
-                        new_inputs[input_key] = input_val
-                    elif isinstance(input_val, REPLHistory) and self._builtin_instruction_proposer:
                         new_inputs[input_key] = input_val
                     else:
                         new_inputs[input_key] = str(input_val)
@@ -449,7 +429,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     new_outputs = s
                 else:
                     for output_key, output_val in outputs.items():
-                        new_outputs[output_key] = str(output_val)
+                        new_outputs[output_key] = output_val if self._builtin_instruction_proposer else str(output_val)
 
                 d = {"Inputs": new_inputs, "Generated Outputs": new_outputs}
                 if isinstance(outputs, FailedPrediction):

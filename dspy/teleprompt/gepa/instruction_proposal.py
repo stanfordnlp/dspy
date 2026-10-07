@@ -1,11 +1,12 @@
-import logging
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, TypedDict
 
+import yaml
 from gepa.core.adapter import ProposalFn
+from pydantic import StringConstraints, TypeAdapter, ValidationError
 
 import dspy
 from dspy.adapters.base import Adapter
@@ -14,12 +15,17 @@ from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
 from dspy.adapters.types.tool import ToolCallResults, ToolCalls
 from dspy.primitives.repl_types import REPLHistory
-from dspy.teleprompt.gepa.gepa_utils import ReflectiveExample, format_history_for_reflection
 from dspy.utils.annotation import experimental
 
-logger = logging.getLogger(__name__)
-
-_WORD_RE = re.compile(r"\S+")
+ReflectiveExample = TypedDict(
+    "ReflectiveExample",
+    {
+        "Inputs": dict[str, Any],
+        "Generated Outputs": dict[str, Any] | str,
+        "Feedback": str,
+    },
+)
+ReflectiveExample.__doc__ = "An example's predictor inputs, generated outputs, and evaluation feedback."
 
 
 # --------------------------------------------------------------------------- #
@@ -103,6 +109,8 @@ class _SkillLoader:
 
         meta, content = cls._parse_frontmatter(text)
         content = content.strip()
+        if not content:
+            raise ValueError("Empty skill content after removing frontmatter.")
 
         if fallback_name is None:
             # The first non-empty line doubles as a display name for inline skills.
@@ -144,24 +152,25 @@ class _SkillLoader:
 
     @staticmethod
     def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
-        """Split a leading `--- ... ---` block into (metadata, body).
-
-        Only flat, unindented `key: value` lines are read; nested YAML is ignored. Returns `({}, text)`
-        when there is no well-formed block.
-        """
+        """Read YAML frontmatter, retaining string name/description metadata."""
         lines = text.splitlines()
         if not lines or lines[0].strip() != "---":
             return {}, text
         for end, line in enumerate(lines[1:], start=1):
-            if line.strip() == "---":
-                meta: dict[str, str] = {}
-                for raw in lines[1:end]:
-                    if raw.startswith((" ", "\t")) or ":" not in raw:
-                        continue
-                    key, _, value = raw.partition(":")
-                    meta[key.strip()] = value.strip().strip("'\"")
-                return meta, "\n".join(lines[end + 1 :])
-        return {}, text
+            if line.rstrip() == "---":
+                try:
+                    meta = yaml.safe_load("\n".join(lines[1:end]) + "\n")
+                except yaml.YAMLError as exc:
+                    raise ValueError("Invalid YAML skill frontmatter.") from exc
+                if meta is None:
+                    meta = {}
+                if not isinstance(meta, dict):
+                    raise ValueError("Skill frontmatter must be a YAML mapping.")
+                for key in ("name", "description"):
+                    if key in meta and not isinstance(meta[key], str):
+                        raise ValueError(f"Skill frontmatter {key!r} must be a string.")
+                return {key: meta[key] for key in ("name", "description") if key in meta}, "\n".join(lines[end + 1 :])
+        raise ValueError("Skill frontmatter is missing its closing '---'.")
 
 
 def _render_skill(skill: _Skill) -> str:
@@ -187,7 +196,7 @@ class ProposeInstruction(dspy.Signature):
     Read all the assistant responses and the corresponding feedback. Identify all niche and domain specific factual information about the task and include it in the instruction, as a lot of it may not be available to the assistant in the future. The assistant may have utilized a generalizable strategy to solve the task, if so, include that in the instruction as well."""
 
     current_instruction: str = dspy.InputField(desc="The instructions I provided to the assistant.")
-    examples_with_feedback: str = dspy.InputField(
+    examples_with_feedback: list[dict[str, Any]] = dspy.InputField(
         desc="Task inputs provided to the assistant, the assistant's response for each, "
         "and feedback on how the response could be better."
     )
@@ -262,29 +271,27 @@ class InstructionProposer(ProposalFn):
     """GEPA's default instruction proposer.
 
     `dspy.GEPA` builds `InstructionProposer()` when no `instruction_proposer` is passed. The proposer
-    renders each component's reflective examples as markdown and asks the reflection LM, through
+    passes each component's reflective examples as structured values and asks the reflection LM, through
     `dspy.Predict` and a `JSONAdapter`, for a new instruction. Inputs that are `dspy.Type` instances
     (for example `dspy.Image`) reach the reflection LM as structured content.
 
     Args:
-        skills: Reference material for the reflection LM, each a path to a skill file, a path to a
-            directory holding `SKILL.md`, or an inline string. Loaded once, at construction; a path
-            that does not exist raises.
+        skills: Reference material for the reflection LM, as a single source or a sequence of sources.
+            Each source is a path to a skill file, a directory holding `SKILL.md`, or an inline string.
+            Loaded once, at construction; a path that does not exist raises.
         additional_instructions: Guidance applied to every proposal, for example "Write instructions in
             imperative voice."
         base_instructions: Replaces the proposal prompt (the `ProposeInstruction` docstring). The input and
             output fields are unchanged.
-        max_instruction_words: Cap on the length of each proposed instruction, in words.
-        max_instruction_tokens: Cap on the length of each proposed instruction, in tokens, counted with
-            `litellm.token_counter` for the reflection LM's model.
-        compaction: When True, long tool results inside `dspy.History` inputs and long outputs inside
+        max_chars: Maximum number of Unicode characters in each proposed instruction, after stripping
+            outer whitespace. Enforced with Pydantic validation; None means no limit.
+        truncate_history_outputs: When True, long tool results inside `dspy.History` inputs and long outputs inside
             `REPLHistory` inputs are cut before the examples are rendered. Nothing else is shortened.
         adapter: The adapter for the proposer's own LM calls. Defaults to `JSONAdapter()`.
 
-    When a cap is set and a proposal exceeds it, the proposer makes one call asking the reflection LM to
-    shorten the draft. A draft that is still over the cap is kept and a warning is logged; the proposer
-    never truncates an instruction. Exceptions from LM calls propagate to GEPA, which retries the
-    proposal once and then skips the iteration.
+    When a proposal exceeds max_chars, the proposer makes one call asking the reflection LM to
+    shorten the draft. Pydantic rejects an empty or still oversized result with ValidationError.
+    The proposer never truncates an instruction. Exceptions propagate to GEPA for proposal failure handling.
 
     Example:
         ```python
@@ -296,8 +303,8 @@ class InstructionProposer(ProposalFn):
             instruction_proposer=InstructionProposer(
                 skills=["./skills/prompt-engineering"],
                 additional_instructions="Write instructions in imperative voice.",
-                max_instruction_words=300,
-                compaction=True,
+                max_chars=1500,
+                truncate_history_outputs=True,
             ),
             auto="medium",
         )
@@ -306,31 +313,32 @@ class InstructionProposer(ProposalFn):
 
     def __init__(
         self,
-        skills: Sequence[str | Path] | None = None,
+        skills: str | Path | Sequence[str | Path] | None = None,
         additional_instructions: str | None = None,
         base_instructions: str | None = None,
-        max_instruction_words: int | None = None,
-        max_instruction_tokens: int | None = None,
-        compaction: bool = False,
+        max_chars: int | None = None,
+        truncate_history_outputs: bool = False,
         adapter: Adapter | None = None,
     ):
-        for label, cap in (
-            ("max_instruction_words", max_instruction_words),
-            ("max_instruction_tokens", max_instruction_tokens),
-        ):
-            if cap is not None and (isinstance(cap, bool) or not isinstance(cap, int) or cap <= 0):
-                raise ValueError(f"{label} must be a positive int or None, got {cap!r}.")
-        if not isinstance(compaction, bool):
-            raise TypeError(f"compaction must be a bool, got {type(compaction).__name__}.")
+        if max_chars is not None and (isinstance(max_chars, bool) or not isinstance(max_chars, int) or max_chars <= 0):
+            raise ValueError(f"max_chars must be a positive int or None, got {max_chars!r}.")
+        if not isinstance(truncate_history_outputs, bool):
+            raise TypeError(f"truncate_history_outputs must be a bool, got {type(truncate_history_outputs).__name__}.")
         if adapter is not None and not isinstance(adapter, Adapter):
             raise TypeError(f"adapter must be a dspy.Adapter or None, got {type(adapter).__name__}.")
 
+        if isinstance(skills, str | Path):
+            skills = [skills]
         self.skills: tuple[_Skill, ...] = tuple(_SkillLoader.load(skill) for skill in (skills or ()))
         self.additional_instructions = _clean_text("additional_instructions", additional_instructions)
         self.base_instructions = _clean_text("base_instructions", base_instructions)
-        self.max_instruction_words = max_instruction_words
-        self.max_instruction_tokens = max_instruction_tokens
-        self.compaction = compaction
+        self.max_chars = max_chars
+        # Adapter parsing currently drops top-level field constraints. Validate here so the
+        # same Pydantic contract holds with JSONAdapter and custom adapters alike.
+        self._instruction_validator = TypeAdapter(
+            Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=max_chars)]
+        )
+        self.truncate_history_outputs = truncate_history_outputs
         self.adapter = adapter if adapter is not None else JSONAdapter()
 
         # Static fields come first so provider-side prompt caching can reuse them across calls. Each
@@ -383,7 +391,7 @@ class InstructionProposer(ProposalFn):
             if self.compress is not None:
                 kwargs["length_limit"] = self._length_limit_text()
             kwargs["current_instruction"] = candidate[name]
-            kwargs["examples_with_feedback"] = self._render_examples(reflective_dataset[name])
+            kwargs["examples_with_feedback"] = self._prepare_examples(reflective_dataset[name])
 
             with dspy.context(adapter=self.adapter):
                 pred = self.propose(**kwargs)
@@ -392,119 +400,41 @@ class InstructionProposer(ProposalFn):
             if not draft:
                 raise ValueError(f"The reflection LM returned an empty instruction for component {name!r}.")
 
-            results[name] = self._enforce_length(name, draft)
+            results[name] = self._enforce_length(draft)
 
         return results
 
-    # -- Rendering ----------------------------------------------------------
+    def _prepare_examples(self, examples: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        """Optionally shorten history outputs, leaving rendering to the adapter."""
 
-    def _render_examples(self, examples: Sequence[Mapping[str, Any]]) -> str:
-        """Render reflective examples as markdown, in the layout of gepa's stock proposer."""
-        if not examples:
-            return "No examples were provided."
-
-        def render_value(value: Any, level: int = 3) -> str:
+        def prepare(value: Any) -> Any:
             if isinstance(value, History):
-                if self.compaction:
-                    value = compact_history(value)
-                return f"{format_history_for_reflection(value)}\n\n"
+                return compact_history(value)
             if isinstance(value, REPLHistory):
-                text = compact_repl_history(value).format() if self.compaction else str(value)
-                return f"{text.strip()}\n\n"
-            if isinstance(value, Type):
-                # str() emits DSPy's custom-type marker; the adapter turns it back into structured content.
-                return f"{value!s}\n\n"
+                return compact_repl_history(value)
             if isinstance(value, Mapping):
-                out = ""
-                for k, v in value.items():
-                    out += f"{'#' * level} {k}\n{render_value(v, min(level + 1, 6))}"
-                return out or "\n"
-            if isinstance(value, (list, tuple)):
-                out = ""
-                for i, item in enumerate(value, 1):
-                    out += f"{'#' * level} Item {i}\n{render_value(item, min(level + 1, 6))}"
-                return out or "\n"
-            return f"{str(value).strip()}\n\n"
+                return {key: prepare(item) for key, item in value.items()}
+            if isinstance(value, list | tuple):
+                return [prepare(item) for item in value]
+            return value
 
-        blocks = []
-        for i, example in enumerate(examples, 1):
-            block = f"# Example {i}\n"
-            for key, value in example.items():
-                block += f"## {key}\n{render_value(value)}"
-            blocks.append(block)
-        return "\n\n".join(blocks)
-
-    # -- Length caps ---------------------------------------------------------
+        if self.truncate_history_outputs:
+            return [prepare(example) for example in examples]
+        return [dict(example) for example in examples]
 
     def _length_limit_text(self) -> str:
-        parts = []
-        if self.max_instruction_words is not None:
-            parts.append(f"at most {self.max_instruction_words} words")
-        if self.max_instruction_tokens is not None:
-            parts.append(f"at most {self.max_instruction_tokens} tokens")
-        return "The new instruction must be " + " and ".join(parts) + "." if parts else ""
+        return f"The new instruction must be at most {self.max_chars} characters." if self.max_chars is not None else ""
 
-    def _measure(self, text: str) -> dict[str, int]:
-        """Measure `text` in every unit that has a cap."""
-        measured = {}
-        if self.max_instruction_words is not None:
-            measured["words"] = len(_WORD_RE.findall(text))
-        if self.max_instruction_tokens is not None:
-            measured["tokens"] = _count_tokens(text, getattr(dspy.settings.lm, "model", None))
-        return measured
-
-    def _caps(self) -> dict[str, int]:
-        caps = {}
-        if self.max_instruction_words is not None:
-            caps["words"] = self.max_instruction_words
-        if self.max_instruction_tokens is not None:
-            caps["tokens"] = self.max_instruction_tokens
-        return caps
-
-    def _enforce_length(self, name: str, draft: str) -> str:
-        """Ask the reflection LM once to shorten an over-length draft. Never truncates.
-
-        A compressed draft that still exceeds a cap is kept when it makes progress on at least one
-        over-cap unit without going over, or further over, the cap in any unit. A unit that was and
-        stays within its cap may change freely. Otherwise the original draft is kept.
-        """
-        if self.compress is None:
-            return draft
-        caps = self._caps()
-        draft_size = self._measure(draft)
-        if all(draft_size[unit] <= caps[unit] for unit in caps):
-            return draft
-
+    def _enforce_length(self, draft: str) -> str:
+        """Validate with Pydantic, allowing one attempt to compress an oversized draft."""
+        try:
+            return self._instruction_validator.validate_python(draft)
+        except ValidationError:
+            if self.compress is None:
+                raise
         with dspy.context(adapter=self.adapter):
             shortened = self.compress(instruction=draft, length_limit=self._length_limit_text()).shortened_instruction
-        shortened = shortened.strip()
-
-        if shortened:
-            shortened_size = self._measure(shortened)
-            if all(shortened_size[unit] <= caps[unit] for unit in caps):
-                return shortened
-            progressed = any(draft_size[unit] > caps[unit] and shortened_size[unit] < draft_size[unit] for unit in caps)
-            regressed = any(
-                shortened_size[unit] > caps[unit] and shortened_size[unit] > draft_size[unit] for unit in caps
-            )
-            if progressed and not regressed:
-                logger.warning(
-                    "The proposed instruction for component %r is %s after compression (limit: %s). "
-                    "Using the compressed instruction as is.",
-                    name,
-                    _describe(shortened_size),
-                    _describe(caps),
-                )
-                return shortened
-
-        logger.warning(
-            "The proposed instruction for component %r is %s (limit: %s), and compression did not shorten it. "
-            "Using the original proposal as is.",
-            name,
-            _describe(draft_size),
-            _describe(caps),
-        )
-        return draft
+        return self._instruction_validator.validate_python(shortened)
 
 
 def _clean_text(label: str, value: str | None) -> str | None:
@@ -513,19 +443,6 @@ def _clean_text(label: str, value: str | None) -> str | None:
     if not isinstance(value, str):
         raise TypeError(f"{label} must be a str or None, got {type(value).__name__}.")
     return value.strip() or None
-
-
-def _describe(sizes: Mapping[str, int]) -> str:
-    return ", ".join(f"{count} {unit}" for unit, count in sizes.items())
-
-
-def _count_tokens(text: str, model: str | None) -> int:
-    try:
-        import litellm
-
-        return litellm.token_counter(model=model, text=text)
-    except Exception:
-        return max(1, round(len(text) / 4))  # rough fallback: ~4 characters per token
 
 
 # --------------------------------------------------------------------------- #
@@ -729,7 +646,7 @@ class SingleComponentMultiModalProposer(dspy.Module):
                 if not value:
                     s += "\n"
                 return s
-            elif isinstance(value, (list, tuple)):
+            elif isinstance(value, list | tuple):
                 s = ""
                 for i, item in enumerate(value):
                     s += f"{'#' * level} Item {i + 1}\n"
@@ -793,7 +710,8 @@ class SingleComponentMultiModalProposer(dspy.Module):
 
 
 # TODO: InstructionProposer now delivers images to the reflection LM as structured content.
-# Review this class for deprecation once the two are compared on a vision task.
+# Compare quality on a vision task before considering deprecation:
+# https://github.com/stanfordnlp/dspy/issues/10591
 class MultiModalInstructionProposer(ProposalFn):
     """GEPA-compatible multimodal instruction proposer.
 

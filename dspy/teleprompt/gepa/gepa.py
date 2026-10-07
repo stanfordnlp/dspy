@@ -274,9 +274,9 @@ class GEPA(Teleprompter):
               shown to the reflection LM
             - `additional_instructions`: guidance applied to every proposal
             - `base_instructions`: replaces the reflection prompt
-            - `max_instruction_words` / `max_instruction_tokens`: length caps on each proposed
-              instruction, enforced with one compression call (never truncation)
-            - `compaction`: shorten long tool results in `dspy.History` inputs and long outputs in
+            - `max_chars`: character limit validated with Pydantic after one compression attempt;
+              an oversized result raises instead of being returned or truncated
+            - `truncate_history_outputs`: shorten long tool results in `dspy.History` inputs and long outputs in
               `REPLHistory` inputs before rendering
             - `adapter`: the adapter for the proposer's own LM calls (default `JSONAdapter()`)
 

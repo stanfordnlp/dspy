@@ -1,16 +1,18 @@
 """Tests for `InstructionProposer`, GEPA's built-in instruction proposer."""
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 import dspy
 from dspy.adapters.types.tool import ToolCallResults, ToolCalls
 from dspy.primitives.repl_types import REPLHistory
 from dspy.teleprompt.gepa import InstructionProposer
-from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, format_history_for_reflection
+from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.teleprompt.gepa.instruction_proposal import (
     ProposeInstruction,
     _Skill,
@@ -35,6 +37,12 @@ EXAMPLES = [
     {"Inputs": {"question": "2+2?"}, "Generated Outputs": {"answer": "5"}, "Feedback": "Wrong answer."},
     {"Inputs": {"question": "3+3?"}, "Generated Outputs": {"answer": "6"}, "Feedback": "Correct."},
 ]
+
+
+@pytest.fixture(autouse=True)
+def capture_dspy_logs(monkeypatch):
+    # DSPy's logger has its own handler and normally disables propagation to pytest.
+    monkeypatch.setattr(logging.getLogger("dspy"), "propagate", True)
 
 
 def json_lm(*answers: str, **kwargs) -> DummyLM:
@@ -72,7 +80,7 @@ def test_default_prompt_has_only_the_two_base_fields_and_gepa_wording():
     assert GEPA_PARAGRAPH_2 in system
     assert "Provide the new instructions within" not in system
     assert "[[ ## current_instruction ## ]]\nAnswer the question." in user
-    assert "[[ ## examples_with_feedback ## ]]\n# Example 1\n## Inputs\n### question\n2+2?" in user
+    assert json.dumps(EXAMPLES) in user
     for absent in ("reference_skills", "additional_instructions", "length_limit"):
         assert absent not in user
         assert absent not in system
@@ -87,8 +95,7 @@ def test_default_prompt_has_only_the_two_base_fields_and_gepa_wording():
     [
         ({"skills": ["Be terse."]}, "reference_skills"),
         ({"additional_instructions": "Use imperative voice."}, "additional_instructions"),
-        ({"max_instruction_words": 50}, "length_limit"),
-        ({"max_instruction_tokens": 80}, "length_limit"),
+        ({"max_chars": 50}, "length_limit"),
     ],
 )
 def test_each_option_adds_only_its_field(options, field):
@@ -102,9 +109,7 @@ def test_each_option_adds_only_its_field(options, field):
 
 
 def test_static_fields_precede_the_dynamic_ones():
-    proposer = InstructionProposer(
-        skills=["Be terse."], additional_instructions="Use imperative voice.", max_instruction_words=50
-    )
+    proposer = InstructionProposer(skills=["Be terse."], additional_instructions="Use imperative voice.", max_chars=50)
     assert list(proposer.propose.signature.input_fields) == [
         "reference_skills",
         "additional_instructions",
@@ -117,7 +122,7 @@ def test_static_fields_precede_the_dynamic_ones():
     _, user = last_messages(lm)
     assert "[[ ## reference_skills ## ]]\n<skill name='Be terse.'>\nBe terse.\n</skill>" in user
     assert "[[ ## additional_instructions ## ]]\nUse imperative voice." in user
-    assert "[[ ## length_limit ## ]]\nThe new instruction must be at most 50 words." in user
+    assert "[[ ## length_limit ## ]]\nThe new instruction must be at most 50 characters." in user
 
 
 def test_base_instructions_replace_the_docstring_and_keep_the_fields():
@@ -151,12 +156,10 @@ def test_default_adapter_is_json_even_when_settings_adapter_differs():
 
 
 def test_constructor_validation():
-    with pytest.raises(ValueError, match="max_instruction_words"):
-        InstructionProposer(max_instruction_words=0)
-    with pytest.raises(ValueError, match="max_instruction_tokens"):
-        InstructionProposer(max_instruction_tokens=-1)
-    with pytest.raises(TypeError, match="compaction"):
-        InstructionProposer(compaction="yes")
+    with pytest.raises(ValueError, match="max_chars"):
+        InstructionProposer(max_chars=0)
+    with pytest.raises(TypeError, match="truncate_history_outputs"):
+        InstructionProposer(truncate_history_outputs="yes")
     with pytest.raises(TypeError, match="adapter"):
         InstructionProposer(adapter=object())
     assert InstructionProposer(additional_instructions="  ").additional_instructions is None
@@ -308,12 +311,8 @@ def test_inline_skill_and_empty_skill():
 # --- length caps --------------------------------------------------------------
 
 
-def words(n: int) -> str:
-    return " ".join(f"w{i}" for i in range(n))
-
-
 def test_no_cap_means_no_length_field_and_no_compress_call():
-    draft = words(2000)
+    draft = "x" * 20_000
     lm = json_lm(draft)
     proposer = InstructionProposer()
     assert proposer.compress is None
@@ -321,111 +320,52 @@ def test_no_cap_means_no_length_field_and_no_compress_call():
     assert len(lm.history) == 1
 
 
-def test_draft_within_the_cap_makes_one_call():
-    lm = json_lm(words(10))
-    assert propose(InstructionProposer(max_instruction_words=50), lm) == {"pred": words(10)}
+@pytest.mark.parametrize("draft", ["x" * 5, "é猫🙂ab", "a\nb\nc"])
+def test_draft_at_character_limit_makes_one_call(draft):
+    lm = json_lm(draft)
+    assert propose(InstructionProposer(max_chars=5), lm) == {"pred": draft}
     assert len(lm.history) == 1
 
 
-def test_over_length_draft_is_compressed_within_the_cap(caplog):
-    lm = json_lm(words(10), words(3))
-    with caplog.at_level(logging.WARNING):
-        assert propose(InstructionProposer(max_instruction_words=5), lm) == {"pred": words(3)}
+def test_over_length_draft_is_compressed_within_the_cap():
+    lm = json_lm("x" * 10, "a\nb")
+    assert propose(InstructionProposer(max_chars=5), lm) == {"pred": "a\nb"}
     assert len(lm.history) == 2
     _, user = last_messages(lm)
-    assert "[[ ## instruction ## ]]\n" + words(10) in user
-    assert "[[ ## length_limit ## ]]\nThe new instruction must be at most 5 words." in user
-    assert not caplog.records
+    assert "[[ ## instruction ## ]]\n" + "x" * 10 in user
+    assert "The new instruction must be at most 5 characters." in user
 
 
-def test_compressed_draft_still_over_but_shorter_is_kept_with_a_warning(caplog):
-    lm = json_lm(words(10), words(7))
-    with caplog.at_level(logging.WARNING):
-        assert propose(InstructionProposer(max_instruction_words=5), lm) == {"pred": words(7)}
-    [record] = caplog.records
-    assert "'pred'" in record.message
-    assert "7 words" in record.message
-    assert "limit: 5 words" in record.message
-
-
-@pytest.mark.parametrize("compressed", [words(12), ""])
-def test_compression_that_does_not_shorten_keeps_the_draft_with_a_warning(compressed, caplog):
-    lm = json_lm(words(10), compressed)
-    with caplog.at_level(logging.WARNING):
-        assert propose(InstructionProposer(max_instruction_words=5), lm) == {"pred": words(10)}
+@pytest.mark.parametrize("compressed", ["x" * 7, "x" * 12, "", "   "])
+def test_invalid_compression_raises_pydantic_validation_error(compressed):
+    lm = json_lm("x" * 10, compressed)
+    with pytest.raises(ValidationError):
+        propose(InstructionProposer(max_chars=5), lm)
     assert len(lm.history) == 2
-    [record] = caplog.records
-    assert "'pred'" in record.message
-    assert "10 words" in record.message
-    assert "limit: 5 words" in record.message
 
 
-def test_multi_line_drafts_keep_their_newlines_in_every_path():
-    within = "Line one.\n\nLine two.\n- a\n- b"
-    assert propose(InstructionProposer(max_instruction_words=50), json_lm(within)) == {"pred": within}
-
-    over = "\n".join(words(4) for _ in range(5))
-    compressed = "Keep this.\nAnd this."
-    assert propose(InstructionProposer(max_instruction_words=5), json_lm(over, compressed)) == {"pred": compressed}
-
-    still_over = "Keep this.\nAnd this.\nAnd that too."
-    assert propose(InstructionProposer(max_instruction_words=5), json_lm(over, still_over)) == {"pred": still_over}
-
-    longer = over + "\nand more"
-    assert propose(InstructionProposer(max_instruction_words=5), json_lm(over, longer)) == {"pred": over}
+@pytest.mark.parametrize("cap", [0, -1, True, 1.5, "5"])
+def test_invalid_character_limit(cap):
+    with pytest.raises(ValueError, match="max_chars"):
+        InstructionProposer(max_chars=cap)
 
 
-def test_token_cap_with_the_fallback_counter(monkeypatch):
-    import litellm
-
-    def broken_counter(**kwargs):
-        raise RuntimeError("no tokenizer")
-
-    monkeypatch.setattr(litellm, "token_counter", broken_counter)
-
-    draft = "x" * 40  # 10 tokens with the ~4 characters per token fallback
-    lm = json_lm(draft, "y" * 12)
-    proposer = InstructionProposer(max_instruction_tokens=5)
-    assert propose(proposer, lm) == {"pred": "y" * 12}
-    assert len(lm.history) == 2
-    _, user = last_messages(lm)
-    assert "The new instruction must be at most 5 tokens." in user
-
-    both = InstructionProposer(max_instruction_words=3, max_instruction_tokens=5)
-    assert both._length_limit_text() == "The new instruction must be at most 3 words and at most 5 tokens."
+def test_character_limit_applies_after_stripping_outer_whitespace():
+    lm = json_lm("  abcde  ")
+    assert propose(InstructionProposer(max_chars=5), lm) == {"pred": "abcde"}
+    assert len(lm.history) == 1
 
 
-def test_two_caps_keep_a_compression_that_only_improves_the_over_cap_unit(monkeypatch, caplog):
-    import litellm
-
-    # Every text costs the same 4 tokens: the token cap is met before and after compression.
-    monkeypatch.setattr(litellm, "token_counter", lambda **kwargs: 4)
-    proposer = InstructionProposer(max_instruction_words=5, max_instruction_tokens=10)
-
-    lm = json_lm(words(8), words(7))
-    with caplog.at_level(logging.WARNING):
-        assert propose(proposer, lm) == {"pred": words(7)}
-    [record] = caplog.records
-    assert "7 words, 4 tokens" in record.message
-    assert "limit: 5 words, 10 tokens" in record.message
+def test_character_limit_is_enforced_with_custom_adapter():
+    lm = DummyLM(
+        [{"new_instruction": "too long"}, {"shortened_instruction": "still too long"}],
+        adapter=dspy.ChatAdapter(),
+    )
+    with pytest.raises(ValidationError):
+        propose(InstructionProposer(max_chars=5, adapter=dspy.ChatAdapter()), lm)
 
 
-def test_two_caps_drop_a_compression_that_pushes_the_other_unit_over_its_cap(monkeypatch, caplog):
-    import litellm
-
-    # Fewer words cost more tokens: compression trades a word-cap miss for a token-cap miss.
-    monkeypatch.setattr(litellm, "token_counter", lambda model, text: 20 - len(text.split()))
-    proposer = InstructionProposer(max_instruction_words=5, max_instruction_tokens=12)
-
-    lm = json_lm(words(10), words(7))  # 10 tokens -> 13 tokens
-    with caplog.at_level(logging.WARNING):
-        assert propose(proposer, lm) == {"pred": words(10)}
-    [record] = caplog.records
-    assert "10 words, 10 tokens" in record.message
-    assert "compression did not shorten it" in record.message
-
-
-# --- compaction -----------------------------------------------------------------
+# --- truncate_history_outputs -----------------------------------------------------------------
 
 
 def tool_history(result: str) -> dspy.History:
@@ -484,7 +424,7 @@ def test_compact_repl_history_lowers_max_output_chars_and_never_raises_it():
     assert compact_repl_history(small).max_output_chars == 100
 
 
-def test_without_compaction_history_and_repl_history_render_as_on_main():
+def test_history_and_repl_history_use_adapter_serialization():
     history = tool_history("r" * 1_200)
     repl = REPLHistory().append(reasoning="look", code="print(x)", output="o" * 3_000)
     examples = [{"Inputs": {"Context": history, "repl": repl}, "Generated Outputs": {"a": "b"}, "Feedback": "ok"}]
@@ -492,12 +432,14 @@ def test_without_compaction_history_and_repl_history_render_as_on_main():
     lm = json_lm("New instruction.")
     propose(InstructionProposer(), lm, examples=examples)
     _, user = last_messages(lm)
-    assert "### Context\n" + format_history_for_reflection(history) + "\n\n### repl\n" + str(repl) + "\n\n" in user
+    assert '"Context": {"messages":' in user
+    assert "r" * 1_200 in user
+    assert "o" * 3_000 in user
     assert "characters cut" not in user
     assert "characters omitted" not in user
 
     lm = json_lm("New instruction.")
-    propose(InstructionProposer(compaction=True), lm, examples=examples)
+    propose(InstructionProposer(truncate_history_outputs=True), lm, examples=examples)
     _, user = last_messages(lm)
     assert "r" * 500 + " [700 of 1,200 characters cut]" in user
     assert "r" * 501 not in user
@@ -533,8 +475,8 @@ def test_gepa_default_proposer_on_a_text_program(caplog):
     system, user = last_messages(reflection_lm)
     assert GEPA_PARAGRAPH_1 in system
     assert "[[ ## current_instruction ## ]]\n" + student.signature.instructions in user
-    assert "[[ ## examples_with_feedback ## ]]\n# Example 1\n## Inputs\n### input\n" in user
-    assert "## Feedback\nWrong answer." in user
+    assert '"Inputs": {"input":' in user
+    assert '"Feedback": "Wrong answer."' in user
     assert "Proposed new text for self: Answer in one word." in caplog.text
     assert optimized is not None
 
@@ -566,24 +508,24 @@ def react_metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
     return dspy.Prediction(score=0.3, feedback="Answer with more detail.")
 
 
-def test_gepa_compaction_on_a_react_program_and_custom_proposers_see_the_context_string(caplog):
+def test_gepa_truncate_history_outputs_on_a_react_program_and_custom_proposers_see_the_context_string(caplog):
     trainset = [dspy.Example(question="cats?", answer="cats purr loudly").with_inputs("question")]
 
-    # The built-in proposer with compaction: the reflection prompt omits the long tool output.
+    # The built-in proposer with truncate_history_outputs: the reflection prompt omits the long tool output.
     program, task_lm = react_program_and_lm()
     reflection_lm = DummyLM([{"new_instruction": "Search, then answer in detail."}] * 5, adapter=dspy.JSONAdapter())
     with dspy.context(lm=task_lm, adapter=dspy.ChatAdapter()), caplog.at_level(logging.INFO, logger="dspy"):
         dspy.GEPA(
             metric=react_metric,
             reflection_lm=reflection_lm,
-            instruction_proposer=InstructionProposer(compaction=True),
+            instruction_proposer=InstructionProposer(truncate_history_outputs=True),
             max_metric_calls=4,
         ).compile(program, trainset=trainset, valset=trainset)
 
     assert no_reflection_errors(caplog)
     _, user = last_messages(reflection_lm)
-    assert "### Context\n```json\n  0: {" in user
-    assert "'next_thought': 'I should look this up.'" in user
+    assert '"Context": {"messages":' in user
+    assert '"next_thought": "I should look this up."' in user
     assert "characters cut]" in user
     assert LONG_TOOL_OUTPUT not in user
 
@@ -649,3 +591,111 @@ def test_explicit_builtin_proposer_with_a_flex_submodule_logs_no_custom_proposer
 
     assert out["sibling"] == "new instruction"
     assert not any("custom instruction_proposer" in r.message for r in caplog.records)
+
+
+@pytest.mark.parametrize("source", ["abc", ""])
+def test_scalar_skill_text_is_one_source(source):
+    if not source:
+        with pytest.raises(ValueError, match="Empty skill"):
+            InstructionProposer(skills=source)
+    else:
+        assert [s.content for s in InstructionProposer(skills=source).skills] == [source]
+
+
+def test_scalar_skill_path_is_one_source(tmp_path):
+    path = tmp_path / "skill.md"
+    path.write_text("Be terse.")
+    for source in (path, str(path)):
+        assert [s.content for s in InstructionProposer(skills=source).skills] == ["Be terse."]
+
+
+@pytest.mark.parametrize("source", ["---\nname: empty\n---", "---\nname: empty\n---\n  "])
+def test_frontmatter_without_body_is_rejected(source, tmp_path):
+    with pytest.raises(ValueError, match="Empty skill"):
+        InstructionProposer(skills=[source])
+    path = tmp_path / "SKILL.md"
+    path.write_text(source)
+    with pytest.raises(ValueError, match="Empty skill"):
+        InstructionProposer(skills=[path])
+
+
+@pytest.mark.parametrize(
+    ("style", "description"), [("|", "First line.\nSecond line.\n"), (">", "First line. Second line.\n")]
+)
+def test_yaml_multiline_description(style, description):
+    source = f"---\nname: example\ndescription: {style}\n  First line.\n  Second line.\n---\nSkill body."
+    [skill] = InstructionProposer(skills=[source]).skills
+    assert skill.description == description
+    assert skill.content == "Skill body."
+
+
+@pytest.mark.parametrize("metadata", ["[unclosed", "- item", "name: [nested]", "description: 123"])
+def test_invalid_yaml_metadata_is_rejected(metadata):
+    with pytest.raises(ValueError):
+        InstructionProposer(skills=[f"---\n{metadata}\n---\nSkill body."])
+
+
+def test_examples_reach_adapter_as_structured_values():
+    seen = []
+
+    class InspectAdapter(dspy.JSONAdapter):
+        def format(self, signature, demos, inputs):
+            seen.append(inputs["examples_with_feedback"])
+            return super().format(signature, demos, inputs)
+
+    history = tool_history("short result")
+    image = dspy.Image(url="https://example.com/image.png")
+    repl = REPLHistory().append(code="print(1)", output="1")
+    examples = [
+        {
+            "Inputs": {"Context": history, "nested": [{"image": image}], "repl": repl},
+            "Generated Outputs": {"answer": "cat"},
+            "Feedback": "ok",
+        }
+    ]
+    lm = json_lm("New instruction.")
+    propose(InstructionProposer(adapter=InspectAdapter()), lm, examples=examples)
+    assert seen == [examples]
+    assert seen[0][0]["Inputs"]["Context"] is history
+    assert seen[0][0]["Inputs"]["repl"] is repl
+    content = lm.history[-1]["messages"][-1]["content"]
+    assert any(part.get("type") == "image_url" for part in content)
+
+
+@pytest.mark.parametrize("builtin", [True, False])
+def test_reflective_dataset_preserves_builtin_values_and_custom_string_format(builtin):
+    from gepa import EvaluationBatch
+
+    student = dspy.Predict("payload: dict -> answer: list")
+    payload = {"items": [{"image": dspy.Image(url="https://example.com/image.png"), "count": 3}]}
+    output = dspy.Prediction(answer=["cat", "dog"])
+    example = dspy.Example(payload=payload).with_inputs("payload")
+    proposer = None if builtin else lambda **kwargs: {}
+    adapter = DspyAdapter(
+        student_module=student,
+        metric_fn=lambda *args, **kwargs: 0,
+        feedback_map={"self": lambda **kwargs: {"score": 0, "feedback": "Try again."}},
+        custom_instruction_proposer=proposer,
+    )
+    batch = EvaluationBatch(
+        outputs=[output],
+        scores=[0],
+        trajectories=[
+            {
+                "trace": [(student, {"payload": payload}, output)],
+                "example": example,
+                "prediction": output,
+                "score": 0,
+            }
+        ],
+    )
+    [record] = adapter.make_reflective_dataset({"self": student.signature.instructions}, batch, ["self"])["self"]
+    assert record["Inputs"]["payload"] == (payload if builtin else str(payload))
+    assert record["Generated Outputs"]["answer"] == (output.answer if builtin else str(output.answer))
+
+
+def test_yaml_description_can_contain_an_indented_separator():
+    source = "---\nname: example\ndescription: |\n  Before.\n  ---\n  After.\n---\nSkill body."
+    [skill] = InstructionProposer(skills=[source]).skills
+    assert skill.description == "Before.\n---\nAfter.\n"
+    assert skill.content == "Skill body."
