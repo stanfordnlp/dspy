@@ -128,6 +128,20 @@ def test_failure_indentation_error(pooled_interpreter):
     assert pooled_interpreter.execute("print(40 + 2)") == "42\n"
 
 
+@pytest.mark.parametrize(
+    "code",
+    [
+        "raise SyntaxError(object())",
+        "raise SyntaxError(b'bytes sentinel')",
+        "circular = []; circular.append(circular); raise SyntaxError(circular)",
+    ],
+)
+def test_syntax_error_with_unserializable_args_is_recoverable(pooled_interpreter, code):
+    with pytest.raises(SyntaxError, match="Invalid Python syntax"):
+        pooled_interpreter.execute(code)
+    assert pooled_interpreter.execute("6 * 7") == 42
+
+
 def test_javascript_syntax_error_does_not_reuse_python_exception_args(pooled_interpreter):
     with pytest.raises(CodeExecutionError, match="previous Python error"):
         pooled_interpreter.execute("raise ValueError('previous Python error')")
