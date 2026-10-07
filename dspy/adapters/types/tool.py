@@ -525,7 +525,8 @@ def _normalize_tool_call_dict(data: dict[str, Any]) -> dict[str, Any]:
 def _to_json_default(value: Any) -> Any:
     """Convert a parameter default to its JSON form, e.g. an Enum member to its value."""
     if isinstance(value, Decimal):
-        return value
+        # A JSON number fits both float and Decimal arguments; pydantic would give a string.
+        return float(value)
     try:
         return pydantic_core.to_jsonable_python(value)
     except Exception:
