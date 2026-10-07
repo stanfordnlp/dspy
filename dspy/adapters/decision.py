@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 from dspy.adapters.decision_state import DecisionState
 from dspy.adapters.types.decision import Choice, Noul, Probability, Score
 from dspy.dsp.utils.settings import settings
+from dspy.primitives.example import Example
 
 
 @contextmanager
@@ -24,6 +25,45 @@ def record_evidence():
     log = []
     with settings.context(_decision_evidence=(log, threading.Lock())):
         yield log
+
+
+@contextmanager
+def replay_answers():
+    """Reuse raw answers to repeated decision requests in this execution context and its DSPy workers.
+
+    A request repeats when the client and its defaults, adapter settings, signature, question
+    settings, demos, inputs, and LM arguments all match an earlier call. Its stored answers are
+    decoded under the current thresholds, cuts, and weights, which change how answers are read
+    but not what is asked.
+    Only clients that cache take part, since an uncached client would answer a repeat afresh.
+    Custom chat adapters and unsupported request values use the normal request path.
+    Replayed calls skip the client, so they add no history or usage. Concurrent first calls
+    may each reach the client before an answer is stored.
+    """
+    with settings.context(_decision_replay=({}, threading.Lock())):
+        yield
+
+
+def _frozen(value):
+    """Snapshot supported request values without merging different types or dict orders.
+
+    Hashability alone is insufficient: arbitrary objects may change their rendered value
+    while keeping the same hash. Unsupported values must use the normal request path.
+    """
+    kind = type(value)
+    if kind is dict:
+        return (kind, tuple((_frozen(k), _frozen(v)) for k, v in value.items()))
+    if kind in (list, tuple):
+        return (kind, tuple(_frozen(v) for v in value))
+    if kind is float:
+        return (kind, value.hex())  # Preserve signed zero, which compares equal in Python.
+    if kind in (str, int, bool, type(None)):
+        return (kind, value)
+    if isinstance(value, BaseModel):
+        return (kind, _frozen(value.model_dump(mode="json")))
+    if isinstance(value, Example):
+        return (kind, _frozen(value.toDict()))
+    raise TypeError(f"Cannot snapshot {kind.__name__} for decision replay.")
 
 
 @lru_cache(maxsize=256)
@@ -135,12 +175,78 @@ class DecisionAdapter:
             results.append({**completion, **self.state._decode(answers)})
         return results
 
+    def _replay_key(self, lm, lm_kwargs, signature, demos, inputs):
+        """This request's key in the open replay store, or None when it cannot be replayed."""
+        if (
+            settings.get("_decision_replay") is None
+            or not lm_kwargs.get("cache", getattr(lm, "cache", False))
+            or not getattr(lm, "_cache_responses", True)
+        ):
+            return None
+        questions = {
+            name: {k: v for k, v in config.items() if k in ("instructions", "criteria")}
+            for name, config in self.state.fields.items()
+        }
+        try:
+            adapter = None
+            if not self.system_one:
+                from dspy.adapters.chat_adapter import ChatAdapter
+                from dspy.adapters.json_adapter import JSONAdapter
+
+                # Custom adapters can depend on state outside their attributes. Leave
+                # their request construction and cache lookup to the normal path.
+                if type(self.adapter) not in (ChatAdapter, JSONAdapter):
+                    return None
+                adapter = (
+                    type(self.adapter),
+                    tuple(self.adapter.native_response_types),
+                    _frozen({k: v for k, v in vars(self.adapter).items() if k != "native_response_types"}),
+                )
+            client = {
+                name: getattr(lm, name, None)
+                for name in ("model", "model_type", "kwargs", "base_url", "use_developer_role")
+            }
+            key = (
+                id(lm),
+                self.system_one,
+                _frozen(client),
+                adapter,
+                signature,
+                _frozen(signature.dump_state()),
+                _frozen(questions),
+                _frozen(demos),
+                _frozen(inputs),
+                _frozen(lm_kwargs),
+            )
+            hash(key)
+        except (TypeError, ValueError, RecursionError):
+            return None
+        return key
+
+    @staticmethod
+    def _store(key, lm, completions):
+        answers, lock = settings.get("_decision_replay")
+        stored = copy.deepcopy(completions)
+        with lock:
+            # Keep runtime-selected clients alive so their ids cannot be reused in this context.
+            answers[key] = (lm, stored)
+
     def __call__(self, lm, lm_kwargs, signature, demos, inputs):
+        key = self._replay_key(lm, lm_kwargs, signature, demos, inputs)
+        if key is not None and key in settings.get("_decision_replay")[0]:
+            return self._decode(copy.deepcopy(settings.get("_decision_replay")[0][key][1]))
         request = self._prepare(signature, demos, inputs, lm_kwargs)
         completions = [lm(**request)] if self.system_one else self.adapter(lm, **request)
+        if key is not None:
+            self._store(key, lm, completions)
         return self._decode(completions)
 
     async def acall(self, lm, lm_kwargs, signature, demos, inputs):
+        key = self._replay_key(lm, lm_kwargs, signature, demos, inputs)
+        if key is not None and key in settings.get("_decision_replay")[0]:
+            return self._decode(copy.deepcopy(settings.get("_decision_replay")[0][key][1]))
         request = self._prepare(signature, demos, inputs, lm_kwargs)
         completions = [await lm.acall(**request)] if self.system_one else await self.adapter.acall(lm, **request)
+        if key is not None:
+            self._store(key, lm, completions)
         return self._decode(completions)

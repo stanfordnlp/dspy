@@ -1,10 +1,12 @@
 """Fit a program's decision thresholds, cuts, and weights against the metric."""
 
+import contextlib
 import json
 import logging
 from pathlib import Path
 from typing import Any
 
+from dspy.adapters.decision import replay_answers
 from dspy.teleprompt.reanchor.calibrate import caches, calibrate, predictors, run
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.annotation import experimental
@@ -32,17 +34,21 @@ class ReAnchor(Teleprompter):
         log_dir: When set, report.json is written here.
         require_cache: When True, check caching on statically bound or globally configured clients.
             Set it to False for runtime client selection or to allow uncached requests.
+        replay: When True, each repeated request in a calibration reuses the raw answers of its
+            first call, decoded under the current settings, instead of being rebuilt and looked
+            up in the cache. Only clients that cache take part.
 
     After `compile`, `report` holds the fitted parameters and the metric's mean before and after
     calibration, on the training set and on the validation set when one is given.
     """
 
-    def __init__(self, metric, *, num_threads=None, log_dir=None, require_cache=True):
+    def __init__(self, metric, *, num_threads=None, log_dir=None, require_cache=True, replay=True):
         super().__init__()
         self.metric = metric
         self.num_threads = num_threads
         self.log_dir = Path(log_dir) if log_dir else None
         self.require_cache = require_cache
+        self.replay = replay
         self.report: dict[str, Any] = {}
 
     def compile(self, student, *, trainset, valset=None):
@@ -66,16 +72,21 @@ class ReAnchor(Teleprompter):
                 "Enable the client's cache, or pass require_cache=False to calibrate anyway."
             )
 
-        logger.info("answering %d training examples", len(trainset))
-        before = self._score(program, trainset, progress=True)
-        val_before = self._score(program, valset) if valset else None
-        logger.info("fitting thresholds, cuts, and weights")
-        fitted = calibrate(program, trainset, self.metric, num_threads=self.num_threads)
-        self.report = {"train_score_before": before, "train_score": self._score(program, trainset), "fitted": fitted}
-        logger.info("calibrated: train %s -> %s", before, self.report["train_score"])
-        if valset:
-            self.report.update(val_score_before=val_before, val_score=self._score(program, valset))
-            logger.info("validation: %s -> %s", val_before, self.report["val_score"])
+        with replay_answers() if self.replay else contextlib.nullcontext():
+            logger.info("answering %d training examples", len(trainset))
+            before = self._score(program, trainset, progress=True)
+            val_before = self._score(program, valset) if valset else None
+            logger.info("fitting thresholds, cuts, and weights")
+            fitted = calibrate(program, trainset, self.metric, num_threads=self.num_threads)
+            self.report = {
+                "train_score_before": before,
+                "train_score": self._score(program, trainset),
+                "fitted": fitted,
+            }
+            logger.info("calibrated: train %s -> %s", before, self.report["train_score"])
+            if valset:
+                self.report.update(val_score_before=val_before, val_score=self._score(program, valset))
+                logger.info("validation: %s -> %s", val_before, self.report["val_score"])
 
         if self.log_dir:
             self.log_dir.mkdir(parents=True, exist_ok=True)
