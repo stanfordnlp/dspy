@@ -868,7 +868,7 @@ wheels = [
 
 [[package]]
 name = "dspy"
-version = "3.4.0b1"
+version = "3.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
@@ -881,6 +881,7 @@ dependencies = [
     { name = "openai" },
     { name = "orjson" },
     { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "regex" },
     { name = "requests" },
     { name = "tenacity" },
@@ -988,6 +989,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.26.0" },
     { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.12.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5.0" },
+    { name = "pyyaml", specifier = ">=6.0.1" },
     { name = "regex", specifier = ">=2023.10.3" },
     { name = "requests", specifier = ">=2.31.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3.0" },
