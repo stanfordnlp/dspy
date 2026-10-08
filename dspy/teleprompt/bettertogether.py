@@ -307,16 +307,16 @@ class BetterTogether(Teleprompter):
 
     def _prepare_student_and_teacher(
         self, student: Module, teacher: Module | list[Module] | None
-    ) -> tuple[Module, list[Module] | None]:
+    ) -> tuple[Module, Module | list[Module] | None]:
         student = prepare_student(student)
         assert_all_predictors_have_lms(student, role="student")
 
         if not teacher:
             return student, None
-        teacher = [teacher] if not isinstance(teacher, list) else teacher
-        teacher = [prepare_teacher(student, t) for t in teacher]
-
-        return student, teacher
+        # Keep the caller's shape: most optimizers accept a single teacher module, not a list.
+        if isinstance(teacher, list):
+            return student, [prepare_teacher(student, t) for t in teacher]
+        return student, prepare_teacher(student, teacher)
 
     def _prepare_trainset_and_valset(
         self, trainset: list[Example], valset: list[Example] | None, valset_ratio: float
@@ -363,7 +363,7 @@ class BetterTogether(Teleprompter):
     def _prepare_optimizer_compile_args(
         self,
         optimizer_compile_args: dict[str, dict[str, Any]] | None,
-        teacher: list[Module] | None,
+        teacher: Module | list[Module] | None,
     ) -> dict[str, dict[str, Any]]:
         logger.info(f"{BLUE}Validating optimizer compile arguments...{ENDC}")
 
@@ -411,7 +411,7 @@ class BetterTogether(Teleprompter):
         self,
         student: Module,
         trainset: list[Example],
-        teacher: list[Module] | None,
+        teacher: Module | list[Module] | None,
         valset: list[Example] | None,
         num_threads: int | None,
         effective_max_errors: int | None,
@@ -516,7 +516,7 @@ class BetterTogether(Teleprompter):
         self,
         optimizer: Teleprompter,
         student: Module,
-        teacher: list[Module] | None,
+        teacher: Module | list[Module] | None,
         trainset: list[Example],
         valset: list[Example] | None,
         compile_args: dict[str, Any],
