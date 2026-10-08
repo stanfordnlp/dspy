@@ -146,6 +146,42 @@ def test_tool_from_function():
     assert tool.args["y"]["default"] == "hello"
 
 
+def test_tool_defaults_are_json_serializable():
+    import datetime
+    import enum
+    import json
+    from decimal import Decimal
+
+    class Unit(enum.Enum):
+        CELSIUS = "celsius"
+        FAHRENHEIT = "fahrenheit"
+
+    def forecast(
+        city: str,
+        unit: Unit = Unit.CELSIUS,
+        start: datetime.date = datetime.date(2026, 1, 2),
+        price: Decimal = Decimal("1.5"),
+        factor: float = Decimal("0.1"),
+    ) -> str:
+        return city
+
+    tool = Tool(forecast)
+    assert tool.args["unit"]["default"] == "celsius"
+    assert tool.args["start"]["default"] == "2026-01-02"
+    assert tool.args["price"]["default"] == 1.5
+    assert tool.args["factor"]["default"] == 0.1
+    assert tool(city="x", price=tool.args["price"]["default"], factor=tool.args["factor"]["default"]) == "x"
+    json.dumps(tool.format_as_litellm_function_call())
+
+
+def test_tool_defaults_without_json_form_are_kept():
+    def scale(data: bytes = b"\xff") -> str:
+        return "ok"
+
+    tool = Tool(scale)
+    assert tool.args["data"]["default"] == b"\xff"
+
+
 def test_format_as_litellm_function_call_excludes_defaulted_args_from_required():
     # `x` has no default and must be required; `y` has a default and must be optional.
     tool = Tool(dummy_function)
