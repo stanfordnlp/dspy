@@ -2,6 +2,7 @@ import asyncio
 import copy
 import enum
 import logging
+import sys
 import time
 import types
 from datetime import datetime
@@ -1780,3 +1781,207 @@ def test_custom_signature_types(caplog, enable_type_warnings):
         assert "Type mismatch for field 'query': expected Query" in caplog.text
     else:
         assert "Type mismatch" not in caplog.text
+
+
+def test_typeddict_type_validation(caplog):
+    """TypedDict-annotated inputs must validate instead of crashing (#10214)."""
+    log_test_helper()
+
+    from typing_extensions import TypedDict
+
+    class EmailRecord(TypedDict):
+        subject: str
+        sender_email: str
+
+    class TypedDictSignature(dspy.Signature):
+        email: EmailRecord = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    predict_instance = Predict(TypedDictSignature)
+    lm = DummyLM([{"result": f"test output {i}"} for i in range(6)])
+    dspy.configure(lm=lm)
+
+    # Valid dict: no crash, no warning
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(email={"subject": "hi", "sender_email": "a@b.c"})
+    assert "Type mismatch" not in caplog.text
+
+    # Missing required key warns rather than passing silently
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(email={"subject": "hi"})
+    assert "Type mismatch for field 'email'" in caplog.text
+
+    # Non-dict value warns
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(email="not a dict")
+    assert "Type mismatch for field 'email'" in caplog.text
+
+    # A member value that contradicts its declared annotation warns
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(email={"subject": 123, "sender_email": "a@b.c"})
+    assert "Type mismatch for field 'email'" in caplog.text
+
+
+def test_typeddict_optional_members(caplog):
+    """NotRequired members may be absent, but must type-check when present."""
+    log_test_helper()
+
+    from typing_extensions import NotRequired, TypedDict
+
+    class Profile(TypedDict):
+        name: str
+        age: NotRequired[int]
+
+    class ProfileSignature(dspy.Signature):
+        profile: Profile = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    predict_instance = Predict(ProfileSignature)
+    dspy.configure(lm=DummyLM([{"result": "ok"}, {"result": "ok"}, {"result": "ok"}]))
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(profile={"name": "arthi"})
+    assert "Type mismatch" not in caplog.text
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(profile={"name": "arthi", "age": 30})
+    assert "Type mismatch" not in caplog.text
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(profile={"name": "arthi", "age": "thirty"})
+    assert "Type mismatch for field 'profile'" in caplog.text
+
+
+def test_typeddict_unresolvable_forward_reference(caplog):
+    """An annotation that cannot be resolved must not end the prediction (#10215 review)."""
+    log_test_helper()
+
+    from typing_extensions import TypedDict
+
+    class Unresolvable(TypedDict):
+        # A forward reference to a name that does not exist anywhere. get_type_hints
+        # raises NameError on this, and that used to propagate out of _check_type.
+        item: "NoSuchTypeAnywhere"
+
+    class UnresolvableSignature(dspy.Signature):
+        payload: Unresolvable = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    predict_instance = Predict(UnresolvableSignature)
+    dspy.configure(lm=DummyLM([{"result": "ok"}, {"result": "ok"}]))
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        prediction = predict_instance(payload={"item": 1})
+    assert prediction.result == "ok"
+
+    # The key checks still apply, because they do not need the annotation resolved.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(payload={"unknown_key": 1})
+    assert "Type mismatch for field 'payload'" in caplog.text
+
+
+def test_typeddict_unresolvable_member_does_not_excuse_its_siblings(caplog):
+    """One unresolvable member must not suppress a mismatch on a resolvable one."""
+    log_test_helper()
+
+    from typing_extensions import TypedDict
+
+    class Mixed(TypedDict):
+        # get_type_hints raises for the whole class because of this member alone.
+        opaque: "StillNoSuchType"
+        # This one resolves perfectly well and must still be checked.
+        count: int
+
+    class MixedSignature(dspy.Signature):
+        payload: Mixed = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    predict_instance = Predict(MixedSignature)
+    dspy.configure(lm=DummyLM([{"result": "ok"}, {"result": "ok"}]))
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(payload={"opaque": object(), "count": 3})
+    assert "Type mismatch" not in caplog.text
+
+    # count is a str where the annotation says int. The unresolvable sibling must not
+    # turn this into a whole-payload pass.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(payload={"opaque": object(), "count": "three"})
+    assert "Type mismatch for field 'payload'" in caplog.text
+
+
+def test_typing_extensions_typeddict_is_recognised(caplog):
+    """typing_extensions.TypedDict must take the TypedDict path, not the isinstance one."""
+    log_test_helper()
+
+    from typing_extensions import TypedDict as ExtTypedDict
+
+    class ExtRecord(ExtTypedDict):
+        sender: str
+        count: int
+
+    class ExtSignature(dspy.Signature):
+        record: ExtRecord = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    predict_instance = Predict(ExtSignature)
+    dspy.configure(lm=DummyLM([{"result": "ok"}, {"result": "ok"}, {"result": "ok"}]))
+
+    # typing.is_typeddict returns False for this class, so before the fix it reached
+    # isinstance(value, expected) and raised TypedDict does not support instance and
+    # class checks, ending the prediction.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        prediction = predict_instance(record={"sender": "arthi", "count": 2})
+    assert prediction.result == "ok"
+    assert "Type mismatch" not in caplog.text
+
+    # And it must actually be validated, not merely survive.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(record={"sender": "arthi", "count": "two"})
+    assert "Type mismatch for field 'record'" in caplog.text
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="pydantic rejects typing.TypedDict below 3.12 and asks for typing_extensions instead",
+)
+def test_stdlib_typeddict_is_recognised(caplog):
+    """The typing.TypedDict path still needs cover on the versions that allow it."""
+    log_test_helper()
+
+    from typing import TypedDict as StdTypedDict
+
+    class StdRecord(StdTypedDict):
+        sender: str
+        count: int
+
+    class StdSignature(dspy.Signature):
+        record: StdRecord = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    predict_instance = Predict(StdSignature)
+    dspy.configure(lm=DummyLM([{"result": "ok"}, {"result": "ok"}]))
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        prediction = predict_instance(record={"sender": "arthi", "count": 2})
+    assert prediction.result == "ok"
+    assert "Type mismatch" not in caplog.text
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(record={"sender": "arthi", "count": "two"})
+    assert "Type mismatch for field 'record'" in caplog.text
