@@ -160,13 +160,22 @@ class BoundClient:
 
     # ─── requests ─────────────────────────────────────────────────────
 
+    def _model(self, model: str) -> str:
+        if model not in (self.selection.routed, self.selection.model):
+            raise AuthOperationError(
+                f"this client is bound to {self.selection.routed!r}; the request names {model!r}",
+                reason="selection_mismatch", stage="dispatch", recovery="none", provider=self.provider,
+            )
+        return self.selection.routed
+
     def request(self, messages: Iterable[Message] | str, *, tools: Sequence[Tool] | None = None,
                 config: Config | None = None, system: str | None = None, **fields: Any) -> Request:
         """An ordinary canonical Request with the selected routed model.
         ``messages`` may be a single user string for the short path."""
         if isinstance(messages, str):
             messages = (Message.user(messages),)
-        kwargs: dict[str, Any] = {"model": self.selection.routed, "messages": tuple(messages)}
+        model = self._model(fields.pop("model", self.selection.routed))
+        kwargs: dict[str, Any] = {"model": model, "messages": tuple(messages)}
         if tools:
             kwargs["tools"] = tuple(tools)
         if config is not None:
@@ -183,12 +192,8 @@ class BoundClient:
                     "pass either a Request or messages/keywords, not both", reason="selection_mismatch",
                     stage="dispatch", recovery="none", provider=self.provider,
                 )
-            if request.model not in (self.selection.routed, self.selection.model):
-                raise AuthOperationError(
-                    f"this client is bound to {self.selection.routed!r}; the Request names {request.model!r}",
-                    reason="selection_mismatch", stage="dispatch", recovery="none", provider=self.provider,
-                )
-            return replace(request, model=self.selection.routed) if request.model != self.selection.routed else request
+            model = self._model(request.model)
+            return replace(request, model=model) if request.model != model else request
         if messages is None:
             raise TypeError("complete()/stream() need a Request or messages=")
         return self.request(messages, **kwargs)

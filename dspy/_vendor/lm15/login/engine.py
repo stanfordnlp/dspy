@@ -43,7 +43,7 @@ from typing import Any, Callable
 from urllib.parse import parse_qsl, urlsplit
 
 from .._version import __version__
-from ..errors import AuthError, AuthOperationError, ServerError, TransportError
+from ..errors import AuthError, AuthOperationError, RateLimitError, ServerError, TransportError
 from .types import AuthUI, InfoNotice, ManualCodePrompt, Notice, Prompt
 
 __all__ = [
@@ -304,6 +304,11 @@ def _send(ctx: LoginContext, request: urllib.request.Request) -> HttpReply:
             if isinstance(candidate, str) and candidate in _OAUTH_ERROR_CODES:
                 oauth_error = candidate
     security_challenge = response_headers.get("cf-mitigated", "").strip().lower() == "challenge"
+    if status == 429:
+        raise RateLimitError(
+            f"{ctx.provider or 'auth'}: the authentication server answered HTTP {status}",
+            provider=ctx.provider or None, status=status,
+        )
     if status >= 500:
         raise ServerError(
             f"{ctx.provider or 'auth'}: the authentication server answered HTTP {status}",
