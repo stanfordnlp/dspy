@@ -27,6 +27,7 @@ dependencies = [
     "tqdm>=4.66.1",
     "requests>=2.31.0",
     "pydantic>=2.11.0",
+    "pyyaml>=6.0.1",
     "litellm>=1.65.8",
     "diskcache>=5.6.0",
     "json-repair>=0.54.2",
