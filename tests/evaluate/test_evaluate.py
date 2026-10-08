@@ -423,6 +423,30 @@ def test_evaluate_save_as_json_with_history():
             os.unlink(temp_json)
 
 
+def test_evaluate_save_as_json_with_prediction_metric(tmp_path):
+    """Test that save_as_json works when the metric returns dspy.Prediction(score, feedback)."""
+    dspy.settings.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}}))
+
+    def metric_with_feedback(example, prediction, trace=None):
+        return dspy.Prediction(score=1.0, feedback="correct")
+
+    temp_json = tmp_path / "results.json"
+    evaluator = Evaluate(
+        devset=[new_example("What is 1+1?", "2")],
+        metric=metric_with_feedback,
+        display_progress=False,
+        save_as_json=str(temp_json),
+    )
+
+    result = evaluator(Predict("question -> answer"))
+    assert result.score == 100.0
+
+    with open(temp_json) as f:
+        data = json.load(f)
+
+    assert data[0]["metric_with_feedback"] == {"score": 1.0, "feedback": "correct"}
+
+
 def test_evaluate_save_as_csv_with_history():
     """Test that save_as_csv works with Examples containing dspy.History objects."""
     # Setup
