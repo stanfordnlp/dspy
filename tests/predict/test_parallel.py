@@ -234,6 +234,40 @@ def test_batch_with_failed_examples():
     assert str(exceptions[0]) == "test error"
 
 
+def test_parallel_reuse_does_not_accumulate_failed_examples():
+    class FailingModule(dspy.Module):
+        def forward(self, value: int) -> str:
+            if value < 0:
+                raise ValueError(f"negative value: {value}")
+            return f"success-{value}"
+
+    module = FailingModule()
+    parallel = dspy.Parallel(return_failed_examples=True, provide_traceback=True)
+
+    # First call: a single failure on value=-1.
+    results1, failed1, exceptions1 = parallel(
+        [
+            (module, dspy.Example(value=1).with_inputs("value")),
+            (module, dspy.Example(value=-1).with_inputs("value")),
+        ]
+    )
+    assert results1 == ["success-1", None]
+    assert [example.inputs()["value"] for example in failed1] == [-1]
+    assert len(exceptions1) == 1
+
+    # Reusing the same instance for a second call must report only this call's
+    # failure (value=-2), not accumulate the previous call's failure (value=-1).
+    results2, failed2, exceptions2 = parallel(
+        [
+            (module, dspy.Example(value=2).with_inputs("value")),
+            (module, dspy.Example(value=-2).with_inputs("value")),
+        ]
+    )
+    assert results2 == ["success-2", None]
+    assert [example.inputs()["value"] for example in failed2] == [-2]
+    assert len(exceptions2) == 1
+
+
 def test_parallel_timeout_and_straggler_limit_params():
     parallel_default = dspy.Parallel()
     assert parallel_default.timeout == 120
