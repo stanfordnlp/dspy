@@ -6,7 +6,7 @@ mkdocstrings==1.0.6
 mkdocstrings-python==2.0.9
 nbconvert==7.17.1
 pillow==12.3.0
-zensical==0.0.64
+zensical==0.0.67
 mike==2.2.0
 urllib3==2.7.0
 mistune==3.3.4
