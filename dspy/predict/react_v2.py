@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 # A user signature that declares any of these as an output would collide with the keyword
 # expansion at the `Prediction(**final_outputs, history=..., termination_reason=...)` call sites.
 _RESERVED_PREDICTION_KEYS = frozenset({"history", "termination_reason"})
+_RESERVED_INPUT_KEYS = frozenset({"history", "tools"})
 
 if TYPE_CHECKING:
     from dspy.signatures.signature import Signature
@@ -43,6 +44,14 @@ class ReActV2(Module):
         super().__init__()
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
+
+        reserved_inputs = _RESERVED_INPUT_KEYS.intersection(self.signature.input_fields)
+        if reserved_inputs:
+            names = ", ".join(f"`{name}`" for name in sorted(reserved_inputs))
+            raise ValueError(
+                f"Input field name(s) {names} are reserved by ReActV2 for its conversation "
+                "history and available tools. Rename these input fields on your signature."
+            )
 
         reserved_outputs = _RESERVED_PREDICTION_KEYS.intersection(self.signature.output_fields)
         if reserved_outputs:
