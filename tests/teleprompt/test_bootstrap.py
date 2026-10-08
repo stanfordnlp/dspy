@@ -168,3 +168,31 @@ def test_validation_set_usage():
 
     # Check that validation examples are part of student's demos after compilation
     assert len(compiled_student.predictor.demos) >= len(valset), "Validation set not used in compiled student demos"
+
+
+@pytest.mark.parametrize(
+    ("metric_value", "metric_threshold", "expected_demos"),
+    [
+        (0.0, 0.0, 1),
+        (-0.1, 0.0, 0),
+        (0.0, 0.01, 0),
+        (0.0, -0.01, 1),
+    ],
+)
+def test_metric_threshold_zero_is_applied(metric_value, metric_threshold, expected_demos):
+    # A threshold of 0.0 must be compared numerically rather than treated as unset.
+    def metric(example, prediction, trace=None):
+        return metric_value
+
+    dspy.configure(lm=DummyLM([{"output": "blue"}]))
+    bootstrap = BootstrapFewShot(
+        metric=metric,
+        metric_threshold=metric_threshold,
+        max_bootstrapped_demos=1,
+        max_labeled_demos=0,
+    )
+    compiled_student = bootstrap.compile(
+        SimpleModule("input -> output"), teacher=SimpleModule("input -> output"), trainset=trainset
+    )
+
+    assert len(compiled_student.predictor.demos) == expected_demos
