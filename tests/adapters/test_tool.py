@@ -1,8 +1,8 @@
 import asyncio
-from typing import Any
+from typing import Annotated, Any
 
 import pytest
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter
 
 import dspy
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls, convert_input_schema_to_tool_args
@@ -775,3 +775,24 @@ def test_tool_call_execute_with_local_functions():
             globals().pop("local_add", None)
 
     main()
+
+def test_tool_annotated_field_metadata_reaches_schema_and_validation():
+    """Annotated Field descriptions and bounds must survive into the tool schema."""
+
+    def get_forecast(
+        city: Annotated[str, Field(description="City name")],
+        days: Annotated[int, Field(description="Days to forecast", ge=1, le=7)] = 3,
+    ) -> str:
+        """Get the weather forecast."""
+        return f"{days}-day forecast for {city}"
+
+    tool = dspy.Tool(get_forecast)
+    assert tool.args["city"]["description"] == "City name"
+    assert tool.args["days"]["description"] == "Days to forecast"
+    assert tool.args["days"]["minimum"] == 1
+    assert tool.args["days"]["maximum"] == 7
+    assert tool.args["days"]["default"] == 3
+    assert tool(city="Paris", days=3) == "3-day forecast for Paris"
+    with pytest.raises(ValueError, match="days"):
+        tool(city="Paris", days=0)
+

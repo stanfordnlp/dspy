@@ -92,7 +92,8 @@ class Tool(Type):
         # Use inspect.signature to get all arg names
         sig = inspect.signature(annotations_func)
         # Get available type hints
-        available_hints = get_type_hints(annotations_func)
+        # include_extras keeps Annotated[T, Field(...)] metadata (descriptions, ge/le).
+        available_hints = get_type_hints(annotations_func, include_extras=True)
         # Build a dictionary of arg name -> type (defaulting to Any when missing)
         hints = {param_name: available_hints.get(param_name, Any) for param_name in sig.parameters.keys()}
         default_values = {param_name: sig.parameters[param_name].default for param_name in sig.parameters.keys()}
