@@ -44,6 +44,16 @@ def _is_openai_reasoning_model(model: str) -> bool:
     ) is not None
 
 
+def _validate_reasoning_model_settings(model: str, provider: str, temperature, max_tokens):
+    if (temperature and temperature != 1.0) or (max_tokens and max_tokens < 16000):
+        raise LMConfigurationError(
+            "OpenAI's reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None to "
+            "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5', temperature=1.0, max_tokens=16000)",
+            model=model,
+            provider=provider,
+        )
+
+
 _ENGINE_SELECTIONS = ("auto", "lm15", "litellm")
 # Serialized custom engines: {"class": "pkg.module:Qual.Name", "state": {...}}.
 _ENGINE_CLASS_KEY = "class"
@@ -301,13 +311,7 @@ class LM(BaseLM):
     def _get_initial_kwargs(self, *, temperature, max_tokens, **kwargs) -> dict[str, Any]:
         # Override BaseLM's default kwargs shape for LiteLLM/model-family-specific token parameters.
         if _is_openai_reasoning_model(self.model):
-            if (temperature and temperature != 1.0) or (max_tokens and max_tokens < 16000):
-                raise LMConfigurationError(
-                    "OpenAI's reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None to "
-                    "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5', temperature=1.0, max_tokens=16000)",
-                    model=self.model,
-                    provider=self._provider_name,
-                )
+            _validate_reasoning_model_settings(self.model, self._provider_name, temperature, max_tokens)
             initial_kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
         else:
             initial_kwargs = super()._get_initial_kwargs(temperature=temperature, max_tokens=max_tokens, **kwargs)
@@ -466,6 +470,23 @@ class LM(BaseLM):
         _check_engines(spec, async_spec)
         _refuse_client_settings(spec, {**self.kwargs, **kwargs}, where="LM.copy")
         copied = super().copy(**kwargs)
+
+        # BaseLM.copy() intentionally preserves generic copy semantics and
+        # does not repeat constructor validation. Validate the effective
+        # settings when the resulting model is in the reasoning family, while
+        # leaving kwargs untouched and matching request preparation's alias handling.
+        if _is_openai_reasoning_model(copied.model):
+            temperature = copied.kwargs.get("temperature")
+            token_limits = {
+                key: copied.kwargs[key]
+                for key in ("max_completion_tokens", "max_tokens")
+                if copied.kwargs.get(key) is not None
+            }
+            if len(set(map(repr, token_limits.values()))) > 1:
+                raise ValueError(f"max_tokens and max_completion_tokens disagree: {token_limits}")
+            max_tokens = next(iter(token_limits.values()), None)
+            _validate_reasoning_model_settings(copied.model, copied._provider_name, temperature, max_tokens)
+
         copied._engine_spec = spec
         copied._async_engine_spec = async_spec
         return copied

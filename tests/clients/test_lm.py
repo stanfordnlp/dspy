@@ -443,6 +443,77 @@ def test_reasoning_model_requirements(model_name):
     assert lm.kwargs["max_completion_tokens"] is None
 
 
+def test_lm_copy_applies_reasoning_model_validation_when_model_changes():
+    with pytest.raises(
+        dspy.LMConfigurationError,
+        match=r"reasoning models require passing temperature=1\.0 or None and max_tokens >= 16000 or None",
+    ):
+        dspy.LM("openai/gpt-4o", temperature=0.2).copy(model="openai/gpt-5")
+
+    with pytest.raises(
+        dspy.LMConfigurationError,
+        match=r"reasoning models require passing temperature=1\.0 or None and max_tokens >= 16000 or None",
+    ):
+        dspy.LM("openai/gpt-4o", max_tokens=1_000).copy(model="openai/gpt-5")
+
+    lm = dspy.LM("openai/gpt-4o", max_tokens=16_000).copy(model="openai/gpt-5")
+    assert lm.model == "openai/gpt-5"
+    assert lm.kwargs["max_tokens"] == 16_000
+
+    fixed = dspy.LM("openai/gpt-4o", temperature=0.2, max_tokens=1_000).copy(
+        model="openai/gpt-5",
+        temperature=1.0,
+        max_tokens=16_000,
+    )
+    assert fixed.kwargs["temperature"] == 1.0
+    assert fixed.kwargs["max_tokens"] == 16_000
+
+
+def test_lm_copy_validates_reasoning_model_updates_against_constructor_rules():
+    lm = dspy.LM("openai/gpt-5", temperature=1.0, max_tokens=16_000)
+
+    with pytest.raises(
+        dspy.LMConfigurationError,
+        match=r"reasoning models require passing temperature=1\.0 or None and max_tokens >= 16000 or None",
+    ):
+        lm.copy(temperature=0.2)
+
+    with pytest.raises(
+        dspy.LMConfigurationError,
+        match=r"reasoning models require passing temperature=1\.0 or None and max_tokens >= 16000 or None",
+    ):
+        lm.copy(max_completion_tokens=1_000)
+
+    valid = lm.copy(temperature=1.0, rollout_id=1)
+    assert valid.kwargs["temperature"] == 1.0
+    assert valid.kwargs["max_completion_tokens"] == 16_000
+    assert valid.kwargs["rollout_id"] == 1
+
+    cleared = lm.copy(temperature=None)
+    assert "temperature" not in cleared.kwargs
+
+
+def test_lm_copy_validates_effective_token_aliases_after_base_copy():
+    from dspy.clients.execution import _canonical, prepare
+
+    lm = dspy.LM("openai/gpt-4o", max_completion_tokens=1_000)
+
+    # BaseLM.copy() removes the explicit None alias, leaving the inherited
+    # completion-token cap as the value request preparation would use.
+    with pytest.raises(dspy.LMConfigurationError, match="max_tokens >= 16000"):
+        lm.copy(model="openai/gpt-5", max_tokens=None)
+
+    # Different non-None aliases are rejected during canonical request
+    # preparation too, so copy should report the same ambiguity up front.
+    with pytest.raises(ValueError, match="max_tokens and max_completion_tokens disagree"):
+        lm.copy(model="openai/gpt-5", max_tokens=16_000)
+
+    equal_aliases = dspy.LM("openai/gpt-4o", max_completion_tokens=16_000).copy(model="openai/gpt-5", max_tokens=16_000)
+    assert equal_aliases.kwargs["max_tokens"] == equal_aliases.kwargs["max_completion_tokens"] == 16_000
+    request = _canonical(prepare(equal_aliases, "hello", None, {}))
+    assert request.config.max_tokens == 16_000
+
+
 def test_gpt_5_chat_not_reasoning_model():
     """Test that gpt-5-chat is NOT treated as a reasoning model."""
     # Should NOT raise validation error - gpt-5-chat is not a reasoning model
