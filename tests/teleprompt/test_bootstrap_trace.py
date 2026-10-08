@@ -6,9 +6,9 @@ from litellm import Choices, Message, ModelResponse
 
 import dspy
 from dspy.primitives.example import Example
-from dspy.utils.exceptions import AdapterParseError
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, bootstrap_trace_data
 from dspy.utils import DummyLM
+from dspy.utils.exceptions import AdapterParseError
 
 
 def test_bootstrap_trace_data():
@@ -206,7 +206,7 @@ def test_bootstrap_trace_partial_credit_and_zero_reward():
     program = dspy.Predict(TwoFieldSignature)
     dataset = [Example(text="one", number=1, explanation="e").with_inputs("text")]
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
 
     partial_response = ModelResponse(
         choices=[Choices(message=Message(content='```json\n{"number": 1}\n```'))],
@@ -242,7 +242,7 @@ def test_bootstrap_trace_zero_output_signature_skips_fractional_credit():
     program = dspy.Predict(ZeroOutputSignature)
     dataset = [Example(text="one").with_inputs("text")]
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
 
     with mock.patch(
         "dspy.adapters.json_adapter.JSONAdapter.parse",
