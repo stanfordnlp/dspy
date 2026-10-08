@@ -2,6 +2,7 @@ import csv
 import importlib
 import json
 import logging
+import sys
 import types
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -371,7 +372,15 @@ def display_dataframe(df: "pd.DataFrame"):
         with pd.option_context(
             "display.max_rows", None, "display.max_columns", None
         ):  # more options can be specified also
-            print(df)
+            try:
+                print(df)
+            except UnicodeEncodeError:
+                # Some consoles (e.g. the default Windows terminal, or a non-UTF-8 locale)
+                # cannot encode characters such as the checkmark used in stylize_metric_name.
+                # Fall back to a representation that is safe for the current stdout encoding
+                # instead of crashing after the evaluation has already finished.
+                encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+                print(str(df).encode(encoding, errors="replace").decode(encoding))
 
 
 def configure_dataframe_for_ipython_notebook_display(df: "pd.DataFrame") -> "pd.DataFrame":
