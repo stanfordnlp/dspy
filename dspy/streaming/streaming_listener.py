@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 import re
 from collections import defaultdict
 from queue import Queue
@@ -15,6 +16,7 @@ from dspy.streaming.messages import StreamResponse
 from dspy.utils.lazy_import import require
 
 jiter = require("jiter")
+json_repair = require("json_repair")
 
 if TYPE_CHECKING:
     from litellm import ModelResponseStream
@@ -55,9 +57,11 @@ class StreamListener:
         self.cache_hit = False
         self.allow_reuse = allow_reuse
 
-        self.json_adapter_state = {"field_accumulated_messages": ""}
+        self.json_adapter_state = {"field_accumulated_messages": "", "emitted_length": 0, "response_complete": False}
         self.value_started = False
         self.held_whitespace = ""
+        self.xml_leading_whitespace = ""
+        self.xml_has_child_markup = False
 
         self.adapter_identifiers = {
             "ChatAdapter": {
@@ -131,15 +135,41 @@ class StreamListener:
 
         if self.stream_end:
             if self.allow_reuse:
+                if isinstance(settings.adapter, JSONAdapter) and self._output_type is str:
+                    try:
+                        message = chunk.choices[0].delta.content
+                        finish_reason = chunk.choices[0].finish_reason
+                    except Exception:
+                        return
+                    if not message:
+                        if finish_reason is not None:
+                            self.json_adapter_state["response_complete"] = True
+                        return
+                    if finish_reason is not None and not self.json_adapter_state["response_complete"]:
+                        self.json_adapter_state["response_complete"] = True
+                        return
+                    if not self.json_adapter_state["response_complete"]:
+                        try:
+                            jiter.from_json(self.json_adapter_state["field_accumulated_messages"].encode("utf-8"))
+                        except ValueError:
+                            # This field ended, but the rest of its response is still arriving.
+                            self.json_adapter_state["field_accumulated_messages"] += message
+                            return
+                        if not message.lstrip().startswith("{"):
+                            return
                 # Clear up the state for the next stream.
                 self.stream_end = False
                 self.cache_hit = False
                 self.field_start_queue = []
                 self.field_end_queue = Queue()
                 self.json_adapter_state["field_accumulated_messages"] = ""
+                self.json_adapter_state["emitted_length"] = 0
+                self.json_adapter_state["response_complete"] = False
                 self.stream_start = False
                 self.value_started = False
                 self.held_whitespace = ""
+                self.xml_leading_whitespace = ""
+                self.xml_has_child_markup = False
             else:
                 return
 
@@ -161,8 +191,20 @@ class StreamListener:
         # For non-custom streamable types, the streaming chunks come from the content field of the ModelResponseStream.
         try:
             chunk_message = chunk.choices[0].delta.content
-            if chunk_message is None:
+            if not chunk_message:
+                if (
+                    isinstance(settings.adapter, JSONAdapter)
+                    and self._output_type is str
+                    and chunk.choices[0].finish_reason is not None
+                ):
+                    return self.finalize()
                 return
+            if (
+                isinstance(settings.adapter, JSONAdapter)
+                and self._output_type is str
+                and chunk.choices[0].finish_reason is not None
+            ):
+                self.json_adapter_state["response_complete"] = True
         except Exception:
             return
 
@@ -184,7 +226,13 @@ class StreamListener:
             # ChatAdapter to identify the start of the stream of our target field. Once the start_indicator, i.e., "[["
             # for ChatAdapter, is found, we start checking the next tokens
             self.field_start_queue.append(chunk_message)
-            return
+            if (
+                not isinstance(settings.adapter, JSONAdapter)
+                or self._output_type is not str
+                or start_identifier not in chunk_message
+            ):
+                return
+            chunk_message = ""
 
         if len(self.field_start_queue) > 0 and not self.stream_start:
             # We keep appending the tokens to the queue until we have a full identifier or the concanated
@@ -198,7 +246,9 @@ class StreamListener:
                 self.field_start_queue = []
                 # Keep the part after the start_identifier from the concat_message, we need to write it to the buffer.
                 value_start_index = concat_message.find(start_identifier) + len(start_identifier)
-                chunk_message = concat_message[value_start_index:].lstrip()
+                chunk_message = concat_message[value_start_index:]
+                if not isinstance(settings.adapter, XMLAdapter):
+                    chunk_message = chunk_message.lstrip()
 
                 if isinstance(settings.adapter, JSONAdapter):
                     # For JSONAdapter, we rely on partial json parsing to detect the end of the field we are listening
@@ -217,6 +267,12 @@ class StreamListener:
                 return
 
         if self.stream_start and chunk_message:
+            if isinstance(settings.adapter, JSONAdapter) and self._output_type is str:
+                if chunk.choices[0].finish_reason is not None:
+                    self.json_adapter_state["field_accumulated_messages"] += chunk_message
+                    return self.finalize()
+                return self._json_adapter_handle_string_chunk(chunk_message)
+
             # The stream is started, we keep returning the token until we see the start of the next field.
             self.field_end_queue.put(chunk_message)
 
@@ -242,6 +298,38 @@ class StreamListener:
             else:
                 # Other adapters rely on the end_identifier to detect the end of the field we are listening to.
                 return self._default_handle_stream_chunk(token, end_identifier)
+
+    def _json_adapter_handle_string_chunk(self, chunk_message: str) -> StreamResponse | None:
+        self.json_adapter_state["field_accumulated_messages"] += chunk_message
+        accumulated = self.json_adapter_state["field_accumulated_messages"].encode("utf-8")
+        try:
+            parsed = jiter.from_json(accumulated, partial_mode="trailing-strings")
+            value = parsed.get(self.signature_field_name)
+            if not isinstance(value, str):
+                # JSONAdapter also accepts non-string JSON values in str fields.
+                # Decode the complete value, then use the adapter's str coercion.
+                start_identifier = self.adapter_identifiers["JSONAdapter"]["start_identifier"]
+                value_source = self.json_adapter_state["field_accumulated_messages"][
+                    len(start_identifier) + 1 :
+                ].lstrip()
+                value, end = json.JSONDecoder().raw_decode(value_source)
+                if end == len(value_source) or value_source[end] not in " \t\r\n,}":
+                    # A partial number like 4 may still become 42 or 4e2.
+                    return None
+                self.stream_end = True
+                return StreamResponse(self.predict_name, self.signature_field_name, str(value), is_last_chunk=True)
+            # Unlike trailing-strings mode, partial_mode=True omits unfinished strings.
+            # A completed value ends this field even if the same chunk contains the next field.
+            completed = jiter.from_json(accumulated, partial_mode=True)
+        except ValueError:
+            # An escape sequence may be split across provider chunks.
+            return None
+
+        self.stream_end = self.signature_field_name in completed
+        token = value[self.json_adapter_state["emitted_length"] :]
+        self.json_adapter_state["emitted_length"] = len(value)
+        if token or self.stream_end:
+            return StreamResponse(self.predict_name, self.signature_field_name, token, is_last_chunk=self.stream_end)
 
     def _json_adapter_handle_stream_chunk(self, token: str, chunk_message: str) -> StreamResponse | None:
         self.json_adapter_state["field_accumulated_messages"] += chunk_message
@@ -304,11 +392,60 @@ class StreamListener:
             self.stream_end = True
             last_token = self.flush()
             token = token + last_token if token else last_token
-            token = token.rstrip()  # Remove the trailing \n\n
+            if not (isinstance(settings.adapter, XMLAdapter) and self._output_type is str):
+                token = token.rstrip()  # Remove the trailing \n\n
+        if isinstance(settings.adapter, XMLAdapter) and self._output_type is str:
+            return self._xml_adapter_handle_string_chunk(token)
 
         # The parsed field value is stripped, so drop leading whitespace and hold back trailing whitespace until more
         # text arrives. Otherwise the newlines around the field headers leak into the chunks depending on how the
         # provider splits the stream.
+        if token and not self.value_started:
+            token = token.lstrip()
+        if token:
+            stripped = token.rstrip()
+            if stripped:
+                self.value_started = True
+                token, self.held_whitespace = self.held_whitespace + stripped, token[len(stripped) :]
+            else:
+                self.held_whitespace += token
+                token = ""
+
+        if token or self.stream_end:
+            return StreamResponse(
+                self.predict_name,
+                self.signature_field_name,
+                token,
+                is_last_chunk=self.stream_end,
+            )
+
+    def _xml_adapter_handle_string_chunk(self, token: str) -> StreamResponse | None:
+        """Preserve raw XML string content when the value contains child markup."""
+        if self.xml_leading_whitespace or (token and not self.value_started and token[0].isspace()):
+            self.xml_leading_whitespace += token
+            if re.search(r"<(?!/|\?|!)[A-Za-z_][^>]*>", self.xml_leading_whitespace):
+                self.xml_has_child_markup = True
+                token = self.xml_leading_whitespace
+                self.xml_leading_whitespace = ""
+            elif self.stream_end:
+                token = self.xml_leading_whitespace.strip()
+                self.xml_leading_whitespace = ""
+            else:
+                return None
+        elif re.search(r"<(?!/|\?|!)[A-Za-z_][^>]*>", token):
+            self.xml_has_child_markup = True
+            token = self.held_whitespace + token
+            self.held_whitespace = ""
+
+        if self.xml_has_child_markup:
+            if token or self.stream_end:
+                return StreamResponse(
+                    self.predict_name, self.signature_field_name, token, is_last_chunk=self.stream_end
+                )
+            return None
+
+        # Childless XML strings are stripped by XMLAdapter. Match that behavior while
+        # holding initial whitespace until we know whether it is meaningful XML text.
         if token and not self.value_started:
             token = token.lstrip()
         if token:
@@ -365,11 +502,22 @@ class StreamListener:
             A StreamResponse with the remaining buffered tokens and is_last_chunk=True,
             or None if there are no buffered tokens or the stream hasn't started.
         """
+        if isinstance(settings.adapter, JSONAdapter) and self._output_type is str:
+            # A top-level Prediction is also a response boundary for repaired JSON.
+            self.json_adapter_state["response_complete"] = True
         if self.stream_end or not self.stream_start:
             # Stream already ended or never started, nothing to finalize
             return None
 
         self.stream_end = True
+        if isinstance(settings.adapter, JSONAdapter) and self._output_type is str:
+            # JSONAdapter accepts repaired/truncated JSON; drain the new string buffer
+            # with the same repair and coercion rather than silently losing the field.
+            parsed = json_repair.loads(self.json_adapter_state["field_accumulated_messages"])
+            if isinstance(parsed, dict) and self.signature_field_name in parsed:
+                value = str(parsed[self.signature_field_name])
+                token = value[self.json_adapter_state["emitted_length"] :]
+                return StreamResponse(self.predict_name, self.signature_field_name, token, is_last_chunk=True)
         if self.field_end_queue.qsize() > 0:
             token = self.flush()
             if token:

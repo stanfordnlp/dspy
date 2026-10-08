@@ -575,6 +575,137 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter():
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    "parts, expected",
+    [
+        (
+            ['{"', "summary", '":', ' "', "Paris", " is", " big", '.",', ' "', "answer", '":', ' "', "Paris", '"', "}"],
+            {"summary": "Paris is big.", "answer": "Paris"},
+        ),
+        (['{"summary": "Paris is', ' big.", "answer": "Paris', '"}'], {"summary": "Paris is big.", "answer": "Paris"}),
+        (['{"summary": "Paris is big.", "answer": "Paris"}'], {"summary": "Paris is big.", "answer": "Paris"}),
+        (['{"summary": ', "4", "2", ', "answer": ', "4", "2", "}"], {"summary": "42", "answer": "42"}),
+        (['{"summary": tr', 'ue, "answer": fal', "se}"], {"summary": "True", "answer": "False"}),
+        (['{"summary": 42, "answer": ', "42"], {"summary": "42", "answer": "42"}),
+        (['{"summary": "', "line\nbreak", '", "answer": "ok"}'], {"summary": "line\nbreak", "answer": "ok"}),
+    ],
+    ids=[
+        "token-sized",
+        "multi-token",
+        "single-chunk",
+        "coerced-number",
+        "coerced-boolean",
+        "truncated-number",
+        "repaired-newline",
+    ],
+)
+async def test_stream_listener_json_adapter_field_boundary(parts, expected):
+    async def stream(*args, **kwargs):
+        for part in parts:
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=part))])
+
+    program = dspy.streamify(
+        dspy.Predict("question -> summary, answer"),
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name=field) for field in expected],
+    )
+    content = dict.fromkeys(expected, "")
+    final_fields = set()
+    prediction = None
+    with mock.patch("litellm.acompletion", side_effect=stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()):
+            async for value in program(question="q"):
+                if isinstance(value, StreamResponse):
+                    field = value.signature_field_name
+                    content[field] += value.chunk
+                    assert expected[field].startswith(content[field])
+                    if value.is_last_chunk:
+                        assert content[field] == expected[field]
+                        assert field not in final_fields
+                        final_fields.add(field)
+                elif isinstance(value, dspy.Prediction):
+                    prediction = value
+
+    assert content == expected
+    assert final_fields == expected.keys()
+    assert prediction is not None
+    assert prediction.summary == expected["summary"]
+    assert prediction.answer == expected["answer"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("annotation, answer", [("int", 42), ("list[int]", [1, 2])])
+async def test_stream_listener_json_adapter_typed_single_chunk(annotation, answer):
+    async def stream(*args, **kwargs):
+        content = f'{{"answer": {answer}, "other": "other"}}'
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=content))])
+
+    program = dspy.streamify(
+        dspy.Predict(f"question -> answer: {annotation}, other: str"),
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        include_final_prediction_in_output_stream=False,
+    )
+    with mock.patch("litellm.acompletion", side_effect=stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()):
+            values = [value async for value in program(question="q")]
+    assert len(values) == 1
+    assert isinstance(values[0], dspy.Prediction)
+    assert values[0].answer == answer
+    assert values[0].other == "other"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "prefix, combined_finish, truncated",
+    [("", False, False), ("", True, False), ("```json\n", False, False), ("```json\n", True, False), ("", True, True)],
+)
+async def test_stream_listener_json_adapter_reuse_at_response_boundary(prefix, combined_finish, truncated):
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = dspy.Predict("question -> answer, other: dict[str, str]")
+
+        def forward(self, question):
+            self.predict(question=question)
+            return self.predict(question=question)
+
+    call_count = 0
+
+    async def stream(*args, **kwargs):
+        nonlocal call_count
+        parts = [
+            prefix + '{"answer":',
+            ' "good",',
+            ' "other": {"answer":',
+            ' "bad"}}' + ("\n```" if prefix else ""),
+        ]
+        if truncated and call_count % 2 == 0:
+            parts = ['{"other": {}, "answer":', "42"]
+        call_count += 1
+        for index, part in enumerate(parts):
+            finish_reason = "stop" if combined_finish and index == len(parts) - 1 else None
+            yield ModelResponseStream(
+                model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=part), finish_reason=finish_reason)]
+            )
+        if not combined_finish:
+            yield ModelResponseStream(
+                model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=None), finish_reason="stop")]
+            )
+
+    program = dspy.streamify(
+        MyProgram(),
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer", allow_reuse=True)],
+        include_final_prediction_in_output_stream=False,
+    )
+    with mock.patch("litellm.acompletion", side_effect=stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()):
+            for _ in range(2):
+                values = [value async for value in program(question="q")]
+                assert all(isinstance(value, StreamResponse) for value in values)
+                assert [value.chunk for value in values] == (["42", "good"] if truncated else ["good", "good"])
+                assert all(value.is_last_chunk for value in values)
+
+
+@pytest.mark.anyio
 async def test_stream_listener_returns_correct_chunk_json_adapter():
     class MyProgram(dspy.Module):
         def __init__(self):
@@ -651,7 +782,7 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
 
         assert all_chunks[0].predict_name == "predict1"
         assert all_chunks[0].signature_field_name == "answer"
-        assert all_chunks[0].chunk == '"To'
+        assert all_chunks[0].chunk == "To"
         assert all_chunks[1].chunk == " get"
         assert all_chunks[2].chunk == " to"
         assert all_chunks[3].chunk == " the"
@@ -661,12 +792,12 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
         assert all_chunks[7].chunk == " the"
         assert all_chunks[8].chunk == " frying"
         assert all_chunks[9].chunk == " pan"
-        assert all_chunks[10].chunk == '!"'
+        assert all_chunks[10].chunk == "!"
         assert all_chunks[10].is_last_chunk is True
 
         assert all_chunks[11].predict_name == "predict2"
         assert all_chunks[11].signature_field_name == "judgement"
-        assert all_chunks[11].chunk == '"The'
+        assert all_chunks[11].chunk == "The"
         assert all_chunks[12].chunk == " answer"
         assert all_chunks[13].chunk == " is"
         assert all_chunks[14].chunk == " humorous"
@@ -680,7 +811,7 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
         assert all_chunks[22].chunk == " classic"
         assert all_chunks[23].chunk == " joke"
         assert all_chunks[24].chunk == " format"
-        assert all_chunks[25].chunk == '."'
+        assert all_chunks[25].chunk == "."
         assert all_chunks[25].is_last_chunk is True
 
 
@@ -881,13 +1012,16 @@ async def test_stream_listener_returns_correct_chunk_json_adapter_untokenized_st
         assert all_chunks[0].predict_name == "predict1"
         assert all_chunks[0].signature_field_name == "answer"
 
-        assert all_chunks[0].chunk == '"To get to the other side... of the cutting board!"'
-
-        assert all_chunks[1].predict_name == "predict2"
-        assert all_chunks[1].signature_field_name == "judgement"
-        assert (
-            all_chunks[1].chunk == '"The answer provides a humorous and relevant punchline to the classic joke setup."'
+        answer_chunks = [chunk for chunk in all_chunks if chunk.signature_field_name == "answer"]
+        judgement_chunks = [chunk for chunk in all_chunks if chunk.signature_field_name == "judgement"]
+        assert all(chunk.predict_name == "predict1" for chunk in answer_chunks)
+        assert all(chunk.predict_name == "predict2" for chunk in judgement_chunks)
+        assert "".join(chunk.chunk for chunk in answer_chunks) == "To get to the other side... of the cutting board!"
+        assert "".join(chunk.chunk for chunk in judgement_chunks) == (
+            "The answer provides a humorous and relevant punchline to the classic joke setup."
         )
+        assert answer_chunks[-1].is_last_chunk is True
+        assert judgement_chunks[-1].is_last_chunk is True
 
 
 @pytest.mark.anyio
