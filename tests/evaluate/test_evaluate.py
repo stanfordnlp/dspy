@@ -1,3 +1,4 @@
+import csv
 import json
 import signal
 import tempfile
@@ -478,6 +479,93 @@ def test_evaluate_save_as_csv_with_history():
         import os
         if os.path.exists(temp_csv):
             os.unlink(temp_csv)
+
+
+@pytest.mark.parametrize("example_order", [(0, 1), (1, 0)])
+@pytest.mark.parametrize("num_threads", [1, 2])
+@pytest.mark.parametrize("failure_score", [0.0, 0.25])
+def test_evaluate_save_as_csv_with_failed_prediction(tmp_path, example_order, num_threads, failure_score):
+    class Program(dspy.Module):
+        def forward(self, x):
+            if x == 1:
+                raise RuntimeError("controlled failure")
+            return dspy.Prediction(answer="pred-0")
+
+    examples = [dspy.Example(x=i, answer=f"gold-{i}").with_inputs("x") for i in example_order]
+    csv_path = tmp_path / "results.csv"
+
+    def graded(example, prediction):
+        return 1.0
+
+    evaluator = Evaluate(
+        devset=examples,
+        metric=graded,
+        num_threads=num_threads,
+        max_errors=10,
+        display_progress=False,
+        failure_score=failure_score,
+        save_as_csv=str(csv_path),
+    )
+
+    result = evaluator(Program())
+
+    assert result.score == round(100 * (1 + failure_score) / 2, 2)
+    assert [score for _, _, score in result.results] == [1.0 if i == 0 else failure_score for i in example_order]
+
+    with csv_path.open(newline="", encoding="utf-8") as csvfile:
+        reader = csv.DictReader(csvfile)
+        rows = list(reader)
+
+    assert len(rows) == 2
+    assert [int(row["x"]) for row in rows] == list(example_order)
+    expected_fieldnames = (
+        ["x", "example_answer", "pred_answer", "graded", "answer"]
+        if example_order[0] == 0
+        else ["x", "answer", "graded", "example_answer", "pred_answer"]
+    )
+    assert reader.fieldnames == expected_fieldnames
+    successful_row = rows[example_order.index(0)]
+    failed_row = rows[example_order.index(1)]
+    assert successful_row["example_answer"] == "gold-0"
+    assert successful_row["pred_answer"] == "pred-0"
+    assert successful_row["answer"] == ""
+    assert successful_row["graded"] == "1.0"
+    assert failed_row["answer"] == "gold-1"
+    assert failed_row["example_answer"] == ""
+    assert failed_row["pred_answer"] == ""
+    assert failed_row["graded"] == str(failure_score)
+
+
+def test_evaluate_save_as_csv_with_later_prediction_fields(tmp_path):
+    class Program(dspy.Module):
+        def forward(self, x):
+            if x == 0:
+                return dspy.Prediction(answer="pred-0")
+            return dspy.Prediction(answer="pred-1", explanation="later field")
+
+    examples = [dspy.Example(x=i, answer=f"gold-{i}").with_inputs("x") for i in range(2)]
+    csv_path = tmp_path / "results.csv"
+
+    def graded(example, prediction):
+        return 1.0
+
+    evaluator = Evaluate(
+        devset=examples,
+        metric=graded,
+        display_progress=False,
+        save_as_csv=str(csv_path),
+    )
+
+    result = evaluator(Program())
+
+    assert result.score == 100.0
+    with csv_path.open(newline="", encoding="utf-8") as csvfile:
+        reader = csv.DictReader(csvfile)
+        rows = list(reader)
+
+    assert reader.fieldnames == ["x", "example_answer", "pred_answer", "graded", "explanation"]
+    assert rows[0]["explanation"] == ""
+    assert rows[1]["explanation"] == "later field"
 
 
 def test_evaluate_raises_on_empty_devset():
