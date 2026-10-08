@@ -196,3 +196,31 @@ def test_metric_threshold_zero_is_applied(metric_value, metric_threshold, expect
     )
 
     assert len(compiled_student.predictor.demos) == expected_demos
+
+
+@pytest.mark.parametrize(
+    ("metric_value", "expected_demos"),
+    [
+        (0.0, 0),
+        (False, 0),
+        (1.0, 1),
+        (True, 1),
+    ],
+)
+def test_metric_threshold_none_uses_metric_value_as_success(metric_value, expected_demos):
+    # With no threshold, the metric's own (truthy/falsy) value decides success.
+    def metric(example, prediction, trace=None):
+        return metric_value
+
+    dspy.configure(lm=DummyLM([{"output": "blue"}]))
+    bootstrap = BootstrapFewShot(
+        metric=metric,
+        metric_threshold=None,
+        max_bootstrapped_demos=1,
+        max_labeled_demos=0,
+    )
+    compiled_student = bootstrap.compile(
+        SimpleModule("input -> output"), teacher=SimpleModule("input -> output"), trainset=trainset
+    )
+
+    assert len(compiled_student.predictor.demos) == expected_demos
