@@ -60,6 +60,8 @@ class StreamListener:
         self.json_adapter_state = {"field_accumulated_messages": "", "emitted_length": 0, "response_complete": False}
         self.value_started = False
         self.held_whitespace = ""
+        self.xml_leading_whitespace = ""
+        self.xml_has_child_markup = False
 
         self.adapter_identifiers = {
             "ChatAdapter": {
@@ -166,6 +168,8 @@ class StreamListener:
                 self.stream_start = False
                 self.value_started = False
                 self.held_whitespace = ""
+                self.xml_leading_whitespace = ""
+                self.xml_has_child_markup = False
             else:
                 return
 
@@ -242,7 +246,9 @@ class StreamListener:
                 self.field_start_queue = []
                 # Keep the part after the start_identifier from the concat_message, we need to write it to the buffer.
                 value_start_index = concat_message.find(start_identifier) + len(start_identifier)
-                chunk_message = concat_message[value_start_index:].lstrip()
+                chunk_message = concat_message[value_start_index:]
+                if not isinstance(settings.adapter, XMLAdapter):
+                    chunk_message = chunk_message.lstrip()
 
                 if isinstance(settings.adapter, JSONAdapter):
                     # For JSONAdapter, we rely on partial json parsing to detect the end of the field we are listening
@@ -386,11 +392,60 @@ class StreamListener:
             self.stream_end = True
             last_token = self.flush()
             token = token + last_token if token else last_token
-            token = token.rstrip()  # Remove the trailing \n\n
+            if not (isinstance(settings.adapter, XMLAdapter) and self._output_type is str):
+                token = token.rstrip()  # Remove the trailing \n\n
+        if isinstance(settings.adapter, XMLAdapter) and self._output_type is str:
+            return self._xml_adapter_handle_string_chunk(token)
 
         # The parsed field value is stripped, so drop leading whitespace and hold back trailing whitespace until more
         # text arrives. Otherwise the newlines around the field headers leak into the chunks depending on how the
         # provider splits the stream.
+        if token and not self.value_started:
+            token = token.lstrip()
+        if token:
+            stripped = token.rstrip()
+            if stripped:
+                self.value_started = True
+                token, self.held_whitespace = self.held_whitespace + stripped, token[len(stripped) :]
+            else:
+                self.held_whitespace += token
+                token = ""
+
+        if token or self.stream_end:
+            return StreamResponse(
+                self.predict_name,
+                self.signature_field_name,
+                token,
+                is_last_chunk=self.stream_end,
+            )
+
+    def _xml_adapter_handle_string_chunk(self, token: str) -> StreamResponse | None:
+        """Preserve raw XML string content when the value contains child markup."""
+        if self.xml_leading_whitespace or (token and not self.value_started and token[0].isspace()):
+            self.xml_leading_whitespace += token
+            if re.search(r"<(?!/|\?|!)[A-Za-z_][^>]*>", self.xml_leading_whitespace):
+                self.xml_has_child_markup = True
+                token = self.xml_leading_whitespace
+                self.xml_leading_whitespace = ""
+            elif self.stream_end:
+                token = self.xml_leading_whitespace.strip()
+                self.xml_leading_whitespace = ""
+            else:
+                return None
+        elif re.search(r"<(?!/|\?|!)[A-Za-z_][^>]*>", token):
+            self.xml_has_child_markup = True
+            token = self.held_whitespace + token
+            self.held_whitespace = ""
+
+        if self.xml_has_child_markup:
+            if token or self.stream_end:
+                return StreamResponse(
+                    self.predict_name, self.signature_field_name, token, is_last_chunk=self.stream_end
+                )
+            return None
+
+        # Childless XML strings are stripped by XMLAdapter. Match that behavior while
+        # holding initial whitespace until we know whether it is meaningful XML text.
         if token and not self.value_started:
             token = token.lstrip()
         if token:
