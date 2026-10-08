@@ -1,5 +1,5 @@
 source=https://github.com/cmpnd-ai/lm15-python.git
 version=1.2.1
-commit=80c7b3a4dd0c024ec3f7c9b37e309325a2ff831b
+commit=1ae34816e0ee522f30189bcee65ab9986ea4a4d9
 contract=0f3ea829eeff53e3b944656f2e52c1dc4b358d95
-split=c84feaba7ecd37585ba7e8413f3e72089937e219
+split=546ad8ceaacb7c5adc7597f23e3da104a49e9812
