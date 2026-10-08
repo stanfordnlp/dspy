@@ -181,6 +181,89 @@ def write_legacy_redirects(repository: Path, branch: str, site: Path, identifier
         commit.add_file(git_utils.FileInfo(LEGACY_REDIRECTS_MANIFEST, manifest))
 
 
+def release_inventory(repository: Path, branch: str):
+    """Require readable Mike inventory for an existing deployment branch."""
+    from mike.versions import Versions
+
+    exists = subprocess.run(
+        ["git", "-C", str(repository), "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+        capture_output=True,
+    )
+    if exists.returncode == 1:
+        return Versions()
+    exists.check_returncode()
+    try:
+        inventory = branch_file(repository, branch, "versions.json")
+        if inventory is None:
+            raise ValueError("missing or unreadable versions.json")
+        entries = json.loads(inventory)
+        if not isinstance(entries, list):
+            raise ValueError("expected a version inventory list")
+        if any(not isinstance(entry["aliases"], list) for entry in entries):
+            raise ValueError("expected an aliases list")
+        return Versions.from_json(entries)
+    except (TypeError, ValueError, KeyError) as error:
+        raise RuntimeError(f"invalid Mike inventory on {branch}: {error}") from error
+
+
+def publish_stable(
+    repository: Path, site: Path, identifier: str, aliases: list[str], package_source: str, branch: str
+) -> bool:
+    """Publish a stable snapshot and prune its prereleases in one Mike commit."""
+    from mike import commands, git_utils
+
+    versions = release_inventory(repository, branch)
+    if not (site / "index.html").is_file():
+        raise RuntimeError("release site is missing index.html")
+    prerelease = re.compile(re.escape(identifier) + r"(?:a|b|rc)[0-9]+")
+    superseded = [str(entry.version) for entry in versions if prerelease.fullmatch(str(entry.version))]
+    if any(versions[version].aliases for version in superseded):
+        raise RuntimeError("superseded prereleases unexpectedly own aliases")
+    minor = identifier.rsplit(".", 1)[0]
+    if versions.find(identifier) not in (None, (identifier,)):
+        raise RuntimeError("unexpected stable version ownership")
+    holder = versions.find(minor)
+    if holder and (len(holder) != 2 or not STABLE_VERSION.fullmatch(holder[0]) or holder[0].rsplit(".", 1)[0] != minor):
+        raise RuntimeError("unexpected stable minor alias ownership")
+    aliases = monotonic_aliases(repository, branch, identifier, aliases)
+
+    deployed = deployed_tree_digest(repository, branch, identifier)
+    if versions.find(identifier) and not deployed:
+        raise RuntimeError(f"invalid Mike inventory: empty snapshot {identifier}")
+    if deployed and deployed != tree_digest(site):
+        raise RuntimeError(f"immutable Mike snapshot {identifier} already exists with different content")
+    if deployed:
+        if not set(aliases).issubset(versions[identifier].aliases):
+            raise RuntimeError(f"invalid Mike inventory: missing stable alias for {identifier}")
+        if not superseded:
+            return False
+    else:
+        info = versions.add(identifier, identifier, aliases, update_aliases=True)
+        info.set_property("renderer", "zensical")
+        info.set_property("package_source", package_source)
+    versions.difference_update(superseded)
+
+    with working_directory(repository):
+        # Mike's deploy/delete commands each commit independently. Use their
+        # primitives so aliases, inventory and pruning share one transaction.
+        with git_utils.Commit(branch, f"Publish DSPy documentation {identifier}") as commit:
+            commit.delete_files(superseded)
+            if not deployed:
+                commit.delete_files(sorted(info.aliases))
+                template = commands._redirect_template()
+                for file in git_utils.walk_real_files(str(site)):
+                    canonical = file.copy(identifier, str(site))
+                    commit.add_file(canonical)
+                    for alias in sorted(info.aliases):
+                        commands._add_redirect_to_commit(
+                            commit, template, file.copy(alias, str(site)).path, canonical.path, True
+                        )
+                commit.add_file(commands.make_nojekyll())
+                commit.add_file(git_utils.FileInfo("vercel.json", HOST_CONFIG))
+            commit.add_file(commands.versions_to_file_info(versions))
+    return True
+
+
 def publish_site(
     *,
     repository: Path,
@@ -197,9 +280,10 @@ def publish_site(
         require_current_renderer(repository, branch, required_current_renderer)
     current = identifier == "current"
     if not current:
-        # Automated publication is append-only. Intentional corrections to an
-        # existing snapshot go through review in the deployment repository.
         version_tuple(identifier)
+        if STABLE_VERSION.fullmatch(identifier):
+            return publish_stable(repository, site, identifier, aliases, package_source, branch)
+        # Intentional corrections to existing snapshots require deployment review.
         aliases = monotonic_aliases(repository, branch, identifier, aliases)
         deployed = deployed_tree_digest(repository, branch, identifier)
         if deployed:
