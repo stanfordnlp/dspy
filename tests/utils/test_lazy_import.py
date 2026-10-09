@@ -1,6 +1,8 @@
 import importlib
 import sys
 import threading
+import time
+import types
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -90,6 +92,74 @@ def test_require_is_safe_under_concurrent_first_use(tmp_path, monkeypatch):
         assert list(executor.map(read_value, range(threads))) == [42] * threads
 
     assert counter_path.read_text() == "1"
+
+
+def test_require_does_not_expose_module_accessed_during_its_own_initialization(tmp_path, monkeypatch):
+    module_name = "dspy_lazy_reentrant_module"
+    hooks = types.SimpleNamespace(started=threading.Event(), release=threading.Event())
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    monkeypatch.setitem(sys.modules, "dspy_lazy_test_hooks", hooks)
+    (tmp_path / f"{module_name}.py").write_text(
+        "import dspy_lazy_test_hooks as hooks\n"
+        "early = 1\n"
+        "assert hooks.proxy.early == 1\n"
+        "hooks.started.set()\n"
+        "assert hooks.release.wait(5)\n"
+        "value = 42\n"
+    )
+    hooks.proxy = require(module_name)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(lambda: hooks.proxy.value)
+        assert hooks.started.wait(5)
+        # The module is still initializing, so another thread must wait instead of seeing the partial module.
+        second = executor.submit(lambda: hooks.proxy.value)
+        time.sleep(0.1)
+        hooks.release.set()
+
+        assert first.result() == 42
+        assert second.result() == 42
+
+
+def test_require_resolves_module_that_replaces_itself_during_initialization(tmp_path, monkeypatch):
+    module_name = "dspy_lazy_replacing_module"
+    hooks = types.SimpleNamespace()
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    monkeypatch.setitem(sys.modules, "dspy_lazy_test_hooks", hooks)
+    (tmp_path / f"{module_name}.py").write_text(
+        "import sys\n"
+        "import types\n"
+        "import dspy_lazy_test_hooks as hooks\n"
+        "early = 1\n"
+        "assert hooks.proxy.early == 1\n"
+        "sys.modules[__name__] = types.SimpleNamespace(value='replacement')\n"
+    )
+    hooks.proxy = require(module_name)
+
+    # A plain import, not the proxy, starts initialization, so the proxy only sees the partial module mid-import.
+    importlib.import_module(module_name)
+
+    assert hooks.proxy.value == "replacement"
+
+
+def test_require_retries_after_failed_import(tmp_path, monkeypatch):
+    module_name = "dspy_lazy_flaky_module"
+    flag = tmp_path / "fail"
+    flag.touch()
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    (tmp_path / f"{module_name}.py").write_text(
+        f"import pathlib\nif pathlib.Path({str(flag)!r}).exists():\n    raise RuntimeError('boom')\nvalue = 42\n"
+    )
+
+    mod = require(module_name)
+    with pytest.raises(RuntimeError, match="boom"):
+        _ = mod.value
+
+    flag.unlink()
+    assert mod.value == 42
 
 
 def test_require_assignment_updates_materialized_module(tmp_path, monkeypatch):
