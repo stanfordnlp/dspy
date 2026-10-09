@@ -148,6 +148,66 @@ def test_error_handling_during_bootstrap():
         bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
 
+def test_teacher_demos_restored_after_failed_bootstrap():
+    class FailingOnceModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = Predict("input -> output")
+            self.seen_demos = []
+
+        def forward(self, **kwargs):
+            self.seen_demos.append(self.predictor.demos)
+            if len(self.seen_demos) == 1:
+                raise RuntimeError("Teacher failed")
+            return dspy.Prediction(output="ok")
+
+    teacher = FailingOnceModule()
+    first = Example(input="first", output="ok").with_inputs("input")
+    second = Example(input="second", output="ok").with_inputs("input")
+    original_demos = [first]
+    teacher.predictor.demos = original_demos
+
+    bootstrap = BootstrapFewShot(max_errors=2)
+    bootstrap.teacher = teacher
+
+    assert not bootstrap._bootstrap_one_example(first)
+    assert teacher.seen_demos[0] == []
+    assert teacher.predictor.demos is original_demos
+
+    assert bootstrap._bootstrap_one_example(second)
+    assert teacher.seen_demos[1] == original_demos
+    assert teacher.predictor.demos is original_demos
+
+
+def test_teacher_swap_does_not_receive_old_predictor_demos():
+    original_predictor = Predict("input -> output")
+    replacement_predictor = Predict("input -> output")
+    first = Example(input="first", output="ok").with_inputs("input")
+    replacement_example = Example(input="replacement", output="ok").with_inputs("input")
+    original_demos = [first]
+    replacement_demos = [replacement_example]
+    original_predictor.demos = original_demos
+    replacement_predictor.demos = replacement_demos
+
+    class SwappingTeacher(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = original_predictor
+
+        def forward(self, **kwargs):
+            self.predictor = replacement_predictor
+            raise RuntimeError("Teacher failed after swapping predictors")
+
+    teacher = SwappingTeacher()
+    bootstrap = BootstrapFewShot(max_errors=2)
+    bootstrap.teacher = teacher
+
+    assert not bootstrap._bootstrap_one_example(first)
+    assert original_predictor.demos is original_demos
+    assert teacher.predictor is replacement_predictor
+    assert replacement_predictor.demos is replacement_demos
+
+
 def test_validation_set_usage():
     """
     Test to ensure the validation set is correctly used during bootstrapping
