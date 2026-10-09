@@ -21,6 +21,7 @@ class TransportRequest:
     connect_timeout: float | None = None
     read_timeout: float | None = None
     write_timeout: float | None = None
+    _admit: Callable[[], None] | None = field(default=None, repr=False, compare=False)
 
 
 class LineSplitter:

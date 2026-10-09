@@ -29,6 +29,7 @@ from ..errors import (
     UnsupportedFeatureError,
 )
 from ..features import EndpointSupport, ProviderManifest
+from ._managed import admit, async_stream, operation, require_unmanaged_live
 from ..sse import aparse_sse
 from ..transports import (
     AsyncTransportResponse,
@@ -157,6 +158,7 @@ class AsyncBaseProviderLM:
         """What a call WOULD adapt (MAP-13), no network, no credential; pure, so sync."""
         return self._inner.plan(request, policy=self.adaptations)
 
+    @operation
     async def complete(self, request: Request) -> Response:
         req, adaptations = await self._build(self._inner._build, request, stream=False, policy=self.adaptations)
         if _client_side_stop(adaptations):
@@ -174,6 +176,7 @@ class AsyncBaseProviderLM:
             _attach_error_metadata(error, resp.headers)
             raise
 
+    @async_stream
     def stream(self, request: Request) -> AsyncIterator[StreamEvent]:
         # MAP-3 (docs/mapping-rules.md): adapters may emit one end event per
         # provider terminal frame; the coalescer merges them so the public
@@ -197,6 +200,10 @@ class AsyncBaseProviderLM:
     async def _stream_raw(self, request: Request, req: "TransportRequest | None" = None) -> AsyncIterator[StreamEvent]:
         if req is None:
             req = await self._build(self._inner.build_request, request, stream=True)
+        if getattr(self, "_managed_admit", None) is not None:
+            await asyncio.to_thread(admit, self, req)
+        else:
+            admit(self, req)
         try:
             async with self.transport.stream(req) as resp:
                 if resp.status >= 400:
@@ -218,6 +225,10 @@ class AsyncBaseProviderLM:
             raise LM15TransportError(str(exc)) from exc
 
     async def _send(self, request: TransportRequest) -> HttpResponse:
+        if getattr(self, "_managed_admit", None) is not None:
+            await asyncio.to_thread(admit, self, request)
+        else:
+            admit(self, request)
         try:
             async with self.transport.stream(request) as resp:
                 body = await resp.read()
@@ -235,6 +246,7 @@ class AsyncBaseProviderLM:
     def normalize_error(self, status: int, body: str) -> ProviderError:
         return self._inner.normalize_error(status, body)
 
+    @operation
     async def list_models(self):
         """Async mirror of BaseProviderLM.list_models (canonical ModelInfo)."""
         resp = await self._send(await self._build(self._inner._models_request))
@@ -244,6 +256,7 @@ class AsyncBaseProviderLM:
 
     # ── Batch: async drivers over the sync adapter's pure hooks ──────
 
+    @operation
     async def batch_submit(self, request: "BatchRequest"):
         self._inner._batch_preflight(request)
         upload_body = None
@@ -264,12 +277,14 @@ class AsyncBaseProviderLM:
             raise self._inner._http_error(resp)
         return _parse_reply(resp, lambda reply: self._inner._batch_job_from_body(reply.text()))
 
+    @operation
     async def batch_status(self, batch_id: str):
         resp = await self._send(await self._build(self._inner._batch_status_request, batch_id))
         if resp.status >= 400:
             raise self._inner._http_error(resp)
         return _parse_reply(resp, lambda reply: self._inner._batch_job_from_body(reply.text()))
 
+    @operation
     async def batch_results(self, batch_id: str):
         from ..types import BATCH_TERMINAL_STATUSES
 
@@ -296,12 +311,14 @@ class AsyncBaseProviderLM:
             texts.append(self._inner._batch_reply_text(status_body, fetched))
         return _parse_reply(resp, lambda reply: self._inner._batch_entries(status_body, tuple(texts)), json_body=False)
 
+    @operation
     async def batch_cancel(self, batch_id: str):
         resp = await self._send(await self._build(self._inner._batch_cancel_request, batch_id))
         if resp.status >= 400:
             raise self._inner._http_error(resp)
         return _parse_reply(resp, lambda reply: self._inner._batch_job_from_body(reply.text()))
 
+    @operation
     async def batch_list(self, limit: int = 20):
         resp = await self._send(await self._build(self._inner._batch_list_request, limit))
         if resp.status >= 400:
@@ -331,6 +348,7 @@ class AsyncBaseProviderLM:
 
     # ── Cache resources: async drivers over the sync adapter's pure hooks ──
 
+    @operation
     async def cache_create(self, prefix: Request, *, ttl_seconds: int | None = None, label: str | None = None):
         self._inner._check_cache_prefix(prefix, ttl_seconds)
         resp = await self._send(await self._build(self._inner._cache_create_request, prefix, ttl_seconds, label))
@@ -338,23 +356,27 @@ class AsyncBaseProviderLM:
             raise self._inner._http_error(resp)
         return _parse_reply(resp, lambda reply: self._inner._cache_info_from_body(reply.text()))
 
+    @operation
     async def cache_get(self, cache_id: str):
         resp = await self._send(await self._build(self._inner._cache_get_request, cache_id))
         if resp.status >= 400:
             raise self._inner._http_error(resp)
         return _parse_reply(resp, lambda reply: self._inner._cache_info_from_body(reply.text()))
 
+    @operation
     async def cache_list(self, limit: int = 20, cursor: str | None = None):
         resp = await self._send(await self._build(self._inner._cache_list_request, limit, cursor))
         if resp.status >= 400:
             raise self._inner._http_error(resp)
         return _parse_reply(resp, lambda reply: self._inner._cache_page_from_list_body(reply.text()))
 
+    @operation
     async def cache_delete(self, cache_id: str) -> None:
         resp = await self._send(await self._build(self._inner._cache_delete_request, cache_id))
         if resp.status >= 400:
             raise self._inner._http_error(resp)
 
+    @operation
     async def cache_update(self, cache_id: str, *, ttl_seconds: int):
         if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int) or ttl_seconds <= 0:
             raise ValueError("ttl_seconds must be a positive int")
@@ -375,35 +397,41 @@ class AsyncBaseProviderLM:
 
     # ── Files: async drivers over the sync adapter's pure hooks ──────
 
+    @operation
     async def file_upload(self, request: "FileUploadRequest"):
         resp = await self._send(await self._build(self._inner._file_upload_request, request))
         if resp.status >= 400:
             raise self._inner._http_error(resp)
         return _parse_reply(resp, lambda reply: self._inner._file_info_from_body(reply.text()))
 
+    @operation
     async def file_get(self, file_id: str):
         resp = await self._send(await self._build(self._inner._file_get_request, file_id))
         if resp.status >= 400:
             raise self._inner._http_error(resp)
         return _parse_reply(resp, lambda reply: self._inner._file_info_from_body(reply.text()))
 
+    @operation
     async def file_list(self, limit: int = 20, cursor: str | None = None):
         resp = await self._send(await self._build(self._inner._file_list_request, limit, cursor))
         if resp.status >= 400:
             raise self._inner._http_error(resp)
         return _parse_reply(resp, lambda reply: self._inner._file_page_from_list_body(reply.text()))
 
+    @operation
     async def file_delete(self, file_id: str) -> None:
         resp = await self._send(await self._build(self._inner._file_delete_request, file_id))
         if resp.status >= 400:
             raise self._inner._http_error(resp)
 
+    @operation
     async def file_download(self, file_id: str) -> bytes:
         resp = await self._send(await self._build(self._inner._file_download_request, file_id))
         if resp.status >= 400:
             raise self._inner._http_error(resp)
         return resp.body
 
+    @operation
     async def file_wait_ready(self, file_id: str, poll_every: float = 2.0, timeout: float | None = None):
         import asyncio
         import time as _time
@@ -442,18 +470,21 @@ class AsyncBaseProviderLM:
 
     # ── Video generation: async drivers over the sync adapter's pure hooks ──
 
+    @operation
     async def video_submit(self, request: "VideoGenerationRequest"):
         resp = await self._send(await self._build(self._inner._video_submit_request, request))
         if resp.status >= 400:
             raise self._inner._http_error(resp)
         return _parse_reply(resp, lambda reply: self._inner._video_job_from_body(reply.text()))
 
+    @operation
     async def video_status(self, video_id: str):
         resp = await self._send(await self._build(self._inner._video_status_request, video_id))
         if resp.status >= 400:
             raise self._inner._http_error(resp)
         return _parse_reply(resp, lambda reply: self._inner._video_job_from_body(reply.text(), video_id))
 
+    @operation
     async def video_result(self, video_id: str):
         from ..types import VIDEO_TERMINAL_STATUSES
 
@@ -479,6 +510,7 @@ class AsyncBaseProviderLM:
                 raise self._inner._http_error(fetched)
         return _parse_reply(fetched or resp, lambda reply: self._inner._video_part(status_body, fetched), json_body=False)
 
+    @operation
     async def video_list(self, limit: int = 20, model: str | None = None):
         resp = await self._send(await self._build(self._inner._video_list_request, limit, model))
         if resp.status >= 400:
@@ -502,12 +534,14 @@ class AsyncBaseProviderLM:
 
     # ── Media generation: async drivers over the sync adapter's pure hooks ──
 
+    @operation
     async def image_generate(self, request: ImageGenerationRequest):
         resp = await self._send(await self._build(self._inner._image_generate_request, request))
         if resp.status >= 400:
             raise self._inner._http_error(resp)
         return _parse_reply(resp, lambda reply: self._inner._image_generation_from_response(request, reply))
 
+    @operation
     async def speech_generate(self, request: SpeechGenerationRequest):
         resp = await self._send(await self._build(self._inner._speech_generate_request, request))
         if resp.status >= 400:
@@ -546,6 +580,7 @@ class AsyncOpenAILM(AsyncBaseProviderLM):
     adaptations: AdaptationPolicy = field(default="note", kw_only=True)
 
     async def live(self, config: LiveConfig):
+        require_unmanaged_live(self)
         self._inner._require("live")
         # Native async websocket (websockets.asyncio) — not a thread
         # wrapper: a blocked sync recv in a worker thread cannot be
@@ -666,6 +701,7 @@ class AsyncGeminiLM(AsyncBaseProviderLM):
         self._mirror_binding()
 
     async def live(self, config: LiveConfig):
+        require_unmanaged_live(self)
         self._inner._require("live")
         # Native async twin of GeminiLM.live: same pure setup frame,
         # encoder, and setup-status classifier; only the socket awaits.
@@ -732,6 +768,7 @@ class AsyncOpenAIChatLM(AsyncBaseProviderLM):
         """Pure; the sync sibling's reader under this adapter's provider name."""
         return self._inner.response_from_openai_chat(body, model=model, choice=choice)
 
+    @operation
     async def complete(self, request: Request) -> Response:
         """Mirror of OpenAIChatLM.complete: the judgment trie driver (MAP-14
         §4) over the inner adapter's pure hooks, else the ordinary path."""
@@ -939,6 +976,7 @@ class AsyncOpenAICodexLM(AsyncBaseProviderLM):
         self.api_key = self._inner.api_key  # static key or per-request credential provider (repr-suppressed)
         self.account_id = self._inner.account_id
 
+    @operation
     async def complete(self, request: Request) -> Response:
         # Mirror of OpenAICodexLM.complete: the Codex subscription backend is
         # streaming-first; materialize the (coalesced) stream.

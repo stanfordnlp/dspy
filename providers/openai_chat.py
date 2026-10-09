@@ -30,6 +30,7 @@ from ..adaptation import Adaptation, AdaptationPolicy, adapt, check_policy, coll
 from ..errors import ProviderError, ServerError, UnsupportedFeatureError
 from ..access import OPENAI_CHAT_API
 from ..features import ProviderManifest
+from ._managed import operation
 from ..judgments import Judgment, judgments_in_schema, non_judgment_properties, normalize_logprobs, note_unmeasurable_probabilities, replace_text_with_data, request_judgments
 from ..sse import SSEEvent
 from ..transports import TransportRequest
@@ -1922,6 +1923,7 @@ class OpenAIChatLM(BaseProviderLM):
             return self._judgment_adaptations(wire_request, policy=policy)
         return BaseProviderLM.plan(self, request, policy=policy)
 
+    @operation
     def complete(self, request: Request) -> Response:
         wire_request = self._wire_request(request)
         if not self._judgments_via_token_scoring(wire_request):

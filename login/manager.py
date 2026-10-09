@@ -61,6 +61,11 @@ class ForgetResult:
     identity_generation: str
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _RequestSnapshot(RequestAuth):
+    connection: Connection
+
+
 @dataclass
 class _Slot:
     """A slot record as the manager reasons about it (non-secret)."""
@@ -778,11 +783,29 @@ class Auth:
 
     def _auth_from(self, provider: str, flow: Any, material: Material, slot: _Slot) -> RequestAuth:
         try:
-            return flow.request_auth(material, slot.settings)
+            value = flow.request_auth(material, slot.settings)
+            connection = slot.connection()
+            assert connection is not None
+            return _RequestSnapshot(
+                credential=value.credential, headers=dict(value.headers), base_url=value.base_url,
+                account_id=value.account_id, named=value.named, connection=connection,
+            )
         except LoginDenied as exc:
             raise AuthOperationError(f"{provider}: {exc}", reason="login_required", stage="resolution",
                                      recovery="restart_login", provider=provider,
                                      connection_id=slot.connection_id) from None
+
+    def _admit(self, snapshot: _RequestSnapshot) -> None:
+        """Order local dispatch against replacement/logout, without renewing.
+
+        The lock is released before transport I/O. Logout after this admission
+        cannot recall an already admitted request (AUTH-19/20).
+        """
+        connection = snapshot.connection
+        with self.store.transaction() as txn:
+            slot, material = self._view(txn.read(), connection.provider)
+            self._check_selected(connection.provider, slot, material,
+                                 (connection.id, connection.identity_generation))
 
     def _renew(self, provider: str, pinned: tuple[str, str] | None) -> RequestAuth:
         """AUTH-20.4: lock, re-read, reuse a sibling's fresh result, else
@@ -836,6 +859,15 @@ class Auth:
             except BaseException:
                 self._mark(txn, document, slot, material, state="indeterminate", keep_marker=True)
                 raise
+            previous_account = flow.request_auth(material, slot.settings).account_id
+            renewed_account = flow.request_auth(result.material, slot.settings).account_id
+            if previous_account is not None and renewed_account != previous_account:
+                self._mark(txn, document, slot, material, state="needs_login", drop_material=True)
+                raise AuthOperationError(
+                    f"{provider}: renewal changed the selected account; sign in again",
+                    reason="connection_changed", stage="renewal", commit_state="committed",
+                    recovery="restart_login", provider=provider, connection_id=slot.connection_id,
+                )
             slot.renewal_in_flight = None
             slot.revision += 1
             slot.state = "ready"

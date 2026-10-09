@@ -28,6 +28,7 @@ from ..errors import (
 from ..access import GEMINI_API
 from ..features import ProviderManifest
 from ..judgments import gemini_schema, note_unmeasurable_probabilities, replace_text_with_data, request_judgments
+from ._managed import operation, require_unmanaged_live
 from ..live import WebSocketLiveSession, require_websocket_sync_connect
 from ..sse import SSEEvent
 from ..transports import TransportRequest
@@ -1128,6 +1129,7 @@ class GeminiLM(BaseProviderLM):
 
     # ─── Streaming via Gemini Live for live models ──────────────────
 
+    @operation
     def stream(self, request: Request) -> Iterator[StreamEvent]:
         wire = self._wire_request(request)
         if self._should_use_live_completion(wire):
@@ -1163,6 +1165,7 @@ class GeminiLM(BaseProviderLM):
         return data, 16000
 
     def _stream_via_live_completion(self, request: Request) -> Iterator[StreamEvent]:
+        require_unmanaged_live(self)
         ws = self._live_connect(self._live_url())
         saw_tool_call = False
         audio_native = self._is_audio_native_live_model(request.model)
@@ -1315,6 +1318,7 @@ class GeminiLM(BaseProviderLM):
     # ─── Live sessions ──────────────────────────────────────────────
 
     def live(self, config: LiveConfig):
+        require_unmanaged_live(self)
         self._require("live")
         ws = self._live_connect(self._live_url())
         for frame in self._live_setup_frames(config):
