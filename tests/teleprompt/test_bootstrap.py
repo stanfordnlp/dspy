@@ -168,3 +168,38 @@ def test_validation_set_usage():
 
     # Check that validation examples are part of student's demos after compilation
     assert len(compiled_student.predictor.demos) >= len(valset), "Validation set not used in compiled student demos"
+
+
+def test_metric_threshold_of_zero_compares_numerically():
+    # An explicit 0.0 threshold is a configured floor: scores >= 0.0 pass and
+    # scores < 0.0 fail. Regression: a truthiness check treated 0.0 like an
+    # omitted threshold, so 0.0 was rejected and -0.1 was accepted.
+    example = Example(question="q", answer="a").with_inputs("question")
+
+    def demo_count(metric_value, threshold):
+        def metric(example, prediction, trace=None):
+            return metric_value
+
+        dspy.configure(lm=DummyLM([{"answer": "a"}]))
+        optimizer = BootstrapFewShot(
+            metric=metric,
+            metric_threshold=threshold,
+            max_bootstrapped_demos=1,
+            max_labeled_demos=0,
+        )
+        compiled = optimizer.compile(
+            SimpleModule("question -> answer"),
+            teacher=SimpleModule("question -> answer"),
+            trainset=[example],
+        )
+        return len(compiled.predictor.demos)
+
+    assert demo_count(0.0, 0.0) == 1
+    assert demo_count(-0.1, 0.0) == 0
+
+    # Nonzero thresholds keep working, and an omitted threshold stays boolean.
+    assert demo_count(0.0, 0.01) == 0
+    assert demo_count(0.0, -0.01) == 1
+    assert demo_count(-0.1, 0.5) == 0
+    assert demo_count(0.5, None) == 1
+    assert demo_count(0.0, None) == 0
