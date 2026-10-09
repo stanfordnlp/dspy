@@ -201,7 +201,7 @@ class XMLAdapter(ChatAdapter):
             return [cls._elements_to_value([element], schema.get("items", {}), definitions) for element in elements]
         element = elements[0]
         if schema.get("type") == "string" and list(element):
-            return (element.text or "") + "".join(ET.tostring(child, encoding="unicode") for child in element)
+            return ((element.text or "") + "".join(ET.tostring(child, encoding="unicode") for child in element)).strip()
         children = cls._group_children(element)
         if not children:
             if schema.get("type") == "object" and not (element.text or "").strip():
