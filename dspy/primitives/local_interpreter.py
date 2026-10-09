@@ -6,6 +6,7 @@ import contextvars
 import inspect
 import json
 import keyword
+import logging
 import os
 import queue
 import signal
@@ -21,6 +22,8 @@ from typing import Any, NoReturn
 
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
 from dspy.utils.callback import BaseCallback, with_callbacks
+
+logger = logging.getLogger(__name__)
 
 
 def _run_in_thread(function: Callable[[], Any]) -> Future[Any]:
@@ -42,6 +45,95 @@ def _await_in_sync(awaitable: Any) -> Any:
     except RuntimeError:
         return asyncio.run(awaitable)
     return _run_in_thread(lambda: asyncio.run(awaitable)).result()
+
+
+if os.name == "nt":
+    import ctypes
+    from ctypes import wintypes
+
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    _kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+    _kernel32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    _kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    _kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+    class _JobObjectBasicLimitInformation(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", wintypes.LARGE_INTEGER),
+            ("PerJobUserTimeLimit", wintypes.LARGE_INTEGER),
+            ("LimitFlags", wintypes.DWORD),
+            ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t),
+            ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t),
+            ("PriorityClass", wintypes.DWORD),
+            ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class _IoCounters(ctypes.Structure):
+        _fields_ = [
+            (name, ctypes.c_ulonglong)
+            for name in (
+                "ReadOperationCount",
+                "WriteOperationCount",
+                "OtherOperationCount",
+                "ReadTransferCount",
+                "WriteTransferCount",
+                "OtherTransferCount",
+            )
+        ]
+
+    class _JobObjectExtendedLimitInformation(ctypes.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", _JobObjectBasicLimitInformation),
+            ("IoInfo", _IoCounters),
+            ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
+    _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+
+
+def _job_for(process: subprocess.Popen[str]) -> int | None:
+    """Windows counterpart of the POSIX process group: a kill-on-close Job Object.
+
+    Every descendant the worker spawns inherits the job, so terminating it ends
+    the whole tree at once and immediately; ``taskkill /T`` instead walks parent
+    ids after the fact, so a short-lived child can finish before it is reached.
+    The job is attached right after ``Popen`` returns, before the worker has read
+    its first request, so nothing can be spawned in the gap. Returns None where
+    jobs are unavailable, e.g. when this process is already in a job that
+    forbids nesting; callers then fall back to taskkill.
+    """
+    if os.name != "nt":
+        return None
+    job = _kernel32.CreateJobObjectW(None, None)
+    if not job:
+        logger.debug("LocalInterpreter: CreateJobObject failed (%s); falling back to taskkill", ctypes.get_last_error())
+        return None
+    info = _JobObjectExtendedLimitInformation()
+    info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    assigned = _kernel32.SetInformationJobObject(
+        job, _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, ctypes.byref(info), ctypes.sizeof(info)
+    ) and _kernel32.AssignProcessToJobObject(job, int(process._handle))
+    if not assigned:
+        logger.debug(
+            "LocalInterpreter: could not assign worker to a Job Object (%s); falling back to taskkill",
+            ctypes.get_last_error(),
+        )
+        _kernel32.CloseHandle(job)
+        return None
+    return job
+
+
+def _terminate_job(job: int) -> None:
+    _kernel32.TerminateJobObject(job, 1)
+    _kernel32.CloseHandle(job)
 
 
 class LocalInterpreter:
@@ -86,6 +178,7 @@ class LocalInterpreter:
         self.execution_timeout = execution_timeout
         self.callbacks = list(callbacks or [])
         self._process: subprocess.Popen[str] | None = None
+        self._job: int | None = None
         self._responses: queue.Queue[str | BaseException | None] = queue.Queue()
         self._lock = threading.Lock()
         self._send_lock = threading.Lock()
@@ -138,6 +231,7 @@ class LocalInterpreter:
         except OSError as exc:
             raise CodeInterpreterError(f"Unable to start Python worker: {exc}") from exc
         self._process = process
+        self._job = _job_for(process)
         threading.Thread(target=self._read_responses, args=(process,), daemon=True).start()
         message = self._receive(time.monotonic() + 10, "Python worker did not start within 10 seconds.")
         if message.get("type") != "ready":
@@ -189,9 +283,12 @@ class LocalInterpreter:
         self._process = None
         if process is None:
             return
+        job, self._job = self._job, None
         if os.name == "posix":
             with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(process.pid, signal.SIGKILL)
+        elif job is not None:
+            _terminate_job(job)  # ends the worker and every descendant immediately
         elif os.name == "nt":
             with contextlib.suppress(OSError):
                 subprocess.run(
