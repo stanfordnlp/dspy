@@ -1169,8 +1169,9 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
         inner = getattr(lm, "_inner", lm)
         if snapshot is None:
             def prepare():
+                execution_extra = dict(original_extra, transport=lm.transport, adaptations=lm.adaptations)
                 return _build_managed_lm(
-                    resolution, config, adapters, cls, original_definition, dict(original_extra), hosted,
+                    resolution, config, adapters, cls, original_definition, execution_extra, hosted,
                     original_url, snapshot=auth.request_auth(provider),
                 )
             lm._managed_prepare = prepare
