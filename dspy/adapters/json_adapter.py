@@ -1,6 +1,7 @@
 import json
 import logging
-from typing import Any, get_origin
+import types
+from typing import Annotated, Any, Union, get_args, get_origin
 
 import json_repair
 import pydantic
@@ -26,17 +27,28 @@ from dspy.utils.exceptions import AdapterParseError
 logger = logging.getLogger(__name__)
 
 
+def _is_open_ended_mapping_annotation(annotation: Any) -> bool:
+    """True for dict, dict[...], and the same type wrapped in Optional/Union/Annotated."""
+    if annotation is dict:
+        return True
+    origin = get_origin(annotation)
+    if origin is dict:
+        return True
+    args = get_args(annotation)
+    if origin is Union or origin is types.UnionType:
+        return any(_is_open_ended_mapping_annotation(arg) for arg in args if arg is not type(None))
+    if origin is Annotated:
+        return bool(args) and _is_open_ended_mapping_annotation(args[0])
+    return False
+
+
 def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
     """
     Check whether any output field in the signature has an open-ended mapping type,
     such as dict[str, Any]. Structured Outputs require explicit properties, so such fields
     are incompatible.
     """
-    for field in signature.output_fields.values():
-        annotation = field.annotation
-        if get_origin(annotation) is dict:
-            return True
-    return False
+    return any(_is_open_ended_mapping_annotation(field.annotation) for field in signature.output_fields.values())
 
 
 class JSONAdapter(ChatAdapter):
@@ -225,7 +237,7 @@ def _get_structured_outputs_response_format(
     # Although we've already performed an early check, we keep this here as a final guard.
     for name, field in signature.output_fields.items():
         annotation = field.annotation
-        if get_origin(annotation) is dict:
+        if _is_open_ended_mapping_annotation(annotation):
             raise ValueError(
                 f"Field '{name}' has an open-ended mapping type which is not supported by Structured Outputs."
             )
