@@ -246,7 +246,13 @@ _INGEST_CONFIG_KEYS: frozenset[str] = frozenset({
 
 _INGEST_GROQ_BUILTIN_INVERSE: dict[str, str] = {wire: name for name, wire in _GROQ_BUILTIN_MAP.items()}
 
-_INGEST_AUDIO_MEDIA_TYPES: dict[str, str] = {"wav": "audio/wav", "mp3": "audio/mpeg"}
+# MAP-12 rule 4: OpenAI's server takes wav and mp3, Gemini's any audio type,
+# and DSPy writes the MIME subtype (mpeg for .mp3). Each format reads as its
+# true media type; a builder with no audio slot raises at send (MAP-10).
+_INGEST_AUDIO_MEDIA_TYPES: dict[str, str] = {
+    "wav": "audio/wav", "mp3": "audio/mpeg", "mpeg": "audio/mpeg", "ogg": "audio/ogg", "opus": "audio/opus",
+    "flac": "audio/flac", "aac": "audio/aac", "aiff": "audio/aiff", "webm": "audio/webm",
+}
 
 
 def _ingest_unsupported(provider: str, what: str, why: str) -> UnsupportedFeatureError:
