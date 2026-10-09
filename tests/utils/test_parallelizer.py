@@ -2,6 +2,7 @@ import threading
 import time
 from unittest import mock
 
+import numpy as np
 import pytest
 
 from dspy.utils.callback import ACTIVE_CALL_ID
@@ -18,6 +19,24 @@ def test_worker_threads_independence():
     results = executor.execute(task, data)
 
     assert results == [2, 4, 6, 8, 10]
+
+
+@pytest.mark.parametrize("num_threads", [1, 3])
+def test_cancelled_string_is_preserved_as_result(num_threads):
+    executor = ParallelExecutor(num_threads=num_threads, disable_progress_bar=True)
+
+    assert executor.execute(lambda item: item, ["cancelled", "completed"]) == ["cancelled", "completed"]
+
+
+@pytest.mark.parametrize("num_threads", [1, 3])
+def test_numpy_array_is_preserved_as_result(num_threads):
+    executor = ParallelExecutor(num_threads=num_threads, disable_progress_bar=True)
+    arrays = [np.array([1, 2]), np.array([3, 4])]
+
+    results = executor.execute(lambda item: item, arrays)
+
+    for result, expected in zip(results, arrays, strict=True):
+        np.testing.assert_array_equal(result, expected)
 
 
 @pytest.mark.parametrize("num_threads", [1, 3])
