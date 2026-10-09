@@ -20,10 +20,11 @@ except ModuleNotFoundError as error:
     if error.name != "gepa":
         raise
 
-    class GEPA:
+    class GEPA(Teleprompter):
         """Stand-in for GEPA when the gepa package is not installed.
 
-        DSPy installs gepa only on Python < 3.15, because gepa declares requires-python <3.15.
+        DSPy installs gepa only on Python < 3.15, because gepa declares requires-python <3.15. The stand-in keeps
+        GEPA's Teleprompter interface, so code that inspects or wraps GEPA.__init__ and GEPA.compile still imports.
         """
 
         def __init__(self, *args, **kwargs):
