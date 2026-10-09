@@ -13,6 +13,7 @@ Two layers of coverage:
 
 from __future__ import annotations
 
+import ast
 import datetime
 import enum
 import inspect
@@ -348,6 +349,56 @@ def test_shim_file_literals_match_bridge_constants() -> None:
         assert token in shim, f"{token!r} missing from the shim file"
     for kind in facade.BRIDGEABLE_KINDS:
         assert kind in shim, f"bridgeable kind {kind!r} missing from the shim file"
+
+
+class _ExecInterpreter:
+    """Runs code with exec() in the host process, in a private namespace; leaves sys.modules alone."""
+
+    def __init__(self):
+        self.tools = {}
+        self._namespace = {}
+
+    def start(self) -> None:
+        pass
+
+    def execute(self, code: str, variables: dict | None = None):
+        self._namespace.update(self.tools, **(variables or {}))
+        tree = ast.parse(code)
+        last = tree.body.pop() if tree.body and isinstance(tree.body[-1], ast.Expr) else None
+        exec(compile(tree, "<flex>", "exec"), self._namespace)
+        return eval(compile(ast.Expression(last.value), "<flex>", "eval"), self._namespace) if last else None
+
+    def shutdown(self) -> None:
+        self._namespace.clear()
+
+
+def test_in_process_interpreter_runs_the_facade_without_replacing_host_dspy() -> None:
+    host_dspy_seen = []
+
+    def louder(text: str) -> str:
+        """Uppercase the text."""
+        host_dspy_seen.append(sys.modules["dspy"] is dspy)
+        return text.upper()
+
+    flex = Flex(ShoutSig, tools=[louder], interpreter_factory=_ExecInterpreter)
+    flex._bind_code(
+        textwrap.dedent(
+            """
+            import dspy
+
+            class Shout(dspy.Module):
+                def __init__(self):
+                    self.draft = dspy.Predict("text -> out")
+
+                def forward(self, text):
+                    return dspy.Prediction(out=louder(text=self.draft(text=text).out))
+            """
+        )
+    )
+    with dspy.context(lm=DummyLM([{"out": "hello"}])):
+        assert flex(text="hi").out == "HELLO"
+    assert host_dspy_seen == [True]
+    assert sys.modules["dspy"] is dspy
 
 
 def test_max_predictor_calls_is_plumbed_to_bridge() -> None:
