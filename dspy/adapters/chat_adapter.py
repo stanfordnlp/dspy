@@ -167,7 +167,7 @@ class ChatAdapter(Adapter):
         messages.append(suffix)
         return "\n\n".join(messages).strip()
 
-    def user_message_output_requirements(self, signature: type[Signature]) -> str:
+    def user_message_output_requirements(self, signature: type[Signature]) -> str | None:
         """Returns a simplified format reminder for the language model.
 
         In chat-based interactions, language models may lose track of the required output format
@@ -178,12 +178,15 @@ class ChatAdapter(Adapter):
             signature (Type[Signature]): The DSPy signature defining the expected input/output fields.
 
         Returns:
-            str: A simplified description of the required output format.
+            str | None: A simplified description of the required output format, or None when the signature has no
+                output fields left for the LM to write.
 
         Note:
             This is a more lightweight version of `format_field_structure` specifically designed
             for inline reminders within chat messages.
         """
+        if not signature.output_fields:
+            return None
 
         def type_info(v):
             if v.annotation == ToolCalls:
