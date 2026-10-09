@@ -143,6 +143,8 @@ def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
 
         _refuse_client_settings(lm._engine_spec, kwargs, where="LM call")
     merged = {**lm.kwargs, **{key: val for key, val in kwargs.items() if key != "cache"}}
+    if hasattr(lm, "_raise_if_unsupported_stream_kwarg"):
+        lm._raise_if_unsupported_stream_kwarg(merged, model=lm.model, provider=lm._provider_name)
     prompt_cache = merged.get("prompt_cache")
     if prompt_cache is not None:
         if not isinstance(prompt_cache, CacheConfig):
