@@ -1082,22 +1082,25 @@ def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[st
 
 
 def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[str, type], cls: type,
-                      definition: "ProviderDefinition | None", extra: dict, hosted: bool, base_url: str | None):
+                      definition: "ProviderDefinition | None", extra: dict, hosted: bool, base_url: str | None,
+                      *, snapshot=None):
     """AUTH-15 mode B.  Order: explicit ``api_keys`` entry; explicit named
     cloud identity; the scope's saved connection (renewed per request);
     a keyless local server's placeholder.  Never an environment key, a
     foreign CLI file or the machine's cloud chain."""
-    from .login.manager import Auth
+    from .login.manager import Auth, _RequestSnapshot
 
     auth: Auth = config.auth  # type: ignore[assignment]
     provider = resolution.provider
+    original_definition, original_extra, original_url = definition, dict(extra), base_url
+    saved = None
     api_key, explicit = _api_keys_entry(config, provider, adapters)
     named = _credentials_entry(config, provider)
     origin: str | None = None
     account_id: str | None = None
     if not explicit and named is None:
         try:
-            saved = auth.request_auth(provider)
+            saved = snapshot if snapshot is not None else auth.request_auth(provider)
         except AuthOperationError as exc:
             if exc.reason == "login_required" and definition is not None and definition.placeholder_key is not None \
                     and not auth.status(provider).logged_out:
@@ -1113,11 +1116,14 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
             else:
                 raise
         else:
-            connection = auth.status(provider).connection
+            if not isinstance(saved, _RequestSnapshot):
+                raise AuthOperationError("managed authentication requires a connection snapshot",
+                                         reason="indeterminate", stage="resolution")
+            connection = saved.connection
             if saved.named is not None:
                 named = saved.named  # a saved cloud recipe names the identity; the chain rung runs
             else:
-                api_key = auth.credential_provider(provider)
+                api_key = saved.credential
                 account_id = saved.account_id
                 if saved.base_url is not None and base_url is None:
                     base_url = saved.base_url
@@ -1159,6 +1165,21 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
         lm = cls(api_key=api_key, **extra)
     if origin is not None:
         _set_origin(lm, origin)
+    if saved is not None:
+        inner = getattr(lm, "_inner", lm)
+        if snapshot is None:
+            def prepare():
+                return _build_managed_lm(
+                    resolution, config, adapters, cls, original_definition, dict(original_extra), hosted,
+                    original_url, snapshot=auth.request_auth(provider),
+                )
+            lm._managed_prepare = prepare
+            inner._managed_prepare = prepare
+        else:
+            def admission():
+                auth._admit(saved)
+            lm._managed_admit = admission
+            inner._managed_admit = admission
     return lm
 
 

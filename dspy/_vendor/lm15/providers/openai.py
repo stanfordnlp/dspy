@@ -32,6 +32,7 @@ from ..auth import extract_chatgpt_account_id
 from ..compat import OPENAI_RESPONSES_PRESET_BASE_URLS, OpenAIResponsesCompat, preset_base_url
 from ..features import ProviderManifest
 from ..judgments import note_unmeasurable_probabilities, replace_text_with_data, request_judgments
+from ._managed import operation, require_unmanaged_live
 from ..result import materialize_response
 from ..live import WebSocketLiveSession, require_websocket_sync_connect
 from ..profiles import ProviderProfile, ResolvedOpenAIResponsesCompat, resolve_openai_responses_compat
@@ -1377,6 +1378,7 @@ class OpenAILM(BaseProviderLM):
 
     # ─── Streaming over OpenAI Realtime for live models ──────────────
 
+    @operation
     def complete(self, request: Request) -> Response:
         if self._codex:
             # Streaming-first backend: materialize the stream so callers get
@@ -1384,6 +1386,7 @@ class OpenAILM(BaseProviderLM):
             return materialize_response(self.stream(request), request)
         return BaseProviderLM.complete(self, request)
 
+    @operation
     def stream(self, request: Request) -> Iterator[StreamEvent]:
         wire = self._wire_request(request)
         if not self._codex and self._should_use_live_completion(wire):
@@ -1403,6 +1406,7 @@ class OpenAILM(BaseProviderLM):
         return "realtime" in model_name or "-live" in model_name
 
     def _stream_via_live_completion(self, request: Request) -> Iterator[StreamEvent]:
+        require_unmanaged_live(self)
         ws = self._live_connect(self._live_url(request.model), self._live_headers())
         saw_tool_call = False
         usage = Usage()
@@ -1533,6 +1537,7 @@ class OpenAILM(BaseProviderLM):
     # ─── Live sessions ──────────────────────────────────────────────
 
     def live(self, config: LiveConfig):
+        require_unmanaged_live(self)
         self._require("live")
         ws = self._live_connect(self._live_url(config.model), self._live_headers())
         for frame in self._live_setup_frames(config):
