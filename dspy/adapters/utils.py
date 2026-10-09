@@ -185,6 +185,33 @@ def find_enum_member(enum, identifier):
 
 
 def parse_value(value, annotation):
+    origin = get_origin(annotation)
+    if origin in (Union, types.UnionType):
+        members = [arg for arg in get_args(annotation) if arg is not type(None)]
+        if len(members) == 1 and (isinstance(members[0], enum.EnumMeta) or get_origin(members[0]) is Literal):
+            # `X | None` for an Enum or Literal X: keep whatever the generic union handling returns, so
+            # values it already parsed keep their type (e.g. 1 for `Literal[1, "1"] | None`), and only
+            # when it fails accept the other spellings the bare X accepts (an Enum member's name, a
+            # `Literal[...]`-wrapped value). A bare "null" that X permits as a value (e.g. `Literal["null"]`)
+            # is that member, not None; a member whose own value is None still reads as None.
+            try:
+                parsed = _parse_value(value, annotation)
+            except ValueError:
+                return _parse_value(value, members[0])
+            if parsed is None:
+                try:
+                    member = _parse_value(value, members[0])
+                except ValueError:
+                    return None
+                member_value = member.value if isinstance(member, enum.Enum) else member
+                if member_value is not None:
+                    return member
+            return parsed
+
+    return _parse_value(value, annotation)
+
+
+def _parse_value(value, annotation):
     if annotation is str:
         return str(value)
 
