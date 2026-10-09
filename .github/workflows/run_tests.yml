@@ -70,25 +70,22 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
-    # 3.15 is an allowed failure until its deps ship cp315 wheels (see the matrix
-    # note). Tolerating it stops the failure from failing the workflow and, under
-    # the default fail-fast, from cancelling the 3.10-3.14 legs.
+    # 3.15 is an allowed failure (see the matrix note). Tolerating it stops a
+    # failure from failing the workflow and, under the default fail-fast, from
+    # cancelling the 3.10-3.14 legs.
     continue-on-error: ${{ matrix.python-version == '3.15' }}
+    env:
+      # fastuuid has no cp315 wheel and its pyo3 rejects 3.15; build it against
+      # the stable ABI on the 3.15 leg. pyo3 reads only the value "1".
+      PYO3_USE_ABI3_FORWARD_COMPATIBILITY: ${{ matrix.python-version == '3.15' && '1' || '0' }}
     permissions:
       contents: read
     strategy:
       matrix:
-        # The 3.15 leg is an ALLOWED FAILURE (continue-on-error above) until its
-        # native deps ship cp315 wheels. With no wheels, uv builds them from
-        # source and pyo3 rejects a Python past its max (3.14): fastuuid is the
-        # first wall, and pydantic-core is the hard one -- it subclasses the
-        # native PyTzInfo type, which pyo3's abi3 forward-compat forbids, so no
-        # build flag rescues it. The real unlock is prebuilt cp315 wheels, and it
-        # is imminent: pydantic 2.14.0 pins a cp315-capable pydantic-core --
-        # already proven by the published 2.14.0b2 pre-release, which pins
-        # pydantic-core 2.49.0 (it ships cp315 wheels). Once pydantic 2.14.0
-        # releases, this leg installs from wheels and greens with no change here.
-        # (Latest stable pydantic 2.13.5 still pins pydantic-core 2.46.5, none.)
+        # 3.15 is an allowed failure (continue-on-error above) while Python 3.15
+        # is a release candidate. Its deps install from cp315 wheels except
+        # fastuuid (a litellm dep), whose pyo3 rejects a Python past 3.14; the
+        # job env builds it against the stable ABI on the 3.15 leg only.
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -119,16 +116,18 @@ jobs:
   extra_test:
     name: Run Extra and Deno Tests
     runs-on: ubuntu-latest
-    # 3.15 is an allowed failure until its deps ship cp315 wheels (see the note
-    # in the `test` job); tolerated so it does not fail the workflow or, under
-    # fail-fast, cancel the 3.10-3.14 legs.
+    # 3.15 is an allowed failure (see the note in the `test` job); tolerated so
+    # it does not fail the workflow or, under fail-fast, cancel the 3.10-3.14 legs.
     continue-on-error: ${{ matrix.python-version == '3.15' }}
+    env:
+      # fastuuid has no cp315 wheel and its pyo3 rejects 3.15; build it against
+      # the stable ABI on the 3.15 leg. pyo3 reads only the value "1".
+      PYO3_USE_ABI3_FORWARD_COMPATIBILITY: ${{ matrix.python-version == '3.15' && '1' || '0' }}
     permissions:
       contents: read
     strategy:
       matrix:
-        # 3.15 is an allowed failure until pydantic 2.14.0 ships a cp315-capable
-        # pydantic-core (see the note in the `test` job above).
+        # 3.15 is an allowed failure (see the note in the `test` job above).
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -279,16 +278,18 @@ jobs:
   build_package:
     name: Build Package
     runs-on: ubuntu-latest
-    # 3.15 is an allowed failure until its deps ship cp315 wheels (see the note
-    # in the `test` job); tolerated so it does not fail the workflow or, under
-    # fail-fast, cancel the 3.10-3.14 legs.
+    # 3.15 is an allowed failure (see the note in the `test` job); tolerated so
+    # it does not fail the workflow or, under fail-fast, cancel the 3.10-3.14 legs.
     continue-on-error: ${{ matrix.python-version == '3.15' }}
+    env:
+      # fastuuid has no cp315 wheel and its pyo3 rejects 3.15; build it against
+      # the stable ABI on the 3.15 leg. pyo3 reads only the value "1".
+      PYO3_USE_ABI3_FORWARD_COMPATIBILITY: ${{ matrix.python-version == '3.15' && '1' || '0' }}
     permissions:
       contents: read
     strategy:
       matrix:
-        # 3.15 is an allowed failure until pydantic 2.14.0 ships a cp315-capable
-        # pydantic-core (see the note in the `test` job above).
+        # 3.15 is an allowed failure (see the note in the `test` job above).
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
