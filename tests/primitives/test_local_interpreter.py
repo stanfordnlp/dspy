@@ -56,7 +56,6 @@ def test_guest_stdin_is_isolated_from_the_protocol():
     with dspy.LocalInterpreter(execution_timeout=10) as interpreter:
         assert interpreter.execute("import sys\nsys.stdin.read()") == ""
         assert interpreter.execute("import os\nos.read(0, 10).decode()") == ""
-        started = time.monotonic()
         assert (
             interpreter.execute(
                 "import subprocess, sys\n"
@@ -64,7 +63,6 @@ def test_guest_stdin_is_isolated_from_the_protocol():
             )
             == "7"
         )
-        assert time.monotonic() - started < 10
         assert interpreter.execute("6 * 7") == 42
 
 

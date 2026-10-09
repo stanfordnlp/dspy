@@ -6,6 +6,7 @@ import contextvars
 import inspect
 import json
 import keyword
+import logging
 import os
 import queue
 import signal
@@ -21,6 +22,8 @@ from typing import Any, NoReturn
 
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
 from dspy.utils.callback import BaseCallback, with_callbacks
+
+logger = logging.getLogger(__name__)
 
 
 def _run_in_thread(function: Callable[[], Any]) -> Future[Any]:
@@ -100,14 +103,18 @@ def _job_for(process: subprocess.Popen[str]) -> int | None:
     """Windows counterpart of the POSIX process group: a kill-on-close Job Object.
 
     Every descendant the worker spawns inherits the job, so terminating it ends
-    the whole tree at once (``taskkill /T`` walks parent ids and takes about a
-    second). Returns None where jobs are unavailable, e.g. when this process is
-    already in a job that forbids nesting; callers then fall back to taskkill.
+    the whole tree at once and immediately; ``taskkill /T`` instead walks parent
+    ids after the fact, so a short-lived child can finish before it is reached.
+    The job is attached right after ``Popen`` returns, before the worker has read
+    its first request, so nothing can be spawned in the gap. Returns None where
+    jobs are unavailable, e.g. when this process is already in a job that
+    forbids nesting; callers then fall back to taskkill.
     """
     if os.name != "nt":
         return None
     job = _kernel32.CreateJobObjectW(None, None)
     if not job:
+        logger.debug("LocalInterpreter: CreateJobObject failed (%s); falling back to taskkill", ctypes.get_last_error())
         return None
     info = _JobObjectExtendedLimitInformation()
     info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
@@ -115,6 +122,10 @@ def _job_for(process: subprocess.Popen[str]) -> int | None:
         job, _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, ctypes.byref(info), ctypes.sizeof(info)
     ) and _kernel32.AssignProcessToJobObject(job, int(process._handle))
     if not assigned:
+        logger.debug(
+            "LocalInterpreter: could not assign worker to a Job Object (%s); falling back to taskkill",
+            ctypes.get_last_error(),
+        )
         _kernel32.CloseHandle(job)
         return None
     return job
