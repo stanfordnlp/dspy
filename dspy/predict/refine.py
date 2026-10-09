@@ -100,6 +100,7 @@ class Refine(Module):
         start = lm.kwargs.get("rollout_id", 0)
         rollout_ids = [start + i for i in range(self.N)]
         best_pred, best_trace, best_reward = None, None, -float("inf")
+        remaining_failures = self.fail_count
         advice = None
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
 
@@ -169,9 +170,9 @@ class Refine(Module):
 
             except Exception as e:
                 print(f"Refine: Attempt failed with rollout id {rid}: {e}")
-                if idx > self.fail_count:
+                if remaining_failures <= 0:
                     raise e
-                self.fail_count -= 1
+                remaining_failures -= 1
         if best_trace:
             dspy.settings.trace.extend(best_trace)
         return best_pred
