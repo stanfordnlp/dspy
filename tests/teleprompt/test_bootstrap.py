@@ -168,3 +168,51 @@ def test_validation_set_usage():
 
     # Check that validation examples are part of student's demos after compilation
     assert len(compiled_student.predictor.demos) >= len(valset), "Validation set not used in compiled student demos"
+
+
+def test_bootstrap_zero_metric_threshold():
+    """
+    Test that BootstrapFewShot correctly respects an explicit metric_threshold of 0.0
+    """
+    class TinyModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = Predict("question -> answer")
+
+        def forward(self, question):
+            return self.predictor(question=question)
+
+    example = Example(question="q", answer="a").with_inputs("question")
+
+    def metric_zero(example, prediction, trace=None):
+        return 0.0
+
+    def metric_negative(example, prediction, trace=None):
+        return -0.1
+
+    dspy.settings.configure(lm=DummyLM([{"answer": "a"}]))
+
+    # Threshold = 0.0, score = 0.0 should succeed (demo added)
+    optimizer_accept = BootstrapFewShot(
+        metric=metric_zero,
+        metric_threshold=0.0,
+        max_bootstrapped_demos=1,
+        max_labeled_demos=0,
+    )
+    compiled_accept = optimizer_accept.compile(
+        TinyModule(), teacher=TinyModule(), trainset=[example]
+    )
+    assert len(compiled_accept.predictor.demos) == 1
+
+    # Threshold = 0.0, score = -0.1 should fail (no demo added)
+    optimizer_reject = BootstrapFewShot(
+        metric=metric_negative,
+        metric_threshold=0.0,
+        max_bootstrapped_demos=1,
+        max_labeled_demos=0,
+    )
+    compiled_reject = optimizer_reject.compile(
+        TinyModule(), teacher=TinyModule(), trainset=[example]
+    )
+    assert len(compiled_reject.predictor.demos) == 0
+
