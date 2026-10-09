@@ -28,6 +28,7 @@ from ..errors import (
 from ..access import GEMINI_API
 from ..features import ProviderManifest
 from ..judgments import gemini_schema, note_unmeasurable_probabilities, replace_text_with_data, request_judgments
+from ._managed import operation, require_unmanaged_live
 from ..live import WebSocketLiveSession, require_websocket_sync_connect
 from ..sse import SSEEvent
 from ..transports import TransportRequest
@@ -107,7 +108,7 @@ from .base import (
     default_transport,
     resolve_credential,
 )
-from .common import EFFORT_THINKING_BUDGETS, MEDIA_KINDS, build_url, data_part_text, iso_utc, media_base64, model_infos_from_entries, multipart_related_body, parts_to_text, path_id, unnamed_tool_call_error
+from .common import EFFORT_THINKING_BUDGETS, MEDIA_KINDS, build_url, data_part_text, iso_utc, media_base64, model_infos_from_entries, multipart_related_body, parts_to_text, path_id, tool_description, unnamed_tool_call_error
 
 # Canonical builtin tool name → Gemini tool key
 _GEMINI_BUILTIN_MAP: dict[str, str] = {
@@ -190,22 +191,62 @@ def _gemini_token_logprobs(logprobs_result: Any) -> tuple[TokenLogprob, ...]:
     return tuple(out)
 
 
-def _gemini_schema_field(schema: dict[str, Any]) -> str:
-    """Pick Gemini's schema field for an lm15 JSON schema.
+# Gemini's Schema object (generate-content#v1beta.Schema): the keys its
+# OpenAPI fields (``responseSchema``, ``parameters``) parse.
+_GEMINI_SCHEMA_FIELDS = frozenset({
+    "type", "format", "title", "description", "nullable", "enum", "maxItems", "minItems",
+    "properties", "required", "minProperties", "maxProperties", "minLength", "maxLength",
+    "pattern", "example", "anyOf", "propertyOrdering", "default", "items", "minimum", "maximum",
+})
 
-    ``responseSchema`` is Gemini's OpenAPI-ish schema type and rejects JSON
-    Schema keywords such as ``additionalProperties``.  ``responseJsonSchema``
-    accepts those keywords, so use it when the schema needs full JSON Schema.
+
+def gemini_openapi_schema(schema: Any) -> bool:
+    """MAP-16: can Gemini's OpenAPI field carry ``schema``?
+
+    No, when a schema node — the root, a value of ``properties``, ``items``,
+    an element of ``anyOf`` (or ``anyOf`` itself when it is one object) —
+    is a boolean, has a key that is not a Schema field, has a list
+    ``type``, or has an ``enum`` list with an element that is not a string:
+    the OpenAPI field answers 400 there and the JSON Schema field accepts
+    it (live 2026-09-26).  Anything else stays on the OpenAPI field, where
+    lm15 has always sent it; ``example`` and ``default`` are values, never
+    walked.
     """
-    return "responseJsonSchema" if _contains_key(schema, "additionalProperties") else "responseSchema"
+    stack = [schema]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, bool):
+            return False
+        if not isinstance(node, dict):
+            continue
+        for key, value in node.items():
+            if key not in _GEMINI_SCHEMA_FIELDS:
+                return False
+            if key == "type" and isinstance(value, list):
+                return False
+            if key == "enum" and isinstance(value, list) and any(not isinstance(v, str) for v in value):
+                return False
+            if key == "properties" and isinstance(value, dict):
+                stack.extend(value.values())
+            elif key == "items":
+                stack.append(value)
+            elif key == "anyOf":
+                stack.extend(value if isinstance(value, list) else [value])
+    return True
 
 
-def _contains_key(value: Any, key: str) -> bool:
-    if isinstance(value, dict):
-        return key in value or any(_contains_key(v, key) for v in value.values())
-    if isinstance(value, list):
-        return any(_contains_key(v, key) for v in value)
-    return False
+def _gemini_schema_field(schema: Any) -> str:
+    """MAP-16: ``responseSchema`` when the schema fits Gemini's OpenAPI
+    Schema object, else ``responseJsonSchema`` (full JSON Schema)."""
+    return "responseSchema" if gemini_openapi_schema(schema) else "responseJsonSchema"
+
+
+def _gemini_function_declaration(tool: FunctionTool) -> dict[str, Any]:
+    """MAP-16: ``parameters`` when the tool's schema fits Gemini's OpenAPI
+    Schema object, else ``parametersJsonSchema``.  The schema is verbatim
+    either way (INV-002); only the field that carries it changes."""
+    field = "parameters" if gemini_openapi_schema(tool.parameters) else "parametersJsonSchema"
+    return {"name": tool.name, **tool_description(tool.description), field: tool.parameters}
 
 
 def _gemini_number(value: float) -> float | int:
@@ -225,10 +266,10 @@ def _gemini_number(value: float) -> float | int:
 def _response_format_to_gemini_config(format_config: dict[str, Any]) -> dict[str, Any]:
     """Canonical response_format (INV-050) -> Gemini generationConfig.
 
-    `responseJsonSchema` accepts JSON Schema keywords; `responseSchema` is
-    the OpenAPI subset — `_gemini_schema_field` picks by the presence of
-    `additionalProperties` (pinned by gemini.response_schema and the
-    2026-09-02 receipts).  `strict` is satisfied (always constrained);
+    `responseJsonSchema` accepts JSON Schema; `responseSchema` is Gemini's
+    OpenAPI Schema object — `_gemini_schema_field` picks by MAP-16 (pinned
+    by gemini.response_schema, gemini.response_json_schema and the
+    2026-09-26 receipts).  `strict` is satisfied (always constrained);
     `name` is a label with no slot.
     """
     if format_config["type"] == "json_object":
@@ -813,7 +854,7 @@ class GeminiLM(BaseProviderLM):
 
         if request.tools and resource is None:
             function_declarations = [
-                {"name": t.name, "description": t.description, "parameters": t.parameters}
+                _gemini_function_declaration(t)
                 for t in request.tools
                 if isinstance(t, FunctionTool)
             ]
@@ -1088,6 +1129,7 @@ class GeminiLM(BaseProviderLM):
 
     # ─── Streaming via Gemini Live for live models ──────────────────
 
+    @operation
     def stream(self, request: Request) -> Iterator[StreamEvent]:
         wire = self._wire_request(request)
         if self._should_use_live_completion(wire):
@@ -1123,6 +1165,7 @@ class GeminiLM(BaseProviderLM):
         return data, 16000
 
     def _stream_via_live_completion(self, request: Request) -> Iterator[StreamEvent]:
+        require_unmanaged_live(self)
         ws = self._live_connect(self._live_url())
         saw_tool_call = False
         audio_native = self._is_audio_native_live_model(request.model)
@@ -1275,6 +1318,7 @@ class GeminiLM(BaseProviderLM):
     # ─── Live sessions ──────────────────────────────────────────────
 
     def live(self, config: LiveConfig):
+        require_unmanaged_live(self)
         self._require("live")
         ws = self._live_connect(self._live_url())
         for frame in self._live_setup_frames(config):
@@ -1347,7 +1391,7 @@ class GeminiLM(BaseProviderLM):
         if config.system:
             setup["systemInstruction"] = {"parts": [{"text": config.system if isinstance(config.system, str) else parts_to_text(config.system)}]}
         function_tools = [
-            {"name": t.name, "description": t.description, "parameters": t.parameters}
+            _gemini_function_declaration(t)
             for t in config.tools
             if isinstance(t, FunctionTool)
         ]
@@ -1619,7 +1663,7 @@ class GeminiLM(BaseProviderLM):
             body["systemInstruction"] = {"parts": [{"text": text}]}
         if prefix.tools:
             declarations = [
-                {"name": t.name, "description": t.description, "parameters": t.parameters}
+                _gemini_function_declaration(t)
                 for t in prefix.tools if isinstance(t, FunctionTool)
             ]
             tools_wire: list[dict[str, Any]] = []

@@ -3,15 +3,19 @@
 from dspy._vendor.lm15.errors import error_class_for_code
 from dspy._vendor.lm15.types import STREAM_EVENT_CLASSES
 from dspy.clients.engines.lifecycle import aclosing_stream, closing_stream
-from dspy.lm15 import StreamAssemblyError
+from dspy.lm15 import AuthOperationError, StreamAssemblyError
 
 
 def error_from_event(event, *, provider=None):
     http = event.error.http_response
-    return error_class_for_code(event.error.code)(
+    error_class = error_class_for_code(event.error.code)
+    # ErrorDetail carries no managed-auth lifecycle state. Do not invent a
+    # specific login failure or claim that an operation did not commit.
+    kwargs = {"reason": "indeterminate", "stage": "dispatch", "commit_state": "unknown"} if error_class is AuthOperationError else {}
+    return error_class(
         event.error.message, provider=provider, provider_code=event.error.provider_code,
         request_id=http.get("request_id"), retry_after=http.get("retry_after"),
-        rate_limit_headers=http.get("rate_limit_headers"),
+        rate_limit_headers=http.get("rate_limit_headers"), **kwargs,
     )
 
 

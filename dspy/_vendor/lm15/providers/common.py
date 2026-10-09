@@ -3,10 +3,13 @@ from __future__ import annotations
 import base64
 import json
 import urllib.parse
-from typing import Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from ..models import ModelInfo, ModelOrigin
 from ..transports import TransportRequest
+
+if TYPE_CHECKING:
+    from ..errors import ProviderError
 from ..types import (
     AudioPart,
     BinaryPart,
@@ -23,9 +26,26 @@ from ..types import (
     ToolResultPart,
     TopLogprob,
     VideoPart,
+    Request,
 )
 
 JsonPayload = dict[str, Any] | list[Any]
+
+
+def tool_description(description: str | None) -> dict[str, str]:
+    """MAP-17: a function tool's description field for any wire.
+
+    ``{"description": text}`` when the tool has one, ``{}`` when it does not.
+    An absent description is left off the wire, never sent as ``null``:
+    every tool wire documents the field as an optional *string*, and
+    Anthropic and Groq refuse ``null`` (400, receipts
+    lm15-contract/receipts/2026-10-02-tool-description/).  ``""`` is the
+    same value as ``None`` in canonical JSON (omit-empty, spec/types.md), so
+    it is left off too: two requests that serialize identically must build
+    the same wire.  Splat it between the name and the schema to keep the
+    documented key order: ``{"name": ..., **tool_description(d), ...}``.
+    """
+    return {"description": description} if description else {}
 
 
 # The FileReadiness fold for every OpenAI-shaped file object (api.openai.com,
@@ -154,6 +174,38 @@ def check_tool_result_media(provider: str, part: ToolResultPart, policy: str, *,
             )
 
 
+# MAP-10 for message parts, the cells where a dialect has no slot at all.
+# Found 2026-09-24 (lm15-contract changes/2026-09-24-message-media.md): the
+# builders below turned such a part into an empty text block or dropped it,
+# silently. lm15-rs refused; this is the same preflight, before any wire.
+_NO_MESSAGE_SLOT = {
+    # The Messages API has image and document blocks only, in either role.
+    "anthropic": lambda role, kind: kind in ("audio", "video", "binary"),
+    # Assistant content is output text (and refusals) on both OpenAI wires.
+    "openai": lambda role, kind: role == "assistant",
+    "openai_chat": lambda role, kind: role == "assistant",
+}
+
+
+def check_message_media(request: Request, *, dialect: str, provider: str) -> None:
+    """Raise before any wire when a message holds a media part this dialect
+    has no content slot for in that role (MAP-10: natively or raises).
+    ``feature`` is the part's path, as MAP-13.4b addresses refusals."""
+    from ..errors import UnsupportedFeatureError
+
+    gap = _NO_MESSAGE_SLOT.get(dialect)
+    if gap is None:
+        return
+    for i, message in enumerate(request.messages):
+        for j, part in enumerate(message.parts):
+            if part.type in MEDIA_KINDS and gap(message.role, part.type):
+                raise UnsupportedFeatureError(
+                    f"{provider}: messages[{i}].parts[{j}]: the program depends on this "
+                    f"{message.role} {part.type} part; no native {dialect} content slot carries it (MAP-10)",
+                    provider=provider, feature=f"messages[{i}].parts[{j}]",
+                )
+
+
 def tool_result_error_text(part: ToolResultPart, text: str) -> str:
     """MAP-10 rule 5 on wires with no error flag: the text carries it."""
     return f"[error] {text}" if part.is_error else text
@@ -246,7 +298,7 @@ def model_infos_from_entries(
     *,
     provider: str,
     api_family: str,
-    id_of: "callable",
+    id_of: Callable[[dict[str, Any]], object],
 ) -> tuple[ModelInfo, ...]:
     """Map a provider's list-models entries to canonical ModelInfo.
 

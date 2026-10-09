@@ -19,6 +19,7 @@ from ..errors import (
     TimeoutError,
     UnsupportedFeatureError,
     UnsupportedModelError,
+    is_pinned_model_not_found,
     canonical_error_code,
     map_http_error,
 )
@@ -72,7 +73,7 @@ from .base import (
     batch_entry_request,
     default_transport,
 )
-from .common import EFFORT_THINKING_BUDGETS, MEDIA_KINDS, anthropic_source, check_tool_result_media, data_part_text, iso_utc, model_infos_from_entries, multipart_form_body, parts_to_text, path_id, unnamed_tool_call_error
+from .common import check_message_media, EFFORT_THINKING_BUDGETS, MEDIA_KINDS, anthropic_source, check_tool_result_media, data_part_text, iso_utc, model_infos_from_entries, multipart_form_body, parts_to_text, path_id, tool_description, unnamed_tool_call_error
 
 # Canonical builtin tool name → Anthropic tool format
 _ANTHROPIC_BUILTIN_MAP: dict[str, str] = {
@@ -162,27 +163,37 @@ def _reasoning_thinking_budget(request: Request) -> int | None:
     return EFFORT_THINKING_BUDGETS[reasoning.effort]
 
 
-# Output ceilings by model class, for the `max_tokens` the Messages API
-# requires and the caller did not set (MAP-13 `defaulted`, decision
-# 2026-09-14 §4.8).  Until then the default was 1024, which cut ordinary
-# answers off with nothing said.  The 3.x classes have documented lower
-# ceilings and a value above them is a 400; everything else (4.x and later,
-# and any name this table does not know) gets 16384 — loud and actionable
-# if a model's ceiling is lower ("max_tokens: 16384 > N"), never a silent
-# truncation.  A table that rots; `Config.max_tokens` overrides.
-_DEFAULT_MAX_TOKENS_BY_CLASS: tuple[tuple[str, int], ...] = (
+# The `max_tokens` the Messages API requires and the caller did not set
+# (MAP-13 `defaulted`; MAP-7 rule 6, amended 2026-09-30): the model's own
+# output ceiling, the value OpenAI and Gemini apply when their field is
+# omitted.  From Anthropic's Models API (`max_tokens`, receipts 2026-09-01
+# and 2026-09-30) and its models overview: 128000 for the 4.6 generation and
+# every later Claude (5.x, Fable, Mythos, and any Claude name this table has
+# not met — a newer model is loud, "max_tokens: 128000 > N", never a silent
+# truncation); 64000 for the 4.5 generation; the retired 3.x values stay.
+# Before 2026-09-30 every 4.x and later model got 16384, which a reply with
+# reasoning on routinely exhausted.  A model name that is not Claude's (a
+# DeepSeek, Kimi or Muse model on an Anthropic-dialect server) keeps 16384:
+# those servers publish their own, lower ceilings.  On the adaptive class
+# this is the ceiling for thinking and answer together; the note records it.
+# There is no rate-limit cost: Anthropic counts output tokens as produced,
+# not max_tokens (scrapes/anthropic/pages/rate-limits.md).
+_CLAUDE_OUTPUT_CEILINGS: tuple[tuple[str, int], ...] = (
     ("claude-3-haiku", 4096), ("claude-3-opus", 4096), ("claude-3-sonnet", 4096),
     ("claude-3-5-", 8192), ("claude-3.5-", 8192),
+    ("claude-haiku-4-5", 64000), ("claude-sonnet-4-5", 64000), ("claude-opus-4-5", 64000),
+    ("claude", 128000),
 )
 _DEFAULT_MAX_TOKENS = 16384
 
 
-def _default_max_tokens(model: str) -> int:
+def _claude_output_ceiling(model: str) -> int | None:
+    """The output ceiling of a Claude model, by name; None for any other."""
     lowered = model.lower()
-    for marker, ceiling in _DEFAULT_MAX_TOKENS_BY_CLASS:
+    for marker, ceiling in _CLAUDE_OUTPUT_CEILINGS:
         if marker in lowered:
             return ceiling
-    return _DEFAULT_MAX_TOKENS
+    return None
 
 
 def _max_tokens_for_anthropic(request: Request, thinking_budget: int | None, *, provider: str = "anthropic") -> int:
@@ -190,12 +201,26 @@ def _max_tokens_for_anthropic(request: Request, thinking_budget: int | None, *, 
     budget plus the visible cap.  Adaptive class (thinking_budget None):
     Config.max_tokens is the total ceiling — provider semantics, stated in
     spec/types.md.  The Messages API requires the field: when the caller
-    set none, the class default is used and recorded (MAP-13)."""
+    set none, a Claude model gets its output ceiling as the WIRE value (on
+    the manual class the visible part is what the budget leaves), any other
+    model 16384 visible; the default is recorded (MAP-13)."""
     visible = request.config.max_tokens
     if visible is None:
-        visible = _default_max_tokens(request.model)
+        ceiling = _claude_output_ceiling(request.model)
+        if ceiling is None:
+            visible = _DEFAULT_MAX_TOKENS
+        elif thinking_budget is None:
+            visible = ceiling
+        elif thinking_budget < ceiling:
+            visible = ceiling - thinking_budget
+        else:
+            # The caller's budget alone reaches the ceiling: the server's
+            # 400 names the limit (never a silent shrink of their budget).
+            visible = _DEFAULT_MAX_TOKENS
         adapt("config.max_tokens", "defaulted",
-              "the Messages API requires max_tokens and none was set; the class default was used",
+              "the Messages API requires max_tokens and none was set; the model's output ceiling was used"
+              if ceiling is not None else
+              "the Messages API requires max_tokens and none was set; 16384 was used (this server's ceiling is its own)",
               applied=visible, provider=provider)
     if thinking_budget is None:
         return visible
@@ -359,7 +384,9 @@ class AnthropicLM(BaseProviderLM):
         cls = self._error_type_map.get(provider_code, ProviderError)
         if self._is_context_length_message(message):
             cls = ContextLengthError
-        elif provider_code == "not_found_error" and self._is_model_error(message):
+        elif (provider_code == "not_found_error" and self._is_model_error(message)) or is_pinned_model_not_found(
+            provider_code, message
+        ):  # MAP-15
             cls = UnsupportedModelError
         return ErrorDetail(
             code=canonical_error_code(cls),
@@ -378,6 +405,10 @@ class AnthropicLM(BaseProviderLM):
             msg = err.get("message", "") if isinstance(err, dict) else str(err)
             err_type = str(err.get("type") or err.get("code") or "") if isinstance(err, dict) else ""
             request_id = str(data.get("request_id") or "") if isinstance(data, dict) else ""
+            if self.access is not None and self.access.backend == "claude-code":
+                from ..access import claude_code_version_guidance
+
+                msg = claude_code_version_guidance(msg)
 
             if self._is_context_length_message(msg):
                 return self._provider_error(
@@ -392,7 +423,7 @@ class AnthropicLM(BaseProviderLM):
             # 2026-09-03); the message rule decides, as on the chat wire.
             if err_type == "DeploymentNotFound" or (
                 err_type in ("not_found_error", "resource_not_found_error") and self._is_model_error(msg)
-            ):
+            ) or is_pinned_model_not_found(err_type, msg):  # MAP-15
                 return self._provider_error(
                     UnsupportedModelError,
                     msg,
@@ -565,6 +596,7 @@ class AnthropicLM(BaseProviderLM):
         return payload
 
     def _payload(self, request: Request, stream: bool) -> dict[str, Any]:
+        check_message_media(request, dialect="anthropic", provider=self.provider)
         compat = self._resolved_compat
         if compat.model_prefixes is not None and not request.model.startswith(compat.model_prefixes):
             # The server maps foreign model names onto its own models without
@@ -591,13 +623,26 @@ class AnthropicLM(BaseProviderLM):
         # which walks backwards silently when the last block is ineligible.
         # prefix="stable" (and plain auto) mark the system block below.
         # key / resource name mechanisms the Messages API does not have.
+        if cache_cfg is not None and cache_cfg.key is not None:
+            # MAP-13: a best-effort routing hint by definition; no home on
+            # this wire, whether or not the server takes marks.
+            adapt("config.cache.key", "dropped",
+                  "the Messages API has no cache affinity key (OpenAI's prompt_cache_key); "
+                  "marks on blocks are its mechanism",
+                  asked=cache_cfg.key, provider=self.provider)
+        if cache_cfg is not None and cache_cfg.retention == "long" and compat.cache_control != "anthropic":
+            # MAP-13: the TTL rides a cache mark, and this server takes none.
+            adapt("config.cache.retention", "dropped",
+                  "this server caches implicitly and has no cache-control TTL",
+                  asked="long", provider=self.provider)
+        if not use_cache and cache_cfg is not None and cache_cfg.resource is not None:
+            # MAP-6 rule 7 on a server without marks (e.g. meta-anthropic): the
+            # same refusal; dropping it would lose the prefix it holds.
+            raise UnsupportedFeatureError(
+                f"{self.provider}: cache.resource is not supported — this server has no stored-cache tier and no cache marks; sending without it would drop the prompt prefix the resource holds",
+                provider=self.provider, feature="config.cache.resource",
+            )
         if use_cache and cache_cfg is not None:
-            if cache_cfg.key is not None:
-                # MAP-13: a best-effort routing hint by definition; no home here.
-                adapt("config.cache.key", "dropped",
-                      "the Messages API has no cache affinity key (OpenAI's prompt_cache_key); "
-                      "marks on blocks are its mechanism and were placed",
-                      asked=cache_cfg.key, provider=self.provider)
             if cache_cfg.resource is not None:
                 # MAP-13 rule 4(b): the program references a stored object
                 # that does not exist on this provider.
@@ -662,7 +707,9 @@ class AnthropicLM(BaseProviderLM):
                            "(protocols--messages.md)"
                            if always_adaptive else
                            f"{request.model} takes thinking.type 'adaptive' with output_config.effort; "
-                           "budget_tokens is rejected by the API (live 2026-09-02)"),
+                           "budget_tokens is rejected by the API (live 2026-09-02). Thinking is bounded only "
+                           "by max_tokens, which covers thinking and answer together: lower the effort or "
+                           "raise max_tokens"),
                           asked=reasoning.thinking_budget, provider=self.provider)
                     reasoning = replace(reasoning, thinking_budget=None)
                 # MAP-7: the word goes verbatim on the always-adaptive server;
@@ -731,7 +778,7 @@ class AnthropicLM(BaseProviderLM):
                 if allowed_subset is not None and tool.name not in allowed_subset:
                     continue
                 if isinstance(tool, FunctionTool):
-                    tools_wire.append({"name": tool.name, "description": tool.description, "input_schema": tool.parameters})
+                    tools_wire.append({"name": tool.name, **tool_description(tool.description), "input_schema": tool.parameters})
                 elif isinstance(tool, BuiltinTool):
                     tools_wire.append(_builtin_to_anthropic(tool))
             if allowed_subset is not None:

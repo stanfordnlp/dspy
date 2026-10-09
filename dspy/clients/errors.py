@@ -46,7 +46,6 @@ ERROR_MAPPING = (
     (lm15.CapabilityError, LMUnsupportedFeatureError),
     (lm15.NotConfiguredError, LMNotConfiguredError),
     (lm15.ConfigurationError, LMConfigurationError),
-    (lm15.ToolDerivationError, LMConfigurationError),
     (lm15.TransportError, LMTransportError),
     (lm15.ProviderError, LMProviderError),
 )
