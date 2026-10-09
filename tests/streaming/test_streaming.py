@@ -362,9 +362,15 @@ async def test_streaming_handles_space_correctly():
         ["[[ ## answer", " ## ]]", "\nHow ", "are ", "you ", "doing?", "\n\n[[ ## completed ## ]]"],
         ["[[ ## answer ## ]]\n", "How\n", "are you\n", "doing?", "\n\n[[ ## completed ## ]]"],
         ["[[ ## answer ## ]]\n", "How ", "are ", "you ", "doing?\n\n"],
+        # "[[" inside the value is not a field header.
+        ["[[ ## answer ## ]]\n", "```python\nm = ", "[[", "1, 2], ", "[3, 4]]", "\n```", "\n\n[[ ## completed ## ]]"],
+        ["[[ ## answer ## ]]\n", "See ", "also ", "[[", "Matrices", "]].", "\n\n", "[[ ## completed ## ]]"],
+        ["[[ ## answer ## ]]\n", "See also ", "[[Matrices]]\n\n[[ ## comp", "leted ## ]]"],
+        # The end marker is split across chunks.
+        ["[[ ## answer ## ]]\n", "m = [[1, 2]]", "\n\n[", "[ #", "# comp", "leted #", "# ]", "]"],
     ],
 )
-async def test_streaming_strips_boundary_whitespace_regardless_of_chunking(parts):
+async def test_streaming_chunks_join_to_parsed_value_regardless_of_chunking(parts):
     program = dspy.streamify(
         dspy.Predict("question->answer"),
         stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],

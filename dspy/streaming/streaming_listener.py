@@ -23,6 +23,9 @@ if TYPE_CHECKING:
 
 ADAPTER_SUPPORT_STREAMING = [ChatAdapter, XMLAdapter, JSONAdapter]
 
+# Matches an unfinished "[[ ## <field> ## ]]" at the end of the text, from "[" up to "[[ ## <field> ## ]".
+_CHAT_END_IDENTIFIER_PREFIX = re.compile(r"\[(?:\[(?: (?:#(?:#(?: (?:\w+(?: (?:#(?:#(?: \]?)?)?)?)?)?)?)?)?)?)?\Z")
+
 
 class StreamListener:
     """Class that listens to the stream to capture the streeaming of a specific output field of a predictor."""
@@ -345,10 +348,15 @@ class StreamListener:
                 boundary_index = len(last_tokens)
             return last_tokens[:boundary_index]
         elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
-            boundary_index = last_tokens.find("[[")
-            if boundary_index == -1:
-                boundary_index = len(last_tokens)
-            return last_tokens[:boundary_index]
+            if not self.stream_end:
+                # Values can contain "[[", e.g. `[[1, 2]]` or wiki links, so only cut when ending the field.
+                return last_tokens
+            # Cut at the next field header, or at a trailing prefix of one, e.g. "[[ ## comp". The parsed value is
+            # stripped, so drop the whitespace before the cut too.
+            match = self.adapter_identifiers["ChatAdapter"]["end_identifier"].search(
+                last_tokens
+            ) or _CHAT_END_IDENTIFIER_PREFIX.search(last_tokens)
+            return (last_tokens[: match.start()] if match else last_tokens).rstrip()
         else:
             raise ValueError(
                 f"Unsupported adapter for streaming: {settings.adapter}, please use one of the following adapters: "
