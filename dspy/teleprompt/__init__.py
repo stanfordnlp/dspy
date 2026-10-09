@@ -14,7 +14,23 @@ from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.teleprompt.teleprompt_optuna import BootstrapFewShotWithOptuna
 from dspy.teleprompt.vanilla import LabeledFewShot
 
-from .gepa.gepa import GEPA
+try:
+    from .gepa.gepa import GEPA
+except ModuleNotFoundError as error:
+    if error.name != "gepa":
+        raise
+
+    class GEPA:
+        """Stand-in for GEPA when the gepa package is not installed.
+
+        DSPy installs gepa only on Python < 3.15, because gepa declares requires-python <3.15.
+        """
+
+        def __init__(self, *args, **kwargs):
+            raise ImportError(
+                "gepa is required to use dspy.GEPA. It is not installed by default on Python 3.15 and later "
+                "because gepa declares requires-python <3.15."
+            )
 
 __all__ = [
     "AvatarOptimizer",
