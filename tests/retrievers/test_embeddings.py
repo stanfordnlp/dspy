@@ -49,6 +49,24 @@ def test_embeddings_basic_search():
     assert result.passages[0] == "The dog barked at the mailman."
 
 
+def test_embeddings_faiss_ignores_missing_candidates():
+    retriever = EmbeddingsWithScores(corpus=dummy_corpus(), embedder=dummy_embedder, k=2)
+
+    class Index:
+        def search(self, query_embeddings, num_candidates):
+            assert query_embeddings.shape[0] == 2
+            assert num_candidates == 3
+            return None, np.array([[0, -1, -1], [2, 1, -1]])
+
+    retriever.index = Index()
+    results = retriever._batch_forward(["cat", "dog"])
+
+    assert results == [
+        (["The cat sat on the mat."], [0], [1.0]),
+        (["The dog barked at the mailman.", "Birds fly in the sky."], [1, 2], [1.0, 0.0]),
+    ]
+
+
 def test_embeddings_multithreaded_search():
     corpus = dummy_corpus()
     embedder = dummy_embedder
