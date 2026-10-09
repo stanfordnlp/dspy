@@ -1,9 +1,12 @@
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import pydantic
 
 from dspy.adapters.types.base_type import Type
 from dspy.utils.annotation import experimental
+
+if TYPE_CHECKING:
+    from dspy.signatures.signature import Signature
 
 
 @experimental(version="3.0.4")
@@ -168,7 +171,7 @@ class Citations(Type):
         return self.citations[index]
 
     @classmethod
-    def adapt_to_native_lm_feature(cls, signature, field_name, lm, lm_kwargs) -> bool:
+    def adapt_to_native_lm_feature(cls, signature, field_name, lm, lm_kwargs) -> type["Signature"]:
         if lm.model.startswith("anthropic/"):
             return signature.delete(field_name)
         return signature

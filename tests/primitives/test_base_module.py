@@ -544,6 +544,20 @@ def test_forward_through_call_no_warning(capsys):
     assert "directly is discouraged" not in captured.err
 
 
+def test_forward_guard_does_not_walk_the_stack(monkeypatch):
+    import inspect
+
+    class TestModule(dspy.Module):
+        def forward(self, x):
+            return x
+
+    def fail(*args, **kwargs):
+        raise AssertionError("inspect.stack() must not run on module call")
+
+    monkeypatch.setattr(inspect, "stack", fail)
+    assert TestModule()(x="test") == "test"
+
+
 def test_modules_to_serialize_registration_does_not_outlive_the_save(tmp_path):
     # cloudpickle's by-value registry is process-wide and keyed by module
     # name. A save must not leave a module registered, or every later pickle

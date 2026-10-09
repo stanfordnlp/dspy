@@ -8,33 +8,25 @@ The `instruction_proposer` is the component responsible for invoking the `reflec
 
 ### Default Implementation
 
-By default, GEPA uses the built-in instruction proposer from the [GEPA library](https://github.com/gepa-ai/gepa), which implements the [`ProposalFn`](https://github.com/gepa-ai/gepa/blob/main/src/gepa/core/adapter.py). The [default proposer](https://github.com/gepa-ai/gepa/blob/main/src/gepa/proposer/reflective_mutation/reflective_mutation.py#L53-L75) uses this prompt template:
+By default, GEPA uses `InstructionProposer` from `dspy.teleprompt.gepa`. When you pass no `instruction_proposer`, GEPA builds `InstructionProposer()` with its defaults. The proposer passes reflective examples as a list of dictionaries to `dspy.Predict`. The adapter renders their inputs, outputs, and feedback, including history and multimodal values. The proposer asks the `reflection_lm` for a new instruction through `dspy.Predict` with a `JSONAdapter`. Inputs that are `dspy.Type` instances, such as `dspy.Image`, reach the reflection LM as structured content.
+
+The default prompt is the `ProposeInstruction` signature. Its instructions are:
 
 ````
-I provided an assistant with the following instructions to perform a task for me:
-```
-<curr_param>
-```
-
-The following are examples of different task inputs provided to the assistant along with the assistant's response for each of them, and some feedback on how the assistant's response could be better:
-```
-<side_info>
-```
+I provided an assistant with instructions to perform a task for me. You are given those instructions, along with examples of different task inputs provided to the assistant, the assistant's response for each of them, and some feedback on how the assistant's response could be better.
 
 Your task is to write a new instruction for the assistant.
 
 Read the inputs carefully and identify the input format and infer detailed task description about the task I wish to solve with the assistant.
 
 Read all the assistant responses and the corresponding feedback. Identify all niche and domain specific factual information about the task and include it in the instruction, as a lot of it may not be available to the assistant in the future. The assistant may have utilized a generalizable strategy to solve the task, if so, include that in the instruction as well.
-
-Provide the new instructions within ``` blocks.
 ````
 
-This template is automatically filled with:
+The signature has two input fields and one output field:
 
-- `<curr_param>`: The current instruction being optimized
-- `<side_info>`: Structured markdown containing predictor inputs, generated outputs, and evaluation feedback
-
+- `current_instruction`: The current instruction being optimized
+- `examples_with_feedback`: A list of dictionaries containing predictor inputs, generated outputs, and evaluation feedback
+- `new_instruction`: The proposed instruction
 
 Example of default behavior:
 
@@ -42,22 +34,52 @@ Example of default behavior:
 # Default instruction proposer is used automatically
 gepa = dspy.GEPA(
     metric=my_metric,
-    reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000, api_key=api_key),
+    reflection_lm=dspy.LM(model="gpt-5", max_tokens=32000, api_key=api_key),
     auto="medium"
 )
 optimized_program = gepa.compile(student, trainset=examples)
 ```
 
+#### Configuring the default proposer
+
+Pass an `InstructionProposer(...)` instance to configure the default behavior. `skills`, `additional_instructions`, and `max_chars` each add one input field to the proposal prompt when set. `InstructionProposer()` sends only the two base fields.
+
+| Option | Effect |
+|---|---|
+| `skills` | Reference material shown to the reflection LM, as one source or a sequence of sources. Each entry is a path to a markdown or text file, a directory holding `SKILL.md` (the Agent Skills layout), or an inline string. A path that does not exist raises at construction. A leading YAML frontmatter block supplies `name` and `description`, including multiline descriptions. Empty bodies and invalid frontmatter raise at construction. |
+| `additional_instructions` | Guidance applied to every proposal, such as "Write instructions in imperative voice." |
+| `base_instructions` | Replaces the prompt text above. The input and output fields stay the same. |
+| `max_chars` | Maximum Unicode characters in each proposed instruction after stripping outer whitespace. Pydantic validates this limit. `None` means no limit. |
+| `truncate_history_outputs` | When `True`, long tool results inside `dspy.History` inputs (for example from `dspy.ReActV2`) and long outputs inside `REPLHistory` inputs are cut to 500 characters before the examples are rendered. Nothing else is shortened. |
+| `adapter` | The adapter for the proposer's own LM calls. Defaults to `JSONAdapter()`. |
+
+When a proposal exceeds `max_chars`, the proposer makes one more call asking the reflection LM to shorten the draft. Pydantic validates the result and raises `ValidationError` if it is empty or still too long. The proposer never truncates an instruction. Validation runs after adapter parsing, so the limit is enforced with custom adapters too.
+
+```python
+from dspy.teleprompt.gepa import InstructionProposer
+
+gepa = dspy.GEPA(
+    metric=my_metric,
+    reflection_lm=dspy.LM(model="gpt-5", max_tokens=32000, api_key=api_key),
+    instruction_proposer=InstructionProposer(
+        skills=["./skills/prompt-engineering", "./skills/prompt-engineering/models/openai.md"],
+        additional_instructions="Write instructions in imperative voice.",
+        max_chars=1500,
+        truncate_history_outputs=True,
+    ),
+    auto="medium",
+)
+```
+
+Exceptions raised while proposing propagate to GEPA for proposal failure handling.
+
 ### When to Use Custom instruction_proposer
 
-**Note:** Custom instruction proposers are an advanced feature. Most users should start with the default proposer, which works well for most text-based optimization tasks.
+**Note:** Custom instruction proposers are an advanced feature. Most users should start with the default proposer, which works well for most optimization tasks, and reach for its options (`skills`, `additional_instructions`, `base_instructions`, `max_chars`, and `truncate_history_outputs`) before writing their own.
 
 Consider implementing a custom instruction proposer when you need:
 
-- **Multi-modal handling**: Process images (dspy.Image) alongside textual information in your inputs
-- **Nuanced control on limits and length constraints**: Have more fine-grained control over instruction length, format, and structural requirements
-- **Domain-specific information**: Inject specialized knowledge, terminology, or context that the default proposer lacks and cannot be provided via feedback_func. This is an advanced feature, and most users should not need to use this.
-- **Provider-specific prompting guides**: Optimize instructions for specific LLM providers (OpenAI, Anthropic, etc.) with their unique formatting preferences
+- **Nuanced control on format and structure**: Requirements on instruction format or structure that go beyond what `additional_instructions` and `max_chars` express
 - **Coupled component updates**: Handle situations where 2 or more components need to be updated together in a coordinated manner, rather than optimizing each component independently (refer to component_selector parameter, in [Custom Component Selection](#custom-component-selection) section, for related functionality)
 - **External knowledge integration**: Connect to databases, APIs, or knowledge bases during instruction generation
 
@@ -65,22 +87,22 @@ Consider implementing a custom instruction proposer when you need:
 
 **Built-in Options:**
 
-- **Default Proposer**: The standard GEPA instruction proposer (used when `instruction_proposer=None`). The default instruction proposer IS an instruction proposer as well! It is the most general one, that was used for the diverse experiments reported in the GEPA paper and tutorials.
-- **MultiModalInstructionProposer**: Handles `dspy.Image` inputs and structured multimodal content.
+- **InstructionProposer**: The default (used when `instruction_proposer=None`), configurable as shown above. It uses GEPA's standard reflection prompt, which was used for the diverse experiments reported in the GEPA paper and tutorials, and it sends `dspy.Image` inputs to the reflection LM as structured content.
+- **MultiModalInstructionProposer**: An earlier proposer for `dspy.Image` inputs with its own vision-oriented prompt. The default proposer now handles images too, so this class is kept for comparison and may be deprecated.
 
 ```python
 from dspy.teleprompt.gepa.instruction_proposal import MultiModalInstructionProposer
 
-# For tasks involving images or multimodal inputs
+# A vision-specific prompt for tasks involving images
 gepa = dspy.GEPA(
     metric=my_metric,
-    reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000, api_key=api_key),
+    reflection_lm=dspy.LM(model="gpt-5", max_tokens=32000, api_key=api_key),
     instruction_proposer=MultiModalInstructionProposer(),
     auto="medium"
 )
 ```
 
-We invite community contributions of new instruction proposers for specialized domains as the [GEPA library](https://github.com/gepa-ai/gepa) continues to grow.
+We invite community contributions of new instruction proposers for specialized domains.
 
 ### How to Implement Custom Instruction Proposers
 
@@ -113,59 +135,17 @@ def custom_instruction_proposer(candidate, reflective_dataset, components_to_upd
   - `Generated_Outputs: dict[str, Any] | str` - Success: output fields dict, Failure: error message
   - `Feedback: str` - Always a string from metric function or auto-generated by GEPA
 
-#### Basic Example: Word Limit Proposer
+#### Basic Example: Character Limit
+
+A character limit needs no custom proposer. The default proposer validates it with Pydantic and allows one compression call when a draft is too long:
 
 ```python
-import dspy
-from gepa.core.adapter import ProposalFn
-from dspy.teleprompt.gepa.gepa_utils import ReflectiveExample
+from dspy.teleprompt.gepa import InstructionProposer
 
-class GenerateWordLimitedInstruction(dspy.Signature):
-    """Given a current instruction and feedback examples, generate an improved instruction with word limit constraints."""
-
-    current_instruction = dspy.InputField(desc="The current instruction that needs improvement")
-    feedback_summary = dspy.InputField(desc="Feedback from examples that might include both positive and negative cases")
-    max_words = dspy.InputField(desc="Maximum number of words allowed in the new instruction")
-
-    improved_instruction = dspy.OutputField(desc="A new instruction that fixes the issues while staying under the max_words limit")
-
-class WordLimitProposer(ProposalFn):
-    def __init__(self, max_words: int = 1000):
-        self.max_words = max_words
-        self.instruction_improver = dspy.ChainOfThought(GenerateWordLimitedInstruction)
-
-    def __call__(self, candidate: dict[str, str], reflective_dataset: dict[str, list[ReflectiveExample]], components_to_update: list[str]) -> dict[str, str]:
-        updated_components = {}
-
-        for component_name in components_to_update:
-            if component_name not in candidate or component_name not in reflective_dataset:
-                continue
-
-            current_instruction = candidate[component_name]
-            component_examples = reflective_dataset[component_name]
-
-            # Create feedback summary
-            feedback_text = "\n".join([
-                f"Example {i+1}: {ex.get('Feedback', 'No feedback')}"
-                for i, ex in enumerate(component_examples)  # Limit examples to prevent context overflow
-            ])
-
-            # Use the module to improve the instruction
-            result = self.instruction_improver(
-                current_instruction=current_instruction,
-                feedback_summary=feedback_text,
-                max_words=self.max_words
-            )
-
-            updated_components[component_name] = result.improved_instruction
-
-        return updated_components
-
-# Usage
 gepa = dspy.GEPA(
     metric=my_metric,
-    reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000, api_key=api_key),
-    instruction_proposer=WordLimitProposer(max_words=700),
+    reflection_lm=dspy.LM(model="gpt-5", max_tokens=32000, api_key=api_key),
+    instruction_proposer=InstructionProposer(max_chars=3500),
     auto="medium"
 )
 ```
@@ -278,7 +258,7 @@ collection = client.get_collection("instruction_guidelines")
 
 gepa = dspy.GEPA(
     metric=task_specific_metric,
-    reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000, api_key=api_key),
+    reflection_lm=dspy.LM(model="gpt-5", max_tokens=32000, api_key=api_key),
     instruction_proposer=DocumentationEnhancedProposer(collection),
     auto="medium"
 )
@@ -410,7 +390,7 @@ By default, GEPA uses a **round-robin strategy** (`RoundRobinReflectionComponent
 # Default round-robin component selection
 gepa = dspy.GEPA(
     metric=my_metric,
-    reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000, api_key=api_key),
+    reflection_lm=dspy.LM(model="gpt-5", max_tokens=32000, api_key=api_key),
     # component_selector="round_robin"  # This is the default
     auto="medium"
 )
@@ -511,12 +491,14 @@ gepa = dspy.GEPA(
 Component selectors work seamlessly with custom instruction proposers. The selector determines which components to update, then the instruction proposer generates new instructions for those components:
 
 ```python
-# Combined custom selector + custom proposer
+from dspy.teleprompt.gepa import InstructionProposer
+
+# Combined custom selector and configured instruction proposer
 gepa = dspy.GEPA(
     metric=my_metric,
     reflection_lm=reflection_lm,
     component_selector=alternating_half_selector,
-    instruction_proposer=WordLimitProposer(max_words=500),
+    instruction_proposer=InstructionProposer(max_chars=2500),
     auto="medium"
 )
 ```

@@ -906,6 +906,7 @@ dependencies = [
     { name = "openai" },
     { name = "orjson" },
     { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "regex" },
     { name = "requests" },
     { name = "tenacity" },
@@ -971,6 +972,11 @@ weaviate = [
     { name = "weaviate-client" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "dspy-interpreters" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.18.0,<1.0.0" },
@@ -1008,6 +1014,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.26.0" },
     { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.12.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5.0" },
+    { name = "pyyaml", specifier = ">=6.0.1" },
     { name = "regex", specifier = ">=2023.10.3" },
     { name = "requests", specifier = ">=2.31.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3.0" },
@@ -1017,6 +1024,17 @@ requires-dist = [
     { name = "weaviate-client", marker = "extra == 'weaviate'", specifier = ">=4.5.4,<4.22.0" },
 ]
 provides-extras = ["anthropic", "typesafe", "weaviate", "mcp", "deno", "langchain", "optuna", "numpy", "litellm", "dev", "test-extras"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "dspy-interpreters", git = "https://github.com/cmpnd-ai/dspy-interpreters" }]
+
+[[package]]
+name = "dspy-interpreters"
+version = "0.1.0"
+source = { git = "https://github.com/cmpnd-ai/dspy-interpreters#f05f3bdca9b2fc543bc3f8512b887e36b90c7e04" }
+dependencies = [
+    { name = "dspy" },
+]
 
 [[package]]
 name = "email-validator"

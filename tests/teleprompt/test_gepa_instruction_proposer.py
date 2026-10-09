@@ -331,13 +331,14 @@ def test_default_proposer(reasoning: bool, caplog):
 
     reflection_lm = DummyLM(
         [
-            {"improved_instruction": "Be more specific about image analysis"},
-            {"improved_instruction": "Focus on visual features when classifying"},
-            {"improved_instruction": "Consider contextual clues in the image"},
-            {"improved_instruction": "Analyze shape, color, and texture patterns"},
-            {"improved_instruction": "Look for distinguishing characteristics"},
+            {"new_instruction": "Be more specific about image analysis"},
+            {"new_instruction": "Focus on visual features when classifying"},
+            {"new_instruction": "Consider contextual clues in the image"},
+            {"new_instruction": "Analyze shape, color, and texture patterns"},
+            {"new_instruction": "Look for distinguishing characteristics"},
         ],
         reasoning=reasoning,
+        adapter=dspy.JSONAdapter(),
     )
 
     gepa = dspy.GEPA(
@@ -363,8 +364,10 @@ def test_default_proposer(reasoning: bool, caplog):
     assert len(lm.history) > 0, "LM should have been called"
     assert len(reflection_lm.history) > 0, "Reflection LM should have been called"
 
+    # The default InstructionProposer sends images to the reflection LM as structured content.
     images_in_history = check_images_in_history(reflection_lm.history)
 
-    assert images_in_history.has_text_serialized_images, (
-        "Expected to find serialized images (CUSTOM-TYPE-START-IDENTIFIER)"
+    assert images_in_history.has_structured_images, "Expected structured image_url parts in the reflection prompt"
+    assert not images_in_history.has_text_serialized_images, (
+        "Expected no serialized images (CUSTOM-TYPE-START-IDENTIFIER) in the reflection prompt"
     )
