@@ -153,16 +153,19 @@ class GenerateModuleInstruction(dspy.Module):
         tip=None,
     ):
         def gather_examples_from_sets(candidate_sets, max_examples):
-            """Helper function to gather up to augmented examples from given sets."""
+            """Helper function to gather up to max_examples from given sets.
+
+            Yields rendered example strings for both bootstrapped (augmented) demos
+            and hand-labeled demos, since both are valid context for instruction proposal.
+            """
             count = 0
             for candidate_set in candidate_sets:
                 for example in candidate_set:
-                    if "augmented" in example.keys():
-                        fields_to_use = get_signature(program.predictors()[pred_i]).fields
-                        yield create_example_string(fields_to_use, example)
-                        count += 1
-                        if count >= max_examples:
-                            return
+                    fields_to_use = get_signature(program.predictors()[pred_i]).fields
+                    yield create_example_string(fields_to_use, example)
+                    count += 1
+                    if count >= max_examples:
+                        return
 
         # Construct full program demo or single module demo depending on settings
         basic_instruction = get_signature(program.predictors()[pred_i]).instructions
