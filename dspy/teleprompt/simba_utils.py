@@ -11,12 +11,16 @@ from dspy.signatures import InputField, OutputField
 
 logger = logging.getLogger(__name__)
 
-def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings: dict | None = None):
+def prepare_models_for_resampling(
+    program: dspy.Module,
+    n: int,
+    teacher_settings: dict | None = None,
+    temperatures: list[float] | float | None = None,
+):
     lm = program.get_lm() or dspy.settings.lm
 
     start_rollout_id = lm.kwargs.get("rollout_id", 0)
     rollout_ids = [start_rollout_id + i for i in range(n)]
-
 
     start_rollout_idx, models = 0, []
     # If we have a teacher model, use this as the first model
@@ -26,8 +30,16 @@ def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings
         models.append(teacher_lm)
         start_rollout_idx += 1
 
-    # The rest of the models are just copies of the base model
-    models.extend([lm.copy(rollout_id=r, temperature=1.0) for r in rollout_ids[start_rollout_idx:]])
+    remaining_rollouts = rollout_ids[start_rollout_idx:]
+    if isinstance(temperatures, (int, float)):
+        temp_list = [float(temperatures)] * len(remaining_rollouts)
+    elif temperatures:
+        temp_list = [temperatures[i % len(temperatures)] for i in range(len(remaining_rollouts))]
+    else:
+        temp_list = [1.0] * len(remaining_rollouts)
+
+    # The rest of the models are copies of the base model with rollout_id and configured temperature
+    models.extend([lm.copy(rollout_id=r, temperature=t) for r, t in zip(remaining_rollouts, temp_list, strict=True)])
 
     return models
 
