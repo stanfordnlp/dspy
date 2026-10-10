@@ -270,6 +270,8 @@ def test_dump_and_load_state():
     assert CustomSignature2.dump_state() != expected
     # Overwrite the state with the state of CustomSignature.
     loaded_signature = CustomSignature2.load_state(state)
+    assert loaded_signature.__name__ == "CustomSignature2"
+    assert CustomSignature.load_state(state).__name__ == "CustomSignature"
     assert loaded_signature.instructions == "I am just an instruction."
     # After `load_state`, the state should be the same as CustomSignature.
     assert loaded_signature.dump_state() == expected

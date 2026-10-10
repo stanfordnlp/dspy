@@ -535,7 +535,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def load_state(cls, state):
-        signature_copy = Signature(deepcopy(cls.fields), cls.instructions)
+        signature_copy = Signature(deepcopy(cls.fields), cls.instructions, signature_name=cls.__name__)
 
         signature_copy.instructions = state["instructions"]
         for field, saved_field in zip(signature_copy.fields.values(), state["fields"], strict=False):

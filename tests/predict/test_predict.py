@@ -281,14 +281,15 @@ def test_typed_demos_after_dump_and_load_state():
 #     assert new_instance.demos[0]["input"] == original_instance.demos[0].input.model_dump_json()
 
 
-def test_signature_fields_after_dump_and_load_state(tmp_path):
+@pytest.mark.parametrize("filename", ["model.json", "model.pkl"])
+def test_signature_fields_after_dump_and_load_state(tmp_path, filename):
     class CustomSignature(dspy.Signature):
         """I am just an instruction."""
 
         sentence = dspy.InputField(desc="I am an innocent input!")
         sentiment = dspy.OutputField()
 
-    file_path = tmp_path / "tmp.json"
+    file_path = tmp_path / filename
     original_instance = Predict(CustomSignature)
     original_instance.save(file_path)
 
@@ -298,11 +299,12 @@ def test_signature_fields_after_dump_and_load_state(tmp_path):
         sentence = dspy.InputField(desc="I am a malicious input!")
         sentiment = dspy.OutputField(desc="I am a malicious output!", prefix="I am a prefix!")
 
-    new_instance = Predict(CustomSignature2)
-    assert new_instance.signature.dump_state() != original_instance.signature.dump_state()
-    # After loading, the fields should be the same.
-    new_instance.load(file_path)
-    assert new_instance.signature.dump_state() == original_instance.signature.dump_state()
+    for signature in (CustomSignature, CustomSignature2, dspy.Signature("sentence -> sentiment")):
+        new_instance = Predict(signature)
+        for _ in range(2):
+            new_instance.load(file_path, allow_pickle=filename.endswith(".pkl"))
+            assert new_instance.signature.__name__ == signature.__name__
+            assert new_instance.signature.dump_state() == original_instance.signature.dump_state()
 
 
 @pytest.mark.parametrize("filename", ["model.json", "model.pkl"])
