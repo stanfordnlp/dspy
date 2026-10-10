@@ -199,6 +199,34 @@ def test_react_v2_forced_submit_on_empty_tool_calls():
     assert lm.history[1]["kwargs"].get("reasoning_effort") is None
 
 
+def test_react_v2_reasoning_effort_none_keeps_thoughts_and_reaches_forced_submit():
+    # Some providers accept function tools only with an explicit reasoning_effort="none" (e.g. Azure OpenAI's
+    # gpt-6-luna on chat completions). "none" must keep `next_thought` as a text field and survive forced submit.
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = ReasoningDummyLM(
+        [
+            {
+                "next_thought": "I should look this up.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": "cats"}}]),
+            },
+            {
+                "next_thought": "Forced final.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
+            },
+        ]
+    )
+    lm.kwargs["reasoning_effort"] = "none"
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2("question -> answer", tools=[lookup], max_iters=1)(question="cats")
+
+    assert pred.termination_reason == "forced_submit"
+    assert pred.history.messages[0]["next_thought"] == "I should look this up."
+    assert lm.history[1]["kwargs"]["reasoning_effort"] == "none"
+
+
 def test_react_v2_forced_submit_with_native_flag_but_unsupported_lm():
     adapter = dspy.JSONAdapter(use_native_function_calling=True)
     lm = dspy.utils.DummyLM(

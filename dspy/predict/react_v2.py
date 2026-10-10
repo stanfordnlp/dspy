@@ -253,6 +253,17 @@ class ReActV2(Module):
             event["tool_calls"] = tool_calls
         return event
 
+    def _forced_submit_config(self) -> dict[str, Any]:
+        # The forced call turns native reasoning off. `None` drops `reasoning_effort` from the request, so keep an
+        # explicit "none": some providers require it before accepting function tools (e.g. Azure OpenAI's
+        # gpt-6-luna on chat completions), and dropping it re-enables their default reasoning.
+        lm = self.react.lm or dspy.settings.lm
+        reasoning_effort = {**getattr(lm, "kwargs", {}), **self.react.config}.get("reasoning_effort")
+        return {
+            "tool_choice": {"type": "function", "function": {"name": "submit"}},
+            "reasoning_effort": "none" if reasoning_effort == "none" else None,
+        }
+
     def _forced_submit(
         self,
         history: dspy.History,
@@ -264,10 +275,7 @@ class ReActV2(Module):
             pred = self.react(
                 history=history,
                 tools=list(self.tools.values()),
-                config={
-                    "tool_choice": {"type": "function", "function": {"name": "submit"}},
-                    "reasoning_effort": None,
-                },
+                config=self._forced_submit_config(),
                 **pending_inputs,
             )
             tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
@@ -304,10 +312,7 @@ class ReActV2(Module):
             pred = await self.react.acall(
                 history=history,
                 tools=list(self.tools.values()),
-                config={
-                    "tool_choice": {"type": "function", "function": {"name": "submit"}},
-                    "reasoning_effort": None,
-                },
+                config=self._forced_submit_config(),
                 **pending_inputs,
             )
             tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
