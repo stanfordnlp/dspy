@@ -234,6 +234,24 @@ def test_xml_adapter_parses_nullable_and_structured_union_fields():
     }
 
 
+def test_xml_adapter_round_trips_none_for_optional_list_fields():
+    class TestSignature(dspy.Signature):
+        emails: list[str] | None = dspy.OutputField()
+        tags: tuple[str, ...] | None = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    outputs = {"emails": None, "tags": None}
+    xml = adapter.format_assistant_message_content(TestSignature, outputs)
+
+    assert xml == "<emails>\nNone\n</emails>\n\n<tags>\nNone\n</tags>"
+    assert adapter.parse(TestSignature, xml) == outputs
+    # A real item whose text is "None" is still an item.
+    assert adapter.parse(TestSignature, "<emails><item>None</item></emails><tags />") == {
+        "emails": ["None"],
+        "tags": None,
+    }
+
+
 def test_xml_adapter_recursive_model_schema_terminates():
     class Node(pydantic.BaseModel):
         value: str
