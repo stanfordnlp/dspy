@@ -48,15 +48,58 @@ def test_refine_forward_success_first_attempt():
 def test_refine_module_default_fail_count():
     lm = DummyLM([{"answer": "Brussels"}, {"answer": "City of Brussels"}, {"answer": "Brussels"}])
     dspy.configure(lm=lm)
+    module_call_count = [0]
 
     def always_raise(self, **kwargs):
-        raise ValueError("Deliberately failing")
+        module_call_count[0] += 1
+        raise ValueError(f"Failure {module_call_count[0]}")
 
     predict = DummyModule("question -> answer", always_raise)
 
     best_of_n = BestOfN(module=predict, N=3, reward_fn=lambda _, __: 1.0, threshold=0.0)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Failure 3"):
         best_of_n(question="What is the capital of Belgium?")
+    with pytest.raises(ValueError, match="Failure 6"):
+        best_of_n(question="What is the capital of Belgium?")
+    assert module_call_count[0] == 6
+    assert best_of_n.fail_count == 3
+
+
+def test_refine_module_zero_fail_count():
+    lm = DummyLM([{"answer": "Brussels"}])
+    dspy.configure(lm=lm)
+    module_call_count = [0]
+
+    def always_raise(self, **kwargs):
+        module_call_count[0] += 1
+        raise ValueError("Deliberately failing")
+
+    predict = DummyModule("question -> answer", always_raise)
+    best_of_n = BestOfN(module=predict, N=3, reward_fn=lambda _, __: 1.0, threshold=0.0, fail_count=0)
+
+    with pytest.raises(ValueError, match="Deliberately failing"):
+        best_of_n(question="What is the capital of Belgium?")
+    assert module_call_count[0] == 1
+    assert best_of_n.fail_count == 0
+
+
+def test_refine_module_succeeds_after_allowed_failure():
+    lm = DummyLM([{"answer": "Brussels"}])
+    dspy.configure(lm=lm)
+    module_call_count = [0]
+
+    def raise_once(self, **kwargs):
+        module_call_count[0] += 1
+        if module_call_count[0] == 1:
+            raise ValueError("Deliberately failing")
+        return self.predictor(**kwargs)
+
+    predict = DummyModule("question -> answer", raise_once)
+    best_of_n = BestOfN(module=predict, N=3, reward_fn=lambda _, __: 1.0, threshold=0.0, fail_count=1)
+
+    result = best_of_n(question="What is the capital of Belgium?")
+    assert result.answer == "Brussels"
+    assert module_call_count[0] == 2
 
 
 def test_refine_module_custom_fail_count():
