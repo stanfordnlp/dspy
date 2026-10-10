@@ -25,9 +25,11 @@ from ..errors import (
 from ..access import ANTHROPIC_API
 from ..compat import ANTHROPIC_PRESET_BASE_URLS, AnthropicCompat, ResolvedAnthropicCompat, preset_base_url, resolve_anthropic_compat
 from ..features import ProviderManifest
+from ..judgments import anthropic_schema, note_unmeasurable_probabilities, replace_text_with_data, request_judgments
 from ..sse import SSEEvent
 from ..transports import TransportRequest
 from ..types import (
+    DataPart,
     BatchEntry,
     BatchJobInfo,
     BatchRequest,
@@ -70,7 +72,7 @@ from .base import (
     batch_entry_request,
     default_transport,
 )
-from .common import EFFORT_THINKING_BUDGETS, MEDIA_KINDS, anthropic_source, check_tool_result_media, iso_utc, model_infos_from_entries, multipart_form_body, parts_to_text, path_id, unnamed_tool_call_error
+from .common import EFFORT_THINKING_BUDGETS, MEDIA_KINDS, anthropic_source, check_tool_result_media, data_part_text, iso_utc, model_infos_from_entries, multipart_form_body, parts_to_text, path_id, unnamed_tool_call_error
 
 # Canonical builtin tool name → Anthropic tool format
 _ANTHROPIC_BUILTIN_MAP: dict[str, str] = {
@@ -278,6 +280,9 @@ class AnthropicLM(BaseProviderLM):
     access: ProviderManifest | None = None
     credentials_path: "str | os.PathLike[str] | None" = field(default=None, repr=False)
     settings: "Mapping[str, str] | None" = None
+    # A named cloud identity ("platform", "workload", "environment", "cli";
+    # AUTH-1) on a cloud door, instead of api_key=.
+    credential: str | None = field(default=None, kw_only=True)
     clock: "Callable[[], datetime] | None" = field(default=None, repr=False)
 
     # MAP-13 policy: "note" (adapt and record), "silent", or "refuse".
@@ -289,7 +294,8 @@ class AnthropicLM(BaseProviderLM):
 
     def __post_init__(self) -> None:
         check_policy(self.adaptations)
-        self._bind_access(self.access, credentials_path=self.credentials_path, default_base_url=_DEFAULT_BASE_URL, settings=self.settings)
+        self._bind_access(self.access, credentials_path=self.credentials_path, default_base_url=_DEFAULT_BASE_URL, settings=self.settings,
+                          credential=self.credential)
         compat = self.compat if self.compat is not None else self._registry_compat()
         if isinstance(compat, str):
             # A preset name also supplies that server's default base_url; an
@@ -445,6 +451,8 @@ class AnthropicLM(BaseProviderLM):
     def _part(self, part) -> dict[str, Any]:
         if isinstance(part, TextPart):
             return {"type": "text", "text": part.text}
+        if isinstance(part, DataPart):
+            return {"type": "text", "text": data_part_text(part)}
         if isinstance(part, ImagePart):
             return {"type": "image", "source": anthropic_source(part)}
         if isinstance(part, DocumentPart):
@@ -487,6 +495,8 @@ class AnthropicLM(BaseProviderLM):
     def _tool_result_content(self, part) -> dict[str, Any]:
         if isinstance(part, TextPart):
             return {"type": "text", "text": part.text}
+        if isinstance(part, DataPart):
+            return {"type": "text", "text": data_part_text(part)}
         if isinstance(part, ImagePart):
             return {"type": "image", "source": anthropic_source(part)}
         if isinstance(part, DocumentPart):
@@ -789,7 +799,15 @@ class AnthropicLM(BaseProviderLM):
                       "describe the shape in the prompt",
                       asked=request.config.response_format, provider=self.provider)
             else:
-                output_config = _response_format_to_anthropic_output_config(request.config.response_format)
+                # MAP-14 §2: a judgment property carrying type+anyOf has its
+                # type moved into every branch (the wire 400s otherwise,
+                # receipted 2026-09-17); probabilities cannot be measured here.
+                note_unmeasurable_probabilities(request, self.provider)
+                found = request_judgments(request)
+                fmt = request.config.response_format
+                if found:
+                    fmt = {**fmt, "schema": anthropic_schema(fmt["schema"], found)}
+                output_config = _response_format_to_anthropic_output_config(fmt)
                 payload["output_config"] = {**payload.get("output_config", {}), **output_config}
         # Promoted cross-provider knobs (changes/2026-09-01-extensions-burn-down):
         # user_id rides Anthropic's metadata.user_id; store has no Anthropic
@@ -835,6 +853,7 @@ class AnthropicLM(BaseProviderLM):
         return payload
 
     def build_request(self, request: Request, stream: bool) -> TransportRequest:
+        request = self._wire_request(request)
         return self._emit(
             method="POST",
             url=f"{self.base_url.rstrip('/')}/messages",
@@ -848,6 +867,7 @@ class AnthropicLM(BaseProviderLM):
     # ─── Response parsing ───────────────────────────────────────────
 
     def parse_response(self, request: Request, response: HttpResponse) -> Response:
+        request = self._wire_request(request)
         data = response.json()
         parts: list[Any] = []
         unmapped: list[dict[str, str]] = []
@@ -926,13 +946,14 @@ class AnthropicLM(BaseProviderLM):
         return Response(
             id=str(data.get("id")) if data.get("id") else None,
             model=str(data.get("model") or request.model),
-            message=Message(role="assistant", parts=tuple(parts)),
+            message=Message(role="assistant", parts=replace_text_with_data(parts, request_judgments(request))),
             finish_reason=_finish_reason(data.get("stop_reason"), has_tool_call=has_tool),
             usage=usage,
             provider_data=_attach_unmapped(data, unmapped),
         )
 
     def parse_stream_events(self, request: Request, raw_event: SSEEvent) -> Iterator[StreamEvent]:
+        request = self._wire_request(request)
         if not raw_event.data:
             return
         payload = json.loads(raw_event.data)
@@ -1058,7 +1079,6 @@ class AnthropicLM(BaseProviderLM):
             url=f"{self.base_url.rstrip('/')}/models",
             params={"limit": 1000},
             headers=self._headers(),
-            read_timeout=30.0,
         )
 
     def _models_from_body(self, body: str):
@@ -1091,7 +1111,6 @@ class AnthropicLM(BaseProviderLM):
             url=f"{self.base_url.rstrip('/')}/files",
             headers=list(headers.items()),
             body=body,
-            read_timeout=300.0,
         )
 
     def _file_info_from_body(self, body: str) -> FileInfo:
@@ -1118,7 +1137,7 @@ class AnthropicLM(BaseProviderLM):
     def _file_get_request(self, file_id: str) -> TransportRequest:
         return self._emit(
             method="GET", url=f"{self.base_url.rstrip('/')}/files/{path_id(file_id)}",
-            headers=self._headers(), read_timeout=60.0,
+            headers=self._headers(),
         )
 
     def _file_list_request(self, limit: int, cursor: str | None) -> TransportRequest:
@@ -1127,7 +1146,7 @@ class AnthropicLM(BaseProviderLM):
             params["page"] = cursor
         return self._emit(
             method="GET", url=f"{self.base_url.rstrip('/')}/files",
-            params=params, headers=self._headers(), read_timeout=60.0,
+            params=params, headers=self._headers(),
         )
 
     def _file_page_from_list_body(self, body: str) -> FilePage:
@@ -1140,18 +1159,19 @@ class AnthropicLM(BaseProviderLM):
     def _file_delete_request(self, file_id: str) -> TransportRequest:
         return self._emit(
             method="DELETE", url=f"{self.base_url.rstrip('/')}/files/{path_id(file_id)}",
-            headers=self._headers(), read_timeout=60.0,
+            headers=self._headers(),
         )
 
     def _file_download_request(self, file_id: str) -> TransportRequest:
         return self._emit(
             method="GET", url=f"{self.base_url.rstrip('/')}/files/{path_id(file_id)}/content",
-            headers=self._headers(), read_timeout=300.0,
+            headers=self._headers(),
         )
 
     # ─── Batch hooks (Message Batches API) ────────────────────────
 
     def _batch_submit_request(self, request: BatchRequest, upload_body: dict[str, Any] | None) -> TransportRequest:
+        self._batch_preflight(request)
         if request.label is not None:
             adapt("label", "dropped",
                   "the Message Batches create body has no metadata field (verified live "
@@ -1169,7 +1189,6 @@ class AnthropicLM(BaseProviderLM):
             url=f"{self.base_url.rstrip('/')}/messages/batches",
             headers=self._headers(),
             payload=payload,
-            read_timeout=120.0,
         )
 
     def _batch_job_from_body(self, body: str) -> BatchJobInfo:
@@ -1191,7 +1210,6 @@ class AnthropicLM(BaseProviderLM):
             method="GET",
             url=f"{self.base_url.rstrip('/')}/messages/batches/{path_id(batch_id)}",
             headers=self._headers(),
-            read_timeout=60.0,
         )
 
     def _batch_cancel_request(self, batch_id: str) -> TransportRequest:
@@ -1199,14 +1217,13 @@ class AnthropicLM(BaseProviderLM):
             method="POST",
             url=f"{self.base_url.rstrip('/')}/messages/batches/{path_id(batch_id)}/cancel",
             headers=self._headers(),
-            read_timeout=60.0,
         )
 
     def _batch_result_fetches(self, status_body: dict[str, Any]) -> tuple[TransportRequest, ...]:
         url = status_body.get("results_url")
         if not isinstance(url, str) or not url:
             raise ProviderError("anthropic: ended batch carries no results_url", provider=self.provider)
-        return (self._emit(method="GET", url=url, headers=self._headers(), read_timeout=300.0),)
+        return (self._emit(method="GET", url=url, headers=self._headers()),)
 
     def _batch_entries(self, status_body: dict[str, Any], fetched: tuple[str, ...]) -> tuple[BatchEntry, ...]:
         entries: list[BatchEntry] = []
@@ -1254,7 +1271,6 @@ class AnthropicLM(BaseProviderLM):
             url=f"{self.base_url.rstrip('/')}/messages/batches",
             params={"limit": int(limit)},
             headers=self._headers(),
-            read_timeout=60.0,
         )
 
     def _batch_jobs_from_list_body(self, body: str) -> tuple[BatchJobInfo, ...]:

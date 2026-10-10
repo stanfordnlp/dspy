@@ -141,6 +141,7 @@ DEFAULT_RULES: tuple[RouteRule, ...] = (
     RouteRule("sora-", "openai", note="OpenAI Sora video generation"),
     RouteRule("veo-", "gemini", note="Google Veo video generation"),
     RouteRule("chat-latest", "openai", note="OpenAI rolling chat alias (live /models listing 2026-09-01)"),
+    RouteRule("jev-", "typesafe", note="TypeSafe Jev (live /v1/models listing 2026-09-17: jev-latest, jev-preview; versioned ids jev-1.13.0 accepted)"),
 )
 
 
@@ -308,17 +309,19 @@ def _check_provider_keyed(config: RouterConfig, adapters: Mapping[str, type]) ->
     import difflib
 
     known = sorted(set(adapters) | _bound_ids(adapters))
-    for field_name in ("api_keys", "base_urls", "settings"):
+    for field_name in ("api_keys", "base_urls", "settings", "credentials"):
         mapping = getattr(config, field_name)
         if not mapping:
             continue
         seen: set[str] = set()
         for key in mapping:
             provider = _canonical_provider(key)
-            if field_name == "api_keys" and provider in seen:
-                raise NotConfiguredError(f"RouterConfig(api_keys=...): duplicate spellings for {provider!r}; use one entry")
+            if field_name in ("api_keys", "credentials") and provider in seen:
+                raise NotConfiguredError(f"RouterConfig({field_name}=...): duplicate spellings for {provider!r}; use one entry")
             seen.add(provider)
             if provider in known:
+                if field_name == "credentials":
+                    _check_named_credential(config, provider, mapping[key], adapters)
                 continue
             close = difflib.get_close_matches(provider, known, n=1, cutoff=0.6)
             hint = f" Did you mean {close[0]!r}?" if close else ""
@@ -445,9 +448,28 @@ class RouterConfig:
 
     ``base_urls`` maps provider string -> the URL the provider's LM is
     built with, replacing the adapter's (or the preset's) default: a
-    proxy in front of OpenAI, a vLLM server on another port.  Not for
-    the cloud doors (azure, bedrock, vertex): their URL is derived from
-    ``settings`` (resource, region), and an entry for one is refused.
+    proxy in front of OpenAI, a vLLM server on another port.  On a cloud
+    door (azure, bedrock, vertex) the entry is the endpoint root — what
+    the console shows (``https://acct.services.ai.azure.com``), a private
+    endpoint, a gateway, a sovereign cloud — and the door appends its own
+    path (``/openai/v1``, ``/anthropic/v1``) unless the URL already ends
+    with it; the door's auth scheme, error mapping and doctor stay
+    attached.  Without an entry the vendor's own variable is read
+    (``AZURE_OPENAI_ENDPOINT``, ``ANTHROPIC_FOUNDRY_BASE_URL``,
+    ``AWS_ENDPOINT_URL_BEDROCK_RUNTIME`` / ``AWS_ENDPOINT_URL``), then the
+    URL is built from ``settings`` (resource, region).  With an endpoint,
+    ``resource`` is not needed; ``region`` still is on AWS (it signs).
+
+    ``credentials`` maps a cloud provider string -> one named identity:
+    ``"platform"`` (the machine's own: managed identity, instance or task
+    role, attached service account), ``"workload"`` (the federated
+    Kubernetes kind), ``"environment"`` (a service principal or static
+    keys from env variables), ``"cli"`` (``az`` / ``aws`` / ``gcloud``
+    sign-in).  That rung only is used and the cloud's chain is not walked:
+    an absent named identity is a ``NotConfiguredError`` at construction,
+    never a fall-through to a developer login (spec/auth.md AUTH-1, amended
+    2026-09-19).  An ``api_keys`` entry and a ``credentials`` entry for
+    the same provider is refused: two answers to "who am I".
 
     ``providers`` declares providers the registry does not list — a
     gateway, a service lm15 has not receipted — as
@@ -478,6 +500,9 @@ class RouterConfig:
     # env variables in order, then its default; region and resource have
     # none and raise.
     settings: Mapping[str, Mapping[str, str]] | None = field(default=None, kw_only=True)
+    # Named cloud identities per provider (AUTH-1, amended 2026-09-19):
+    # {"azure": "platform"}.  See the class docstring.
+    credentials: Mapping[str, str] | None = field(default=None, kw_only=True)
     transport: object | None = None  # SyncTransport for LMRouter, AsyncTransport
                                      # for AsyncLMRouter; passed to every LM the
                                      # router constructs (tests, custom pooling)
@@ -492,6 +517,16 @@ class RouterConfig:
     def __post_init__(self) -> None:
         check_policy(self.adaptations)
         _check_declared(self.providers)
+        if self.credentials is not None:
+            from .features import NAMED_CREDENTIALS
+
+            for key, name in self.credentials.items():
+                if name not in NAMED_CREDENTIALS:
+                    raise NotConfiguredError(
+                        f"RouterConfig(credentials={{{key!r}: {name!r}}}): not a named credential; one of "
+                        + ", ".join(repr(n) for n in NAMED_CREDENTIALS)
+                        + ". A credential VALUE (a key, a token, a callable) goes in api_keys=."
+                    )
         if self.timeouts is not None and not isinstance(self.timeouts, Timeouts):
             raise TypeError(
                 f"RouterConfig(timeouts=...) takes lm15.Timeouts, got {type(self.timeouts).__name__}; "
@@ -801,6 +836,53 @@ def _base_url_entry(config: RouterConfig, provider: str) -> str | None:
     return None
 
 
+def _credentials_entry(config: RouterConfig, provider: str) -> str | None:
+    """The named credential for a provider (AUTH-1), matching either spelling."""
+    if config.credentials is None:
+        return None
+    for key, value in config.credentials.items():
+        if _canonical_provider(key) == provider:
+            return value
+    return None
+
+
+def _check_named_credential(config: RouterConfig, provider: str, name: str, adapters: Mapping[str, type]) -> None:
+    """A ``credentials`` entry names an identity on a cloud door only, and
+    never alongside an ``api_keys`` entry for the same provider."""
+    definition = _bound(provider, adapters)
+    if definition is None or not definition.access.cloud_chain:
+        raise NotConfiguredError(
+            f"RouterConfig(credentials={{{provider!r}: {name!r}}}): {provider!r} is not a cloud door; named "
+            "credentials (platform, workload, environment, cli) exist on the azure, bedrock and vertex doors. "
+            "Pass this provider's credential in api_keys=.",
+        )
+    if _api_keys_source(config, provider, adapters) is not None:
+        raise NotConfiguredError(
+            f"RouterConfig: both api_keys and credentials name {provider!r}; a door has one identity — pass the "
+            "credential value (api_keys) or name the identity (credentials), not both.",
+        )
+
+
+def _hosted_endpoint(config: RouterConfig, provider: str, definition: "ProviderDefinition") -> str | None:
+    """The endpoint root for a cloud door: the explicit ``base_urls`` entry,
+    else the vendor's own variable (AUTH-10, amended 2026-09-19)."""
+    from .cloud.hosts import endpoint_from_env
+
+    explicit = _base_url_entry(config, provider)
+    if explicit is not None:
+        return explicit
+    env = config.env if config.env is not None else os.environ
+    return endpoint_from_env(definition.access.host, env)
+
+
+def _set_origin(lm: object, label: str) -> None:
+    """Stamp the provenance label on a built LM (and its inner sync adapter
+    for the async mirrors)."""
+    for target in (lm, getattr(lm, "_inner", None)):
+        if target is not None and hasattr(target, "_credential_origin"):
+            target._credential_origin = label
+
+
 def _env_key_for(provider: str, config: RouterConfig, adapters: Mapping[str, type]) -> str | None:
     """WHICH env var lm() would read for this provider (never the value).
 
@@ -830,23 +912,19 @@ def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[st
         extra["transport"] = config.transport
     if config.adaptations != "note":
         extra["adaptations"] = config.adaptations
-    base_url = _base_url_entry(config, resolution.provider)
+    hosted = definition is not None and definition.hosted
+    base_url = _hosted_endpoint(config, resolution.provider, definition) if hosted else _base_url_entry(config, resolution.provider)
     if base_url is not None:
-        if definition is not None and definition.hosted:
-            raise NotConfiguredError(
-                f"RouterConfig(base_urls={{{resolution.provider!r}: ...}}): a cloud door's URL is built from its "
-                f"host settings (resource, region), not given whole; set them in "
-                f"RouterConfig(settings={{{resolution.provider!r}: {{...}}}}) instead.",
-            )
         extra["base_url"] = base_url
     policy = _credential_policy(resolution.provider, adapters)
     if policy == "oauth":
         return cls(**extra)  # self-resolving local OAuth constructor
     api_key, _ = _api_keys_entry(config, resolution.provider, adapters)
-    if definition is not None and definition.hosted:
-        # A cloud door (AUTH-10): host settings from config, then env, then
-        # defaults; the credential from the explicit entry or, for a cloud
-        # chain policy, the chain's caching provider (AUTH-1/AUTH-2).
+    if hosted:
+        # A cloud door (AUTH-10): the endpoint from config or the vendor's
+        # variable, host settings from config, then env, then defaults; the
+        # credential from the explicit entry, the named identity, or the
+        # chain's caching provider (AUTH-1/AUTH-2).
         from .cloud.chains import ChainContext, credential_provider
         from .cloud.hosts import resolve_settings
 
@@ -856,15 +934,18 @@ def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[st
         given = (config.settings or {}).get(resolution.provider)
         ctx = ChainContext.online(env)
         settings = resolve_settings(definition.access.host, given, env, provider=resolution.provider,
-                                    profile=profile_settings(definition.access, ctx))
+                                    profile=profile_settings(definition.access, ctx), endpoint=base_url)
         ctx.settings = settings
+        named = _credentials_entry(config, resolution.provider)
+        origin: str | None = None
         if api_key is None and definition.access.cloud_chain:
-            api_key = credential_provider(definition.access, ctx)
+            api_key = credential_provider(definition.access, ctx, named=named)
         elif api_key is None:
             for key in definition.access.env_keys:
                 value = env.get(key)
                 if value:
                     api_key = value
+                    origin = f"env ${key} (value never shown)"
                     break
         if api_key is None:
             env_keys = definition.access.env_keys
@@ -877,20 +958,26 @@ def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[st
             )
         if definition.compat is not None:
             extra["compat"] = definition.compat
-        return cls(api_key=api_key, access=definition.access, settings=settings, **extra)
+        lm = cls(api_key=api_key, access=definition.access, settings=settings, **extra)
+        if origin is not None:
+            _set_origin(lm, origin)
+        return lm
     if api_key is None and policy == "oauth-unless-explicit" and cls.has_stored_credential():
         # A usable stored subscription login outranks ambient env keys:
         # it spends no money per token (AUTH-1, oauth-unless-explicit).
         return cls(**extra)  # self-resolving local OAuth constructor
+    origin: str | None = None
     if api_key is None:
         env = config.env if config.env is not None else os.environ
         for key in _declared_env_keys(resolution.provider, adapters):
             value = env.get(key)
             if value:
                 api_key = value
+                origin = f"env ${key} (value never shown)"
                 break
     if api_key is None and definition is not None and definition.placeholder_key is not None:
         api_key = definition.placeholder_key
+        origin = "the local server's placeholder key"
     if not api_key and policy == "oauth-unless-explicit":
         # Nothing anywhere: the constructor raises the typed login-hint error.
         return cls(**extra)
@@ -908,8 +995,12 @@ def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[st
         # (credential header, surfaces, base_url) and compat preset bound at
         # construction.  The LM then names itself by the provider (errors,
         # ModelInfo.provider), not by the dialect.
-        return cls(api_key=api_key, compat=definition.compat, access=definition.access, **extra)
-    return cls(api_key=api_key, **extra)
+        lm = cls(api_key=api_key, compat=definition.compat, access=definition.access, **extra)
+    else:
+        lm = cls(api_key=api_key, **extra)
+    if origin is not None:
+        _set_origin(lm, origin)
+    return lm
 
 
 PLANNING_KEY = "lm15-planning"
@@ -930,8 +1021,9 @@ def _build_planning_lm(resolution: Resolution, config: RouterConfig, adapters: M
         extra["transport"] = transport
     elif config.transport is not None:
         extra["transport"] = config.transport
-    base_url = _base_url_entry(config, resolution.provider)
-    if base_url is not None and not (definition is not None and definition.hosted):
+    hosted = definition is not None and definition.hosted
+    base_url = _hosted_endpoint(config, resolution.provider, definition) if hosted else _base_url_entry(config, resolution.provider)
+    if base_url is not None:
         extra["base_url"] = base_url
     account_field = getattr(cls, "__dataclass_fields__", {}).get("account_id")
     if account_field is not None and account_field.init:
@@ -946,7 +1038,7 @@ def _build_planning_lm(resolution: Resolution, config: RouterConfig, adapters: M
         env = config.env if config.env is not None else os.environ
         given = dict((config.settings or {}).get(resolution.provider) or {})
         try:
-            settings = resolve_settings(definition.access.host, given, env, provider=resolution.provider)
+            settings = resolve_settings(definition.access.host, given, env, provider=resolution.provider, endpoint=base_url)
         except NotConfiguredError:
             placeholders = {setting.name: given.get(setting.name) or setting.default or "planning"
                             for setting in definition.access.host.settings}
@@ -1161,7 +1253,8 @@ class LMRouter:
     def cache(self, prefix: Request, *, ttl_seconds: int | None = None, label: str | None = None):
         """``router.cache(prefix)``: the MAP-6 door, routed by the prefix's model."""
         resolution = self.resolve(prefix.model)
-        return self.lm(prefix.model).cache(_routed_request(prefix, resolution), ttl_seconds=ttl_seconds, label=label)
+        cached = self.lm(prefix.model).cache(_routed_request(prefix, resolution), ttl_seconds=ttl_seconds, label=label)
+        return replace(cached, provider=resolution.provider)
 
     # ─── the OpenAI-shaped door (api-family § Ingest) ──────────────────
 
@@ -1297,7 +1390,8 @@ class AsyncLMRouter:
 
     async def cache(self, prefix: Request, *, ttl_seconds: int | None = None, label: str | None = None):
         resolution = self.resolve(prefix.model)
-        return await self.lm(prefix.model).cache(_routed_request(prefix, resolution), ttl_seconds=ttl_seconds, label=label)
+        cached = await self.lm(prefix.model).cache(_routed_request(prefix, resolution), ttl_seconds=ttl_seconds, label=label)
+        return replace(cached, provider=resolution.provider)
 
     resolve_openai_chat = LMRouter.resolve_openai_chat
     request_from_openai_chat = LMRouter.request_from_openai_chat

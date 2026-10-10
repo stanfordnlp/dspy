@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import math
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Iterator, Mapping, Protocol, Sequence
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Iterator, Mapping, Protocol, Sequence, TypeVar
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for annotations
     from ..batch import BatchJob
@@ -54,6 +54,7 @@ from ..types import (
     Request,
     Response,
     StreamEvent,
+    StreamErrorEvent,
 )
 
 
@@ -82,6 +83,19 @@ def resolve_credential_value(credential: Credential) -> CredentialValue:
     """Invoke a provider callable if needed and coerce to a credential value."""
     raw = credential() if callable(credential) else credential
     return coerce_credential(raw)
+
+
+def _origin_label(credential: Credential | None, source: str) -> str:
+    """The provenance label for a credential the adapter was handed (AUTH-1
+    provenance).  Honest about what lm15 can see: a callable's identity is
+    not inspected."""
+    if credential is None or credential == "":
+        return "no credential"
+    if source == "stored":
+        return "the stored local login (credentials file)"
+    if callable(credential):
+        return "an application-supplied callable (identity not inspected by lm15)"
+    return "an explicit api_key (value never shown)"
 
 
 def resolve_credential(credential: Credential) -> str:
@@ -135,18 +149,50 @@ def _attach_retry_after(error: ProviderError, headers: "list[tuple[str, str]] | 
     seconds = _retry_after_seconds(value)
     if seconds is not None:
         error.retry_after = seconds
+        return
+    from ..rate_limits import milliseconds_seconds
+
+    for name in ("retry-after-ms", "x-ms-retry-after-ms"):
+        value = next((v for k, v in headers or [] if k.lower() == name), None)
+        seconds = milliseconds_seconds(value)
+        if seconds is not None:
+            error.retry_after = seconds
+            return
 
 
 def _attach_error_metadata(error: ProviderError, headers: "list[tuple[str, str]] | None") -> None:
     """Fill HTTP diagnostics absent from the body; never invent absent fields."""
+    from ..rate_limits import capture_rate_limits
+
+    error.rate_limit_headers = capture_rate_limits(headers or [])
     _attach_retry_after(error, headers)
     if error.request_id is not None:
         return
-    values = {key.lower(): value for key, value in headers or []}
-    for name in ("x-request-id", "request-id", "x-amzn-requestid", "x-amz-request-id", "x-ms-request-id"):
+    values = {}
+    for key, value in headers or []:
+        values.setdefault(key.lower(), value)
+    for name in ("x-request-id", "request-id", "x-amzn-requestid", "x-amz-request-id", "x-ms-request-id", "apim-request-id", "x-typesafe-request-id"):
         if values.get(name):
             error.request_id = values[name]
             break
+
+
+def _stream_error_metadata(event, headers):
+    """Handshake evidence on an in-stream error; never infer status 200."""
+    if not isinstance(event, StreamErrorEvent):
+        return event
+    error = ProviderError()
+    _attach_error_metadata(error, headers)
+    http = {}
+    if error.request_id is not None:
+        http["request_id"] = error.request_id
+    if error.retry_after is not None:
+        http["retry_after"] = error.retry_after
+    if error.rate_limit_headers:
+        http["rate_limit_headers"] = {k: list(v) for k, v in error.rate_limit_headers.items()}
+    if not http:
+        return event
+    return replace(event, error=replace(event.error, http_response=http))
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,12 +236,11 @@ class HttpResponse:
         try:
             return json.loads(self.body)
         except (ValueError, UnicodeDecodeError) as exc:
-            raise ProviderError(
-                _non_json_message(self, exc),
-                provider=self.provider,
-                status=self.status,
-                request_id=self.header("x-request-id") or self.header("request-id"),
-            ) from exc
+            error = ProviderError(
+                _non_json_message(self, exc), provider=self.provider, status=self.status,
+            )
+            _attach_error_metadata(error, self.headers)
+            raise error from exc
 
 
 def _non_json_message(response: "HttpResponse", exc: Exception) -> str:
@@ -208,6 +253,67 @@ def _non_json_message(response: "HttpResponse", exc: Exception) -> str:
         f"{exc}. Body starts: {excerpt!r}. A gateway or proxy in front of the provider is the "
         "usual cause; the request may or may not have been served."
     )
+
+
+_Reply = TypeVar("_Reply")
+
+
+def _reply_error_metadata(error: ProviderError, response: HttpResponse) -> None:
+    """Fill missing provider/status and attach the shared HTTP diagnostics."""
+    if error.provider is None:
+        error.provider = response.provider
+    if error.status is None:
+        error.status = response.status
+    _attach_error_metadata(error, response.headers)
+
+
+def _parse_reply(
+    response: HttpResponse, parser: Callable[[HttpResponse], _Reply], *, json_body: bool = True,
+) -> _Reply:
+    """Pure reply-decoder boundary, shared by sync and async auxiliary drivers.
+
+    Only pass parsing here, never request builders, credentials or user callbacks.
+    Binary media and JSONL opt out of whole-body JSON validation. Local control
+    errors (notably RuntimeError for a not-ready result) deliberately pass through.
+    """
+    try:
+        if json_body:
+            response.json()
+        return parser(response)
+    except ProviderError as error:
+        _reply_error_metadata(error, response)
+        raise
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        error = ProviderError(_non_json_message(response, exc))
+        _reply_error_metadata(error, response)
+        raise error from exc
+    except (TypeError, ValueError, KeyError, AttributeError, IndexError, OverflowError) as exc:
+        # Canonical constructors and provider field access can reject valid
+        # JSON with an unusable shape. This is a reply fault, not bad input.
+        content_type = response.header("content-type") or "no content-type"
+        excerpt = response.body[:200].decode("utf-8", errors="replace")
+        error = ProviderError(
+            f"malformed provider reply (HTTP {response.status}, {content_type}): "
+            f"{exc}. Body starts: {excerpt!r}"
+        )
+        _reply_error_metadata(error, response)
+        raise error from exc
+
+
+def _reply_object(response: HttpResponse) -> dict[str, Any]:
+    data = response.json()
+    if not isinstance(data, dict):
+        raise TypeError("expected a JSON object")
+    return data
+
+
+def _jsonl_reply_text(response: HttpResponse) -> str:
+    # Decode strictly before the legacy text hooks can replace invalid UTF-8.
+    text = response.body.decode("utf-8")
+    for line in text.splitlines():
+        if line.strip():
+            json.loads(line)
+    return text
 
 
 class ProviderDialect(Protocol):
@@ -261,6 +367,12 @@ class BaseProviderLM:
     # dialect declares it as a constructor field; this is the fallback.
     adaptations: AdaptationPolicy = "note"
     _credential_source: str = "explicit"
+    # AUTH-1 provenance (amended 2026-09-19): where the credential came
+    # from, as a human label, for auth errors.  A static label for an
+    # explicit value / env key / stored login; a cloud chain provider
+    # carries its own (``.source``), read at error time so the label names
+    # the rung that actually won.
+    _credential_origin: str | None = None
     # Cloud-host state (AUTH-10): the resolved host settings and the clock
     # every time-dependent byte (SigV4 date, JWT iat/exp) is read from.  The
     # harness injects a fixed clock; users never touch it.
@@ -269,6 +381,19 @@ class BaseProviderLM:
     # The header an ApiKey travels under when the policy says x-api-key
     # (Anthropic ``x-api-key``, Gemini ``x-goog-api-key``).
     _api_key_header: ClassVar[str] = "x-api-key"
+
+    def _wire_request(self, request: Request) -> Request:
+        """Strip exactly this binding's prefix once, at a codec boundary.
+
+        Keep the caller request in drivers so subsequent build/parse boundaries
+        each see the original spelling; other colon-bearing IDs are opaque.
+        """
+        head, sep, model = request.model.partition(":")
+        if sep and model and head.replace("_", "-") == self.provider.replace("_", "-"):
+            from dataclasses import replace
+
+            return replace(request, model=model)
+        return request
 
     @property
     def supports(self) -> EndpointSupport:
@@ -290,6 +415,7 @@ class BaseProviderLM:
         credentials_path: "str | os.PathLike[str] | None" = None,
         default_base_url: str | None = None,
         settings: "Mapping[str, str] | None" = None,
+        credential: str | None = None,
     ) -> None:
         """Bind the access policy and resolve the credential it calls for.
 
@@ -300,7 +426,15 @@ class BaseProviderLM:
         and defaults only — the router fills env fallbacks, like it does for
         the key), and ``base_url``: the policy's own, or the host template
         rendered over the settings, when the caller left the dialect's
-        default.
+        default; an explicit ``base_url`` on a cloud door is the endpoint
+        root, and the door's path is appended unless already present
+        (AUTH-10, amended 2026-09-19).
+
+        ``credential`` names one identity on a cloud door (``platform``,
+        ``workload``, ``environment``, ``cli``; AUTH-1 named credentials):
+        that rung only, read from this process's environment, never the
+        chain.  It cannot be combined with ``api_key``: two answers to "who
+        am I" is a configuration error, not a precedence question.
         """
         from ..access import load_credential
         from ..cloud.hosts import render_base_url, resolve_settings
@@ -308,25 +442,66 @@ class BaseProviderLM:
         policy = access if access is not None else type(self).manifest
         self.access = policy
         self.provider = policy.provider
-        loaded = load_credential(policy, self.api_key, credentials_path=credentials_path)
-        self.api_key = loaded.credential
-        self._credential_source = loaded.source
-        if loaded.account_id is not None and self.account_id is None:
-            self.account_id = loaded.account_id
-        if loaded.credential is not None and not callable(loaded.credential):
-            # A static credential of the wrong kind for this door fails now,
-            # not on the first request (a provider callable is checked per call).
-            from ..access import select_scheme
+        endpoint = self.base_url if (policy.host is not None and default_base_url is not None
+                                     and self.base_url != default_base_url) else None
+        if credential is not None:
+            if not policy.cloud_chain:
+                raise NotConfiguredError(
+                    f"{policy.provider}: credential={credential!r} names a cloud identity, and this door is not a "
+                    "cloud door; pass api_key= instead",
+                    provider=policy.provider,
+                )
+            if self.api_key is not None and self.api_key != "":
+                raise NotConfiguredError(
+                    f"{policy.provider}: both api_key= and credential={credential!r} were given; a door has one "
+                    "identity — pass the credential value, or name the identity, not both",
+                    provider=policy.provider,
+                )
+            from ..cloud.chains import ChainContext, credential_provider
 
-            select_scheme(policy, coerce_credential(loaded.credential))
-        self.host_settings = resolve_settings(policy.host, settings, None, provider=policy.provider)
+            self.host_settings = resolve_settings(policy.host, settings, None, provider=policy.provider, endpoint=endpoint)
+            ctx = ChainContext.online()
+            ctx.settings = self.host_settings
+            self.api_key = credential_provider(policy, ctx, named=credential)
+            self._credential_source = "named"
+        else:
+            loaded = load_credential(policy, self.api_key, credentials_path=credentials_path)
+            self.api_key = loaded.credential
+            self._credential_source = loaded.source
+            if loaded.account_id is not None and self.account_id is None:
+                self.account_id = loaded.account_id
+            if loaded.credential is not None and not callable(loaded.credential):
+                # A static credential of the wrong kind for this door fails now,
+                # not on the first request (a provider callable is checked per call).
+                from ..access import select_scheme
+
+                select_scheme(policy, coerce_credential(loaded.credential))
+            self.host_settings = resolve_settings(policy.host, settings, None, provider=policy.provider, endpoint=endpoint)
+        if self._credential_origin is None:
+            self._credential_origin = _origin_label(self.api_key, self._credential_source)
         if getattr(self, "clock", None) is None:
             self.clock = None
         if policy.host is not None:
-            if default_base_url is None or self.base_url == default_base_url:
-                self.base_url = render_base_url(policy.host, self.host_settings)
+            self.base_url = render_base_url(policy.host, self.host_settings, endpoint, provider=policy.provider)
         elif policy.base_url is not None and default_base_url is not None and self.base_url == default_base_url:
             self.base_url = policy.base_url
+
+    def credential_origin(self) -> str:
+        """Where this adapter's credential comes from, as a sentence fragment
+        with no secret in it (AUTH-1 provenance).  For a cloud chain
+        provider this is the rung that last won, or what will be walked
+        when no request has been sent yet."""
+        provider = self.api_key
+        if hasattr(provider, "source") and hasattr(provider, "named"):  # a cloud chain provider
+            source = provider.source
+            if source is not None and hasattr(source, "describe"):
+                return source.describe(self._now())
+            if provider.named:
+                from ..cloud.chains import named_meaning
+
+                return f'named credential "{provider.named}" ({named_meaning(self.access, provider.named)}; not yet resolved)'
+            return f"the {self.access.credential_policy} (not yet resolved)"
+        return self._credential_origin or _origin_label(provider, self._credential_source)
 
     def _registry_compat(self) -> str | None:
         """The compat preset the bound provider names in the registry, for a
@@ -487,7 +662,11 @@ class BaseProviderLM:
         resp = self._send(req)
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._finish_response(request, self.parse_response(request, resp), adaptations)
+        try:
+            return self._finish_response(request, self.parse_response(request, resp), adaptations)
+        except ProviderError as error:
+            _attach_error_metadata(error, resp.headers)
+            raise
 
     def stream(self, request: Request) -> Iterator[StreamEvent]:
         # MAP-3 (docs/mapping-rules.md): adapters may emit one end event per
@@ -496,7 +675,7 @@ class BaseProviderLM:
         from ..result import coalesce_stream, truncate_stream_at_stop
 
         req, adaptations = self._build(request, stream=True)
-        events = coalesce_stream(self._stream_raw(request, req), model=request.model, adaptations=self._visible(adaptations))
+        events = coalesce_stream(self._stream_raw(request, req), model=self._wire_request(request).model, adaptations=self._visible(adaptations))
         if _client_side_stop(adaptations):
             events = truncate_stream_at_stop(events, request.config.stop)
         return events
@@ -515,10 +694,14 @@ class BaseProviderLM:
                     _attach_error_metadata(error, resp.headers)
                     raise error
                 lines = resp.iter_lines() if hasattr(resp, "iter_lines") else _iter_lines(resp)
-                for raw in parse_sse(lines):
-                    for event in self.parse_stream_events(request, raw):
-                        if event is not None:
-                            yield event
+                try:
+                    for raw in parse_sse(lines):
+                        for event in self.parse_stream_events(request, raw):
+                            if event is not None:
+                                yield _stream_error_metadata(event, resp.headers)
+                except ProviderError as error:
+                    _attach_error_metadata(error, resp.headers)
+                    raise
         except NetworkTransportError as exc:
             raise LM15TransportError(str(exc)) from exc
 
@@ -579,10 +762,24 @@ class BaseProviderLM:
         local login: always under an ``oauth`` policy (there is no env var),
         and under ``oauth-unless-explicit`` only when the stored login was
         the rung that won — an explicit key keeps the generic guidance.
-        ``with_credential_hint`` is a no-op on non-auth errors."""
+        ``with_credential_hint`` is a no-op on non-auth errors.
+
+        Every auth error from the wire also names where the credential came
+        from (AUTH-1 provenance, amended 2026-09-19): the rung of a cloud
+        chain, the env variable, the explicit value, or "an
+        application-supplied callable" — never the value."""
         hint = self.access.login_hint
         if hint and (self.access.credential_policy == "oauth" or self._credential_source == "stored"):
-            return with_credential_hint(error, hint)
+            error = with_credential_hint(error, hint)
+        if isinstance(error, AuthError):
+            from ..errors import with_credential_origin
+
+            try:
+                origin = self.credential_origin()
+            except Exception:  # noqa: BLE001 - provenance must never mask the real error
+                origin = None
+            if origin:
+                error = with_credential_origin(error, origin)
         return error
 
     def close(self) -> None:
@@ -648,7 +845,7 @@ class BaseProviderLM:
         resp = self._send(self._image_generate_request(request))
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._image_generation_from_response(request, resp)
+        return _parse_reply(resp, lambda reply: self._image_generation_from_response(request, reply))
 
     def speech_generate(self, request: SpeechGenerationRequest) -> SpeechGenerationResponse:
         """Text-to-speech.  Omitted ``voice``/``format`` mean the server's
@@ -658,7 +855,7 @@ class BaseProviderLM:
         resp = self._send(self._speech_generate_request(request))
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._speech_generation_from_response(request, resp)
+        return _parse_reply(resp, lambda reply: self._speech_generation_from_response(request, reply), json_body=False)
 
     # ─── Video generation (job-shaped on every wire: Sora / Veo / grok) ─────
     #
@@ -701,14 +898,14 @@ class BaseProviderLM:
         resp = self._send(self._video_submit_request(request))
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._video_job_from_body(resp.text())
+        return _parse_reply(resp, lambda reply: self._video_job_from_body(reply.text()))
 
     def video_status(self, video_id: str) -> VideoJobInfo:
         self._require("video")
         resp = self._send(self._video_status_request(video_id))
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._video_job_from_body(resp.text(), video_id)
+        return _parse_reply(resp, lambda reply: self._video_job_from_body(reply.text(), video_id))
 
     def video_result(self, video_id: str) -> VideoPart:
         """The finished video as a VideoPart, in the provider's own
@@ -719,20 +916,24 @@ class BaseProviderLM:
         resp = self._send(self._video_status_request(video_id))
         if resp.status >= 400:
             raise self._http_error(resp)
-        job = self._video_job_from_body(resp.text(), video_id)
+        job = _parse_reply(resp, lambda reply: self._video_job_from_body(reply.text(), video_id))
         if job.status not in VIDEO_TERMINAL_STATUSES:
             raise ValueError(
                 f"video {video_id} is not finished (status={job.status!r}); "
                 f"wait() or poll video_status() until done"
             )
-        status_body = resp.json()
-        fetch = self._video_result_fetch(status_body)
+        status_body = _parse_reply(resp, _reply_object)
+        try:
+            fetch = self._video_result_fetch(status_body)
+        except ProviderError as error:
+            _reply_error_metadata(error, resp)
+            raise
         fetched = None
         if fetch is not None:
             fetched = self._send(fetch)
             if fetched.status >= 400:
                 raise self._http_error(fetched)
-        return self._video_part(status_body, fetched)
+        return _parse_reply(fetched or resp, lambda reply: self._video_part(status_body, fetched), json_body=False)
 
     def video_list(self, limit: int = 20, model: str | None = None) -> "tuple[VideoJobInfo, ...]":
         """One page of this credential's video jobs.  ``model`` is required
@@ -742,7 +943,7 @@ class BaseProviderLM:
         resp = self._send(self._video_list_request(limit, model))
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._video_jobs_from_list_body(resp.text())
+        return _parse_reply(resp, lambda reply: self._video_jobs_from_list_body(reply.text()))
 
     # Ergonomic verbs (ticket handles) ---------------------------------------
 
@@ -788,7 +989,7 @@ class BaseProviderLM:
         resp = self._send(self._models_request())
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._models_from_body(resp.text())
+        return _parse_reply(resp, lambda reply: self._models_from_body(reply.text()))
 
     # ─── Batch jobs (third execution mode: complete / stream / batch) ───────
     #
@@ -802,8 +1003,22 @@ class BaseProviderLM:
     def _batch_unsupported(self) -> UnsupportedFeatureError:
         return UnsupportedFeatureError(f"{self.provider}: batch not supported", provider=self.provider)
 
+    def _batch_preflight(self, request: BatchRequest) -> None:
+        """Plan every item before credentials or paid work, including direct hooks."""
+        for nested in request.requests:
+            records = self.plan(nested, policy="note")
+            if _client_side_stop(records):
+                raise UnsupportedFeatureError(
+                    f"{self.provider}: batch cannot close the generation source at a client-side stop cut; "
+                    "use a dialect with native stop support or individual complete()/stream() calls",
+                    provider=self.provider, feature="config.stop",
+                )
+            if self.adaptations == "refuse":
+                self.plan(nested, policy="refuse")
+
     def _batch_upload_request(self, request: BatchRequest) -> TransportRequest | None:
         """Optional pre-submit upload step (OpenAI's JSONL file); None = single-step."""
+        self._batch_preflight(request)
         return None
 
     def _batch_submit_request(self, request: BatchRequest, upload_body: "dict[str, Any] | None") -> TransportRequest:
@@ -833,6 +1048,7 @@ class BaseProviderLM:
     def batch_submit(self, request: BatchRequest) -> BatchJobInfo:
         """Submit to the provider's batch queue; returns the ticket snapshot."""
         self._require("batches")
+        self._batch_preflight(request)
         upload_body = None
         # MAP-13: the batch builders run under the adapter's policy so
         # "refuse" refuses here too; a batch ticket has no adaptations field
@@ -843,20 +1059,25 @@ class BaseProviderLM:
             resp = self._send(upload_req)
             if resp.status >= 400:
                 raise self._http_error(resp)
-            upload_body = resp.json()
-        with collecting(check_policy(self.adaptations), provider=self.provider):
-            submit_req = self._batch_submit_request(request, upload_body)
+            upload_body = _parse_reply(resp, _reply_object)
+        try:
+            with collecting(check_policy(self.adaptations), provider=self.provider):
+                submit_req = self._batch_submit_request(request, upload_body)
+        except ProviderError as error:
+            if upload_req is not None:
+                _reply_error_metadata(error, resp)
+            raise
         resp = self._send(submit_req)
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._batch_job_from_body(resp.text())
+        return _parse_reply(resp, lambda reply: self._batch_job_from_body(reply.text()))
 
     def batch_status(self, batch_id: str) -> BatchJobInfo:
         self._require("batches")
         resp = self._send(self._batch_status_request(batch_id))
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._batch_job_from_body(resp.text())
+        return _parse_reply(resp, lambda reply: self._batch_job_from_body(reply.text()))
 
     def batch_results(self, batch_id: str) -> "tuple[BatchEntry, ...]":
         """Entries in submission order; raises ValueError while the job runs."""
@@ -864,20 +1085,43 @@ class BaseProviderLM:
         resp = self._send(self._batch_status_request(batch_id))
         if resp.status >= 400:
             raise self._http_error(resp)
-        job = self._batch_job_from_body(resp.text())
+        job = _parse_reply(resp, lambda reply: self._batch_job_from_body(reply.text()))
         if job.status not in BATCH_TERMINAL_STATUSES:
             raise ValueError(
                 f"batch {batch_id} is not finished (status={job.status!r}); "
                 f"wait() or poll batch_status() until done"
             )
-        status_body = resp.json()
+        status_body = _parse_reply(resp, _reply_object)
+        try:
+            fetches = self._batch_result_fetches(status_body)
+        except ProviderError as error:
+            _reply_error_metadata(error, resp)
+            raise
         texts = []
-        for fetch in self._batch_result_fetches(status_body):
+        for fetch in fetches:
             fetched = self._send(fetch)
             if fetched.status >= 400:
                 raise self._http_error(fetched)
-            texts.append(fetched.text())
-        return self._batch_entries(status_body, tuple(texts))
+            texts.append(self._batch_reply_text(status_body, fetched))
+        return _parse_reply(resp, lambda reply: self._batch_entries(status_body, tuple(texts)), json_body=False)
+
+    def _batch_reply_text(self, status_body: dict[str, Any], response: HttpResponse) -> str:
+        """Validate each result file against its own HTTP evidence.
+
+        Legacy hooks combine files and fill missing entries from job status.
+        Decode each file once in isolation before that combined pass so both
+        JSONL syntax and entry-shape faults retain the offending fetch's headers.
+        Blank lines remain valid. Hooks are pure; no request is repeated.
+        """
+        text = _parse_reply(response, _jsonl_reply_text, json_body=False)
+        try:
+            _parse_reply(response, lambda reply: self._batch_entries(status_body, (text,)), json_body=False)
+        except ProviderError as error:
+            # Entry decoders may use synthetic HttpResponse(status=200).
+            # The actual reply containing the broken entry is this fetch.
+            error.status = response.status
+            raise
+        return text
 
     def batch_cancel(self, batch_id: str) -> BatchJobInfo:
         """Request cancellation — a request, not a guarantee."""
@@ -885,7 +1129,7 @@ class BaseProviderLM:
         resp = self._send(self._batch_cancel_request(batch_id))
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._batch_job_from_body(resp.text())
+        return _parse_reply(resp, lambda reply: self._batch_job_from_body(reply.text()))
 
     def batch_list(self, limit: int = 20) -> "tuple[BatchJobInfo, ...]":
         """Enumerate this credential's batch jobs, newest first.
@@ -897,7 +1141,7 @@ class BaseProviderLM:
         resp = self._send(self._batch_list_request(limit))
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._batch_jobs_from_list_body(resp.text())
+        return _parse_reply(resp, lambda reply: self._batch_jobs_from_list_body(reply.text()))
 
     def batch(self, requests: "BatchRequest | Sequence[Request]", *, model: str | None = None,
               label: str | None = None, extensions: "dict[str, Any] | None" = None) -> "BatchJob":
@@ -969,21 +1213,21 @@ class BaseProviderLM:
         resp = self._send(self._cache_create_request(prefix, ttl_seconds, label))
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._cache_info_from_body(resp.text())
+        return _parse_reply(resp, lambda reply: self._cache_info_from_body(reply.text()))
 
     def cache_get(self, cache_id: str) -> CacheInfo:
         self._require("caches")
         resp = self._send(self._cache_get_request(cache_id))
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._cache_info_from_body(resp.text())
+        return _parse_reply(resp, lambda reply: self._cache_info_from_body(reply.text()))
 
     def cache_list(self, limit: int = 20, cursor: str | None = None) -> CachePage:
         self._require("caches")
         resp = self._send(self._cache_list_request(limit, cursor))
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._cache_page_from_list_body(resp.text())
+        return _parse_reply(resp, lambda reply: self._cache_page_from_list_body(reply.text()))
 
     def cache_delete(self, cache_id: str) -> None:
         """Returning without an exception IS the confirmation (the files precedent)."""
@@ -999,7 +1243,7 @@ class BaseProviderLM:
         resp = self._send(self._cache_update_request(cache_id, ttl_seconds))
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._cache_info_from_body(resp.text())
+        return _parse_reply(resp, lambda reply: self._cache_info_from_body(reply.text()))
 
     def cache(self, prefix: Request, *, ttl_seconds: int | None = None, label: str | None = None) -> CachedPrefix:
         """Make a prompt beginning reusable with the best tier this provider has.
@@ -1009,10 +1253,12 @@ class BaseProviderLM:
         Marks and automatic tiers: pure — the CachedPrefix only records the
         boundary; `cached + messages` places the mark or sends nothing.
         """
+        wire = self._wire_request(prefix)
+        provider = self.provider if wire.model != prefix.model else None
         if self.supports.caches:
-            return CachedPrefix(prefix, self.cache_create(prefix, ttl_seconds=ttl_seconds, label=label))
-        self._check_cache_prefix(prefix, ttl_seconds)
-        return CachedPrefix(prefix)
+            return CachedPrefix(wire, self.cache_create(wire, ttl_seconds=ttl_seconds, label=label), provider=provider)
+        self._check_cache_prefix(wire, ttl_seconds)
+        return CachedPrefix(wire, provider=provider)
 
     # ─── Files (account-scoped storage: upload / get / list / delete / download) ─
     #
@@ -1058,14 +1304,14 @@ class BaseProviderLM:
         resp = self._send(self._file_upload_request(request))
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._file_info_from_body(resp.text())
+        return _parse_reply(resp, lambda reply: self._file_info_from_body(reply.text()))
 
     def file_get(self, file_id: str) -> FileInfo:
         self._require("files")
         resp = self._send(self._file_get_request(file_id))
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._file_info_from_body(resp.text())
+        return _parse_reply(resp, lambda reply: self._file_info_from_body(reply.text()))
 
     def file_list(self, limit: int = 20, cursor: str | None = None) -> FilePage:
         """One page of this credential's stored files.
@@ -1078,7 +1324,7 @@ class BaseProviderLM:
         resp = self._send(self._file_list_request(limit, cursor))
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self._file_page_from_list_body(resp.text())
+        return _parse_reply(resp, lambda reply: self._file_page_from_list_body(reply.text()))
 
     def file_delete(self, file_id: str) -> None:
         """Delete a stored file.  Returning without an exception IS the

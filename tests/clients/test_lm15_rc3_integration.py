@@ -171,3 +171,74 @@ async def test_request_conversion_refusal_keeps_the_feature(asynchronous, monkey
 def test_explicit_feature_list_is_preserved():
     error = dspy.LMUnsupportedFeatureError("unsupported", feature="config.x", features=["custom"])
     assert error.feature == "config.x" and error.features == ["custom"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_judgment_response_preserves_json_prediction_and_typed_value(asynchronous, monkeypatch):
+    import json
+    from typing import Literal
+
+    from dspy._vendor.lm15.providers.base import HttpResponse
+    from dspy._vendor.lm15.providers.openai_chat import OpenAIChatLM
+    from dspy.clients.execution import _canonical, prepare
+
+    class Answer(dspy.Signature):
+        question: str = dspy.InputField()
+        accepted: bool = dspy.OutputField()
+        label: Literal["yes", "no"] = dspy.OutputField()
+
+    body = {"model": "gpt-4o", "choices": [{"index": 0, "message": {
+        "role": "assistant", "content": '{"accepted":false,"label":"yes"}',
+    }, "finish_reason": "stop"}]}
+    monkeypatch.setattr(OpenAIChatLM, "_send", lambda *args: HttpResponse(
+        status=200, reason="OK", headers=[], body=json.dumps(body).encode(),
+    ))
+    # Exercise the real native parser with a fake wire, including async mirrors.
+    from dspy._vendor.lm15.providers.async_base import AsyncOpenAIChatLM
+
+    async def send(*args):
+        return HttpResponse(status=200, reason="OK", headers=[], body=json.dumps(body).encode())
+
+    monkeypatch.setattr(AsyncOpenAIChatLM, "_send", send)
+    lm = dspy.LM("openai/gpt-4o", api_key="test", cache=False, num_retries=0)
+    with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
+        predict = dspy.Predict(Answer)
+        result = await predict.acall(question="test") if asynchronous else predict(question="test")
+    assert result.accepted is False and result.label == "yes"
+    request = _canonical(prepare(lm, "test", None, {"response_format": {
+        "type": "json_schema", "json_schema": {"name": "Answer", "schema": {
+            "type": "object", "properties": {"accepted": {"type": "boolean"}},
+        }},
+    }}))
+    response = await invoke(lm, asynchronous, request)
+    assert isinstance(response.message.parts[0], lm15.DataPart)
+    assert response.data == {"accepted": False, "label": "yes"}
+    assert CallResult.load(CallResult.native(response).dump()).responses[0] == response
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_rate_limit_evidence_survives_public_boundary(asynchronous, streaming):
+    from dspy.clients.execution import _delay
+
+    class RateLimited(Engine):
+        def stream(self, request):
+            yield lm15.StreamErrorEvent(error=lm15.ErrorDetail(
+                code="rate_limit", message="wait", provider_code="limited",
+                http_response={"retry_after": 23, "request_id": "req-123",
+                               "rate_limit_headers": {"retry-after": ["23"]}},
+            ))
+
+    engine = RateLimited(lm15.RateLimitError(
+        "wait", retry_after=23, request_id="req-123", provider_code="limited",
+        rate_limit_headers={"retry-after": ["23"]},
+    ))
+    lm = dspy.LM("custom", engine=engine, async_engine=AsyncEngine(engine), cache=False, num_retries=0)
+    with dspy.context(send_stream=Sink() if streaming else None), pytest.raises(dspy.LMRateLimitError) as caught:
+        await invoke(lm, asynchronous, "hello")
+    error = caught.value
+    assert error.request_id == "req-123" and error.provider_code == "limited"
+    assert error.retry_after == 23 and _delay(error, 0) == 23
+    assert error.rate_limit_headers == {"retry-after": ("23",)}

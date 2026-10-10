@@ -30,6 +30,7 @@ from ..access import OPENAI_API, auth_header
 from ..auth import extract_chatgpt_account_id
 from ..compat import OPENAI_RESPONSES_PRESET_BASE_URLS, OpenAIResponsesCompat, preset_base_url
 from ..features import ProviderManifest
+from ..judgments import note_unmeasurable_probabilities, replace_text_with_data, request_judgments
 from ..result import materialize_response
 from ..live import WebSocketLiveSession, require_websocket_sync_connect
 from ..profiles import ProviderProfile, ResolvedOpenAIResponsesCompat, resolve_openai_responses_compat
@@ -474,6 +475,9 @@ class OpenAILM(BaseProviderLM):
     access: ProviderManifest | None = field(default=None, repr=False)
     credentials_path: "str | os.PathLike[str] | None" = field(default=None, repr=False)
     settings: "Mapping[str, str] | None" = field(default=None, kw_only=True)
+    # A named cloud identity ("platform", "workload", "environment", "cli";
+    # AUTH-1) on a cloud door, instead of api_key=.
+    credential: str | None = field(default=None, kw_only=True)
     clock: "Callable[[], datetime] | None" = field(default=None, repr=False, kw_only=True)
     account_id: str | None = None
 
@@ -494,7 +498,8 @@ class OpenAILM(BaseProviderLM):
                 DeprecationWarning,
                 stacklevel=3,
             )
-        self._bind_access(self.access, credentials_path=self.credentials_path, default_base_url=_DEFAULT_BASE_URL, settings=self.settings)
+        self._bind_access(self.access, credentials_path=self.credentials_path, default_base_url=_DEFAULT_BASE_URL, settings=self.settings,
+                          credential=self.credential)
         compat = self.compat if self.compat is not None else self._registry_compat()
         if isinstance(compat, str):
             self._compat_base = OpenAIResponsesCompat.preset(compat)
@@ -523,6 +528,9 @@ class OpenAILM(BaseProviderLM):
     _response_error_code_map: ClassVar[dict[str, type[ProviderError]]] = {
         "server_error": ServerError,
         "rate_limit_exceeded": RateLimitError,
+        # Azure documents these on Responses error frames even under HTTP 200.
+        "no_capacity": RateLimitError,
+        "too_many_requests": RateLimitError,
         "invalid_prompt": InvalidRequestError,
         "vector_store_timeout": TimeoutError,
         "invalid_image": InvalidRequestError,
@@ -939,6 +947,10 @@ class OpenAILM(BaseProviderLM):
         if request.config.tool_choice and request.config.tool_choice.parallel is not None:
             payload["parallel_tool_calls"] = request.config.tool_choice.parallel
         if request.config.response_format:
+            # MAP-14: the judgment convention goes verbatim (strict honours
+            # anyOf/const/title, receipted 2026-09-17); probabilities cannot
+            # be measured here.
+            note_unmeasurable_probabilities(request, self.provider)
             payload["text"] = _response_format_to_openai_text(request.config.response_format)
         if request.config.reasoning:
             reasoning = request.config.reasoning
@@ -1043,6 +1055,7 @@ class OpenAILM(BaseProviderLM):
         return payload
 
     def build_request(self, request: Request, stream: bool) -> TransportRequest:
+        request = self._wire_request(request)
         return self._emit(
             method="POST",
             url=f"{self.base_url.rstrip('/')}/responses",
@@ -1056,6 +1069,7 @@ class OpenAILM(BaseProviderLM):
     # ─── Response parsing ───────────────────────────────────────────
 
     def parse_response(self, request: Request, response: HttpResponse) -> Response:
+        request = self._wire_request(request)
         data = response.json()
 
         resp_error = data.get("error") if isinstance(data, dict) else None
@@ -1162,7 +1176,7 @@ class OpenAILM(BaseProviderLM):
         return Response(
             id=str(data.get("id")) if data.get("id") else None,
             model=str(data.get("model") or request.model),
-            message=Message(role="assistant", parts=tuple(parts)),
+            message=Message(role="assistant", parts=replace_text_with_data(parts, request_judgments(request))),
             finish_reason=_finish_from_status(data, has_tool_call=has_tool),
             usage=usage,
             logprobs=tuple(logprob_seq) if logprob_seq else None,
@@ -1170,6 +1184,7 @@ class OpenAILM(BaseProviderLM):
         )
 
     def parse_stream_events(self, request: Request, raw_event: SSEEvent) -> Iterator[StreamEvent]:
+        request = self._wire_request(request)
         payload = json.loads(raw_event.data) if raw_event.data and raw_event.data != "[DONE]" else None
         if isinstance(payload, dict) and payload.get("type") in {"response.output_item.added", "response.output_item.done"}:
             item = payload.get("item")
@@ -1326,8 +1341,9 @@ class OpenAILM(BaseProviderLM):
         return BaseProviderLM.complete(self, request)
 
     def stream(self, request: Request) -> Iterator[StreamEvent]:
-        if not self._codex and self._should_use_live_completion(request):
-            yield from self._stream_via_live_completion(request)
+        wire = self._wire_request(request)
+        if not self._codex and self._should_use_live_completion(wire):
+            yield from self._stream_via_live_completion(wire)
             return
         # BaseProviderLM.stream applies the MAP-3 coalescer: the Codex
         # backend sends response.completed (usage) and then [DONE], two
@@ -1690,7 +1706,6 @@ class OpenAILM(BaseProviderLM):
             url=f"{self.base_url.rstrip('/')}/models",
             params=params,
             headers=self._headers(),
-            read_timeout=30.0,
         )
 
     def _models_from_body(self, body: str):
@@ -1733,7 +1748,6 @@ class OpenAILM(BaseProviderLM):
             url=f"{self.base_url.rstrip('/')}/files",
             headers=list(self._headers(content_type=content_type).items()),
             body=body,
-            read_timeout=300.0,
         )
 
     def _file_info_from_body(self, body: str) -> FileInfo:
@@ -1760,7 +1774,7 @@ class OpenAILM(BaseProviderLM):
     def _file_get_request(self, file_id: str) -> TransportRequest:
         return self._emit(
             method="GET", url=f"{self.base_url.rstrip('/')}/files/{path_id(file_id)}",
-            headers=self._headers(), read_timeout=60.0,
+            headers=self._headers(),
         )
 
     def _file_list_request(self, limit: int, cursor: str | None) -> TransportRequest:
@@ -1769,7 +1783,7 @@ class OpenAILM(BaseProviderLM):
             params["after"] = cursor
         return self._emit(
             method="GET", url=f"{self.base_url.rstrip('/')}/files",
-            params=params, headers=self._headers(), read_timeout=60.0,
+            params=params, headers=self._headers(),
         )
 
     def _file_page_from_list_body(self, body: str) -> FilePage:
@@ -1782,13 +1796,13 @@ class OpenAILM(BaseProviderLM):
     def _file_delete_request(self, file_id: str) -> TransportRequest:
         return self._emit(
             method="DELETE", url=f"{self.base_url.rstrip('/')}/files/{path_id(file_id)}",
-            headers=self._headers(), read_timeout=60.0,
+            headers=self._headers(),
         )
 
     def _file_download_request(self, file_id: str) -> TransportRequest:
         return self._emit(
             method="GET", url=f"{self.base_url.rstrip('/')}/files/{path_id(file_id)}/content",
-            headers=self._headers(), read_timeout=300.0,
+            headers=self._headers(),
         )
 
     # ─── Batch hooks (Batch API over /v1/responses) ──────────────────
@@ -1800,6 +1814,7 @@ class OpenAILM(BaseProviderLM):
     # results so entry order always equals submission order.
 
     def _batch_upload_request(self, request: BatchRequest) -> TransportRequest:
+        self._batch_preflight(request)
         lines = []
         for i, nested in enumerate(request.requests):
             lines.append(json.dumps({
@@ -1818,10 +1833,10 @@ class OpenAILM(BaseProviderLM):
             url=f"{self.base_url.rstrip('/')}/files",
             headers=list(self._headers(content_type=content_type).items()),
             body=body,
-            read_timeout=300.0,
         )
 
     def _batch_submit_request(self, request: BatchRequest, upload_body: dict[str, Any] | None) -> TransportRequest:
+        self._batch_preflight(request)
         input_file_id = (upload_body or {}).get("id")
         if not isinstance(input_file_id, str) or not input_file_id:
             raise ProviderError("openai: batch input file upload returned no id", provider=self.provider)
@@ -1839,7 +1854,6 @@ class OpenAILM(BaseProviderLM):
             url=f"{self.base_url.rstrip('/')}/batches",
             headers=self._headers(),
             payload=payload,
-            read_timeout=120.0,
         )
 
     def _batch_job_from_body(self, body: str) -> BatchJobInfo:
@@ -1862,13 +1876,13 @@ class OpenAILM(BaseProviderLM):
     def _batch_status_request(self, batch_id: str) -> TransportRequest:
         return self._emit(
             method="GET", url=f"{self.base_url.rstrip('/')}/batches/{path_id(batch_id)}",
-            headers=self._headers(), read_timeout=60.0,
+            headers=self._headers(),
         )
 
     def _batch_cancel_request(self, batch_id: str) -> TransportRequest:
         return self._emit(
             method="POST", url=f"{self.base_url.rstrip('/')}/batches/{path_id(batch_id)}/cancel",
-            headers=self._headers(), read_timeout=60.0,
+            headers=self._headers(),
         )
 
     def _batch_result_fetches(self, status_body: dict[str, Any]) -> tuple[TransportRequest, ...]:
@@ -1878,7 +1892,7 @@ class OpenAILM(BaseProviderLM):
             if isinstance(file_id, str) and file_id:
                 fetches.append(self._emit(
                     method="GET", url=f"{self.base_url.rstrip('/')}/files/{path_id(file_id)}/content",
-                    headers=self._headers(), read_timeout=300.0,
+                    headers=self._headers(),
                 ))
         return tuple(fetches)
 
@@ -1936,7 +1950,7 @@ class OpenAILM(BaseProviderLM):
     def _batch_list_request(self, limit: int) -> TransportRequest:
         return self._emit(
             method="GET", url=f"{self.base_url.rstrip('/')}/batches",
-            params={"limit": int(limit)}, headers=self._headers(), read_timeout=60.0,
+            params={"limit": int(limit)}, headers=self._headers(),
         )
 
     def _batch_jobs_from_list_body(self, body: str) -> tuple[BatchJobInfo, ...]:
@@ -1972,7 +1986,7 @@ class OpenAILM(BaseProviderLM):
         payload: dict[str, Any] = {"model": request.model, "prompt": request.prompt, **(request.extensions or {})}
         if request.seconds is not None:
             payload["seconds"] = str(request.seconds)  # the wire wants a string enum
-        return self._emit(method="POST", url=f"{self.base_url.rstrip('/')}/videos", headers=self._headers(), payload=payload, read_timeout=120.0)
+        return self._emit(method="POST", url=f"{self.base_url.rstrip('/')}/videos", headers=self._headers(), payload=payload)
 
     def _video_job_from_body(self, body: str, video_id: "str | None" = None) -> VideoJobInfo:
         return self._video_job_info(json.loads(body))
@@ -1996,14 +2010,13 @@ class OpenAILM(BaseProviderLM):
         )
 
     def _video_status_request(self, video_id: str) -> TransportRequest:
-        return self._emit(method="GET", url=f"{self.base_url.rstrip('/')}/videos/{path_id(video_id)}", headers=self._headers(), read_timeout=60.0)
+        return self._emit(method="GET", url=f"{self.base_url.rstrip('/')}/videos/{path_id(video_id)}", headers=self._headers())
 
     def _video_result_fetch(self, status_body: dict[str, Any]) -> TransportRequest:
         return self._emit(
             method="GET",
             url=f"{self.base_url.rstrip('/')}/videos/{path_id(str(status_body.get('id')))}/content",
             headers=self._headers(),
-            read_timeout=600.0,
         )
 
     def _video_part(self, status_body: dict[str, Any], fetched: "HttpResponse | None") -> VideoPart:
@@ -2017,7 +2030,7 @@ class OpenAILM(BaseProviderLM):
     def _video_list_request(self, limit: int, model: str | None) -> TransportRequest:
         return self._emit(
             method="GET", url=f"{self.base_url.rstrip('/')}/videos",
-            params={"limit": int(limit)}, headers=self._headers(), read_timeout=60.0,
+            params={"limit": int(limit)}, headers=self._headers(),
         )
 
     def _video_jobs_from_list_body(self, body: str) -> tuple[VideoJobInfo, ...]:
@@ -2044,7 +2057,7 @@ class OpenAILM(BaseProviderLM):
         if not request.images:
             payload = {"model": request.model, "prompt": request.prompt, "size": request.size, **(request.extensions or {})}
             payload = {k: v for k, v in payload.items() if v is not None}
-            return self._emit(method="POST", url=f"{base}/images/generations", headers=self._headers(), payload=payload, read_timeout=300.0)
+            return self._emit(method="POST", url=f"{base}/images/generations", headers=self._headers(), payload=payload)
         # Edits are multipart: the wire takes uploaded bytes only.
         for part in request.images:
             if part.data is None and part.path is None:
@@ -2069,7 +2082,6 @@ class OpenAILM(BaseProviderLM):
             url=f"{base}/images/edits",
             headers=list(self._headers(content_type=content_type).items()),
             body=body,
-            read_timeout=300.0,
         )
 
     def _image_generation_from_response(self, request: ImageGenerationRequest, resp: HttpResponse) -> ImageGenerationResponse:
@@ -2099,7 +2111,7 @@ class OpenAILM(BaseProviderLM):
             payload["voice"] = request.voice
         if request.format is not None:
             payload["response_format"] = request.format
-        return self._emit(method="POST", url=f"{self.base_url.rstrip('/')}/audio/speech", headers=self._headers(), payload=payload, read_timeout=300.0)
+        return self._emit(method="POST", url=f"{self.base_url.rstrip('/')}/audio/speech", headers=self._headers(), payload=payload)
 
     def _speech_generation_from_response(self, request: SpeechGenerationRequest, resp: HttpResponse) -> SpeechGenerationResponse:
         content_type = (resp.header("content-type") or "").split(";", 1)[0].strip()

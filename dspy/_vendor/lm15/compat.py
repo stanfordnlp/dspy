@@ -391,6 +391,11 @@ OpenAIChatForcedToolChoice = Literal["auto", "send", "reject"]
 # answers 200 with free-form, fenced JSON that ignores the schema (live
 # 2026-09-03) — silent, so the adapter must refuse.
 OpenAIChatJsonSchema = Literal["auto", "send", "reject"]
+# MAP-14 §4: can the server score named tokens (``logprob_token_ids`` on
+# the completions endpoint) so lm15 can deliver a distribution over
+# declared keys?  Receipted on vLLM 0.29.0 (honoured) and 0.25.1 (200,
+# silently absent) 2026-09-17; the response-side check catches the latter.
+OpenAIChatTokenScoring = Literal["auto", "none", "logprob_token_ids"]
 # The server's native reasoning-effort levels, when the server does NOT
 # refuse the others.  MAP-7 rule 2: a word with no native level raises
 # client-side rather than downgrading silently.  Most servers answer 400 to
@@ -425,6 +430,7 @@ class OpenAIChatCompat:
     user_field: OpenAIChatUserField | None = None
     forced_tool_choice: OpenAIChatForcedToolChoice | None = None
     json_schema: OpenAIChatJsonSchema | None = None
+    token_scoring: OpenAIChatTokenScoring | None = field(default=None, kw_only=True)
     reasoning_efforts: OpenAIChatReasoningEfforts | None = field(default=None, kw_only=True)
     routing: JsonObject | None = None
     extensions: JsonObject | None = None
@@ -468,6 +474,7 @@ class OpenAIChatCompat:
         _check_literal_or_none(self.tool_result_media, ToolResultMedia, "tool_result_media")
         _check_literal_or_none(self.cache_control, OpenAICacheControl, "cache_control")
         _check_literal_or_none(self.user_field, OpenAIChatUserField, "user_field")
+        _check_literal_or_none(self.token_scoring, OpenAIChatTokenScoring, "token_scoring")
         _check_literal_or_none(self.forced_tool_choice, OpenAIChatForcedToolChoice, "forced_tool_choice")
         _check_literal_or_none(self.json_schema, OpenAIChatJsonSchema, "json_schema")
         if self.reasoning_efforts is not None:
@@ -647,6 +654,9 @@ OPENAI_CHAT_PRESETS: dict[str, OpenAIChatCompat] = {
         strict_tools="omit",
         cache_control="none",
         tool_result_media="reject",  # MAP-10: parser carries it; no server reachable in the pass — reject until a receipt
+        # MAP-14 §4, receipts/2026-09-17-judgments/vllm-0.29-lfm-trie.json (honoured)
+        # and vllm-0.25.1-qwen-trie-negative.json (silently absent; caught on parse).
+        token_scoring="logprob_token_ids",
     ),
     "sglang": OpenAIChatCompat(
         instruction_role="system",
@@ -872,6 +882,7 @@ class ResolvedOpenAIChatCompat:
     user_field: Literal["user", "user_id"] = "user"
     forced_tool_choice: Literal["send", "reject"] = "send"
     json_schema: Literal["send", "reject"] = "send"
+    token_scoring: Literal["none", "logprob_token_ids"] = field(default="none", kw_only=True)
     reasoning_efforts: tuple[str, ...] | None = field(default=None, kw_only=True)
     routing: JsonObject | None = None
     extensions: JsonObject | None = None
@@ -893,6 +904,7 @@ _CHAT_AUTO_DEFAULTS: dict[str, str] = {
     "user_field": "user",
     "forced_tool_choice": "send",
     "json_schema": "send",
+    "token_scoring": "none",
 }
 
 

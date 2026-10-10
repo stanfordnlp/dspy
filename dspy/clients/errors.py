@@ -95,6 +95,7 @@ def wrap_error(exc: Exception, *, model: str, provider: str | None = None) -> Ex
     for name in (
         "partial", "part_index", "env_keys", "credential_hint", "path", "lock_path",
         "providers", "candidates", "rules_tried", "catalog_searched", "cleanup_errors",
+        "rate_limit_headers",
     ):
         if name == "partial" and isinstance(exc, lm15.CollectionLimitError):
             continue  # Even hasattr() would evaluate its lazy partial property.

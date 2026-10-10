@@ -258,10 +258,12 @@ class StreamAccumulator:
         elif finish == "stop" and has_tool_calls:
             finish = "tool_call"
 
+        from .judgments import replace_text_with_data, request_judgments
+        answer_parts = replace_text_with_data(parts, request_judgments(self.request))
         return Response(
             id=self.started_id,
             model=self.started_model or self.request.model,
-            message=Message(role="assistant", parts=tuple(parts), continuation=tuple(self.message_continuation)),
+            message=Message(role="assistant", parts=answer_parts, continuation=tuple(self.message_continuation)),
             finish_reason=finish,
             usage=self.usage or Usage(),
             logprobs=tuple(self.logprob_seq) if self.logprob_seq else None,
@@ -1148,7 +1150,17 @@ def _exception_from_error(event: StreamEvent) -> Exception:
     message = err.message
     exc_cls = error_class_for_code(code)
     if issubclass(exc_cls, LM15Error):
-        return exc_cls(message, provider_code=err.provider_code)
+        import math
+
+        http = err.http_response
+        http = http if isinstance(http, dict) else {}
+        wait = http.get("retry_after")
+        if not isinstance(wait, (int, float)) or isinstance(wait, bool) or not math.isfinite(wait) or wait < 0:
+            wait = None
+        request_id = http.get("request_id")
+        return exc_cls(message, provider_code=err.provider_code,
+                       request_id=request_id if isinstance(request_id, str) else None,
+                       retry_after=wait, rate_limit_headers=http.get("rate_limit_headers"))
     return exc_cls(message)
 
 

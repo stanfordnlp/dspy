@@ -8,6 +8,7 @@ from .async_base import (
     AsyncOpenAICodexLM,
     AsyncOpenAILM,
     AsyncTransport,
+    AsyncTypeSafeLM,
     AsyncXaiLM,
 )
 from .base import BaseProviderLM, Credential, HttpResponse, ProviderDialect, SyncTransport, resolve_credential
@@ -16,6 +17,7 @@ from .gemini import GeminiLM
 from .openai import OpenAILM
 from .openai_chat import OpenAIChatLM
 from .openai_codex import OpenAICodexLM
+from .typesafe import TypeSafeLM
 from .xai import XaiLM
 
 __all__ = [
@@ -27,6 +29,8 @@ __all__ = [
     "OpenAICodexLM",
     "XaiLM",
     "AsyncXaiLM",
+    "TypeSafeLM",
+    "AsyncTypeSafeLM",
     "AsyncOpenAILM",
     "AsyncOpenAIChatLM",
     "AsyncAnthropicLM",

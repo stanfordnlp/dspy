@@ -378,22 +378,23 @@ async def test_async_tool_with_kwargs():
 @pytest.mark.asyncio
 async def test_async_concurrent_calls():
     """Test that multiple async tools can run concurrently."""
-    tool = Tool(async_dummy_function)
+    all_started = asyncio.Event()
+    started = set()
 
-    # Create multiple concurrent calls
+    async def wait_for_peers(x: int, y: str) -> str:
+        started.add(x)
+        if len(started) == 5:
+            all_started.set()
+        await all_started.wait()
+        return f"{y} {x}"
+
+    tool = Tool(wait_for_peers)
     tasks = [tool.acall(x=i, y=f"hello{i}") for i in range(5)]
-
-    # Run them concurrently and measure time
-    start_time = asyncio.get_event_loop().time()
-    results = await asyncio.gather(*tasks)
-    end_time = asyncio.get_event_loop().time()
+    # No call can finish until all five have entered. The timeout only bounds a deadlock.
+    results = await asyncio.wait_for(asyncio.gather(*tasks), timeout=10)
 
     # Verify results, `asyncio.gather` returns results in the order of the tasks
     assert results == [f"hello{i} {i}" for i in range(5)]
-
-    # Check that it ran concurrently (should take ~0.1s, not ~0.5s)
-    # We use 0.3s as threshold to account for some overhead
-    assert end_time - start_time < 0.3
 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
