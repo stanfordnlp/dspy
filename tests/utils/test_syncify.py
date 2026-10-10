@@ -1,4 +1,8 @@
 import asyncio
+import gc
+import warnings
+
+import pytest
 
 import dspy
 
@@ -55,3 +59,62 @@ def test_syncify_works_with_optimizers():
     sync_program = dspy.syncify(async_program, in_place=False)
     optimized_program = optimizer.compile(sync_program, trainset=dataset)
     assert len(optimized_program.predictors()[0].demos) == 2
+
+
+def test_syncify_raises_inside_a_running_event_loop():
+    """Inside a running loop the sync call fails fast toward the native async path (#10337)."""
+
+    class MyProgram(dspy.Module):
+        async def aforward(self, x: int) -> int:
+            return x + 1
+
+    sync_program = dspy.syncify(MyProgram())
+
+    async def call_inside_loop():
+        with pytest.raises(ValueError, match="native async path"):
+            sync_program(1)
+
+    asyncio.run(call_inside_loop())
+
+
+def test_syncify_raise_path_does_not_leak_a_coroutine():
+    """The refused coroutine is closed, so no 'never awaited' RuntimeWarning escapes."""
+
+    class MyProgram(dspy.Module):
+        async def aforward(self, x: int) -> int:
+            return x + 1
+
+    sync_program = dspy.syncify(MyProgram())
+
+    async def call_inside_loop():
+        with pytest.raises(ValueError):
+            sync_program(1)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        asyncio.run(call_inside_loop())
+        gc.collect()
+
+
+def test_syncify_and_tool_share_the_running_loop_policy():
+    """syncify and Tool refuse a sync call inside a running loop the same way, so the two policies cannot drift apart again."""
+
+    async def add_one(x: int) -> int:
+        return x + 1
+
+    tool = dspy.Tool(add_one)
+
+    class MyProgram(dspy.Module):
+        async def aforward(self, x: int) -> int:
+            return x + 1
+
+    sync_program = dspy.syncify(MyProgram())
+
+    async def call_both():
+        with pytest.raises(ValueError):
+            sync_program(1)
+        with dspy.context(allow_tool_async_sync_conversion=True):
+            with pytest.raises(ValueError):
+                tool(x=1)
+
+    asyncio.run(call_both())
