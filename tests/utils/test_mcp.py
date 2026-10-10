@@ -32,12 +32,21 @@ def make_call_tool_result(field_style, texts=(), structured=_UNSET, is_error=Fal
 
 
 @pytest.mark.extra
+def test_convert_mcp_tool_result_defaults_to_structured():
+    camel_result = make_call_tool_result("camel", texts=["fallback"], structured={"result": "data"})
+    snake_result = make_call_tool_result("snake", texts=["fallback"], structured={"result": "data"})
+
+    assert _convert_mcp_tool_result(camel_result) == {"result": "data"}
+    assert _convert_mcp_tool_result(snake_result) == {"result": "data"}
+
+
+@pytest.mark.extra
 def test_convert_mcp_tool_result_supports_both_field_styles_without_changing_results():
     camel_result = make_call_tool_result("camel", texts=["hi"], structured={"result": "ignored"})
     snake_result = make_call_tool_result("snake", texts=["a", "b"], structured={"result": "ignored"})
 
-    assert _convert_mcp_tool_result(camel_result) == "hi"
-    assert _convert_mcp_tool_result(snake_result) == ["a", "b"]
+    assert _convert_mcp_tool_result(camel_result, result_mode="text") == "hi"
+    assert _convert_mcp_tool_result(snake_result, result_mode="text") == ["a", "b"]
 
 
 @pytest.mark.extra
@@ -129,10 +138,10 @@ async def test_convert_mcp_tool_with_v2_client():
     async with Client(server) as client:
         response = await client.list_tools()
         increment_tool = Tool.from_mcp_tool(client, response.tools[0])
-        structured_increment_tool = Tool.from_mcp_tool(client, response.tools[0], result_mode="structured")
+        text_increment_tool = Tool.from_mcp_tool(client, response.tools[0], result_mode="text")
 
-        assert await increment_tool.acall(value=1) == "2"
-        assert await structured_increment_tool.acall(value=1) == {"result": 2}
+        assert await increment_tool.acall(value=1) == {"result": 2}
+        assert await text_increment_tool.acall(value=1) == "2"
 
 
 @pytest.mark.asyncio
@@ -153,6 +162,7 @@ async def test_convert_mcp_tool():
 
             # Check add
             add_tool = convert_mcp_tool(session, response.tools[0])
+            text_add_tool = convert_mcp_tool(session, response.tools[0], result_mode="text")
             assert add_tool.name == "add"
             assert add_tool.desc == "Add two numbers"
             assert add_tool.args == {
@@ -164,7 +174,8 @@ async def test_convert_mcp_tool():
                 "a": "No description provided. (Required)",
                 "b": "No description provided. (Required)",
             }
-            assert await add_tool.acall(a=1, b=2) == "3"
+            assert await add_tool.acall(a=1, b=2) == {"result": 3}
+            assert await text_add_tool.acall(a=1, b=2) == "3"
 
             # Check hello
             hello_tool = convert_mcp_tool(session, response.tools[1])
@@ -255,8 +266,10 @@ async def test_react_v2_native_mcp_end_to_end():
             else:
                 observations = {m["tool_call_id"]: m["content"] for m in messages if m["role"] == "tool"}
                 assert "error!" in observations["mcp_error"]
-                assert observations["mcp_add"] == "42"
-                calls = [("final", "submit", {"answer": int(observations["mcp_add"])})]
+                assert observations["mcp_add"] == '{"result": 42}'
+                add_obs = json.loads(observations["mcp_add"])
+                answer_val = add_obs["result"] if isinstance(add_obs, dict) else int(add_obs)
+                calls = [("final", "submit", {"answer": answer_val})]
             return dotdict(
                 choices=[
                     dotdict(
@@ -300,4 +313,4 @@ async def test_react_v2_native_mcp_end_to_end():
     }
     results = pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results
     assert [(r.call_id, r.is_error) for r in results] == [("mcp_error", True), ("mcp_add", False)]
-    assert results[1].value == "42"
+    assert results[1].value == {"result": 42}
