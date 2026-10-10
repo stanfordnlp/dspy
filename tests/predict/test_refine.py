@@ -17,6 +17,51 @@ class DummyModule(dspy.Module):
         return self.forward_fn(self, **kwargs)
 
 
+def test_refine_adds_hint_to_sub_signatures_during_init():
+    predict = DummyModule("question -> answer", lambda self, **kwargs: self.predictor(**kwargs))
+    predict.other_predictor = Predict("context -> summary")
+
+    Refine(module=predict, N=3, reward_fn=lambda _, __: 1.0, threshold=1.0)
+
+    assert list(predict.predictor.signature.input_fields) == ["question", "hint_"]
+    assert list(predict.other_predictor.signature.input_fields) == ["context", "hint_"]
+    assert predict.predictor.signature.input_fields["hint_"].default_factory is not None
+    assert predict.other_predictor.signature.input_fields["hint_"].default_factory is not None
+
+
+def test_refine_injects_hints_without_modifying_signatures_during_runtime():
+    lm = DummyLM(
+        [
+            {"answer": "wrong"},
+            {"discussion": "The predictor can improve.", "advice": {"predictor": "Return the correct answer."}},
+            {"answer": "correct"},
+        ]
+    )
+    dspy.configure(lm=lm)
+    predictor_inputs = []
+    predictor_signatures = []
+
+    def record_predictor_inputs(self, **kwargs):
+        predictor_signatures.append(self.predictor.signature)
+        result = self.predictor(**kwargs)
+        predictor_inputs.append(dspy.settings.trace[-1][1])
+        return result
+
+    predict = DummyModule("question -> answer", record_predictor_inputs)
+    refine = Refine(
+        module=predict,
+        N=2,
+        reward_fn=lambda _, pred: float(pred.answer == "correct"),
+        threshold=1.0,
+    )
+
+    result = refine(question="What is the capital of Belgium?")
+
+    assert result.answer == "correct"
+    assert [inputs["hint_"] for inputs in predictor_inputs] == ["N/A", "Return the correct answer."]
+    assert all(signature is predict.predictor.signature for signature in predictor_signatures)
+
+
 def test_refine_forward_success_first_attempt():
     lm = DummyLM([{"answer": "Brussels"}, {"answer": "City of Brussels"}, {"answer": "Brussels"}])
     dspy.configure(lm=lm)
