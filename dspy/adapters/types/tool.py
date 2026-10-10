@@ -412,6 +412,10 @@ class ToolCalls(Type):
         if isinstance(data, cls):
             return data
 
+        # Models in JSON mode often write `null` or `{}` to mean "no tool calls"; treat them like `[]`.
+        if data is None or data == {}:
+            return {"tool_calls": []}
+
         # Handle case where data is a list of dicts with either DSPy or provider-shaped tool call keys.
         if isinstance(data, list) and all(isinstance(item, dict) and _is_tool_call_dict(item) for item in data):
             return {"tool_calls": [cls.ToolCall(**_normalize_tool_call_dict(item)) for item in data]}

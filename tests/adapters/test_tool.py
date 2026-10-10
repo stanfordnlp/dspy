@@ -656,6 +656,10 @@ def test_toolcalls_vague_match():
     assert len(tc.tool_calls) == 1
     assert tc.tool_calls[0].args == {"query": "hello"}
 
+    # `null` and `{}` mean "no tool calls", like `[]`.
+    for empty in (None, {}, []):
+        assert ToolCalls.model_validate(empty).tool_calls == []
+
     # Invalid input should raise ValueError
     with pytest.raises(ValueError):
         ToolCalls.model_validate({"foo": "bar"})
