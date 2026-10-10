@@ -104,10 +104,11 @@ class LocalProvider(Provider):
         # Wait until the server is ready (or times out)
         base_url = f"http://localhost:{port}"
         try:
-            wait_for_server(base_url, timeout=timeout)
-        except TimeoutError:
-            # If the server doesn't come up, we might want to kill it:
-            process.kill()
+            wait_for_server(base_url, timeout=timeout, process=process)
+        except Exception:
+            # Connection errors and a process that already exited must not leave the server running.
+            if process.poll() is None:
+                process.kill()
             raise
 
         # Once server is ready, we tell the thread to stop printing further lines.
@@ -332,16 +333,20 @@ def get_free_port() -> int:
         return s.getsockname()[1]
 
 
-def wait_for_server(base_url: str, timeout: int | None = None) -> None:
+def wait_for_server(base_url: str, timeout: int | None = None, process: subprocess.Popen | None = None) -> None:
     """
     Wait for the server to be ready by polling the /v1/models endpoint.
 
     Args:
         base_url: The base URL of the server (e.g. http://localhost:1234)
         timeout: Maximum time to wait in seconds. None means wait forever.
+        process: Server process, when one was started. An exit before the server
+            accepts connections raises TimeoutError instead of waiting out the deadline.
     """
     start_time = time.time()
     while True:
+        if process is not None and process.poll() is not None:
+            raise TimeoutError("Server process exited before becoming ready")
         try:
             response = requests.get(
                 f"{base_url}/v1/models",
@@ -352,10 +357,11 @@ def wait_for_server(base_url: str, timeout: int | None = None) -> None:
                 time.sleep(5)
                 break
 
-            if timeout and (time.time() - start_time) > timeout:
+            if timeout is not None and (time.time() - start_time) > timeout:
                 raise TimeoutError("Server did not become ready within timeout period")
         except requests.exceptions.RequestException:
-            # Server not up yet, wait and retry
+            if timeout is not None and (time.time() - start_time) > timeout:
+                raise TimeoutError("Server did not become ready within timeout period")
             time.sleep(1)
 
 
