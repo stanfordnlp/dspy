@@ -80,6 +80,12 @@ class CodeInterpreter(Protocol):
     Pooling:
         For interpreter pooling, call start() to pre-warm instances, then
         distribute execute() calls across the pool.
+
+    Sandbox dspy facade:
+        dspy.Flex and dspy.RLM install a ``dspy`` shim whose predictors are built and
+        run on the host, so registered tools must be callable as globals in executed
+        code and state must persist across execute() calls. The shim refuses an
+        interpreter that runs code in the host's memory (the host process or a fork).
     """
 
     @property
@@ -159,7 +165,7 @@ def _validate_interpreter_factory(factory: Any, name: str = "interpreter_factory
     if not isinstance(factory, type) and isinstance(factory, CodeInterpreter):
         raise TypeError(
             f"{name} received an object that already implements CodeInterpreter, so its ownership "
-            "is ambiguous. Pass an existing interpreter as the first positional argument when calling the module. "
+            "is ambiguous. "
             "If this object also creates interpreters, pass a dedicated zero-argument creation callable instead."
         )
     if not callable(factory):

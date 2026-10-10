@@ -58,6 +58,14 @@ RUNG_KINDS: frozenset[str] = frozenset({
 AuthStepState = Literal["selected", "shadowed", "absent", "unprobed"]
 AUTH_STEP_STATES: frozenset[str] = frozenset({"selected", "shadowed", "absent", "unprobed"})
 
+# spec/auth.md AUTH-1 named credentials (amended 2026-09-19,
+# changes/2026-09-19-cloud-identity-and-endpoints.md): the four names a
+# caller may pin a cloud door to instead of walking the chain.  One word,
+# the same on every cloud; the chain module maps each to the rungs it
+# covers, and a named credential never falls through to another rung.
+NamedCredential = Literal["platform", "workload", "environment", "cli"]
+NAMED_CREDENTIALS: tuple[str, ...] = ("platform", "workload", "environment", "cli")
+
 
 @dataclass(frozen=True, slots=True)
 class EndpointSupport:
@@ -126,6 +134,14 @@ class HostSpec:
     ``required_headers``   ``(header name, setting name)`` pairs sent on every
                            request from the resolved settings.
     ``sigv4_service``      the SigV4 credential-scope service name.
+    ``endpoint_env``       the cloud vendor's own variables, consulted in
+                           order by the router, that name a full endpoint
+                           root for this door (``AZURE_OPENAI_ENDPOINT``,
+                           ``AWS_ENDPOINT_URL_BEDROCK_RUNTIME``).  An
+                           endpoint replaces the root of ``base_url`` (the
+                           part before the first path segment); the door's
+                           path is appended unless already present
+                           (amended 2026-09-19).
     """
 
     base_url: str
@@ -136,6 +152,7 @@ class HostSpec:
     stream_framing: StreamFraming = "sse"
     required_headers: tuple[tuple[str, str], ...] = ()
     sigv4_service: str | None = None
+    endpoint_env: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.model_in not in MODEL_PLACEMENTS:
@@ -147,10 +164,50 @@ class HostSpec:
         object.__setattr__(self, "settings", tuple(self.settings))
         object.__setattr__(self, "paths", dict(self.paths))
         object.__setattr__(self, "required_headers", tuple((str(k), str(v)) for k, v in self.required_headers))
+        object.__setattr__(self, "endpoint_env", tuple(str(v) for v in self.endpoint_env))
+        if "://" not in self.base_url:
+            raise ValueError(f"HostSpec.base_url must be an absolute URL template, got {self.base_url!r}")
 
     @property
     def setting_names(self) -> tuple[str, ...]:
         return tuple(s.name for s in self.settings)
+
+    @property
+    def root_template(self) -> str:
+        """``base_url`` up to (not including) the first path segment: the
+        part an endpoint override replaces."""
+        scheme, _, rest = self.base_url.partition("://")
+        host, _, _ = rest.partition("/")
+        return f"{scheme}://{host}"
+
+    @property
+    def path_template(self) -> str:
+        """The door's path under the root (``/openai/v1``,
+        ``/v1/projects/{project}/locations/{location}/publishers/google``);
+        ``""`` when the template is a bare host."""
+        _, _, rest = self.base_url.partition("://")
+        _, slash, path = rest.partition("/")
+        return f"/{path}" if slash else ""
+
+    @property
+    def url_only_settings(self) -> frozenset[str]:
+        """Settings an endpoint override makes unnecessary: those that
+        appear in the root of the template and nowhere else — not in the
+        path, not in a required header, and not the SigV4 signing region
+        (AWS's own SDK requires a region even with ``endpoint_url``; the
+        signature's credential scope names it)."""
+        import re
+
+        in_root = set(re.findall(r"{(\w+)}", self.root_template))
+        if "location_host" in in_root:
+            in_root.discard("location_host")
+            in_root.add("location")
+        in_path = set(re.findall(r"{(\w+)}", self.path_template))
+        in_headers = {setting for _, setting in self.required_headers}
+        out = in_root - in_path - in_headers
+        if self.sigv4_service is not None:
+            out.discard("region")
+        return frozenset(out)
 
 
 @dataclass(frozen=True, slots=True, init=False)

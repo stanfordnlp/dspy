@@ -2,8 +2,10 @@ from pydantic import BaseModel
 
 try:
     from mcp.server.fastmcp import FastMCP as MCPServer
+    from mcp.server.fastmcp.exceptions import ToolError
 except ImportError:
     from mcp.server import MCPServer
+    from mcp.server.mcpserver.exceptions import ToolError
 
 mcp = MCPServer("test")
 
@@ -33,7 +35,8 @@ def hello(names: list[str]) -> list[str]:
 @mcp.tool()
 def wrong_tool():
     """This tool raises an error"""
-    raise ValueError("error!")
+    # Deliberate tool errors expose their message; MCP 2 masks unexpected exceptions.
+    raise ToolError("error!")
 
 
 @mcp.tool()

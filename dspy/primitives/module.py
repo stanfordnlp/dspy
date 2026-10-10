@@ -1,5 +1,5 @@
-import inspect
 import logging
+import sys
 from typing import Any, TextIO
 
 from dspy.dsp.utils.settings import settings
@@ -337,9 +337,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
         attr = super().__getattribute__(name)
 
         if name == "forward" and callable(attr):
-            # Check if forward is called through __call__ or directly
-            stack = inspect.stack()
-            forward_called_directly = len(stack) <= 1 or stack[1].function != "__call__"
+            # Only the immediate caller matters; avoid walking the full stack on every call.
+            forward_called_directly = sys._getframe(1).f_code.co_name != "__call__"
 
             if forward_called_directly:
                 logger.warning(

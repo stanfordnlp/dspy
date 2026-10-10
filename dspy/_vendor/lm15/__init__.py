@@ -88,6 +88,7 @@ from .types import (
     BinaryPart,
     ToolCallPart,
     ToolResultPart,
+    DataPart,
     # tools
     FunctionTool,
     BuiltinTool,
@@ -177,6 +178,7 @@ from .providers import (
     ClaudeCodeLM,
     OpenAICodexLM,
     XaiLM,
+    TypeSafeLM,
 )
 from .providers.openai_chat import request_from_openai_chat, response_from_openai_chat
 from .protocols import ProviderLM
@@ -188,6 +190,7 @@ from .providers.async_base import (
     AsyncClaudeCodeLM,
     AsyncOpenAICodexLM,
     AsyncXaiLM,
+    AsyncTypeSafeLM,
 )
 
 # ── Stream assembly ──────────────────────────────────────────────────
@@ -229,13 +232,17 @@ from .tools import (
 )
 from .tools import derive as derive_tool
 
+# ── Judgments (changes/2026-09-17-judgments.md) ─────────────────────
+from .judgments import choice, judgments, score, yes_no
+from .types import data
+
 __all__ = [
     "__version__",
     # core
     "Request", "Response", "Message", "Usage", "Config", "CacheConfig",
     "Reasoning", "ToolChoice", "ErrorDetail", "ContinuationState",
     # parts
-    "TextPart", "ThinkingPart", "RefusalPart", "CitationPart", "ImagePart",
+    "TextPart", "ThinkingPart", "RefusalPart", "CitationPart", "DataPart", "ImagePart",
     "AudioPart", "VideoPart", "DocumentPart", "BinaryPart", "ToolCallPart",
     "ToolResultPart",
     # tools
@@ -266,7 +273,8 @@ __all__ = [
     "NotConfiguredError", "RETRYABLE_ERRORS",
     "AccessPolicy", "EndpointSupport",
     # providers
-    "OpenAILM", "OpenAIChatLM", "AnthropicLM", "GeminiLM", "ClaudeCodeLM", "OpenAICodexLM", "XaiLM",
+    "choice", "judgments", "score", "yes_no", "data",
+    "OpenAILM", "OpenAIChatLM", "AnthropicLM", "GeminiLM", "ClaudeCodeLM", "OpenAICodexLM", "XaiLM", "TypeSafeLM", "AsyncTypeSafeLM",
     "ProviderLM",
     # the Chat Completions dialect read in: a request body -> Request (MAP-12), a response body -> Response
     "request_from_openai_chat", "response_from_openai_chat",
