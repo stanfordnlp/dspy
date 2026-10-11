@@ -1,4 +1,5 @@
 import importlib
+from types import SimpleNamespace
 
 import pytest
 
@@ -55,8 +56,6 @@ async def test_convert_custom_tool_with_custom_class():
 @pytest.mark.asyncio
 @pytest.mark.extra
 async def test_convert_tool_with_json_schema_dict():
-    from langchain_core.tools import StructuredTool
-
     schema = {
         "type": "object",
         "properties": {
@@ -72,11 +71,14 @@ async def test_convert_tool_with_json_schema_dict():
         calls.append((query, limit))
         return f"{query}:{limit}"
 
-    langchain_tool = StructuredTool.from_function(
-        coroutine=search,
+    async def ainvoke(kwargs):
+        return await search(**kwargs)
+
+    langchain_tool = SimpleNamespace(
+        args_schema=schema,
         name="search",
         description="Search records.",
-        args_schema=schema,
+        ainvoke=ainvoke,
     )
     dspy_tool = convert_langchain_tool(langchain_tool)
 
@@ -86,3 +88,26 @@ async def test_convert_tool_with_json_schema_dict():
     with pytest.raises(ValueError, match="Arg query"):
         await dspy_tool.acall(query=3)
     assert calls == [("cats", 5)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.extra
+async def test_convert_real_langchain_tool_with_json_schema_dict():
+    from langchain_core.tools import StructuredTool
+
+    schema = {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
+
+    async def search(query: str) -> str:
+        return f"found:{query}"
+
+    try:
+        source = StructuredTool.from_function(
+            coroutine=search, name="search", description="Search records.", args_schema=schema
+        )
+    except TypeError as error:
+        if "args_schema must be a subclass of pydantic BaseModel" not in str(error):
+            raise
+        pytest.skip("This LangChain version does not support JSON-dict args_schema")
+
+    assert await source.ainvoke({"query": "cats"}) == "found:cats"
+    assert await convert_langchain_tool(source).acall(query="cats") == "found:cats"
