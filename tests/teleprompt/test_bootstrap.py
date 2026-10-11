@@ -190,7 +190,7 @@ def test_bootstrap_zero_metric_threshold():
     def metric_negative(example, prediction, trace=None):
         return -0.1
 
-    dspy.settings.configure(lm=DummyLM([{"answer": "a"}]))
+    dspy.configure(lm=DummyLM([{"answer": "a"}]))
 
     # Threshold = 0.0, score = 0.0 should succeed (demo added)
     optimizer_accept = BootstrapFewShot(
@@ -215,4 +215,28 @@ def test_bootstrap_zero_metric_threshold():
         TinyModule(), teacher=TinyModule(), trainset=[example]
     )
     assert len(compiled_reject.predictor.demos) == 0
+
+    # Threshold = None, truthy metric_val should succeed
+    optimizer_none = BootstrapFewShot(
+        metric=lambda e, p, t: True,
+        metric_threshold=None,
+        max_bootstrapped_demos=1,
+        max_labeled_demos=0,
+    )
+    compiled_none = optimizer_none.compile(
+        TinyModule(), teacher=TinyModule(), trainset=[example]
+    )
+    assert len(compiled_none.predictor.demos) == 1
+
+    # Positive threshold (0.5), score = 0.0 should fail
+    optimizer_pos_reject = BootstrapFewShot(
+        metric=metric_zero,
+        metric_threshold=0.5,
+        max_bootstrapped_demos=1,
+        max_labeled_demos=0,
+    )
+    compiled_pos_reject = optimizer_pos_reject.compile(
+        TinyModule(), teacher=TinyModule(), trainset=[example]
+    )
+    assert len(compiled_pos_reject.predictor.demos) == 0
 
