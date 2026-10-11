@@ -23,6 +23,7 @@ from ..errors import (
     TimeoutError,
     UnsupportedFeatureError,
     UnsupportedModelError,
+    is_pinned_auth_failure,
     is_pinned_model_not_found,
     canonical_error_code,
     map_http_error,
@@ -685,6 +686,8 @@ class OpenAILM(BaseProviderLM):
 
             provider_code = code or err_type or None
 
+            if is_pinned_auth_failure(provider_code, msg):  # MAP-18
+                return self._provider_error(AuthError, msg, status=status, provider_code=provider_code)
             if code == "context_length_exceeded":
                 return self._provider_error(
                     ContextLengthError,

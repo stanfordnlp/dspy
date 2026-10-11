@@ -462,12 +462,13 @@ class BaseProviderLM:
         endpoint = self.base_url if (policy.host is not None and default_base_url is not None
                                      and self.base_url != default_base_url) else None
         if credential is not None:
-            if not policy.cloud_chain:
-                raise NotConfiguredError(
-                    f"{policy.provider}: credential={credential!r} names a cloud identity, and this door is not a "
-                    "cloud door; pass api_key= instead",
-                    provider=policy.provider,
-                )
+            from ..errors import named_credential_refusal
+            from ..features import NAMED_CREDENTIALS
+
+            if not policy.cloud_chain or credential not in NAMED_CREDENTIALS:
+                # AUTH-1 (amended 2026-10-10): never repeat a value that is not
+                # one of the names — it is usually a key in the wrong argument.
+                raise named_credential_refusal(policy.provider, credential, cloud_door=policy.cloud_chain)
             if self.api_key is not None and self.api_key != "":
                 raise NotConfiguredError(
                     f"{policy.provider}: both api_key= and credential={credential!r} were given; a door has one "

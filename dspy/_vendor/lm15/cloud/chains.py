@@ -1439,10 +1439,9 @@ def _gcp_typed(rung: Rung, name: str) -> Rung:
 def named_rungs(policy: AccessPolicy, name: str) -> list[Rung]:
     """The rungs a named credential covers on this door, in chain order."""
     if name not in NAMED_CREDENTIALS:
-        raise NotConfiguredError(
-            f"{policy.provider}: unknown named credential {name!r}; one of {', '.join(repr(n) for n in NAMED_CREDENTIALS)}",
-            provider=policy.provider,
-        )
+        from ..errors import named_credential_refusal
+
+        raise named_credential_refusal(policy.provider, name, cloud_door=True)
     wanted = NAMED_RUNGS[policy.credential_policy][name]
     rungs = [rung for rung in chain_for(policy) if rung.name in wanted]
     if policy.credential_policy == "gcp-chain" and name in _GCP_NAMED_TYPES:

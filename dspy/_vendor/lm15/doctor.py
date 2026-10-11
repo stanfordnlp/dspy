@@ -279,10 +279,9 @@ def explain_auth(
         return _explain_cloud(canonical, env=env, api_keys=api_keys, files=files, home=home, settings=settings,
                               credential=credential, base_url=base_url)
     if credential is not None:
-        raise NotConfiguredError(
-            f"{canonical}: credential={credential!r} names a cloud identity, and this is not a cloud door",
-            provider=canonical,
-        )
+        from .errors import named_credential_refusal
+
+        raise named_credential_refusal(canonical, credential, cloud_door=False)
     if policy == "oauth":
         override = claude_credentials_path if canonical == "claude-code" else codex_auth_path
         step = _oauth_step(canonical, override)
