@@ -85,9 +85,92 @@ async def test_convert_tool_with_json_schema_dict():
     assert await dspy_tool.acall(query="cats") == "cats:5"
     assert dspy_tool.args == schema["properties"]
     assert dspy_tool.format_as_litellm_function_call()["function"]["parameters"]["required"] == ["query"]
-    with pytest.raises(ValueError, match="Arg query"):
+    with pytest.raises(ValueError, match="arguments are invalid"):
         await dspy_tool.acall(query=3)
     assert calls == [("cats", 5)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.extra
+async def test_convert_tool_preserves_nullable_types_and_required_schema():
+    schema = {
+        "type": "object",
+        "properties": {
+            "query": {"type": ["string", "null"]},
+            "limit": {"type": "integer"},
+        },
+        "required": ["query"],
+    }
+
+    async def search(query: str | None, limit: int = 5) -> str:
+        return f"{query}:{limit}"
+
+    source = SimpleNamespace(
+        args_schema=schema,
+        name="search",
+        description="Search records.",
+        ainvoke=lambda kwargs: search(**kwargs),
+    )
+    dspy_tool = convert_langchain_tool(source)
+
+    assert dspy_tool.args == schema["properties"]
+    assert dspy_tool.format_as_litellm_function_call()["function"]["parameters"]["required"] == ["query"]
+    assert await dspy_tool.acall(query=None) == "None:5"
+    assert await dspy_tool.acall(query="cats") == "cats:5"
+    with pytest.raises(ValueError):
+        await dspy_tool.acall(query=3)
+
+
+@pytest.mark.asyncio
+@pytest.mark.extra
+async def test_dict_schema_union_preserves_values_and_root_constraints():
+    schema = {
+        "type": "object",
+        "properties": {"query": {"type": ["string", "integer", "null"]}},
+        "required": ["query"],
+        "anyOf": [{"properties": {"query": {"const": 3}}}, {"properties": {"query": {"type": "null"}}}],
+    }
+
+    async def ainvoke(kwargs):
+        return kwargs["query"]
+
+    converted = convert_langchain_tool(
+        SimpleNamespace(args_schema=schema, name="search", description="Search.", ainvoke=ainvoke)
+    )
+    result = await converted.acall(query=3)
+    assert result == 3 and type(result) is int
+    assert await converted.acall(query=None) is None
+    with pytest.raises(ValueError):
+        await converted.acall(query="cats")
+
+
+@pytest.mark.asyncio
+@pytest.mark.extra
+@pytest.mark.parametrize("required_default", [False, True])
+async def test_dict_schema_preserves_required_and_rejects_invalid_calls(required_default):
+    schema = {
+        "type": "object",
+        "properties": {"query": {"type": "string"}, "limit": {"type": "integer"}},
+        "required": ["query"],
+        "additionalProperties": False,
+    }
+    if required_default:
+        schema["properties"]["query"]["default"] = "cats"
+    calls = []
+
+    async def ainvoke(kwargs):
+        calls.append(kwargs)
+        return kwargs
+
+    converted = convert_langchain_tool(
+        SimpleNamespace(args_schema=schema, name="search", description="Search.", ainvoke=ainvoke)
+    )
+    assert converted.format_as_litellm_function_call()["function"]["parameters"] == schema
+    assert await converted.acall(query="cats") == {"query": "cats"}
+    for arguments in ({}, {"query": "cats", "unknown": 1}, {"query": 1}):
+        with pytest.raises(ValueError):
+            await converted.acall(**arguments)
+    assert calls == [{"query": "cats"}]
 
 
 @pytest.mark.asyncio

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, 
 import json_repair
 import pydantic
 from jsonschema import ValidationError, validate
-from pydantic import BaseModel, TypeAdapter, create_model
+from pydantic import BaseModel, PrivateAttr, TypeAdapter, create_model
 
 from dspy.adapters.types.base_type import Type
 from dspy.dsp.utils.settings import settings
@@ -36,6 +36,7 @@ class Tool(Type):
     arg_types: dict[str, Any] | None = None
     arg_desc: dict[str, str] | None = None
     has_kwargs: bool = False
+    _input_schema: dict[str, Any] | None = PrivateAttr(default=None)
 
     def __init__(
         self,
@@ -122,6 +123,11 @@ class Tool(Type):
         self.has_kwargs = any(param.kind == param.VAR_KEYWORD for param in sig.parameters.values())
 
     def _validate_and_parse_args(self, **kwargs):
+        if self._input_schema is not None:
+            try:
+                validate(instance=kwargs, schema=self._input_schema)
+            except ValidationError as e:
+                raise ValueError(f"Tool arguments are invalid: {e.message}") from e
         # Validate the args value comply to the json schema.
         for k, v in kwargs.items():
             if k not in self.args:
@@ -159,7 +165,7 @@ class Tool(Type):
             "function": {
                 "name": self.name,
                 "description": self.desc,
-                "parameters": {
+                "parameters": self._input_schema if self._input_schema is not None else {
                     "type": "object",
                     "properties": self.args,
                     "required": [k for k in self.args if "default" not in self.args[k]],
@@ -570,7 +576,8 @@ def convert_input_schema_to_tool_args(
         if len(defs) > 0:
             prop = _resolve_json_schema_reference({"$defs": defs, **prop})
         args[name] = prop
-        arg_types[name] = _TYPE_MAPPING.get(prop.get("type"), Any)
+        prop_type = prop.get("type")
+        arg_types[name] = _TYPE_MAPPING.get(prop_type, Any) if isinstance(prop_type, str) else Any
         arg_desc[name] = prop.get("description", "No description provided.")
         if name in required:
             arg_desc[name] += " (Required)"

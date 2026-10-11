@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 from dspy.adapters.types.tool import Tool, convert_input_schema_to_tool_args
@@ -39,7 +40,7 @@ def convert_langchain_tool(tool: "BaseTool") -> Tool:
             for key, field in args_schema.model_fields.items()
         }
 
-    return Tool(
+    converted = Tool(
         func=func,
         name=tool.name,
         desc=tool.description,
@@ -47,3 +48,6 @@ def convert_langchain_tool(tool: "BaseTool") -> Tool:
         arg_types=arg_types,
         arg_desc=arg_desc
     )
+    if isinstance(args_schema, dict):
+        converted._input_schema = deepcopy(args_schema)
+    return converted
