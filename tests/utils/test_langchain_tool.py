@@ -50,3 +50,39 @@ async def test_convert_custom_tool_with_custom_class():
     assert tool.arg_types == {"profile": Profile}
     assert tool.arg_desc == {"profile": "No description provided. (Required)"}
     assert await tool.acall(profile=Profile(name="John", age=20)) == 20
+
+
+@pytest.mark.asyncio
+@pytest.mark.extra
+async def test_convert_tool_with_json_schema_dict():
+    from langchain_core.tools import StructuredTool
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "limit": {"type": "integer", "default": 5},
+        },
+        "required": ["query"],
+    }
+
+    calls = []
+
+    async def search(query: str, limit: int = 5) -> str:
+        calls.append((query, limit))
+        return f"{query}:{limit}"
+
+    langchain_tool = StructuredTool.from_function(
+        coroutine=search,
+        name="search",
+        description="Search records.",
+        args_schema=schema,
+    )
+    dspy_tool = convert_langchain_tool(langchain_tool)
+
+    assert await dspy_tool.acall(query="cats") == "cats:5"
+    assert dspy_tool.args == schema["properties"]
+    assert dspy_tool.format_as_litellm_function_call()["function"]["parameters"]["required"] == ["query"]
+    with pytest.raises(ValueError, match="Arg query"):
+        await dspy_tool.acall(query=3)
+    assert calls == [("cats", 5)]
