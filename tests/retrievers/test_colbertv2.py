@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import dspy
 from dspy.dsp.colbertv2 import colbertv2_get_request_v2, colbertv2_post_request_v2
 
 
@@ -39,3 +40,24 @@ def test_post_request_success():
     with patch("dspy.dsp.colbertv2.requests.post", return_value=mock_response):
         result = colbertv2_post_request_v2("http://test4", "query", k=3)
         assert result[0]["text"] == "doc1"
+
+
+def test_post_request_success_adds_long_text():
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"topk": [{"text": "doc1", "score": 0.9}]}
+
+    with patch("dspy.dsp.colbertv2.requests.post", return_value=mock_response):
+        result = colbertv2_post_request_v2("http://test5", "query", k=3)
+
+    assert result[0]["long_text"] == "doc1"
+
+
+def test_colbert_post_wrapper_and_retrieve_use_long_text():
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"topk": [{"text": "doc1", "score": 0.9}]}
+
+    with patch("dspy.dsp.colbertv2.requests.post", return_value=mock_response):
+        retriever = dspy.ColBERTv2(url="http://test6", post_requests=True)
+        assert retriever("query", simplify=True) == ["doc1"]
+        with dspy.context(rm=retriever):
+            assert dspy.Retrieve(k=1)("query").passages == ["doc1"]
