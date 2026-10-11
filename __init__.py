@@ -10,7 +10,9 @@ transport. Build your DSL on top; let lm15 handle the providers.
 Conformance to the canonical representation is pinned by the lm15-contract
 corpus; this package is the reference implementation, not the spec.
 
-Quick tour:
+Quick tour (tested recipes for every feature — conversations, streaming,
+tools, structured output, images and PDFs, reasoning, web search, caching,
+async, errors, image and speech generation: https://lm15.dev/skill.md):
 
     from lm15 import AnthropicLM, Request, Message
 

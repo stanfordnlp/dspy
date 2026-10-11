@@ -822,11 +822,20 @@ def load_credential(
     loader = _CREDENTIAL_LOADERS.get(policy.provider) if policy.credential_policy != "key" else None
     if loader is not None:
         return loader(credentials_path)
+    if policy.env_keys:
+        # An adapter built by hand reads no environment (only the router
+        # does), so "set the variable" would not help: say what does.
+        var = policy.env_keys[0]
+        raise NotConfiguredError(
+            f"{policy.provider}: no API key given. An adapter built by hand reads no environment variable, "
+            f"so {var} is not used here even when it is set",
+            provider=policy.provider,
+            credential_hint=policy.login_hint
+            or f'pass api_key=os.environ["{var}"], or use lm15.LMRouter(), which reads {" or ".join(policy.env_keys)}',
+        )
     raise NotConfiguredError(
-        f"{policy.provider}: no credential given"
-        + (f"; set {' or '.join(policy.env_keys)} or pass api_key=" if policy.env_keys else "; pass api_key="),
+        f"{policy.provider}: no credential given; pass api_key=",
         provider=policy.provider,
-        env_keys=policy.env_keys,
         credential_hint=policy.login_hint,
     )
 

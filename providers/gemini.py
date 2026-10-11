@@ -23,6 +23,8 @@ from ..errors import (
     UnsupportedFeatureError,
     UnsupportedModelError,
     canonical_error_code,
+    google_error_reasons,
+    is_pinned_auth_failure,
     map_http_error,
 )
 from ..access import GEMINI_API
@@ -562,6 +564,8 @@ class GeminiLM(BaseProviderLM):
             err = data.get("error", {}) if isinstance(data, dict) else {}
             msg = err.get("message", "") if isinstance(err, dict) else str(err)
             err_status = str(err.get("status") or "") if isinstance(err, dict) else ""
+            if is_pinned_auth_failure(err_status, msg, google_error_reasons(err)):  # MAP-18
+                return self._provider_error(AuthError, msg, status=status, provider_code=err_status)
             if self._is_context_length_message(msg):
                 return self._provider_error(
                     ContextLengthError,

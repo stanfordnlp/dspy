@@ -19,6 +19,7 @@ from ..errors import (
     TimeoutError,
     UnsupportedFeatureError,
     UnsupportedModelError,
+    is_pinned_auth_failure,
     is_pinned_model_not_found,
     canonical_error_code,
     map_http_error,
@@ -410,6 +411,10 @@ class AnthropicLM(BaseProviderLM):
 
                 msg = claude_code_version_guidance(msg)
 
+            if is_pinned_auth_failure(err_type, msg):  # MAP-18
+                return self._provider_error(
+                    AuthError, msg, status=status, provider_code=err_type, request_id=request_id or None
+                )
             if self._is_context_length_message(msg):
                 return self._provider_error(
                     ContextLengthError,

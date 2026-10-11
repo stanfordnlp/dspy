@@ -547,9 +547,10 @@ class RouterConfig:
             for key, name in self.credentials.items():
                 if name not in NAMED_CREDENTIALS:
                     raise NotConfiguredError(
-                        f"RouterConfig(credentials={{{key!r}: {name!r}}}): not a named credential; one of "
+                        f"RouterConfig(credentials={{{key!r}: ...}}): the value is not a named credential (one of "
                         + ", ".join(repr(n) for n in NAMED_CREDENTIALS)
-                        + ". A credential VALUE (a key, a token, a callable) goes in api_keys=."
+                        + "), so it is not shown (it may be a key; AUTH-5). A credential VALUE (a key, a token, a "
+                        "callable) goes in api_keys=."
                     )
         if self.timeouts is not None and not isinstance(self.timeouts, Timeouts):
             raise TypeError(

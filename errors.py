@@ -488,6 +488,35 @@ class NotConfiguredError(ConfigurationError):
         super().__init__(message, **kwargs)
 
 
+def named_credential_refusal(provider: str, value: str, *, cloud_door: bool) -> NotConfiguredError:
+    """The refusal of a ``credential=`` value this door cannot use (AUTH-1
+    named credentials, amended 2026-10-10).
+
+    ``credential=`` takes one of the four cloud identity names.  Any other
+    value is almost always an API key put in the wrong argument, so it is
+    never repeated (AUTH-5) and the message says where a key goes.  One of
+    the four names on a door without a cloud chain is safe to repeat.
+    """
+    from .features import NAMED_CREDENTIALS
+
+    names = ", ".join(repr(n) for n in NAMED_CREDENTIALS)
+    if value in NAMED_CREDENTIALS:
+        return NotConfiguredError(
+            f"{provider}: credential={value!r} names a cloud identity, and {provider} is not a cloud door",
+            provider=provider,
+            credential_hint="pass the key as api_key=... (or RouterConfig(api_keys={...})), or use the cloud door of this provider",
+        )
+    if cloud_door:
+        what = f"{provider}: unknown named credential (one of {names})"
+    else:
+        what = f"{provider}: credential= takes the name of a cloud identity ({names}), and {provider} is not a cloud door"
+    return NotConfiguredError(
+        f"{what}; the value given is not shown, because it may be a key",
+        provider=provider,
+        credential_hint="if that value is your API key, pass it as api_key=... (or RouterConfig(api_keys={...}))",
+    )
+
+
 class UnknownModelError(ConfigurationError):
     """The router found no provider for a model string.
 
@@ -621,6 +650,53 @@ def is_pinned_model_not_found(provider_code: str | None, message: str | None) ->
     text = message or ""
     for form in MODEL_NOT_FOUND_FORMS:
         if form["code"] != provider_code:
+            continue
+        if "prefix" in form and not text.startswith(form["prefix"]):
+            continue
+        if "contains" in form and form["contains"] not in text:
+            continue
+        if "suffix" in form and not text.endswith(form["suffix"]):
+            continue
+        return True
+    return False
+
+
+# MAP-18: the pinned forms of a provider's "this key is not valid" answer that
+# arrive without HTTP 401 (lm15-contract spec/auth-failed.json, carried
+# verbatim; each form has a live receipt).  A form with "reason" also needs
+# that reason in a Google google.rpc.ErrorInfo detail of the body.
+AUTH_FAILED_FORMS: tuple[dict[str, str], ...] = (
+    {"code": "INVALID_ARGUMENT", "reason": "API_KEY_INVALID"},  # Gemini (2026-10-10)
+    {"code": "invalid-argument", "prefix": "Incorrect API key provided"},  # xAI (2026-10-10)
+)
+
+
+def google_error_reasons(error: object) -> tuple[str, ...]:
+    """The ``reason`` of every ``google.rpc.ErrorInfo`` in a Google error
+    envelope's ``details`` (the inner ``error`` object), in order."""
+    if not isinstance(error, dict) or not isinstance(error.get("details"), list):
+        return ()
+    return tuple(
+        detail["reason"]
+        for detail in error["details"]
+        if isinstance(detail, dict)
+        and str(detail.get("@type", "")).endswith("google.rpc.ErrorInfo")
+        and isinstance(detail.get("reason"), str)
+    )
+
+
+def is_pinned_auth_failure(provider_code: str | None, message: str | None, reasons: tuple[str, ...] = ()) -> bool:
+    """True when the error is one of the pinned MAP-18 forms: the provider
+    code matches exactly, the message passes every text test the form
+    gives, and the form's ``reason``, when it names one, is among
+    ``reasons``.  Never widened beyond the captured answers."""
+    if not provider_code:
+        return False
+    text = message or ""
+    for form in AUTH_FAILED_FORMS:
+        if form["code"] != provider_code:
+            continue
+        if "reason" in form and form["reason"] not in reasons:
             continue
         if "prefix" in form and not text.startswith(form["prefix"]):
             continue

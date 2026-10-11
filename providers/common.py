@@ -579,11 +579,4 @@ def multipart_related_body(
 # both providers 2026-09-02 (research/reasoning).  Provider floors and
 # ceilings are the provider's: Anthropic rejects < 1024, Gemini 2.5 Flash
 # rejects > 24576 — loudly.
-EFFORT_THINKING_BUDGETS: dict[str, int] = {
-    "minimal": 1024,
-    "low": 2048,
-    "medium": 8192,
-    "high": 16384,
-    "xhigh": 24576,
-    "max": 32768,
-}
+from ..types import EFFORT_THINKING_BUDGETS as EFFORT_THINKING_BUDGETS  # noqa: E402  (one table, in types)
