@@ -110,12 +110,33 @@ def test_require_does_not_expose_module_accessed_during_its_own_initialization(t
     )
     hooks.proxy = require(module_name)
 
+    class ContentionLock:
+        """RLock that records when a thread has to wait for another thread's hold."""
+
+        def __init__(self):
+            self._lock = threading.RLock()
+            self.contended = threading.Event()
+
+        def __enter__(self):
+            if not self._lock.acquire(blocking=False):
+                self.contended.set()
+                self._lock.acquire()
+
+        def __exit__(self, *exc_info):
+            self._lock.release()
+
+    lock = ContentionLock()
+    hooks.proxy._dspy_lazy_lock = lock
+
     with ThreadPoolExecutor(max_workers=2) as executor:
         first = executor.submit(lambda: hooks.proxy.value)
         assert hooks.started.wait(5)
         # The module is still initializing, so another thread must wait instead of seeing the partial module.
         second = executor.submit(lambda: hooks.proxy.value)
-        time.sleep(0.1)
+        # Release only after the second read has returned or is blocked on the proxy lock.
+        deadline = time.monotonic() + 5
+        while not (second.done() or lock.contended.is_set()) and time.monotonic() < deadline:
+            time.sleep(0.001)
         hooks.release.set()
 
         assert first.result() == 42
@@ -142,6 +163,34 @@ def test_require_resolves_module_that_replaces_itself_during_initialization(tmp_
     importlib.import_module(module_name)
 
     assert hooks.proxy.value == "replacement"
+
+
+def test_require_reuses_loaded_module_until_sys_modules_changes(tmp_path, monkeypatch):
+    module_name = "dspy_lazy_cached_module"
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    (tmp_path / f"{module_name}.py").write_text("value = 1\n")
+    mod = require(module_name)
+    assert mod.value == 1
+
+    imports = []
+    import_module = importlib.import_module
+
+    def counting_import_module(name, *args, **kwargs):
+        imports.append(name)
+        return import_module(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib, "import_module", counting_import_module)
+
+    assert [mod.value for _ in range(3)] == [1, 1, 1]
+    assert imports == []
+
+    monkeypatch.setitem(sys.modules, module_name, types.SimpleNamespace(value=2))
+    assert mod.value == 2
+
+    del sys.modules[module_name]
+    assert mod.value == 1
+    assert imports == [module_name, module_name]
 
 
 def test_require_retries_after_failed_import(tmp_path, monkeypatch):
