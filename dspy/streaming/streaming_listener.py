@@ -23,8 +23,9 @@ if TYPE_CHECKING:
 
 ADAPTER_SUPPORT_STREAMING = [ChatAdapter, XMLAdapter, JSONAdapter]
 
-# Matches an unfinished "[[ ## <field> ## ]]" at the end of the text, from "[" up to "[[ ## <field> ## ]".
-_CHAT_END_IDENTIFIER_PREFIX = re.compile(r"\[(?:\[(?: (?:#(?:#(?: (?:\w+(?: (?:#(?:#(?: \]?)?)?)?)?)?)?)?)?)?)?\Z")
+# Matches an unfinished "[[ ## <field> ## ]]" at the end of the text, from "[[" up to "[[ ## <field> ## ]", plus any
+# trailing whitespace. A lone "[" is kept because it is more likely part of the value.
+_CHAT_END_IDENTIFIER_PREFIX = re.compile(r"\[\[(?: (?:#(?:#(?: (?:\w+(?: (?:#(?:#(?: \]?)?)?)?)?)?)?)?)?)?\s*\Z")
 
 
 class StreamListener:
