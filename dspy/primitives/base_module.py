@@ -183,6 +183,13 @@ class BaseModule:
                 if name in state:
                     param_state = state[name]
                 elif legacy_name in state:
+                    if legacy_names.count(legacy_name) > 1:
+                        raise KeyError(
+                            f"'{name}': the pre-fix name '{legacy_name}' is ambiguous (it was shared by several "
+                            'dict keys, e.g. "0" and 0, before '
+                            "https://github.com/stanfordnlp/dspy/issues/1302 was fixed), so the saved state cannot "
+                            "be mapped to a single parameter. Re-save the state with the current DSPy version."
+                        )
                     param_state = state[legacy_name]
                 else:
                     raise KeyError(

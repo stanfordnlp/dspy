@@ -222,6 +222,24 @@ def test_load_state_accepts_pre_fix_dict_key_names():
     prog.load_state(legacy_state)  # must not raise
 
 
+def test_load_state_rejects_ambiguous_pre_fix_dict_key_names():
+    """
+    Distinct keys "0" and 0 shared the single legacy name "dict_a['0']", so a legacy state cannot say which
+    parameter it belongs to. load_state() must reject it rather than apply one state to both parameters.
+    """
+
+    class Prog(Module):
+        def __init__(self):
+            super().__init__()
+            self.dict_a = {"0": dspy.Predict("question -> answer"), 0: dspy.Predict("question -> answer")}
+
+    prog = Prog()
+    legacy_state = {"dict_a['0']": prog.dict_a["0"].dump_state()}
+
+    with pytest.raises(KeyError, match="ambiguous"):
+        prog.load_state(legacy_state)
+
+
 def test_load_state_raises_clear_error_when_name_missing_in_both_formats():
     """
     A parameter missing under BOTH its current name and its pre-#1302 legacy name is a genuine
