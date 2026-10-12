@@ -153,8 +153,8 @@ class File(Type):
     @classmethod
     def from_bytes(
         cls, file_bytes: bytes, filename: str | None = None,
-        resolution:str="medium",
         mime_type: str = "application/octet-stream",
+        resolution:str = "medium"
     ) -> "File":
         """Create a File from raw bytes.
 
