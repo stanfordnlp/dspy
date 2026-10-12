@@ -781,3 +781,62 @@ def test_gepa_subclass_preserves_structured_dataset_while_wrapper_receives_strin
     assert isinstance(example["Inputs"]["Context"], str)
     assert LONG_TOOL_OUTPUT in example["Inputs"]["Context"]
     assert "characters cut" not in example["Inputs"]["Context"]
+
+    assert no_reflection_errors(caplog)
+    _, user = last_messages(reflection_lm)
+    assert LONG_TOOL_OUTPUT in user
+    assert "characters cut" not in user
+
+
+def test_reflective_dataset_repl_history_key_and_types():
+    from gepa import EvaluationBatch
+
+    repl = REPLHistory().append(code="print(1)", output="1")
+    student = dspy.Predict("repl_history: str -> answer: str")
+    output = dspy.Prediction(answer="done")
+    example = dspy.Example(repl_history=repl).with_inputs("repl_history")
+    batch = EvaluationBatch(
+        outputs=[output],
+        scores=[0],
+        trajectories=[
+            {
+                "trace": [(student, {"repl_history": repl}, output)],
+                "example": example,
+                "prediction": output,
+                "score": 0,
+            }
+        ],
+    )
+
+    class SubclassedProposer(InstructionProposer):
+        pass
+
+    adapter_subclass = DspyAdapter(
+        student_module=student,
+        metric_fn=lambda *args, **kwargs: 0,
+        feedback_map={"self": lambda **kwargs: {"score": 0, "feedback": "retry"}},
+        custom_instruction_proposer=SubclassedProposer(),
+    )
+    [record_subclass] = adapter_subclass.make_reflective_dataset(
+        {"self": student.signature.instructions}, batch, ["self"]
+    )["self"]
+    # Stays under original input key "repl_history" (not "Context") and retains the REPLHistory object:
+    assert record_subclass["Inputs"]["repl_history"] is repl
+    assert "Context" not in record_subclass["Inputs"]
+
+    def custom_proposer(candidate, reflective_dataset, components_to_update):
+        return {}
+
+    adapter_custom = DspyAdapter(
+        student_module=student,
+        metric_fn=lambda *args, **kwargs: 0,
+        feedback_map={"self": lambda **kwargs: {"score": 0, "feedback": "retry"}},
+        custom_instruction_proposer=custom_proposer,
+    )
+    [record_custom] = adapter_custom.make_reflective_dataset({"self": student.signature.instructions}, batch, ["self"])[
+        "self"
+    ]
+    # Stays under original input key "repl_history" (not "Context") and is converted to str:
+    assert isinstance(record_custom["Inputs"]["repl_history"], str)
+    assert record_custom["Inputs"]["repl_history"] == str(repl)
+    assert "Context" not in record_custom["Inputs"]

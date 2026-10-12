@@ -141,12 +141,12 @@ When implementing or extending instruction proposers, be aware of how GEPA const
 
 1. **The Built-in Contract (`InstructionProposer` instances and subclasses):**
    - **Structured values:** Direct instances and subclasses of `InstructionProposer` receive structured objects rather than plain string representations.
-   - **Histories:** In the `Inputs` dictionary, `dspy.History` (e.g. from `dspy.ReActV2`) and `REPLHistory` objects remain as structured instances under `"Context"` instead of being formatted to strings. This allows `InstructionProposer(truncate_history_outputs=True)` to inspect tool and REPL records and truncate lengthy outputs to 500 characters.
+   - **Histories:** In the `Inputs` dictionary, `dspy.History` (e.g. from `dspy.ReActV2`) is placed under `"Context"` as a live `History` object (rather than a formatted string). `REPLHistory` objects (e.g. from `dspy.RLM`) remain as structured instances under their original input key (such as `"repl_history"`). This preserves the original objects and allows `InstructionProposer(truncate_history_outputs=True)` to inspect tool calls and REPL entries to truncate lengthy outputs to 500 characters.
    - **Input and output types:** Predictor inputs (including `dspy.Image` and nested dictionaries) and output fields retain their original objects and types rather than being cast to `str()`, enabling `JSONAdapter` to serialize them with structured fidelity for the reflection LM.
 
 2. **The Custom Callable Contract (Legacy and Backward Compatibility):**
    - **Stringified values:** Any callable that does not pass `isinstance(..., InstructionProposer)`—such as functions, closures, lambdas, or non-subclassing classes—receives the legacy dataset representation.
-   - **Pre-rendered strings:** Histories are formatted into markdown/JSON strings via `format_history_for_reflection(history)`. Inputs (other than `dspy.Type`) and outputs are converted to strings with `str(...)`.
+   - **Pre-rendered strings:** `dspy.History` objects are formatted into markdown/JSON strings under `"Context"` via `format_history_for_reflection(history)`. Other inputs—including `REPLHistory` under its original input key—and output fields are converted with `str(...)` (except `dspy.Type` inputs which retain their type).
    - **Compatibility guarantee:** This distinction preserves full backward compatibility for existing custom proposers that expect pre-stringified inputs and outputs.
 
 #### Forwarding Wrappers vs. Subclassing
