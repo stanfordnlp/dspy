@@ -386,6 +386,13 @@ def test_in_process_interpreter_runs_the_facade_without_replacing_host_dspy() ->
             """
             import dspy
 
+            try:
+                import dspy.predict
+            except ModuleNotFoundError:
+                pass
+            else:
+                raise AssertionError("import dspy.predict reached the host's dspy package")
+
             class Shout(dspy.Module):
                 def __init__(self):
                     self.draft = dspy.Predict("text -> out")
