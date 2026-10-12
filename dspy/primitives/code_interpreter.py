@@ -80,6 +80,12 @@ class CodeInterpreter(Protocol):
     Pooling:
         For interpreter pooling, call start() to pre-warm instances, then
         distribute execute() calls across the pool.
+
+    Sandbox dspy facade:
+        dspy.Flex and dspy.RLM install a ``dspy`` shim whose predictors are built and
+        run on the host, so registered tools must be callable as globals in executed
+        code and state must persist across execute() calls. The shim refuses an
+        interpreter that runs code in the host's memory (the host process or a fork).
     """
 
     @property

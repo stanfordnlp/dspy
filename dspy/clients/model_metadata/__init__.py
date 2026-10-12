@@ -141,6 +141,9 @@ def model_info(provider, model, *, namespaces=None):
     for rule in rules if isinstance(rules, list) else []:
         if not isinstance(rule, dict) or not isinstance(rule.get("pattern"), str):
             continue
+        providers = rule.get("fill_missing_for_providers")
+        if found is not None and providers is not None and found.get("litellm_provider") not in providers:
+            continue
         try:
             matches = re.search(rule["pattern"], model) is not None
         except re.error:

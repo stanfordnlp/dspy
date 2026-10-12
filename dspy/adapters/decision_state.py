@@ -141,7 +141,12 @@ class DecisionState:
             elif issubclass(kind, Choice):
                 valid = isinstance(criteria, dict) and criteria.keys() == kind.criteria().keys()
             else:
-                valid = isinstance(criteria, list) and len(criteria) == len(kind.criteria()) and 2 <= len(criteria) <= 10
+                valid = (
+                    isinstance(criteria, list)
+                    and len(criteria) == len(kind.criteria())
+                    and 2 <= len(criteria) <= 10
+                    and None not in criteria
+                )
             if not valid:
                 raise ValueError(f"Invalid criteria for {name!r}: must match the declared decision type and options.")
             entries = criteria.values() if isinstance(criteria, dict) else criteria or []

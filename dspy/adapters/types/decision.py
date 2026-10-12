@@ -103,6 +103,8 @@ class Score(_Decision):
     def __class_getitem__(cls, options):
         if not isinstance(options, tuple) or len(options) < 2:
             raise ValueError("Score requires at least two ordered level descriptions, e.g. Score['poor', 'excellent'].")
+        if None in options:
+            raise ValueError("Score level descriptions cannot be null.")
         return _score_type(tuple(_description_json(desc) for desc in options))
 
     @classmethod

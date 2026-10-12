@@ -263,31 +263,28 @@ class GEPA(Teleprompter):
             a strong reflection model. Consider using `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)`
             for optimal performance.
         skip_perfect_score: Whether to skip examples with perfect scores during reflection. Default is True.
-        instruction_proposer: Optional custom instruction proposer implementing GEPA's ProposalFn protocol.
-            **Default: None (recommended for most users)** - Uses GEPA's proven instruction proposer from
-            the [GEPA library](https://github.com/gepa-ai/gepa), which implements the
-            [`ProposalFn`](https://github.com/gepa-ai/gepa/blob/main/src/gepa/core/adapter.py). This default
-            proposer is highly capable and was validated across diverse experiments reported in the GEPA
-            paper and tutorials.
+        instruction_proposer: The proposer that writes new instructions, implementing GEPA's ProposalFn
+            protocol. **Default: None** - builds `InstructionProposer()` from `dspy.teleprompt.gepa`, the
+            built-in proposer. It asks the reflection LM for a new instruction through `dspy.Predict` with
+            a `JSONAdapter`, using GEPA's standard reflection prompt, and sends `dspy.Image` and other
+            `dspy.Type` inputs to the reflection LM as structured content.
 
-            See documentation on custom instruction proposers
+            To configure the built-in proposer, pass an `InstructionProposer(...)` instance. Its options:
+            - `skills`: reference material (skill files, directories with `SKILL.md`, or inline text)
+              shown to the reflection LM
+            - `additional_instructions`: guidance applied to every proposal
+            - `base_instructions`: replaces the reflection prompt
+            - `max_chars`: character limit validated with Pydantic after one compression attempt;
+              an oversized result raises instead of being returned or truncated
+            - `truncate_history_outputs`: shorten long tool results in `dspy.History` inputs and long outputs in
+              `REPLHistory` inputs before rendering
+            - `adapter`: the adapter for the proposer's own LM calls (default `JSONAdapter()`)
+
+            See documentation on instruction proposers
             [here](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#custom-instruction-proposers).
 
-            **Advanced Feature**: Only needed for specialized scenarios:
-            - **Multi-modal handling**: Processing dspy.Image inputs alongside textual information
-            - **Nuanced control over constraints**: Fine-grained control over instruction length, format,
-              and structural requirements beyond standard feedback mechanisms
-            - **Domain-specific knowledge injection**: Specialized terminology or context that cannot be
-              provided through feedback_func alone
-            - **Provider-specific prompting**: Optimizations for specific LLM providers (OpenAI, Anthropic)
-              with unique formatting preferences
-            - **Coupled component updates**: Coordinated updates of multiple components together rather
-              than independent optimization
-            - **External knowledge integration**: Runtime access to databases, APIs, or knowledge bases
-
-            The default proposer handles the vast majority of use cases effectively. Use
-            MultiModalInstructionProposer() from dspy.teleprompt.gepa.instruction_proposal for visual
-            content or implement custom ProposalFn for highly specialized requirements.
+            Implement a custom ProposalFn only for needs the built-in options do not cover, such as
+            coupled updates of several components or runtime access to external knowledge.
 
             Note: When both instruction_proposer and reflection_lm are set, the instruction_proposer is called
             in the reflection_lm context. However, reflection_lm is optional when using a custom instruction_proposer.
@@ -509,7 +506,8 @@ class GEPA(Teleprompter):
             raise ValueError(
                 "reflection_prompt_template cannot be passed via gepa_kwargs when using dspy.GEPA. "
                 "DspyAdapter implements its own propose_new_texts, so reflection_prompt_template is unused. "
-                "To customize reflection behavior, pass a custom ProposalFn via the instruction_proposer parameter instead."
+                "To customize the reflection prompt, pass "
+                "instruction_proposer=InstructionProposer(base_instructions=...) instead."
             )
 
     def auto_budget(
