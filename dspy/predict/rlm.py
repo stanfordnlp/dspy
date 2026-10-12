@@ -588,8 +588,9 @@ class RLM(Module):
         )
         try:
             invocation.install(repl)
-        except CodeExecutionError as e:
-            # The runtime cannot host the shim (e.g. it runs code in the host's memory): no sub-agents this call.
+        except (CodeExecutionError, SyntaxError) as e:
+            # The runtime cannot host the shim (e.g. it runs code in the host's memory, or a restricted compiler
+            # rejects the shim's `_dspy_*` names): no sub-agents this call.
             for name in (CONSTRUCT_TOOL, CALL_TOOL):
                 repl.tools.pop(name, None)
             logger.warning("RLM sub-agents are unavailable on %s: %s", type(repl).__name__, e)
