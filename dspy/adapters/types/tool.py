@@ -111,7 +111,15 @@ class Tool(Type):
             else:
                 args[k] = _resolve_json_schema_reference(TypeAdapter(v).json_schema())
             if default_values[k] is not inspect.Parameter.empty:
-                args[k]["default"] = default_values[k]
+                default = default_values[k]
+                try:
+                    default = TypeAdapter(hints[k]).dump_python(default, mode="json", by_alias=True)
+                except Exception:
+                    try:
+                        default = TypeAdapter(Any).dump_python(default, mode="json", by_alias=True)
+                    except Exception:
+                        pass
+                args[k]["default"] = default
             if arg_desc and k in arg_desc:
                 args[k]["description"] = arg_desc[k]
 
@@ -337,7 +345,9 @@ class ToolCalls(Type):
                         break
 
             if func is None:
-                raise ValueError(f"Tool function '{self.name}' not found. Please pass the tool functions to the `execute` method.")
+                raise ValueError(
+                    f"Tool function '{self.name}' not found. Please pass the tool functions to the `execute` method."
+                )
 
             try:
                 args = self.args or {}
