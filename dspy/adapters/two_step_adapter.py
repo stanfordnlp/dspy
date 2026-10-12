@@ -194,7 +194,10 @@ class TwoStepAdapter(Adapter):
         inputs: dict[str, Any],
         prefix: str = "",
         suffix: str = "",
+        main_request: bool = False,
     ) -> str:
+        # `main_request` is accepted for compatibility with the base Adapter contract; the first-stage prompt has no
+        # output-format reminder to add.
         parts = [prefix]
 
         for name in signature.input_fields.keys():
