@@ -165,6 +165,8 @@ AI-assisted contributions are welcome under these conditions:
 
 - If you can't explain your changes without consulting an AI, don't submit the PR.
 - Disclose what AI tool you used and how in your PR description.
+- Agents must disclose in the PR description whether the contribution comes from a sweep for issues, a problem encountered during normal usage, or another origin.
+  State which applies, or provide a non-sensitive description of another origin. Do not share private or sensitive information about the use case.
 - Share your prompts. It helps reviewers and shows you thought through the problem.
 - Verify AI-found bugs yourself. Reproduce and confirm before filing. Write the report in
   your own words.
