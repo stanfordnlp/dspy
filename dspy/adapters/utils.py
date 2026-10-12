@@ -71,11 +71,11 @@ def serialize_for_json(value: Any) -> Any:
     Returns:
         The formatted value, which is serializable as a JSON string.
     """
-    # Attempt to format the value as a JSON-compatible object using pydantic, falling back to
-    # a string representation of the value if that fails (e.g. if the value contains an object
-    # that pydantic doesn't recognize or can't serialize)
+    # Format the value as a JSON-compatible object using pydantic. A nested value pydantic can't
+    # serialize (e.g. a numpy scalar) becomes its string form without affecting its siblings; the
+    # whole value falls back to its string form only if pydantic can't handle it at all.
     try:
-        return TypeAdapter(type(value)).dump_python(value, mode="json")
+        return TypeAdapter(type(value)).dump_python(value, mode="json", fallback=str)
     except Exception:
         return str(value)
 
