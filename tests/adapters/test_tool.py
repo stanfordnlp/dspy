@@ -1,4 +1,5 @@
 import asyncio
+from functools import partial
 from typing import Any
 
 import pytest
@@ -144,6 +145,82 @@ def test_tool_from_function():
     assert tool.args["x"]["type"] == "integer"
     assert tool.args["y"]["type"] == "string"
     assert tool.args["y"]["default"] == "hello"
+
+
+def test_tool_from_partial_function_uses_remaining_typed_parameters():
+    def lookup(tenant: str, record_id: int, limit: int = 10) -> str:
+        return f"{tenant}:{record_id}:{limit}"
+
+    tool = Tool(partial(lookup, "demo"))
+
+    assert tool.args == {
+        "record_id": {"type": "integer"},
+        "limit": {"type": "integer", "default": 10},
+    }
+    assert tool(record_id=7) == "demo:7:10"
+
+
+def test_tool_from_keyword_partial_preserves_overridable_defaults():
+    tool = Tool(partial(dummy_function, y="bound"))
+
+    assert tool.args == {"x": {"type": "integer"}, "y": {"type": "string", "default": "bound"}}
+    assert tool.format_as_litellm_function_call()["function"]["parameters"]["required"] == ["x"]
+    assert tool(x=7) == "bound 7"
+    assert tool(x=7, y="override") == "override 7"
+    with pytest.raises(ValueError, match="Arg x is invalid"):
+        tool(x="invalid")
+
+
+def test_tool_from_nested_partial_and_bound_method():
+    class Lookup:
+        def lookup(self, tenant: str, record_id: int, limit: int = 10) -> str:
+            return f"{tenant}:{record_id}:{limit}"
+
+    tool = Tool(partial(partial(Lookup().lookup, "demo"), limit=3))
+
+    assert tool.args == {"record_id": {"type": "integer"}, "limit": {"type": "integer", "default": 3}}
+    assert tool(record_id=7) == "demo:7:3"
+
+
+def test_tool_from_partial_callable_instance():
+    class Lookup:
+        def __call__(self, tenant: str, record_id: int) -> str:
+            return f"{tenant}:{record_id}"
+
+    tool = Tool(partial(Lookup(), "demo"))
+
+    assert tool.args == {"record_id": {"type": "integer"}}
+    assert tool(record_id=7) == "demo:7"
+
+
+def test_partial_tool_schema_reaches_native_adapter():
+    from tests.adapters.conftest import format_messages_and_lm_kwargs
+
+    class FunctionCallingLM(dspy.utils.DummyLM):
+        @property
+        def supports_function_calling(self):
+            return True
+
+    class NativeToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    tool = Tool(partial(dummy_function, y="bound"), name="lookup")
+    _, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.JSONAdapter(use_native_function_calling=True),
+        NativeToolSignature,
+        [],
+        {"question": "lookup 7", "tools": [tool]},
+        lm=FunctionCallingLM([{}]),
+    )
+
+    parameters = lm_kwargs["tools"][0]["function"]["parameters"]
+    assert parameters == {
+        "type": "object",
+        "properties": {"x": {"type": "integer"}, "y": {"type": "string", "default": "bound"}},
+        "required": ["x"],
+    }
 
 
 def test_format_as_litellm_function_call_excludes_defaulted_args_from_required():

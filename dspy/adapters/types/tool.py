@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
 
 import json_repair
@@ -83,14 +84,21 @@ class Tool(Type):
         This is a helper function that automatically infers the name, description, and args of the tool from the
         provided function. In order to make the inference work, the function must have valid type hints.
         """
-        annotations_func = func if inspect.isfunction(func) or inspect.ismethod(func) else func.__call__
+        unwrapped_func = func
+        while isinstance(unwrapped_func, partial):
+            unwrapped_func = unwrapped_func.func
+        annotations_func = (
+            unwrapped_func
+            if inspect.isfunction(unwrapped_func) or inspect.ismethod(unwrapped_func)
+            else unwrapped_func.__call__
+        )
         name = getattr(func, "__name__", type(func).__name__)
         desc = getattr(func, "__doc__", None) or getattr(annotations_func, "__doc__", "")
         args = {}
         arg_types = {}
 
         # Use inspect.signature to get all arg names
-        sig = inspect.signature(annotations_func)
+        sig = inspect.signature(func if isinstance(func, partial) else annotations_func)
         # Get available type hints
         available_hints = get_type_hints(annotations_func)
         # Build a dictionary of arg name -> type (defaulting to Any when missing)
