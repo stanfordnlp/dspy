@@ -84,8 +84,9 @@ class CodeInterpreter(Protocol):
     Sandbox dspy facade:
         dspy.Flex and dspy.RLM install a ``dspy`` shim whose predictors are built and
         run on the host, so registered tools must be callable as globals in executed
-        code and state must persist across execute() calls. The shim refuses an
-        interpreter that runs code in the host's memory (the host process or a fork).
+        code and state must persist across execute() calls. In an interpreter that runs
+        code in the host's memory, the shim binds ``dspy`` in that interpreter's namespace
+        and leaves the host's ``sys.modules`` alone.
     """
 
     @property
