@@ -1,5 +1,6 @@
 # ruff: noqa: UP007
 
+import enum
 from typing import Literal, Optional, Union
 
 import pytest
@@ -115,3 +116,48 @@ def test_parse_value_json_repair():
     malformed = "not json or literal"
     with pytest.raises(Exception):
         parse_value(malformed, dict)
+
+
+def test_parse_value_optional_enum_and_literal_accept_the_bare_spellings():
+    class Color(enum.Enum):
+        RED = "red"
+        BLUE = "blue"
+
+    assert parse_value("RED", Color | None) is Color.RED
+    assert parse_value("red", Color | None) is Color.RED
+    assert parse_value("None", Color | None) is None
+    assert parse_value("Literal[red]", Literal["red", "blue"] | None) == "red"
+    assert parse_value("null", Literal["red", "blue"] | None) is None
+    with pytest.raises(ValueError):
+        parse_value("green", Color | None)
+
+
+def test_parse_value_optional_literal_keeps_the_type_the_union_parsing_returned():
+    # A value the generic union handling already parsed keeps its type: "1" is the int member here,
+    # as it was before optional closed-set annotations got their own handling.
+    assert parse_value("1", Literal[1, "1"] | None) == 1
+    assert type(parse_value("1", Literal[1, "1"] | None)) is int
+    assert parse_value("2", Literal[1, 2, 3] | None) == 2
+    assert parse_value('"1"', Literal[1, "1"] | None) == "1"
+
+
+def test_parse_value_optional_closed_set_keeps_a_null_member():
+    # "null" is a permitted member here, so it must not be read as None.
+    class Status(enum.Enum):
+        NULL = "null"
+        SET = "set"
+
+    assert parse_value("null", Literal["null", "set"] | None) == "null"
+    assert parse_value("null", Status | None) is Status.NULL
+    assert parse_value("None", Literal["null", "set"] | None) is None
+    assert parse_value("None", Status | None) is None
+
+
+def test_parse_value_optional_enum_keeps_null_as_none_for_a_none_valued_member():
+    # A member whose value is None is not a "null" spelling to preserve: JSON null stays None.
+    class Missing(enum.Enum):
+        NOTHING = None
+        SOMETHING = "something"
+
+    assert parse_value("null", Missing | None) is None
+    assert parse_value("something", Missing | None) is Missing.SOMETHING
