@@ -15,6 +15,7 @@ from dspy.adapters.utils import apply_output_field_defaults, serialize_for_json
 from dspy.clients._deprecation import adapter_message_call
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.capabilities import with_capability_planning
+from dspy.dsp.utils.settings import settings
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
@@ -248,6 +249,10 @@ class Adapter:
         messages = self.format(processed_signature, demos, inputs)
         if lm_kwargs.get("parallel_tool_calls") is not None:
             lm_kwargs.setdefault("tool_choice", "auto")
+        if settings.send_stream and settings.stream_listeners:
+            from dspy.streaming.messages import _StreamSignature, sync_send_to_stream
+
+            sync_send_to_stream(settings.send_stream, _StreamSignature(id(settings.caller_predict), processed_signature))
         # TODO(3.5): build Request and parse Response directly; remove this marker.
         with adapter_message_call(lm, messages):
             outputs = lm(messages=messages, **lm_kwargs)
@@ -266,6 +271,10 @@ class Adapter:
         messages = self.format(processed_signature, demos, inputs)
         if lm_kwargs.get("parallel_tool_calls") is not None:
             lm_kwargs.setdefault("tool_choice", "auto")
+        if settings.send_stream and settings.stream_listeners:
+            from dspy.streaming.messages import _StreamSignature
+
+            await settings.send_stream.send(_StreamSignature(id(settings.caller_predict), processed_signature))
         # TODO(3.5): share the canonical request/response boundary with __call__.
         with adapter_message_call(lm, messages):
             outputs = await lm.acall(messages=messages, **lm_kwargs)

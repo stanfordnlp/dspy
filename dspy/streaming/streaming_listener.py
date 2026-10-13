@@ -47,6 +47,7 @@ class StreamListener:
         """
         self.signature_field_name = signature_field_name
         self._wire_field_name = signature_field_name
+        self._use_native_reasoning = True
         self.predict = predict
         self.predict_name = predict_name
 
@@ -120,15 +121,20 @@ class StreamListener:
 
         return False
 
+    def _set_signature(self, signature):
+        # Use the adapter's decision, after per-call overrides and native adaptation.
+        self._use_native_reasoning = True
+        for name, field in signature.output_fields.items():
+            if field.json_schema_extra.get("__dspy_reasoning_field", name) == self.signature_field_name:
+                self._use_native_reasoning = False
+                self._wire_field_name = name
+                self.adapter_identifiers["ChatAdapter"]["start_identifier"] = f"[[ ## {name} ## ]]"
+                self.adapter_identifiers["JSONAdapter"]["start_identifier"] = f'"{name}":'
+                self.adapter_identifiers["XMLAdapter"]["start_identifier"] = f"<{name}>"
+                self.adapter_identifiers["XMLAdapter"]["end_identifier"] = re.compile(rf"</{name}>")
+                break
+
     def receive(self, chunk: ModelResponseStream):
-        if self.predict is not None:
-            wire_name = Reasoning._fallback_field_name(self.predict.signature, self.signature_field_name)
-            if wire_name != self._wire_field_name:
-                self._wire_field_name = wire_name
-                self.adapter_identifiers["ChatAdapter"]["start_identifier"] = f"[[ ## {wire_name} ## ]]"
-                self.adapter_identifiers["JSONAdapter"]["start_identifier"] = f'"{wire_name}":'
-                self.adapter_identifiers["XMLAdapter"]["start_identifier"] = f"<{wire_name}>"
-                self.adapter_identifiers["XMLAdapter"]["end_identifier"] = re.compile(rf"</{wire_name}>")
         adapter_name = settings.adapter.__class__.__name__ if settings.adapter else "ChatAdapter"
         if adapter_name not in self.adapter_identifiers:
             raise ValueError(
@@ -159,6 +165,7 @@ class StreamListener:
             and inspect.isclass(self._output_type)
             and issubclass(self._output_type, Type)
             and self._output_type.is_streamable()
+            and (self._output_type is not Reasoning or self._use_native_reasoning)
         ):
             if parsed_chunk := self._output_type.parse_stream_chunk(chunk):
                 return StreamResponse(
