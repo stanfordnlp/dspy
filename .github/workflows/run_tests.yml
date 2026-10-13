@@ -99,6 +99,8 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
+          # Keep test wheels separate from the smaller package-build cache.
+          cache-suffix: ${{ github.job }}
           cache-dependency-glob: |
             **/pyproject.toml
             **/uv.lock
@@ -141,6 +143,8 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
+          # Preserve optional-dependency wheels independently of the core tests.
+          cache-suffix: ${{ github.job }}
           cache-dependency-glob: |
             **/pyproject.toml
             **/uv.lock
