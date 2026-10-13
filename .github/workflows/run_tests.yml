@@ -70,11 +70,23 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
+    # 3.15 is an allowed failure (see the matrix note). Tolerating it stops a
+    # failure from failing the workflow and, under the default fail-fast, from
+    # cancelling the 3.10-3.14 legs.
+    continue-on-error: ${{ matrix.python-version == '3.15' }}
+    env:
+      # fastuuid has no cp315 wheel and its pyo3 rejects 3.15; build it against
+      # the stable ABI on the 3.15 leg. pyo3 reads only the value "1".
+      PYO3_USE_ABI3_FORWARD_COMPATIBILITY: ${{ matrix.python-version == '3.15' && '1' || '0' }}
     permissions:
       contents: read
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        # 3.15 is an allowed failure (continue-on-error above) while Python 3.15
+        # is a release candidate. Its deps install from cp315 wheels except
+        # fastuuid (a litellm dep), whose pyo3 rejects a Python past 3.14; the
+        # job env builds it against the stable ABI on the 3.15 leg only.
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -82,6 +94,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
       - name: Install uv with caching
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -103,11 +116,19 @@ jobs:
   extra_test:
     name: Run Extra and Deno Tests
     runs-on: ubuntu-latest
+    # 3.15 is an allowed failure (see the note in the `test` job); tolerated so
+    # it does not fail the workflow or, under fail-fast, cancel the 3.10-3.14 legs.
+    continue-on-error: ${{ matrix.python-version == '3.15' }}
+    env:
+      # fastuuid has no cp315 wheel and its pyo3 rejects 3.15; build it against
+      # the stable ABI on the 3.15 leg. pyo3 reads only the value "1".
+      PYO3_USE_ABI3_FORWARD_COMPATIBILITY: ${{ matrix.python-version == '3.15' && '1' || '0' }}
     permissions:
       contents: read
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        # 3.15 is an allowed failure (see the note in the `test` job above).
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -115,6 +136,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
       - name: Install uv with caching
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -256,11 +278,19 @@ jobs:
   build_package:
     name: Build Package
     runs-on: ubuntu-latest
+    # 3.15 is an allowed failure (see the note in the `test` job); tolerated so
+    # it does not fail the workflow or, under fail-fast, cancel the 3.10-3.14 legs.
+    continue-on-error: ${{ matrix.python-version == '3.15' }}
+    env:
+      # fastuuid has no cp315 wheel and its pyo3 rejects 3.15; build it against
+      # the stable ABI on the 3.15 leg. pyo3 reads only the value "1".
+      PYO3_USE_ABI3_FORWARD_COMPATIBILITY: ${{ matrix.python-version == '3.15' && '1' || '0' }}
     permissions:
       contents: read
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        # 3.15 is an allowed failure (see the note in the `test` job above).
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -268,6 +298,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
       - name: Install uv with caching
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:

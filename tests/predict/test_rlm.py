@@ -1977,17 +1977,37 @@ class TestRLMSubAgents:
         invocation.construct("RLM", "q -> a", "nested")
         assert invocation._predictors["nested"]._interpreter_factory is override
 
-    def test_interpreter_in_the_host_memory_runs_without_sub_agents(self, caplog):
-        # The shim refuses it rather than replace the host's `dspy` module; RLM carries on without sub-agents.
+    def test_interpreter_in_the_host_memory_hosts_the_facade(self, caplog):
+        # The shim binds `dspy` in the interpreter's namespace instead of replacing the host's module.
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessInterpreter)
+        rlm.generate_action, seen = _recording_predictor('import dspy\nSUBMIT(dspy.Predict("q -> a")(q="x").a)')
+
+        with caplog.at_level("WARNING", logger="dspy.predict.rlm"), dspy.context(lm=DummyLM([{"a": "42"}])):
+            assert rlm(query="q").answer == "42"
+
+        assert sys.modules["dspy"] is dspy
+        assert "Sub-agents (dspy)" in seen[0].instructions
+        assert "unavailable" not in caplog.text
+
+    def test_interpreter_that_rejects_the_shim_as_syntax_error_runs_without_sub_agents(self, caplog):
+        # Restricted compilers (e.g. RestrictedPython) reject the shim's `_dspy_*` names at compile time.
+        from dspy.primitives import facade
+
+        def execute(code, variables):
+            if code == facade.SHIM_SETUP:
+                raise SyntaxError('"_dspy_sys" is an invalid variable name because it starts with "_"')
+            return FinalOutput({"answer": "42"})
+
+        factory = MockInterpreterFactory(execute_fn=execute)
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
         rlm.generate_action, seen = _recording_predictor('SUBMIT("42")')
 
         with caplog.at_level("WARNING", logger="dspy.predict.rlm"):
             assert rlm(query="q").answer == "42"
 
-        assert sys.modules["dspy"] is dspy
         assert "Sub-agents (dspy)" not in seen[0].instructions
-        assert "host's memory" in caplog.text
+        assert not {facade.CONSTRUCT_TOOL, facade.CALL_TOOL} & factory.instances[0].tools.keys()
+        assert "sub-agents are unavailable on MockInterpreter" in caplog.text
 
     def test_facade_reserves_sandbox_names(self):
         with pytest.raises(ValueError, match="conflict"):
