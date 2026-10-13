@@ -88,6 +88,7 @@ class Adapter:
         # stacked PR should replace this with an explicit `_AdapterPlan` that
         # records deleted fields, native tools, native output fields, inserted
         # messages/parts, and LM config patches.
+        original_signature = signature
         if not self.use_native_function_calling:
             for key in ("tools", "tool_choice", "parallel_tool_calls"):
                 lm_kwargs.pop(key, None)
@@ -130,6 +131,16 @@ class Adapter:
             ):
                 signature = field.annotation.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
 
+        # Only surviving default reasoning fields need the explicit plan fallback.
+        for name in signature.output_fields:
+            fallback_name = Reasoning._fallback_field_name(original_signature, name)
+            if fallback_name != name:
+                signature = signature.with_updated_fields(name, __dspy_reasoning_field=name)
+                signature = Signature(
+                    {fallback_name if key == name else key: field for key, field in signature.fields.items()},
+                    signature.instructions,
+                )
+
         return signature
 
     def _call_postprocess(
@@ -169,6 +180,11 @@ class Adapter:
                     message="The LM returned an empty or null response.",
                 )
 
+            for name, field in processed_signature.output_fields.items():
+                if original_name := field.json_schema_extra.get("__dspy_reasoning_field"):
+                    if name in value:
+                        value[original_name] = value.pop(name)
+
             # Fields removed for native features are absent from the processed parse
             value = apply_output_field_defaults(original_signature, value)
             for field_name in original_signature.output_fields:
@@ -187,6 +203,10 @@ class Adapter:
                     isinstance(field.annotation, type)
                     and field.annotation in self.native_response_types
                     and issubclass(field.annotation, Type)
+                    and not (
+                        field.annotation is Reasoning
+                        and Reasoning._fallback_field_name(original_signature, name) in processed_signature.output_fields
+                    )
                 ):
                     parsed_value = field.annotation.parse_lm_response(output)
                     if parsed_value is not None:
@@ -297,6 +317,20 @@ class Adapter:
             A list of multiturn messages as expected by the LM.
         """
         inputs_copy = dict(inputs)
+        fallback_names = {
+            field.json_schema_extra["__dspy_reasoning_field"]: name
+            for name, field in signature.output_fields.items()
+            if "__dspy_reasoning_field" in field.json_schema_extra
+        }
+        if fallback_names:
+            def remap(values):
+                return {fallback_names.get(key, key): value for key, value in values.items()}
+
+            demos = [remap(demo) for demo in demos]
+            for name, field in signature.input_fields.items():
+                if field.annotation is History and name in inputs_copy:
+                    history = inputs_copy[name]
+                    inputs_copy[name] = history.model_copy(update={"messages": [remap(m) for m in history.messages]})
 
         # If the signature and inputs have conversation history, we need to format the conversation history and
         # remove the history field from the signature.

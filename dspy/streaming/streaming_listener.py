@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.types import Type
+from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.dsp.utils.settings import settings
 from dspy.streaming.messages import StreamResponse
@@ -45,6 +46,7 @@ class StreamListener:
                 hurt the performance because the same stream chunk is sent to multiple listeners.
         """
         self.signature_field_name = signature_field_name
+        self._wire_field_name = signature_field_name
         self.predict = predict
         self.predict_name = predict_name
 
@@ -119,6 +121,14 @@ class StreamListener:
         return False
 
     def receive(self, chunk: ModelResponseStream):
+        if self.predict is not None:
+            wire_name = Reasoning._fallback_field_name(self.predict.signature, self.signature_field_name)
+            if wire_name != self._wire_field_name:
+                self._wire_field_name = wire_name
+                self.adapter_identifiers["ChatAdapter"]["start_identifier"] = f"[[ ## {wire_name} ## ]]"
+                self.adapter_identifiers["JSONAdapter"]["start_identifier"] = f'"{wire_name}":'
+                self.adapter_identifiers["XMLAdapter"]["start_identifier"] = f"<{wire_name}>"
+                self.adapter_identifiers["XMLAdapter"]["end_identifier"] = re.compile(rf"</{wire_name}>")
         adapter_name = settings.adapter.__class__.__name__ if settings.adapter else "ChatAdapter"
         if adapter_name not in self.adapter_identifiers:
             raise ValueError(
@@ -279,7 +289,7 @@ class StreamListener:
                 keys = list(parsed.keys())
                 next_field_name = None
                 for key in keys:
-                    if key != self.signature_field_name:
+                    if key != self._wire_field_name:
                         next_field_name = key
                         break
 
@@ -340,7 +350,7 @@ class StreamListener:
         if isinstance(settings.adapter, JSONAdapter):
             return last_tokens
         elif isinstance(settings.adapter, XMLAdapter):
-            boundary_index = last_tokens.find(f"</{self.signature_field_name}>")
+            boundary_index = last_tokens.find(f"</{self._wire_field_name}>")
             if boundary_index == -1:
                 boundary_index = len(last_tokens)
             return last_tokens[:boundary_index]

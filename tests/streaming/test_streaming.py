@@ -2150,6 +2150,34 @@ async def test_async_streamify_raises_the_public_error_itself():
             pass
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
+async def test_default_cot_fallback_streams_reasoning(adapter_type):
+    texts = {
+        dspy.ChatAdapter: "[[ ## plan ## ]]\nCount the signed items.\n\n[[ ## answer ## ]]\n17\n\n[[ ## completed ## ]]",
+        dspy.JSONAdapter: '{"plan": "Count the signed items.", "answer": "17"}',
+        dspy.XMLAdapter: "<plan>Count the signed items.</plan><answer>17</answer>",
+    }
+
+    async def stream(*args, **kwargs):
+        text = texts[adapter_type]
+        for offset in range(0, len(text), 4):
+            yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(content=text[offset:offset + 4]))])
+
+    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+    program = dspy.streamify(
+        dspy.ChainOfThought("question -> answer"),
+        stream_listeners=[dspy.streaming.StreamListener("reasoning")],
+    )
+    with mock.patch("litellm.acompletion", side_effect=stream), dspy.context(lm=lm, adapter=adapter_type()):
+        values = [value async for value in program(question="Count items")]
+    chunks = [value for value in values if isinstance(value, StreamResponse)]
+    assert chunks and all(c.signature_field_name == "reasoning" for c in chunks)
+    assert "Count the signed items." in "".join(c.chunk for c in chunks)
+    assert values[-1].reasoning == "Count the signed items."
+    assert values[-1].answer == "17"
+
+
 def test_streamify_keeps_a_group_of_several_failures():
     import builtins
 
