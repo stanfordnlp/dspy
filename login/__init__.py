@@ -6,6 +6,9 @@ implementation; the contract, not this module, is the authority.
 
     from lm15.login import Auth, TerminalUI
 
+    from lm15 import login_providers           # descriptor collection (also lm15.login.providers)
+    login_providers.meta.methods              # lm15.providers remains the implementation package
+
     auth = Auth.local()                        # reads nothing yet
     auth.login("xai", ui=TerminalUI())         # device code in the terminal; saved on success
     router = LMRouter(RouterConfig(auth=auth)) # explicit keys still win; otherwise the saved login

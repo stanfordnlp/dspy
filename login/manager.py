@@ -158,7 +158,7 @@ class Auth:
         self._monotonic = monotonic
         self._opener = opener
         self._sleep = sleep
-        self._active: dict[str, threading.Event] = {}  # provider -> cancel event of a login in this process
+        self._active: dict[str, tuple[str, threading.Event]] = {}  # provider -> (attempt id, cancel event)
         self._lock = threading.RLock()
         self._closed = False
 
@@ -213,6 +213,20 @@ class Auth:
             )
         return slot, material
 
+    def _route_view(self, document: dict[str, Any], provider: str) -> tuple[_Slot, Material | None]:
+        """An explicit route slot wins; otherwise use its advertised owner."""
+        slots = (document.get(META_KEY) or {}).get("slots") or {}
+        if provider in document or provider in slots:
+            return self._view(document, provider)
+        owners = [owner for owner, record in slots.items()
+                  if provider in record.get("routes", ()) and provider in self.descriptor(owner).routes]
+        if len(owners) > 1:
+            raise AuthOperationError(
+                f"{provider}: multiple saved connections advertise this route; select a connection",
+                reason="connection_changed", stage="resolution", recovery="select_connection", provider=provider,
+            )
+        return self._view(document, owners[0] if owners else provider)
+
     @staticmethod
     def _put(document: dict[str, Any], slot: _Slot, material: Material | None) -> dict[str, Any]:
         meta = document.setdefault(META_KEY, {"version": STORE_VERSION, "slots": {}})
@@ -248,7 +262,7 @@ class Auth:
 
     def status(self, provider: str) -> ConnectionStatus:
         provider = self.descriptor(provider).id
-        slot, material = self._view(self.store.read(), provider)
+        slot, material = self._route_view(self.store.read(), provider)
         connection = slot.connection()
         verification = None
         if slot.verification:
@@ -332,10 +346,8 @@ class Auth:
         # Reservation (AUTH-17/18): storage proven writable, one active
         # attempt per slot, generation observed — before any browser opens.
         self.store.reserve()
-        expected = self._reserve(provider, attempt_id, replace, lifetime_s)
-        with self._lock:
-            self._active[provider] = cancel
         try:
+            expected = self._reserve(provider, attempt_id, replace, lifetime_s, cancel=cancel)
             for field_ in chosen.fields:
                 if field_.id not in answers:
                     if not field_.required and field_.type != "select":
@@ -379,6 +391,7 @@ class Auth:
             except LM15Error:
                 self._release(provider, attempt_id)
                 raise
+            ctx.check()
             return self._commit(provider, attempt_id, expected, chosen, result, settings)
         except BaseException:
             # Any exit without a saved connection ends the attempt — Ctrl-C
@@ -390,7 +403,9 @@ class Auth:
             raise
         finally:
             with self._lock:
-                self._active.pop(provider, None)
+                active = self._active.get(provider)
+                if active is not None and active[0] == attempt_id:
+                    self._active.pop(provider)
 
     def _choose_method(self, descriptor: ProviderDescriptor, method: str | LoginMethod | None, ui: AuthUI, *,
                        allow_unverified: bool) -> LoginMethod:
@@ -440,7 +455,8 @@ class Auth:
             reason="invalid_login_state", stage="interaction", recovery="choose_method", provider=descriptor.id,
         )
 
-    def _reserve(self, provider: str, attempt_id: str, replace: str | None, lifetime_s: float) -> int:
+    def _reserve(self, provider: str, attempt_id: str, replace: str | None, lifetime_s: float,
+                 *, cancel: threading.Event | None = None) -> int:
         """Reserve the slot's single active attempt; return the generation
         the commit must find."""
         now = self._clock()
@@ -473,6 +489,11 @@ class Auth:
                 )
             slot.attempt = {"id": attempt_id, "expected_generation": str(slot.generation),
                             "started_at_s": now, "lifetime_s": float(lifetime_s)}
+            if cancel is not None:
+                with self._lock:
+                    if cancel.is_set():
+                        raise LoginCancelled("login cancelled before reservation")
+                    self._active[provider] = (attempt_id, cancel)
             return self._put(document, slot, material)
 
         document = self.store.mutate(reserve)
@@ -552,16 +573,32 @@ class Auth:
             if not slot.attempt:
                 outcome["result"] = "complete" if slot.connection_id else "none"
                 return None
+            outcome["attempt_id"] = slot.attempt["id"]
             slot.attempt = None
             outcome["result"] = "cancelled"
             return self._put(document, slot, material)
 
         self.store.mutate(cancel)  # the durable record first (AUTH-19) …
         with self._lock:
-            event = self._active.get(provider)
-        if event is not None:
-            event.set()  # … then the running attempt in this process
+            active = self._active.get(provider)
+        if active is not None and active[0] == outcome.get("attempt_id"):
+            active[1].set()  # … then the running attempt in this process
         return outcome["result"]
+
+    def _cancel_login_attempt(self, provider: str, event: threading.Event) -> None:
+        """Cancel only this async caller's reservation, ordered against commit."""
+        provider = self.descriptor(provider).id
+
+        def cancel(document: dict[str, Any]) -> dict[str, Any] | None:
+            slot, material = self._view(document, provider)
+            with self._lock:
+                active = self._active.get(provider)
+            if active is None or active[1] is not event or not slot.attempt or slot.attempt.get("id") != active[0]:
+                return None
+            slot.attempt = None
+            return self._put(document, slot, material)
+
+        self.store.mutate(cancel)
 
     # ─── setup without a provider round-trip (AUTH-17) ─────────────────
 
@@ -650,9 +687,9 @@ class Auth:
             )
             outcome.update(forgot=True, generation=new.generation, routes=new.routes)
             with self._lock:
-                event = self._active.get(provider)
-            if event is not None:
-                event.set()
+                active = self._active.get(provider)
+            if active is not None:
+                active[1].set()
             return self._put(document, new, material_after)
 
         self.store.mutate(forget)
@@ -673,7 +710,9 @@ class Auth:
                 "no saved connection has that id", reason="attempt_unavailable", stage="resolution",
                 recovery="select_connection",
             )
-        return self.descriptor(provider_or_connection).id, None
+        provider = self.descriptor(provider_or_connection).id
+        slot, _ = self._route_view(self.store.read(), provider)
+        return slot.provider, None
 
     # ─── verification (AUTH-17) ────────────────────────────────────────
 
@@ -689,11 +728,21 @@ class Auth:
         if definition is None or not definition.supports.models:
             return Verification(result="unverified", check="models", detail="this route has no safe non-inference check")
         from ..router import LMRouter, RouterConfig
+        from .bound import pinned_auth
+        from .types import ModelSelection
 
         config = router_config or RouterConfig()
         from dataclasses import replace as _replace
 
-        router = LMRouter(_replace(config, auth=self))
+        slot, _ = self._route_view(self.store.read(), provider)
+        connection = slot.connection()
+        managed = self
+        if connection is not None:
+            selection = ModelSelection(provider=provider, model="verify", connection_id=connection.id,
+                                       identity_generation=connection.identity_generation)
+            managed = pinned_auth(self, selection)
+        # Verify the saved connection, never an explicit router-config key.
+        router = LMRouter(_replace(config, auth=managed, api_keys={}, credentials={}))
         checked = _now_iso(self._clock)
         try:
             lm = router.lm(f"{provider}:verify")
@@ -703,13 +752,14 @@ class Auth:
             result = Verification(result="rejected", checked_at=checked, check="models", detail=exc.code)
         finally:
             router.close()
-        self._record_verification(provider, result)
+        if connection is not None:
+            self._record_verification(connection, result)
         return result
 
-    def _record_verification(self, provider: str, result: Verification) -> None:
+    def _record_verification(self, connection: Connection, result: Verification) -> None:
         def record(document: dict[str, Any]) -> dict[str, Any] | None:
-            slot, material = self._view(document, provider)
-            if slot.connection_id is None:
+            slot, material = self._view(document, connection.provider)
+            if slot.connection_id != connection.id or str(slot.generation) != connection.identity_generation:
                 return None
             slot.verification = {"result": result.result, "checked_at": result.checked_at, "check": result.check,
                                  "detail": result.detail}
@@ -729,7 +779,8 @@ class Auth:
         ``connection_changed``, never a silent rebind (AUTH-20.1)."""
         provider = self.descriptor(provider).id
         document = self.store.read()
-        slot, material = self._view(document, provider)
+        slot, material = self._route_view(document, provider)
+        provider = slot.provider
         if slot.renewal_in_flight and slot.state != "indeterminate":
             # A sibling may be renewing right now (it holds the lock), or may
             # have died mid-exchange. Only the lock can tell: wait for it,
@@ -901,7 +952,7 @@ class Auth:
         with self._lock:
             self._closed = True
             events = list(self._active.values())
-        for event in events:
+        for _, event in events:
             event.set()
 
     def _check_open(self) -> None:
@@ -972,7 +1023,24 @@ class AsyncAuth:
         return await self._run(self.sync.status, provider)
 
     async def login(self, provider: str, method: Any = None, **kwargs: Any):
-        return await self._run(self.sync.login, provider, method, **kwargs)
+        import asyncio
+
+        cancel = kwargs.get("cancel") or threading.Event()
+        kwargs["cancel"] = cancel
+        try:
+            return await self._run(self.sync.login, provider, method, **kwargs)
+        except asyncio.CancelledError:
+            cancel.set()
+            cleanup = asyncio.create_task(self._run(self.sync._cancel_login_attempt, provider, cancel))
+            # Repeated task cancellation must not let a reservation outlive
+            # CancelledError. Do not wait for the provider's worker to return.
+            while not cleanup.done():
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    continue
+            cleanup.result()
+            raise
 
     async def set_api_key(self, provider: str, key: str, **kwargs: Any):
         return await self._run(self.sync.set_api_key, provider, key, **kwargs)
