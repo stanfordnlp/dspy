@@ -177,6 +177,9 @@ def test_validation_set_usage():
         (-0.1, 0.0, 0),
         (0.0, 0.01, 0),
         (0.0, -0.01, 1),
+        # Bool metrics are compared numerically too, so False clears a threshold of 0.
+        (True, 0, 1),
+        (False, 0, 1),
     ],
 )
 def test_metric_threshold_zero_is_applied(metric_value, metric_threshold, expected_demos):
