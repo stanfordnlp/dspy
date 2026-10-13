@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import getpass
 import sys
+import threading
 from typing import Any, TextIO
 
 from .types import (
@@ -36,6 +37,9 @@ class TerminalUI:
         self._input = inp if inp is not None else input
         self._open_browser = open_browser
         self._stale: set[int] = set()
+        self._manual_lock = threading.Lock()
+        # Keep the prompt alive so a later prompt cannot reuse its identity.
+        self._manual_reads: dict[int, tuple[Prompt, threading.Event]] = {}
 
     def _say(self, text: str) -> None:
         self._out.write(text + "\n")
@@ -84,11 +88,36 @@ class TerminalUI:
                         return option.id
                 self._say("Not one of the choices.")
         if isinstance(prompt, ManualCodePrompt):
-            return self._input(f"{prompt.label}\n> ")
+            with self._manual_lock:
+                if id(prompt) in self._stale:
+                    return ""
+                done = threading.Event()
+                self._manual_reads[id(prompt)] = (prompt, done)
+            try:
+                return self._input(f"{prompt.label}\n> ")
+            finally:
+                done.set()
         if isinstance(prompt, TextPrompt):
             hint = f" [{prompt.placeholder}]" if prompt.placeholder else ""
             return self._input(f"{prompt.label}{hint}: ")
         raise TypeError(f"unknown prompt {type(prompt).__name__}")
 
     def dismiss(self, prompt: Prompt) -> None:
-        self._say("\n(the browser finished — press Enter to continue)")
+        if not isinstance(prompt, ManualCodePrompt):
+            return
+        with self._manual_lock:
+            self._stale.add(id(prompt))
+            read = self._manual_reads.get(id(prompt))
+            if read is None:
+                # The callback can win before the manual thread starts.
+                done = threading.Event()
+                done.set()
+                self._manual_reads[id(prompt)] = (prompt, done)
+                return
+            done = read[1]
+            if done.is_set():
+                return
+            self._say("\n(the browser finished — press Enter to continue)")
+        # input() cannot be cancelled portably. Do not let the next prompt
+        # begin until this reader returns (or raises), releasing the terminal.
+        done.wait()

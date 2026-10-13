@@ -266,8 +266,9 @@ __all__ = [
     "NotConfiguredError", "AuthOperationError", "RETRYABLE_ERRORS",
     "AccessPolicy", "EndpointSupport",
     # managed authentication (lm15.login / lm15.interactive; loaded on first use)
-    "Auth", "AsyncAuth", "BoundClient", "TerminalUI", "providers", "connect",
+    "Auth", "AsyncAuth", "BoundClient", "TerminalUI", "login_providers", "connect",
     # providers
+    "providers",
     "choice", "judgments", "score", "yes_no", "data",
     "OpenAILM", "OpenAIChatLM", "AnthropicLM", "GeminiLM", "ClaudeCodeLM", "OpenAICodexLM", "XaiLM", "TypeSafeLM", "AsyncTypeSafeLM",
     "ProviderLM",
@@ -294,12 +295,14 @@ __all__ = [
 # ``lm15.login`` pulls in threading, http.server and the login flows;
 # nothing on the request path needs them, and lm15's import time is a
 # promise, so these names resolve lazily (PEP 562).
+# ``providers`` already names the implementation package (including xai,
+# openai, etc.). Keep the descriptor collection under a non-colliding name.
 _LAZY_LOGIN = {
     "Auth": (".login", "Auth"),
     "AsyncAuth": (".login", "AsyncAuth"),
     "BoundClient": (".login", "BoundClient"),
     "TerminalUI": (".login", "TerminalUI"),
-    "providers": (".login", "providers"),
+    "login_providers": (".login", "providers"),
     "connect": (".interactive", "connect"),
 }
 
