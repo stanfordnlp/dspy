@@ -361,6 +361,7 @@ class Auth:
             flow = _flow(provider, chosen.id)
             try:
                 result = flow.login(ctx, chosen, settings, answers)
+                ctx.check()
             except LoginCancelled:
                 self._release(provider, attempt_id)
                 raise
@@ -391,7 +392,6 @@ class Auth:
             except LM15Error:
                 self._release(provider, attempt_id)
                 raise
-            ctx.check()
             return self._commit(provider, attempt_id, expected, chosen, result, settings)
         except BaseException:
             # Any exit without a saved connection ends the attempt — Ctrl-C
