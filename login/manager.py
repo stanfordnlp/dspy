@@ -29,7 +29,7 @@ import os
 import secrets
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -64,6 +64,7 @@ class ForgetResult:
 @dataclass(frozen=True, slots=True, kw_only=True)
 class _RequestSnapshot(RequestAuth):
     connection: Connection
+    route: str
 
 
 @dataclass
@@ -778,6 +779,7 @@ class Auth:
         client's ``(connection_id, generation)``; a mismatch is
         ``connection_changed``, never a silent rebind (AUTH-20.1)."""
         provider = self.descriptor(provider).id
+        route = provider
         document = self.store.read()
         slot, material = self._route_view(document, provider)
         provider = slot.provider
@@ -786,17 +788,17 @@ class Auth:
             # have died mid-exchange. Only the lock can tell: wait for it,
             # re-read, and reuse the sibling's result; a marker still there
             # once we hold the lock is an interrupted renewal (AUTH-20.4).
-            return self._renew(provider, pinned)
+            return replace(self._renew(provider, pinned), route=route)
         self._check_selected(provider, slot, material, pinned)
         flow = flow_for_material(provider, material)  # type: ignore[arg-type]
         assert material is not None
         expiry = flow.expiry(material)
         if expiry in ("never", None):
-            return self._auth_from(provider, flow, material, slot)
+            return replace(self._auth_from(provider, flow, material, slot), route=route)
         now_ms = int(self._clock() * 1000)
         if now_ms < expiry - self._lead_ms(flow.lifetime_s(material)):
-            return self._auth_from(provider, flow, material, slot)
-        return self._renew(provider, pinned)
+            return replace(self._auth_from(provider, flow, material, slot), route=route)
+        return replace(self._renew(provider, pinned), route=route)
 
     def _check_selected(self, provider: str, slot: _Slot, material: Material | None, pinned: tuple[str, str] | None) -> None:
         if pinned is not None and (slot.connection_id != pinned[0] or str(slot.generation) != pinned[1]):
@@ -832,14 +834,14 @@ class Auth:
                 provider=provider, connection_id=slot.connection_id,
             )
 
-    def _auth_from(self, provider: str, flow: Any, material: Material, slot: _Slot) -> RequestAuth:
+    def _auth_from(self, provider: str, flow: Any, material: Material, slot: _Slot) -> _RequestSnapshot:
         try:
             value = flow.request_auth(material, slot.settings)
             connection = slot.connection()
             assert connection is not None
             return _RequestSnapshot(
                 credential=value.credential, headers=dict(value.headers), base_url=value.base_url,
-                account_id=value.account_id, named=value.named, connection=connection,
+                account_id=value.account_id, named=value.named, connection=connection, route=provider,
             )
         except LoginDenied as exc:
             raise AuthOperationError(f"{provider}: {exc}", reason="login_required", stage="resolution",
@@ -854,11 +856,11 @@ class Auth:
         """
         connection = snapshot.connection
         with self.store.transaction() as txn:
-            slot, material = self._view(txn.read(), connection.provider)
-            self._check_selected(connection.provider, slot, material,
+            slot, material = self._route_view(txn.read(), snapshot.route)
+            self._check_selected(snapshot.route, slot, material,
                                  (connection.id, connection.identity_generation))
 
-    def _renew(self, provider: str, pinned: tuple[str, str] | None) -> RequestAuth:
+    def _renew(self, provider: str, pinned: tuple[str, str] | None) -> _RequestSnapshot:
         """AUTH-20.4: lock, re-read, reuse a sibling's fresh result, else
         mark in-flight, exchange, write — all under the lock."""
         ctx = LoginContext(ui=_NoUI(), deadline=self._monotonic() + 60.0, provider=provider, clock=self._monotonic,
@@ -1024,6 +1026,7 @@ class AsyncAuth:
 
     async def login(self, provider: str, method: Any = None, **kwargs: Any):
         import asyncio
+        from concurrent.futures import ThreadPoolExecutor
 
         cancel = kwargs.get("cancel") or threading.Event()
         kwargs["cancel"] = cancel
@@ -1031,15 +1034,20 @@ class AsyncAuth:
             return await self._run(self.sync.login, provider, method, **kwargs)
         except asyncio.CancelledError:
             cancel.set()
-            cleanup = asyncio.create_task(self._run(self.sync._cancel_login_attempt, provider, cancel))
-            # Repeated task cancellation must not let a reservation outlive
-            # CancelledError. Do not wait for the provider's worker to return.
-            while not cleanup.done():
-                try:
-                    await asyncio.shield(cleanup)
-                except asyncio.CancelledError:
-                    continue
-            cleanup.result()
+            # A blocking login can occupy every default-executor worker.
+            # Durable cancellation must not queue behind those workers.
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                cleanup = asyncio.get_running_loop().run_in_executor(
+                    executor, self.sync._cancel_login_attempt, provider, cancel,
+                )
+                # Repeated cancellation must not let the reservation outlive
+                # CancelledError. The provider's worker need not return first.
+                while not cleanup.done():
+                    try:
+                        await asyncio.shield(cleanup)
+                    except asyncio.CancelledError:
+                        continue
+                cleanup.result()
             raise
 
     async def set_api_key(self, provider: str, key: str, **kwargs: Any):
