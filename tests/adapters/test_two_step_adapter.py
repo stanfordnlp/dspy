@@ -31,6 +31,23 @@ def test_two_step_adapter_format_exact_messages_for_simple_signature_with_demo()
     assert lm_kwargs == expected_lm_kwargs
 
 
+def test_two_step_adapter_format_conversation_history():
+    class QA(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    adapter = dspy.TwoStepAdapter(dspy.utils.DummyLM([{"answer": "x"}]))
+    history = dspy.History(messages=[{"question": "Q1", "answer": "A1"}, {"answer": "A2"}])
+
+    messages = adapter.format_conversation_history(QA, "history", {"question": "Q3", "history": history})
+
+    assert messages == [
+        {"role": "user", "content": "question: Q1"},
+        {"role": "assistant", "content": "answer: A1"},
+        {"role": "assistant", "content": "answer: A2"},
+    ]
+
+
 def test_two_step_adapter_format_exact_messages_with_typed_outputs():
     class TypedSignature(dspy.Signature):
         question: str = dspy.InputField()
