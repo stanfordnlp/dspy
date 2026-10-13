@@ -1,15 +1,26 @@
 """
-lm15.login.flows.meta — Meta (Muse subscription) device login + key mint.
+lm15.login.flows.meta — Meta (Muse Code subscription) device login + key mint.
 
 RFC 8628 device authorization against ``auth.meta.com`` (JSON replies);
 the identity token it returns is **not** accepted for inference, so it is
-exchanged at the Muse Code key-mint endpoint for a Model API key that
-lives about a day.  Renewal is a re-mint with the stored identity token
+exchanged at the Muse Code key-mint endpoint for the account's Muse Code
+Model API key.  Renewal is a re-mint with the stored identity token
 (``renewal="remint"``); the identity token itself is not renewable, so a
-401/403 from the mint is a permanent rejection (``needs_login``).  Pi
-0.87.0 ``oauth/meta.ts`` is the implementation reference.
+401/403 from the mint is a permanent rejection (``needs_login``).  Muse
+Code 1.4.6 is the reference (Pi 0.87.0 ``oauth/meta.ts`` was the first).
 
-**Availability: unverified** (no live LM15 receipt).
+Live 2026-10-12 (lm15-contract ``receipts/2026-10-12-muse-code/``): the
+mint answers the same key on every call, so a re-mint never revokes the
+key Muse Code itself holds; the reply also names the API address
+(``base_url``) and the subscription (``is_subs_active``,
+``subs_tier_name``).  The key serves all three Meta wires, and
+``muse-wonder-full-1.0`` (Power and Maximum Usage plans only) answers on
+it.  The address is used as given when it is an https ``meta.ai`` host and
+refused otherwise: the key is never sent anywhere else.
+
+**Availability: unverified.**  Meta's Model API terms (2026-10-09, § 3.2)
+say the Muse Code key "may not be used to access the Services outside the
+coding harness"; lm15 is not that harness.  The descriptor says so.
 """
 
 from __future__ import annotations
@@ -26,12 +37,17 @@ CLIENT_ID = "1031625952748946"  # Muse Code CLI
 DEVICE_AUTHORIZATION_URL = "https://auth.meta.com/oidc/device/authorization/"
 DEVICE_TOKEN_URL = "https://auth.meta.com/oidc/device/token/"
 KEY_MINT_URL = "https://api.meta.ai/muse-code/key"
-KEY_LIFETIME_S = 24 * 60 * 60.0
+KEY_LIFETIME_S = 24 * 60 * 60.0  # no expiry in the reply; a daily re-mint is free (same key, 2026-10-12)
+TERMS_NOTE = ("Meta's Model API terms (§ 3.2) reserve the Muse Code key for Muse Code; using it here is outside "
+              "those terms and puts the Meta account at risk. Subscription traffic is Contributor mode by default "
+              "(Meta may train on it).")
 
 METHOD_DEVICE = LoginMethod(
     id="device", label="Sign in with Meta (Muse subscription)", kind="account", flow="device_code",
-    availability="unverified", reason="no live receipt yet", delivery=("device",), subscription=True,
-    billing_note="Minted Model API keys are tied to the Muse subscription; verify entitlement on your account.",
+    availability="unverified", reason="login, mint and inference observed 2026-10-12; " + TERMS_NOTE,
+    delivery=("device",), subscription=True,
+    billing_note="Billed to the Muse Code plan when it is active (muse-wonder-full-1.0 needs Power or Maximum "
+                 "Usage); without one, Meta bills the key pay-as-you-go.",
 )
 
 DESCRIPTOR = ProviderDescriptor(
@@ -55,7 +71,36 @@ def _positive(value: Any) -> float | None:
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0 else None
 
 
-def _mint(ctx: LoginContext, identity_token: str) -> Material:
+def _api_base(value: Any) -> str | None:
+    """The mint's ``base_url`` when the key may go there: https, a
+    ``meta.ai`` host, no credentials in the URL.  ``None`` when absent."""
+    if value is None:
+        return None
+    parsed = urllib.parse.urlsplit(value) if isinstance(value, str) else None
+    host = (parsed.hostname or "") if parsed else ""
+    if parsed is None or parsed.scheme != "https" or parsed.username or parsed.password or parsed.query \
+            or not (host == "meta.ai" or host.endswith(".meta.ai")):
+        raise LoginDenied("Meta named an API address outside meta.ai for the minted key; refusing to send it there")
+    return value.rstrip("/")
+
+
+def _plan(body: dict[str, Any]) -> str | None:
+    """Display text for the account's plan; ``None`` when the reply is silent."""
+    active = body.get("is_subs_active")
+    if active is True:
+        tier = body.get("subs_tier_name")
+        return tier if isinstance(tier, str) and tier else "Muse Code subscription"
+    if active is False:
+        return "no Muse Code subscription (pay-as-you-go)"
+    return None
+
+
+def _result(material: Material, body: dict[str, Any]) -> LoginResult:
+    return LoginResult(material=material, label="Meta (Muse subscription)", account_label=_plan(body),
+                       renewal="remint")
+
+
+def _mint(ctx: LoginContext, identity_token: str) -> tuple[Material, dict[str, Any]]:
     ctx.notify(ProgressNotice(stage="exchange", message="Enabling Meta Model API access…"))
     reply = http_json(ctx, KEY_MINT_URL, {}, headers={
         "Authorization": f"Bearer {identity_token}", "x-api-version": "1.0.0",
@@ -68,9 +113,13 @@ def _mint(ctx: LoginContext, identity_token: str) -> Material:
     if not isinstance(key, str) or not key:
         action = _http_url(reply.body.get("action_url"))
         raise LoginDenied("Meta did not issue an API key" + (f"; complete setup at {action}" if action else ""))
+    base_url = _api_base(reply.body.get("base_url"))
     now_ms = int(ctx.wall_clock() * 1000)
-    return {"type": "oauth", "access": key, "refresh": identity_token, "issued_at": now_ms,
-            "lifetime_s": KEY_LIFETIME_S, "expires": int(now_ms + KEY_LIFETIME_S * 1000)}
+    material: Material = {"type": "oauth", "access": key, "refresh": identity_token, "issued_at": now_ms,
+                          "lifetime_s": KEY_LIFETIME_S, "expires": int(now_ms + KEY_LIFETIME_S * 1000)}
+    if base_url is not None:
+        material["base_url"] = base_url
+    return material, reply.body
 
 
 class MetaFlow(ProviderFlow):
@@ -111,13 +160,15 @@ class MetaFlow(ProviderFlow):
             raise LoginDenied(f"Meta device token request failed (HTTP {reply.status})")
 
         identity = run_device_flow(ctx, poll, interval_s=interval, expires_in_s=expires_in)
-        return LoginResult(material=_mint(ctx, identity), label="Meta (Muse subscription)", renewal="remint")
+        return _result(*_mint(ctx, identity))
 
     def renew(self, ctx: LoginContext, material: Material, settings: dict[str, str]) -> LoginResult:
         identity = material.get("refresh")
         if not isinstance(identity, str) or not identity:
             raise LoginDenied("Meta credential has no identity token to re-mint with")
-        return LoginResult(material=_mint(ctx, identity), label="Meta (Muse subscription)", renewal="remint")
+        return _result(*_mint(ctx, identity))
 
     def request_auth(self, material: Material, settings: dict[str, str]) -> RequestAuth:
-        return RequestAuth(credential=ApiKey(material["access"]))
+        base_url = material.get("base_url")
+        return RequestAuth(credential=ApiKey(material["access"]),
+                           base_url=base_url if isinstance(base_url, str) and base_url else None)
