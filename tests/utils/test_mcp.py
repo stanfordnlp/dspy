@@ -55,6 +55,13 @@ def test_text_result_mode_preserves_non_text_block_positions():
 
 
 @pytest.mark.extra
+def test_single_empty_text_block_returns_empty_list():
+    from mcp.types import CallToolResult, TextContent
+
+    assert _convert_mcp_tool_result(CallToolResult(content=[TextContent(type="text", text="")])) == []
+
+
+@pytest.mark.extra
 def test_convert_mcp_tool_result_supports_both_field_styles_without_changing_results():
     camel_result = make_call_tool_result("camel", texts=["hi"], structured={"result": "ignored"})
     snake_result = make_call_tool_result("snake", texts=["a", "b"], structured={"result": "ignored"})

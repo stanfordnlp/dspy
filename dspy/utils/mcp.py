@@ -47,7 +47,7 @@ def _convert_mcp_tool_result(
         return [content for content in contents if not isinstance(content, TextContent)]
 
     if len(contents) == 1:
-        return text_contents[0].text
+        return text_contents[0].text or []
 
     # Interleave non-text blocks back into their original positions, so two
     # different tool results can never collapse to the same value.
