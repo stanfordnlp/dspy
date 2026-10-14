@@ -236,7 +236,7 @@ def test_call_runs_predictor_via_host_lm() -> None:
     flex = _bridged_flex()
     inv = flex._bridge.invocation()
     inv.construct("ChainOfThought", "value: int -> result: int", "solve", {})
-    dspy.configure(lm=DummyLM([{"reasoning": "two doubled is four", "result": "4"}]))
+    dspy.configure(lm=DummyLM([{"plan": "two doubled is four", "result": "4"}]))
     fields = inv.call("solve", {"value": 2})
     assert fields["result"] == 4
     assert "reasoning" in fields
@@ -416,7 +416,7 @@ def test_max_predictor_calls_is_plumbed_to_bridge() -> None:
 def test_predictor_call_budget_is_enforced() -> None:
     # The budget lives in the per-forward _Invocation, so every forward starts fresh.
     flex = _bridged_flex_with(max_predictor_calls=2)
-    dspy.configure(lm=DummyLM([{"reasoning": "r", "result": str(i)} for i in range(3)]))
+    dspy.configure(lm=DummyLM([{"plan": "r", "result": str(i)} for i in range(3)]))
     inv = flex._bridge.invocation()
     inv.construct("ChainOfThought", "value: int -> result: int", "solve", {})
     inv.call("solve", {"value": 1})  # 1st
@@ -432,7 +432,7 @@ def test_predictor_call_budget_is_enforced() -> None:
 def test_predictor_call_budget_can_be_disabled() -> None:
     flex = _bridged_flex_with(max_predictor_calls=None)
     assert flex._bridge._max_predictor_calls is None
-    dspy.configure(lm=DummyLM([{"reasoning": "r", "result": str(i)} for i in range(5)]))
+    dspy.configure(lm=DummyLM([{"plan": "r", "result": str(i)} for i in range(5)]))
     inv = flex._bridge.invocation()
     inv.construct("ChainOfThought", "value: int -> result: int", "solve", {})
     for _ in range(5):  # no cap -> all calls go through
@@ -611,7 +611,7 @@ COT_GLUE_MODULE = textwrap.dedent(
 
 @deno_required
 def test_optimized_cot_runs_in_sandbox_with_lm_bridged() -> None:
-    dspy.configure(lm=DummyLM([{"reasoning": "double of 21 is 42", "result": "the result is 42"}]))
+    dspy.configure(lm=DummyLM([{"plan": "double of 21 is 42", "result": "the result is 42"}]))
     flex = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
     flex._bind_code(COT_GLUE_MODULE)
     # forward() runs entirely in the sandbox; self.solve(...) bridges to the host DummyLM, and the
@@ -672,7 +672,7 @@ def test_forward_runs_on_a_fresh_instance_each_call() -> None:
 
 @deno_required
 def test_bridged_program_survives_save_load(tmp_path) -> None:
-    dspy.configure(lm=DummyLM([{"reasoning": "double of 21 is 42", "result": "the result is 42"}]))
+    dspy.configure(lm=DummyLM([{"plan": "double of 21 is 42", "result": "the result is 42"}]))
     program = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
     path = tmp_path / "prog.json"
     program._bind_code(COT_GLUE_MODULE)
@@ -730,7 +730,7 @@ RUNAWAY_MODULE = textwrap.dedent(
 
 @deno_required
 def test_runaway_glue_is_stopped_by_budget_in_sandbox() -> None:
-    dspy.configure(lm=DummyLM([{"reasoning": "r", "result": "1"} for _ in range(50)]))
+    dspy.configure(lm=DummyLM([{"plan": "r", "result": "1"} for _ in range(50)]))
     flex = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter(), max_predictor_calls=3)
     flex._bind_code(RUNAWAY_MODULE)
     with pytest.raises(Exception) as excinfo:  # the budget error propagates out of the sandbox
@@ -814,7 +814,7 @@ def test_bridged_codeact_runs_in_flex_sandbox() -> None:
         lm=DummyLM(
             [
                 {"generated_code": "```python\nprint(shout('hello'))\n```", "finished": True},
-                {"reasoning": "the code printed HELLO", "out": "HELLO"},
+                {"plan": "the code printed HELLO", "out": "HELLO"},
             ]
         )
     )
@@ -854,7 +854,7 @@ def test_bridged_react_runs_in_flex_sandbox() -> None:
             [
                 {"next_thought": "shout it", "next_tool_name": "shout", "next_tool_args": {"text": "hello"}},
                 {"next_thought": "done", "next_tool_name": "finish", "next_tool_args": {}},
-                {"reasoning": "the tool returned HELLO", "out": "HELLO"},
+                {"plan": "the tool returned HELLO", "out": "HELLO"},
             ]
         )
     )
@@ -935,8 +935,8 @@ def test_nested_rlm_tool_provenance() -> None:
     dspy.configure(
         lm=DummyLM(
             [
-                {"reasoning": "probe here, then spawn the sub-agent", "code": outer_code},
-                {"reasoning": "probe from the sub-agent", "code": inner_code},
+                {"plan": "probe here, then spawn the sub-agent", "code": outer_code},
+                {"plan": "probe from the sub-agent", "code": inner_code},
             ]
         )
     )
