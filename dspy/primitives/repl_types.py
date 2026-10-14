@@ -107,7 +107,18 @@ class REPLEntry(pydantic.BaseModel):
     code: str
     output: str
 
+    max_output_chars: int
+
     model_config = pydantic.ConfigDict(frozen=True)
+
+    @pydantic.field_validator("reasoning", mode="before")
+    @classmethod
+    def _coerce_reasoning(cls, value: Any) -> str:
+        # The RLM's internal action signature types `reasoning` as `dspy.Reasoning`, so predictions carry a Reasoning
+        # object rather than a plain str. Store its text so history entries stay plain strings.
+        if value is None:
+            return ""
+        return str(value)
 
     @staticmethod
     def format_output(output: str, max_output_chars: int = 10_000) -> str:
@@ -118,13 +129,78 @@ class REPLEntry(pydantic.BaseModel):
             tail_chars = max_output_chars - head_chars if max_output_chars > 0 else head_chars
             omitted = raw_len - max_output_chars
             output = output[:head_chars] + f"\n\n... ({omitted:,} characters omitted) ...\n\n" + output[-tail_chars:]
-        return f"Output ({raw_len:,} chars):\n{output}"
+        return output
 
-    def format(self, index: int, max_output_chars: int = 10_000) -> str:
+    def format(self, index: int) -> str:
         """Format this entry for inclusion in prompts."""
         reasoning_line = f"Reasoning: {self.reasoning}\n" if self.reasoning else ""
         code_block = f"```python\n{self.code}\n```"
-        return f"=== Step {index + 1} ===\n{reasoning_line}Code:\n{code_block}\n{self.format_output(self.output, max_output_chars)}"
+        return f"=== Step {index + 1} ===\n{reasoning_line}Code:\n{code_block}\n{self.format_output(self.output, self.max_output_chars)}"
+
+
+REPL_ENTRY_KEY = "repl_entry"
+
+
+class ExtractFallbackMarker(pydantic.BaseModel):
+    """Stored under `REPL_ENTRY_KEY` on the extract-fallback event, which records final outputs without any REPL
+    execution. A distinct type (rather than `None`) keeps RLM events distinguishable from application messages that
+    happen to carry a field with the same name."""
+
+    model_config = pydantic.ConfigDict(frozen=True)
+
+
+EXTRACT_FALLBACK = ExtractFallbackMarker()
+
+
+def build_repl_event(
+    inputs: dict[str, Any] | None,
+    repl_entry: REPLEntry | ExtractFallbackMarker,
+    outputs: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build one RLM conversation-history event.
+
+    This is the single definition of the event layout that `split_repl_event` reads back: the RLM's own input fields
+    (only on the first iteration of a turn) come first, then the REPL entry under `REPL_ENTRY_KEY`, then the RLM's
+    output fields (only on the final iteration). Key order is what lets a reader that does not know the RLM's outer
+    signature tell inputs from outputs.
+
+    `repl_entry` is a `REPLEntry` for an executed iteration, or `EXTRACT_FALLBACK` for the extract-fallback event.
+    """
+    event: dict[str, Any] = dict(inputs or {})
+    event[REPL_ENTRY_KEY] = repl_entry
+    event.update(outputs or {})
+    return event
+
+
+def is_repl_event(message: dict[str, Any]) -> bool:
+    """Whether `message` was built by `build_repl_event`.
+
+    Checks the value type, not just the key, so an ordinary history message that stores application data under
+    `REPL_ENTRY_KEY` is not mistaken for an RLM event.
+    """
+    return isinstance(message.get(REPL_ENTRY_KEY), (REPLEntry, ExtractFallbackMarker))
+
+
+def split_repl_event(
+    message: dict[str, Any],
+) -> tuple[dict[str, Any], REPLEntry | ExtractFallbackMarker, dict[str, Any]]:
+    """Split a conversation-history event built by `build_repl_event` into (inputs, repl_entry, outputs).
+
+    Keys before `REPL_ENTRY_KEY` are inputs and keys after it are outputs.
+
+    Raises:
+        ValueError: If `message` is not an RLM event (check with `is_repl_event` first).
+    """
+    if not is_repl_event(message):
+        raise ValueError(
+            f"Not an RLM history event: `{REPL_ENTRY_KEY}` missing or not a REPLEntry. Keys: {list(message)}"
+        )
+    names = list(message)
+    entry_index = names.index(REPL_ENTRY_KEY)
+
+    inputs = {name: message[name] for name in names[:entry_index]}
+    outputs = {name: message[name] for name in names[entry_index + 1 :]}
+    return inputs, message[REPL_ENTRY_KEY], outputs
 
 
 class REPLHistory(pydantic.BaseModel):
@@ -141,7 +217,7 @@ class REPLHistory(pydantic.BaseModel):
     def format(self) -> str:
         if not self.entries:
             return "You have not interacted with the REPL environment yet."
-        return "\n".join(entry.format(index=i, max_output_chars=self.max_output_chars) for i, entry in enumerate(self.entries))
+        return "\n".join(entry.format(index=i) for i, entry in enumerate(self.entries))
 
     @pydantic.model_serializer()
     def serialize_model(self) -> str:
@@ -149,7 +225,7 @@ class REPLHistory(pydantic.BaseModel):
 
     def append(self, *, reasoning: str = "", code: str, output: str) -> REPLHistory:
         """Return a new REPLHistory with the entry appended."""
-        new_entry = REPLEntry(reasoning=reasoning, code=code, output=output)
+        new_entry = REPLEntry(reasoning=reasoning, code=code, output=output, max_output_chars=self.max_output_chars)
         return REPLHistory(entries=list(self.entries) + [new_entry], max_output_chars=self.max_output_chars)
 
     def __len__(self) -> int:
