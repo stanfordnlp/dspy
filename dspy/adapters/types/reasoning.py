@@ -60,9 +60,9 @@ class Reasoning(Type):
             # reasoning effort is set in `lm_kwargs` or `lm.kwargs`.
             reasoning_effort = "low"
 
-        if reasoning_effort is None or not lm.supports_reasoning:
-            # If users explicitly set `reasoning_effort` to None or the LM doesn't support reasoning, we don't enable
-            # native reasoning.
+        if reasoning_effort in (None, "none") or not lm.supports_reasoning:
+            # If users explicitly turn reasoning off (None, or OpenAI's "none") or the LM doesn't support reasoning,
+            # we don't enable native reasoning and keep the reasoning field in the signature.
             return signature
 
         if "gpt-5" in lm.model and lm.model_type == "chat":
