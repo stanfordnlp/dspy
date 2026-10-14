@@ -52,10 +52,10 @@ def test_pot_code_generation(pooled_interpreter):
     lm = DummyLM(
         [
             {
-                "reasoning": "Reason_A",
+                "plan": "Reason_A",
                 "generated_code": "```python\nresult = 1+1\nSUBMIT({'answer': result})\n```",
             },
-            {"reasoning": "Reason_B", "answer": "2"},
+            {"plan": "Reason_B", "answer": "2"},
         ]
     )
     dspy.configure(lm=lm)
@@ -69,8 +69,8 @@ def test_pot_code_generation(pooled_interpreter):
 def test_old_style_pot(pooled_interpreter):
     lm = DummyLM(
         [
-            {"reasoning": "Reason_A", "generated_code": "```python\nresult = 1+1\n```"},
-            {"reasoning": "Reason_B", "answer": "2"},
+            {"plan": "Reason_A", "generated_code": "```python\nresult = 1+1\n```"},
+            {"plan": "Reason_B", "answer": "2"},
         ]
     )
     dspy.configure(lm=lm)
@@ -90,10 +90,10 @@ def test_pot_support_multiple_fields(pooled_interpreter):
     lm = DummyLM(
         [
             {
-                "reasoning": "Reason_A",
+                "plan": "Reason_A",
                 "generated_code": "```python\nmaximum = 6\nminimum = 2\nSUBMIT({'maximum': maximum, 'minimum': minimum})\n```",
             },
-            {"reasoning": "Reason_B", "maximum": "6", "minimum": "2"},
+            {"plan": "Reason_B", "maximum": "6", "minimum": "2"},
         ]
     )
     dspy.configure(lm=lm)
@@ -108,14 +108,14 @@ def test_pot_code_generation_with_one_error(pooled_interpreter):
     lm = DummyLM(
         [
             {
-                "reasoning": "Reason_A",
+                "plan": "Reason_A",
                 "generated_code": "```python\nresult = 1+0/0\nSUBMIT({'answer': result})\n```",
             },
             {
-                "reasoning": "Reason_B",
+                "plan": "Reason_B",
                 "generated_code": "```python\nresult = 1+1\nSUBMIT({'answer': result})\n```",
             },
-            {"reasoning": "Reason_C", "answer": "2"},
+            {"plan": "Reason_C", "answer": "2"},
         ]
     )
     dspy.configure(lm=lm)
@@ -240,7 +240,7 @@ def test_pot_code_generation_persistent_errors():
     lm = DummyLM(
         [
             {
-                "reasoning": "Reason_A",
+                "plan": "Reason_A",
                 "generated_code": "```python\nresult = 1+0/0\nSUBMIT({'answer': result})\n```",
             },
         ]
@@ -257,7 +257,7 @@ def test_pot_code_parse_error():
     max_iters = 3
     lm = DummyLM(
         [
-            {"reasoning": "Reason_A", "generated_code": "```python\ninvalid=python=code\n```"},
+            {"plan": "Reason_A", "generated_code": "```python\ninvalid=python=code\n```"},
         ]
         * max_iters
     )
