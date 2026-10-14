@@ -69,7 +69,9 @@ class XMLAdapter(ChatAdapter):
         }
         messages = [prefix, self.format_field_with_value(fields)]
         if main_request:
-            messages.append(self.user_message_output_requirements(signature))
+            output_requirements = self.user_message_output_requirements(signature)
+            if output_requirements is not None:
+                messages.append(output_requirements)
         return "\n\n".join((*messages, suffix)).strip()
 
     def format_assistant_message_content(
@@ -81,7 +83,9 @@ class XMLAdapter(ChatAdapter):
         }
         return self.format_field_with_value(fields)
 
-    def user_message_output_requirements(self, signature: type[Signature]) -> str:
+    def user_message_output_requirements(self, signature: type[Signature]) -> str | None:
+        if not signature.output_fields:
+            return None
         fields = ", then ".join(f"`<{name}>`" for name in signature.output_fields)
         schemas = [
             self._xml_schema(name, field.annotation)

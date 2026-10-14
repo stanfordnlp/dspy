@@ -1228,10 +1228,7 @@ def test_chat_adapter_format_exact_messages_and_lm_kwargs_with_native_tool_calli
                  "        Given the fields `question`, `tools`, produce the fields `tool_calls`."},
      {"role": "user",
       "content": "[[ ## question ## ]]\n"
-                 "Q?\n"
-                 "\n"
-                 "Respond with the corresponding output fields, starting with the field , and then "
-                 "ending with the marker for `[[ ## completed ## ]]`."}]
+                 "Q?"}]
     assert messages == expected_messages
     expected_lm_kwargs = {"tools": [{"type": "function",
                 "function": {"name": "search",

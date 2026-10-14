@@ -18,7 +18,6 @@ from dspy.adapters.utils import (
     translate_field_type,
 )
 from dspy.clients.base_lm import BaseLM
-from dspy.clients.capabilities import with_capability_planning
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError
@@ -57,6 +56,9 @@ class JSONAdapter(ChatAdapter):
         """Choose a format before execution; schema fallback never encloses an LM call."""
         if "response_format" not in lm.supported_params:
             return
+        if not signature.output_fields:
+            # Every output is delivered natively, so there is no JSON for the LM to produce.
+            return
         has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
         if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls) or not lm.supports_response_schema:
             lm_kwargs["response_format"] = {"type": "json_object"}
@@ -68,29 +70,17 @@ class JSONAdapter(ChatAdapter):
             format_ = {"type": "json_object"}
         lm_kwargs["response_format"] = format_
 
-    @with_capability_planning
-    def __call__(
+    def _call_preprocess(
         self,
         lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
-        demos: list[dict[str, Any]],
         inputs: dict[str, Any],
-    ) -> list[dict[str, Any]]:
+    ) -> type[Signature]:
+        # Build the response format from the render signature so natively handled fields stay out of the schema.
+        signature = super()._call_preprocess(lm, lm_kwargs, signature, inputs)
         self._prepare_response_format(lm, lm_kwargs, signature)
-        return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-
-    @with_capability_planning
-    async def acall(
-        self,
-        lm: BaseLM,
-        lm_kwargs: dict[str, Any],
-        signature: type[Signature],
-        demos: list[dict[str, Any]],
-        inputs: dict[str, Any],
-    ) -> list[dict[str, Any]]:
-        self._prepare_response_format(lm, lm_kwargs, signature)
-        return await super().acall(lm, lm_kwargs, signature, demos, inputs)
+        return signature
 
     def format_field_structure(self, signature: type[Signature]) -> str:
         parts = []
@@ -111,7 +101,10 @@ class JSONAdapter(ChatAdapter):
         parts.append(format_signature_fields_for_instructions(signature.output_fields, role="assistant"))
         return "\n\n".join(parts).strip()
 
-    def user_message_output_requirements(self, signature: type[Signature]) -> str:
+    def user_message_output_requirements(self, signature: type[Signature]) -> str | None:
+        if not signature.output_fields:
+            return None
+
         def type_info(v):
             if v.annotation == ToolCalls:
                 return ' (must be a JSON object like {"tool_calls": [{"name": "...", "args": {...}}]})'

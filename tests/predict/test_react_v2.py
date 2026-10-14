@@ -305,6 +305,46 @@ class ParallelNativeToolLM(dspy.BaseLM):
         )
 
 
+class NativeToolAndReasoningLM(NativeToolLM):
+    @property
+    def supports_reasoning(self):
+        return True
+
+    @property
+    def supports_response_schema(self):
+        return True
+
+    @property
+    def supported_params(self):
+        return {"response_format"}
+
+    def forward(self, prompt=None, messages=None, **kwargs):
+        response = super().forward(prompt=prompt, messages=messages, **kwargs)
+        response.choices[0].message.reasoning_content = "Thinking natively."
+        return response
+
+
+def test_react_v2_json_adapter_omits_json_requirements_when_outputs_are_native():
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = NativeToolAndReasoningLM()
+
+    with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
+        pred = dspy.ReActV2("question -> answer", tools=[lookup])(question="cats")
+
+    assert pred.answer == "found cats"
+    assert len(lm.calls) == 2
+    for call in lm.calls:
+        assert call["kwargs"]["reasoning_effort"] == "low"
+        assert "response_format" not in call["kwargs"]
+        assert not any(
+            "Respond with a JSON object" in (message.get("content") or "")
+            for message in call["messages"]
+            if isinstance(message.get("content"), str)
+        )
+
+
 def test_react_v2_native_tool_loop_replays_tool_result_with_provider_id():
     def lookup(query: str) -> str:
         return f"found {query}"
