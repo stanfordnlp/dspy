@@ -81,9 +81,28 @@ def InputField(**kwargs): # noqa: N802
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="input"))
 
 
+class DeclaredConstraints:
+    """The constraints passed as OutputField kwargs, kept apart from any `Annotated[..., Field(...)]` ones.
+
+    Stored in `FieldInfo.metadata` so it survives signature rebuilds (e.g. `prepend`). It has no pydantic
+    hooks, so it never affects validation or reaches a JSON schema.
+    """
+
+    __slots__ = ("constraints",)
+
+    def __init__(self, constraints):
+        self.constraints = constraints
+
+    def __repr__(self):
+        return f"DeclaredConstraints({list(self.constraints)})"
+
+
 def OutputField(**kwargs): # noqa: N802
     _warn_deprecated_field_args(**kwargs)
-    return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="output"))
+    field = pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="output"))
+    if field.metadata:
+        field.metadata.append(DeclaredConstraints(tuple(field.metadata)))
+    return field
 
 
 def new_to_old_field(field):

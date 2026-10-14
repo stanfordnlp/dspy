@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, get_origin
+from typing import Annotated, Any, get_origin
 
 import json_repair
 import pydantic
@@ -19,6 +19,7 @@ from dspy.adapters.utils import (
 )
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.capabilities import with_capability_planning
+from dspy.signatures.field import DeclaredConstraints
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError
@@ -237,6 +238,13 @@ def _get_structured_outputs_response_format(
             # Skip ToolCalls field if native function calling is enabled.
             continue
         default = field.default if hasattr(field, "default") else ...
+        # Passing only (annotation, default) drops the constraints declared as
+        # OutputField kwargs (ge/le/gt/lt, multiple_of, pattern, min_length/max_length),
+        # so the schema stops asking the provider to honor a bound the prompt still
+        # states. Re-attach just those: the whole FieldInfo would also carry the alias
+        # and description, and `Annotated` metadata keeps its existing schema behavior.
+        declared = next((m for m in field.metadata if isinstance(m, DeclaredConstraints)), None)
+        annotation = Annotated[(annotation, *declared.constraints)] if declared else annotation
         fields[name] = (annotation, default)
 
     # Build the model with extra fields forbidden.
