@@ -158,6 +158,14 @@ If the loop reaches `max_iters`, returns no calls, fails to parse, or exceeds th
 
 Unlike ReAct, ReActV2 does not currently truncate old history events on context overflow.
 
+### Turn budget
+
+By default, ReActV2 tells the model how many turns it has. The instructions say the run has a limited number of turns and must end with `submit`, and every LM call carries a `turn_budget` input showing the current turn, for example `Turn 3 of 10 (7 more after this one).`. The count follows the effective `max_iters`, including a per-call override. The forced final call shows ``No turns remain. Call `submit` now with your final outputs.``
+
+`turn_budget` is rendered only in the newest user message and is never stored in `history`, so earlier turns' counts are not replayed and the cached history prefix stays unchanged. Pass `show_turn_budget=False` to hide the budget. While it is enabled, `turn_budget` is a reserved field name.
+
+Showing an agent its remaining budget follows [Budget-Aware Tool-Use Enables Effective Agent Scaling](https://arxiv.org/abs/2511.17006), where a per-step budget status let ReAct agents keep improving with larger tool budgets at lower cost.
+
 ### Prompt-caching behavior
 
 Structured history makes each completed turn an append-only message group. On the next request, the system instructions and all earlier user/assistant/tool messages remain a stable prefix; only the newest result and request are appended. Providers with prompt caching can therefore reuse more of the prior request instead of reprocessing one ever-growing, newly formatted trajectory value.
@@ -200,8 +208,8 @@ Runs the synchronous or asynchronous loop and returns output fields plus `trajec
 **`ReAct.truncate_trajectory(trajectory)`**
 Drops the oldest complete tool-call group after a context-window error. Override to change the policy.
 
-**`dspy.ReActV2(signature, tools, max_iters=20)`**
-Runs the experimental structured-history loop and reserves `submit` for final outputs.
+**`dspy.ReActV2(signature, tools, max_iters=20, show_turn_budget=True)`**
+Runs the experimental structured-history loop and reserves `submit` for final outputs. With `show_turn_budget=True`, each call shows the model its current turn and how many remain.
 
 **`ReActV2.forward(history=None, max_iters=None, **inputs)`**
 Accepts optional continuation history and a per-call iteration override. Returns `history` and `termination_reason` alongside outputs when submission succeeds.

@@ -368,6 +368,80 @@ def test_react_v2_rejects_reserved_input_field_names(reserved):
         dspy.ReActV2(f"{reserved}: str -> answer: str", tools=[])
 
 
+def _lookup_turn(query):
+    return {
+        "next_thought": f"Look up {query}.",
+        "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": query}}]),
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_async", [False, True])
+async def test_react_v2_shows_current_turn_budget_each_call(use_async):
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = dspy.utils.DummyLM(
+        [
+            _lookup_turn("cats"),
+            _lookup_turn("dogs"),
+            {
+                "next_thought": "Out of turns.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "pets"}}]),
+            },
+        ]
+    )
+    react = dspy.ReActV2("question -> answer", tools=[lookup], max_iters=20)
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        if use_async:
+            pred = await react.acall(question="pets", max_iters=2)
+        else:
+            pred = react(question="pets", max_iters=2)
+
+    assert pred.termination_reason == "forced_submit"
+    assert "`turn_budget` shows your current turn" in lm.history[0]["messages"][0]["content"]
+    expected = [
+        "Turn 1 of 2 (1 more after this one).",
+        "Turn 2 of 2 (this is your last turn).",
+        "No turns remain. Call `submit` now with your final outputs.",
+    ]
+    for call, budget in zip(lm.history, expected, strict=True):
+        current_message = call["messages"][-1]["content"]
+        assert f"[[ ## turn_budget ## ]]\n{budget}" in current_message
+        # Only the current turn's budget is shown; earlier counts are not replayed from history.
+        conversation = "".join(message["content"] for message in call["messages"][1:])
+        assert conversation.count("[[ ## turn_budget ## ]]") == 1
+    assert all("turn_budget" not in event for event in pred.history.messages)
+
+
+def test_react_v2_turn_budget_can_be_disabled():
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "Done.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "done"}}]),
+            }
+        ]
+    )
+    react = dspy.ReActV2("question -> answer", tools=[], show_turn_budget=False)
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = react(question="cats")
+
+    assert pred.answer == "done"
+    assert "turn_budget" not in react.react.signature.input_fields
+    assert all("turn_budget" not in message["content"] for message in lm.history[0]["messages"])
+
+
+def test_react_v2_reserves_turn_budget_field_name():
+    with pytest.raises(ValueError, match="turn_budget"):
+        dspy.ReActV2("question, turn_budget -> answer", tools=[])
+
+    react = dspy.ReActV2("question, turn_budget -> answer", tools=[], show_turn_budget=False)
+    assert "turn_budget" in react.react.signature.input_fields
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("use_async", [False, True])
 @pytest.mark.parametrize("break_reason", ["max_iters", "empty_tool_calls", "parse_error", "context_window_exceeded"])

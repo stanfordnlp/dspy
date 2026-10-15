@@ -25,6 +25,11 @@ _RESERVED_PREDICTION_KEYS = frozenset({"history", "termination_reason"})
 # and popped out of the caller's kwargs by `forward`/`aforward`, so it must be rejected.
 _RESERVED_INPUT_KEYS = frozenset({"history", "tools"})
 
+# Per-turn input that tells the model where it is in its turn budget. It is passed on every
+# LM call but never stored in history, so only the current turn's count is visible.
+_TURN_BUDGET_FIELD = "turn_budget"
+_FINAL_TURN_BUDGET = "No turns remain. Call `submit` now with your final outputs."
+
 if TYPE_CHECKING:
     from dspy.signatures.signature import Signature
 
@@ -42,12 +47,21 @@ class ReActV2(Module):
         signature: The signature defining the agent's inputs and outputs.
         tools: Functions, callable objects, or ``dspy.Tool`` instances available to the agent.
         max_iters: Maximum number of tool-calling turns before a final submit attempt.
+        show_turn_budget: Whether to show the model its current turn and how many turns
+            remain on every call, so it can plan around the ``max_iters`` limit.
     """
 
-    def __init__(self, signature: type[Signature], tools: list[Callable | Tool], max_iters: int = 20):
+    def __init__(
+        self,
+        signature: type[Signature],
+        tools: list[Callable | Tool],
+        max_iters: int = 20,
+        show_turn_budget: bool = True,
+    ):
         super().__init__()
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
+        self.show_turn_budget = show_turn_budget
 
         reserved_outputs = _RESERVED_PREDICTION_KEYS.intersection(self.signature.output_fields)
         if reserved_outputs:
@@ -55,6 +69,11 @@ class ReActV2(Module):
             raise ValueError(
                 f"Output field name(s) {names} are reserved by ReActV2 and attached to every "
                 "returned Prediction. Rename these output fields on your signature."
+            )
+        if show_turn_budget and _TURN_BUDGET_FIELD in self.signature.fields:
+            raise ValueError(
+                f"Field name `{_TURN_BUDGET_FIELD}` is reserved by ReActV2 when `show_turn_budget=True`. "
+                "Rename this field on your signature or pass `show_turn_budget=False`."
             )
 
         reserved_inputs = _RESERVED_INPUT_KEYS.intersection(self.signature.input_fields)
@@ -106,21 +125,30 @@ class ReActV2(Module):
 
         fields["history"] = (dspy.History, dspy.InputField())
         fields["tools"] = (list[dspy.Tool], dspy.InputField())
+        if self.show_turn_budget:
+            fields[_TURN_BUDGET_FIELD] = (
+                str,
+                dspy.InputField(desc="Your current turn and how many turns remain before you must submit."),
+            )
         fields["next_thought"] = (dspy.Reasoning, dspy.OutputField())
         fields["tool_calls"] = (dspy.ToolCalls, dspy.OutputField())
 
         inputs = ", ".join(f"`{name}`" for name in self.signature.input_fields)
         outputs = ", ".join(f"`{name}`" for name in self.signature.output_fields)
         tool_names = ", ".join(f"`{name}`" for name in self.tools)
-        instructions = "\n".join(
-            [
-                self.signature.instructions,
-                f"You are an Agent. Use the supplied tools to produce {outputs} from {inputs}.",
-                "Call tools when more information is needed.",
-                f"When the final answer is ready, call `submit` with {outputs}.",
-                f"The available tools are: {tool_names}.",
-            ]
-        ).strip()
+        instruction_lines = [
+            self.signature.instructions,
+            f"You are an Agent. Use the supplied tools to produce {outputs} from {inputs}.",
+            "Call tools when more information is needed.",
+            f"When the final answer is ready, call `submit` with {outputs}.",
+            f"The available tools are: {tool_names}.",
+        ]
+        if self.show_turn_budget:
+            instruction_lines.append(
+                f"You have a limited number of turns; `{_TURN_BUDGET_FIELD}` shows your current turn and how many "
+                f"remain. After the last turn, you must call `submit` with {outputs}."
+            )
+        instructions = "\n".join(instruction_lines).strip()
 
         return dspy.Signature(fields, instructions)
 
@@ -135,6 +163,7 @@ class ReActV2(Module):
                 pred = self.react(
                     history=history,
                     tools=list(self.tools.values()),
+                    **self._turn_budget_inputs(turn_index, max_iters),
                     **pending_inputs,
                 )
                 tool_calls = _coerce_tool_calls(getattr(pred, "tool_calls", None))
@@ -175,6 +204,7 @@ class ReActV2(Module):
                 pred = await self.react.acall(
                     history=history,
                     tools=list(self.tools.values()),
+                    **self._turn_budget_inputs(turn_index, max_iters),
                     **pending_inputs,
                 )
                 tool_calls = _coerce_tool_calls(getattr(pred, "tool_calls", None))
@@ -203,6 +233,17 @@ class ReActV2(Module):
                 return Prediction(**final_outputs, history=history, termination_reason="submit")
 
         return await self._aforced_submit(history, pending_inputs, break_reason, max_iters)
+
+    def _turn_budget_inputs(self, turn_index: int | None, max_iters: int | None) -> dict[str, str]:
+        """Build the per-call turn budget input; ``turn_index=None`` marks the forced final submit."""
+        if not self.show_turn_budget:
+            return {}
+        if turn_index is None:
+            return {_TURN_BUDGET_FIELD: _FINAL_TURN_BUDGET}
+        turn = turn_index + 1
+        remaining = max_iters - turn
+        after = "this is your last turn" if remaining == 0 else f"{remaining} more after this one"
+        return {_TURN_BUDGET_FIELD: f"Turn {turn} of {max_iters} ({after})."}
 
     def _execute_tool_calls(self, tool_calls: ToolCalls) -> tuple[ToolCallResults, dict[str, Any] | None]:
         values = []
@@ -281,6 +322,7 @@ class ReActV2(Module):
                     "tool_choice": {"type": "function", "function": {"name": "submit"}},
                     "reasoning_effort": None,
                 },
+                **self._turn_budget_inputs(None, None),
                 **pending_inputs,
             )
             tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
@@ -321,6 +363,7 @@ class ReActV2(Module):
                     "tool_choice": {"type": "function", "function": {"name": "submit"}},
                     "reasoning_effort": None,
                 },
+                **self._turn_budget_inputs(None, None),
                 **pending_inputs,
             )
             tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
