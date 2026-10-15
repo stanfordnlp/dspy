@@ -1095,6 +1095,7 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
     provider = resolution.provider
     original_definition, original_extra, original_url = definition, dict(extra), base_url
     saved = None
+    connection = None
     api_key, explicit = _api_keys_entry(config, provider, adapters)
     named = _credentials_entry(config, provider)
     origin: str | None = None
@@ -1143,7 +1144,8 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
         from .cloud.hosts import resolve_settings
 
         env = config.env if config.env is not None else os.environ
-        given = (config.settings or {}).get(provider)
+        given = dict(connection.settings) if connection is not None else {}
+        given.update(_settings_entry(config, provider) or {})
         ctx = ChainContext.online(env)
         settings = resolve_settings(definition.access.host, given, env, provider=provider,
                                     profile=profile_settings(definition.access, ctx), endpoint=base_url)
