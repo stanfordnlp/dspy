@@ -342,6 +342,21 @@ class LM(BaseLM):
         return capabilities(self).response_schema
 
     @property
+    def supports_decision_requests(self) -> bool:
+        """Whether the engine accepts typed System One judgments instead of chat prompts."""
+        from dspy.clients.capabilities import resolve
+        from dspy.lm15 import UnknownModelError, UnsupportedFeatureError
+
+        if not isinstance(self.engine, str):
+            return getattr(self.engine, "supports_decision_requests", False) is True
+        if self.engine == "litellm":
+            return False
+        try:
+            return resolve(self).provider == "typesafe"
+        except (UnknownModelError, UnsupportedFeatureError):
+            return False
+
+    @property
     def supported_params(self) -> set[str]:
         from dspy.clients.capabilities import capabilities
 
@@ -834,4 +849,3 @@ def _add_dspy_identifier_to_headers(headers: dict[str, Any] | None = None):
         "User-Agent": f"DSPy/{dspy.__version__}",
         **headers,
     }
-
