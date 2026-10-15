@@ -17,7 +17,7 @@ import sys
 import pytest
 
 import dspy
-from dspy.lm15 import Message, Response, Usage
+from dspy.lm15 import Message, Request, Response, Usage
 
 
 class Echo:
@@ -90,9 +90,9 @@ async def test_client_settings_are_refused_on_every_call(setting):
     with pytest.raises(ValueError, match=refused):
         await lm.acall("hi", **setting)
     with pytest.raises(ValueError, match=refused):
-        lm.forward("hi", **setting)
+        lm(Request(model=lm.model, messages=(Message.user("hi"),)), **setting)
     with pytest.raises(ValueError, match=refused):
-        await lm.aforward("hi", **setting)
+        await lm.acall(Request(model=lm.model, messages=(Message.user("hi"),)), **setting)
     assert not lm.history  # refused before any attempt or cache entry
     assert lm("hi") == ["echo:t"]
 

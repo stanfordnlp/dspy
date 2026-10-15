@@ -1017,7 +1017,7 @@ def test_chat_adapter_native_preserves_caller_tools_on_ordinary_signature():
     )
 
     assert lm_kwargs["tools"] == [{"type": "function", "function": {
-        "name": "search", "description": None, "parameters": {"type": "object", "properties": {}},
+        "name": "search", "parameters": {"type": "object", "properties": {}},
     }}]
     assert lm_kwargs["tool_choice"] == "auto"
     assert lm_kwargs["parallel_tool_calls"] is True
@@ -2348,11 +2348,12 @@ def test_history_replay_preserves_previous_request_prefix(adapter):
     history = dspy.History(messages=[])
     previous = None
     for question, answer in [("What is 3+4?", "7"), ("Double that?", "14"), ("Subtract five?", "9")]:
-        messages = adapter.format(Conversation, [], {"question": question, "history": history})
+        prompt = adapter.format(Conversation, [], {"question": question, "history": history})
         if previous is not None:
-            assert messages[:len(previous)] == previous
+            assert prompt.system == previous.system
+            assert prompt.messages[:len(previous.messages)] == previous.messages
         history.messages.append({"question": question, "answer": answer})
-        previous = messages
+        previous = prompt
 
 
 def test_chat_adapter_formats_conversation_history():
@@ -2835,7 +2836,6 @@ def test_responses_model_native_tool_calling_round_trips_tool_only_output():
         {
             "type": "function",
             "name": "search",
-            "description": None,
             "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
         }
     ]
@@ -2977,6 +2977,6 @@ def test_chat_adapter_formats_pep604_union_like_typing_union():
 
     messages = dspy.ChatAdapter().format(QA, [], {"question": "How many?"})
 
-    assert "1. `answer` (Union[int, NoneType])" in messages[0]["content"]
-    assert "must be formatted as a valid Python Union[int, NoneType]" in messages[-1]["content"]
-    assert "UnionType" not in messages[0]["content"] + messages[-1]["content"]
+    assert "1. `answer` (Union[int, NoneType])" in messages.system
+    assert "must be formatted as a valid Python Union[int, NoneType]" in messages.messages[-1].text
+    assert "UnionType" not in messages.system + messages.messages[-1].text

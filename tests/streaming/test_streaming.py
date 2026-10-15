@@ -2185,7 +2185,7 @@ async def test_default_cot_fallback_streams_reasoning(adapter_type, mode):
         dspy.ChainOfThought("question -> answer"),
         stream_listeners=[dspy.streaming.StreamListener("reasoning")],
     )
-    with mock.patch("litellm.acompletion", side_effect=stream), dspy.context(lm=lm, adapter=adapter_type()):
+    with patch_litellm_streaming(side_effect=stream), dspy.context(lm=lm, adapter=adapter_type()):
         values = [value async for value in program(question="Count items", config=config)]
     chunks = [value for value in values if isinstance(value, StreamResponse)]
     assert chunks and all(c.signature_field_name == "reasoning" for c in chunks)

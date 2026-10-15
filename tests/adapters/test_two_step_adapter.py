@@ -1,6 +1,7 @@
 import pytest
 
 import dspy
+from dspy.lm15 import Message
 from tests.adapters.conftest import format_messages_and_lm_kwargs
 from tests.test_utils.engines import recording_lm
 
@@ -41,9 +42,9 @@ def test_two_step_adapter_format_conversation_history():
     messages = adapter.format_conversation_history(QA, "history", {"question": "Q3", "history": history})
 
     assert messages == [
-        {"role": "user", "content": "question: Q1"},
-        {"role": "assistant", "content": "answer: A1"},
-        {"role": "assistant", "content": "answer: A2"},
+        Message.user("question: Q1"),
+        Message.assistant("answer: A1"),
+        Message.assistant("answer: A2"),
     ]
 
 

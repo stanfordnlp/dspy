@@ -64,7 +64,7 @@ def test_timeouts_for_rejects_what_it_cannot_honour(bad):
 @pytest.mark.parametrize("asynchronous", [False, True])
 def test_timeout_reaches_the_engines_shared_transport(asynchronous):
     lm = dspy.LM("openai/gpt-4o", timeout=1800, api_key="k", cache=False)
-    call = prepare(lm, "hello", None, {})
+    call = prepare(lm, "hello", {})
 
     def check(backend):
         transport = backend.router._shared_transport()
@@ -75,7 +75,7 @@ def test_timeout_reaches_the_engines_shared_transport(asynchronous):
 
     async def run_async():
         # Async pools belong to their loop: select and close on the same one.
-        backend, _, _ = _engine(lm, call, True)
+        backend, _ = _engine(lm, call, True)
         transport = check(backend)
         await lm.aclose()
         return transport
@@ -83,7 +83,7 @@ def test_timeout_reaches_the_engines_shared_transport(asynchronous):
     if asynchronous:
         transport = asyncio.run(run_async())
     else:
-        backend, _, _ = _engine(lm, call, False)
+        backend, _ = _engine(lm, call, False)
         transport = check(backend)
         lm.close()
     assert transport._closed
@@ -91,9 +91,9 @@ def test_timeout_reaches_the_engines_shared_transport(asynchronous):
 
 def test_different_timeouts_get_different_engines_and_close_releases_them():
     lm = dspy.LM("openai/gpt-4o", api_key="k", cache=False)
-    fast, _, _ = _engine(lm, prepare(lm, "hello", None, {"timeout": 5}), False)
-    slow, _, _ = _engine(lm, prepare(lm, "hello", None, {"timeout": 500}), False)
-    again, _, _ = _engine(lm, prepare(lm, "hello", None, {"timeout": 5}), False)
+    fast, _ = _engine(lm, prepare(lm, "hello", {"timeout": 5}), False)
+    slow, _ = _engine(lm, prepare(lm, "hello", {"timeout": 500}), False)
+    again, _ = _engine(lm, prepare(lm, "hello", {"timeout": 5}), False)
     assert fast is again and fast is not slow
     assert fast.router._shared_transport()._read_timeout == 5.0
     assert slow.router._shared_transport()._read_timeout == 500.0
@@ -101,28 +101,29 @@ def test_different_timeouts_get_different_engines_and_close_releases_them():
     assert fast.router._transport is None and slow.router._transport is None
 
 
-# ─── plan() before I/O: the fallback promise, kept offline ───────────
+# ─── unrepresentable requests are refused before I/O ────────────────
 
-def test_auto_engine_falls_back_before_io_on_a_refusal(monkeypatch):
-    calls = []
+def test_auto_engine_refuses_unrepresentable_tool_result_images_before_io(monkeypatch):
+    import dspy.clients.execution as execution
+    from dspy.lm15 import ImagePart, ToolCallPart, ToolResultPart
 
-    def compatible(engine, lm, request, **context):
-        calls.append(request)
-        from dspy.clients.call_result import CallResult
-
-        return CallResult(outputs=["compatible"], response_model=lm.model)
-
-    monkeypatch.setattr(LiteLLMEngine, "complete_legacy", compatible)
+    transport = FakeTransport([])
+    router_config = dspy.lm15.RouterConfig
+    monkeypatch.setattr(execution, "RouterConfig", lambda **kwargs: router_config(**{**kwargs, "transport": transport}))
+    monkeypatch.setattr(LiteLLMEngine, "complete", lambda *args: pytest.fail("must not use a lossy fallback"))
     lm = dspy.LM("openai/gpt-4o", api_key="k", cache=False)
     # An image inside a tool result has no slot on the Chat Completions wire:
-    # lm15 refuses at build time (MAP-13 rule 4b). The refusal is known from
-    # plan() with no network, so the call goes to LiteLLM before any I/O.
+    # neither native nor compatibility serialization can roundtrip this data.
     png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
-    messages = [{"role": "user", "content": "look"},
-                {"role": "assistant", "content": None, "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}}]},
-                {"role": "tool", "tool_call_id": "c1", "content": [{"type": "image_url", "image_url": {"url": f"data:image/png;base64,{png}"}}]}]
-    backend, _, _ = _engine(lm, prepare(lm, None, messages, {}), False)
-    assert isinstance(backend, LiteLLMEngine)
+    request = Request(model=lm.model, messages=(
+        Message.user("look"),
+        Message.assistant((ToolCallPart(id="c1", name="f", input={}),)),
+        Message.tool((ToolResultPart(id="c1", content=(ImagePart(media_type="image/png", data=png),)),)),
+    ))
+    with pytest.raises(dspy.LMUnsupportedFeatureError, match="image") as caught:
+        lm(request)
+    assert caught.value.feature == "messages[*].tool_result[c1].content[image]"
+    assert not lm.history and not transport.requests
 
 
 def test_plan_raises_the_refusal_with_its_field():
@@ -181,10 +182,11 @@ def test_simultaneous_first_calls_share_one_pool_and_close_releases_it(monkeypat
     import threading
 
     from dspy.clients.engines import LM15Engine as Engine
+    from tests.test_utils.engines import make_response
 
     calls = []
-    monkeypatch.setattr(Engine, "complete", lambda self, request: calls.append(request) or dspy.lm15.Response(
-        None, request.model, dspy.lm15.Message.assistant("ok"), "stop", dspy.lm15.Usage()))
+    monkeypatch.setattr(Engine, "complete", lambda self, request: calls.append(request) or make_response(
+        "ok", model=request.model))
     lm = dspy.LM("openai/gpt-4o", api_key="k", cache=False, timeout=30)
     barrier = threading.Barrier(8)
     transports: set[int] = set()
@@ -192,7 +194,7 @@ def test_simultaneous_first_calls_share_one_pool_and_close_releases_it(monkeypat
     def go():
         barrier.wait()
         assert lm("hello") == ["ok"]
-        backend, _, _ = _engine(lm, prepare(lm, "hello", None, {}), False)
+        backend, _ = _engine(lm, prepare(lm, "hello", {}), False)
         transports.add(id(backend.router._shared_transport()))
 
     threads = [threading.Thread(target=go) for _ in range(8)]
@@ -200,8 +202,9 @@ def test_simultaneous_first_calls_share_one_pool_and_close_releases_it(monkeypat
         t.start()
     for t in threads:
         t.join()
+    assert len(calls) == 8
     assert len(transports) == 1
-    backend, _, _ = _engine(lm, prepare(lm, "hello", None, {}), False)
+    backend, _ = _engine(lm, prepare(lm, "hello", {}), False)
     transport = backend.router._shared_transport()
     lm.close()
     assert transport._closed
@@ -238,7 +241,7 @@ def test_plan_reads_no_stored_login(monkeypatch):
     monkeypatch.setattr(access, "_CREDENTIAL_LOADERS", Forbidden())
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     lm = dspy.LM("anthropic/claude-sonnet-4-5", cache=False)
-    backend, _, _ = _engine(lm, prepare(lm, "hello", None, {"seed": 7}), False)
+    backend, _ = _engine(lm, prepare(lm, "hello", {"seed": 7}), False)
     assert isinstance(backend, LM15Engine)  # selected without a key, without a login
 
 

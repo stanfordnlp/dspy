@@ -15,7 +15,7 @@ from dspy.clients.base_lm import BaseLM
 from dspy.clients.capabilities import with_capability_planning
 from dspy.clients.requests import build_request
 from dspy.dsp.utils.settings import settings
-from dspy.lm15 import Message, Response, TextPart, ToolCallPart
+from dspy.lm15 import DataPart, Message, Response, TextPart, ToolCallPart
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
@@ -50,7 +50,8 @@ def user_message(text: str) -> Message:
 
 def response_text(response: Response) -> str | None:
     """The visible answer text, even when tool calls or media accompany it."""
-    texts = [part.text for part in response.message.parts_of(TextPart)]
+    texts = [part.text if isinstance(part, TextPart) else json.dumps(part.value, ensure_ascii=False)
+             for part in response.message.parts if isinstance(part, (TextPart, DataPart))]
     return "".join(texts) if texts else None
 
 

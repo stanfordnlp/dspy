@@ -127,7 +127,7 @@ async def test_default_reasoning_modes(mode, adapter_type, async_mode):
     assert result.completions.reasoning == [expected, expected]
     assert result.completions.answer == ["17", "29"]
     if adapter_type is dspy.JSONAdapter:
-        schema = lm.history[0]["kwargs"]["response_format"].model_json_schema()
+        schema = lm.history[0]["request"].config.response_format["schema"]
         assert set(schema["properties"]) == ({"answer"} if native else {"plan", "answer"})
         if not native:
             assert schema["properties"]["plan"]["type"] == "string"
