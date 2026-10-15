@@ -1,6 +1,6 @@
 import asyncio
 import concurrent.futures
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from dspy.dsp.utils.settings import settings
@@ -19,6 +19,8 @@ class _StreamSignature:
 
     predict_id: int
     signature: type["Signature"]
+    # Declared output name -> name used in the prompt, for renamed fields.
+    wire_names: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

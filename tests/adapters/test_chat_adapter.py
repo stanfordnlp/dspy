@@ -9,7 +9,7 @@ from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Mess
 
 import dspy
 from dspy.experimental import Citations, Document
-from tests.adapters.conftest import format_messages_and_lm_kwargs
+from tests.adapters.conftest import CapturingLM, StopAdapterCallCapture, format_messages_and_lm_kwargs, native_lm
 
 
 @pytest.mark.parametrize(
@@ -2703,13 +2703,14 @@ def test_chat_adapter_native_reasoning(_supports_reasoning):
             ],
             model="anthropic/claude-3-7-sonnet-20250219",
         )
-        modified_signature = adapter._call_preprocess(
+        plan = adapter._plan(
             dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
             {},
             MySignature,
+            [],
             {"question": "What is the capital of France?"},
         )
-        assert "reasoning" not in modified_signature.output_fields
+        assert "reasoning" not in plan.render_signature.output_fields
 
         result = adapter(
             dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
@@ -2829,11 +2830,12 @@ def test_empty_string_content_raises_adapter_parse_error():
 ])
 def test_tool_call_with_null_or_missing_content_does_not_raise(output):
     """Tool-call-only responses legitimately have content=None or no text key.
-    _call_postprocess must NOT raise when tool_calls are present."""
+    Parsing must NOT raise when tool_calls are present."""
     adapter = dspy.ChatAdapter(use_native_function_calling=True)
     sig_cls = dspy.Signature("question, tools: list[dspy.Tool] -> answer, tool_calls: dspy.ToolCalls")
+    plan = adapter._plan(native_lm(), {}, sig_cls, [], {"question": "q", "tools": []})
 
-    result = adapter._call_postprocess(sig_cls, sig_cls, [output], None, {})
+    result = adapter._parse_outputs(plan, [output])
     assert result is not None
     assert len(result) == 1
     assert result[0]["tool_calls"].tool_calls[0].id == "call_1"
@@ -2910,7 +2912,8 @@ def test_tool_call_with_unstructured_content_does_not_raise():
     original_sig = dspy.Signature(
         "question, tools: list[dspy.Tool] -> next_thought: dspy.Reasoning, tool_calls: dspy.ToolCalls"
     )
-    processed_sig = original_sig.delete("tools").delete("tool_calls").delete("next_thought")
+    plan = adapter._plan(native_lm(), {}, original_sig, [], {"question": "q", "tools": []})
+    assert list(plan.render_signature.fields) == ["question"]
     outputs = [
         {
             "text": "I'll search for that now.",
@@ -2921,7 +2924,7 @@ def test_tool_call_with_unstructured_content_does_not_raise():
         }
     ]
 
-    result = adapter._call_postprocess(processed_sig, original_sig, outputs, None, {})
+    result = adapter._parse_outputs(plan, outputs)
 
     assert result[0]["tool_calls"].tool_calls[0].id == "call_1"
     assert result[0]["next_thought"] == dspy.Reasoning(content="I need a search result.")
@@ -2930,7 +2933,7 @@ def test_tool_call_with_unstructured_content_does_not_raise():
 def test_tool_call_with_structured_content_preserves_other_outputs():
     adapter = dspy.ChatAdapter(use_native_function_calling=True)
     original_sig = dspy.Signature("question, tools: list[dspy.Tool] -> answer, tool_calls: dspy.ToolCalls")
-    processed_sig = original_sig.delete("tools").delete("tool_calls")
+    plan = adapter._plan(native_lm(), {}, original_sig, [], {"question": "q", "tools": []})
     outputs = [
         {
             "text": "[[ ## answer ## ]]\nI should use a tool.\n\n[[ ## completed ## ]]",
@@ -2940,7 +2943,7 @@ def test_tool_call_with_structured_content_preserves_other_outputs():
         }
     ]
 
-    result = adapter._call_postprocess(processed_sig, original_sig, outputs, None, {})
+    result = adapter._parse_outputs(plan, outputs)
 
     assert result[0]["answer"] == "I should use a tool."
     assert result[0]["tool_calls"].tool_calls[0].id == "call_1"
@@ -2949,6 +2952,7 @@ def test_tool_call_with_structured_content_preserves_other_outputs():
 def test_provider_tool_calls_preserve_id_and_repair_arguments():
     adapter = dspy.ChatAdapter(use_native_function_calling=True)
     sig_cls = dspy.Signature("question, tools: list[dspy.Tool] -> tool_calls: dspy.ToolCalls")
+    plan = adapter._plan(native_lm(), {}, sig_cls, [], {"question": "q", "tools": []})
 
     outputs = [
         {
@@ -2963,7 +2967,7 @@ def test_provider_tool_calls_preserve_id_and_repair_arguments():
         }
     ]
 
-    result = adapter._call_postprocess(sig_cls, sig_cls, outputs, None, {})
+    result = adapter._parse_outputs(plan, outputs)
 
     assert result[0]["tool_calls"] == dspy.ToolCalls(
         tool_calls=[
@@ -3062,3 +3066,20 @@ def test_chat_adapter_formats_pep604_union_like_typing_union():
     assert "1. `answer` (Union[int, NoneType])" in messages[0]["content"]
     assert "must be formatted as a valid Python Union[int, NoneType]" in messages[-1]["content"]
     assert "UnionType" not in messages[0]["content"] + messages[-1]["content"]
+
+
+@pytest.mark.parametrize("use_native_function_calling", [False, True])
+def test_adapter_call_leaves_caller_lm_kwargs_unchanged(use_native_function_calling):
+    """The adapter sends its own kwargs to the LM; the caller's dict is reused across calls and must not change."""
+    lm_kwargs = {"tool_choice": "required", "temperature": 0.5}
+    signature = dspy.Signature("question, tools: list[dspy.Tool] -> answer, tool_calls: dspy.ToolCalls")
+    lm = CapturingLM()
+
+    with mock.patch.object(CapturingLM, "supports_function_calling", True), pytest.raises(StopAdapterCallCapture):
+        dspy.ChatAdapter(use_native_function_calling=use_native_function_calling, parallel_tool_calls=True)(
+            lm, lm_kwargs, signature, [], {"question": "q", "tools": [dspy.Tool(lambda x: x, name="echo")]}
+        )
+
+    assert lm_kwargs == {"tool_choice": "required", "temperature": 0.5}
+    sent = lm.calls[0]["kwargs"]
+    assert ("tools" in sent, "tool_choice" in sent) == (use_native_function_calling, use_native_function_calling)

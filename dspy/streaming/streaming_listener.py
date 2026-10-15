@@ -121,18 +121,16 @@ class StreamListener:
 
         return False
 
-    def _set_signature(self, signature):
+    def _set_signature(self, signature, wire_names):
         # Use the adapter's decision, after per-call overrides and native adaptation.
-        self._use_native_reasoning = True
-        for name, field in signature.output_fields.items():
-            if field.json_schema_extra.get("__dspy_reasoning_field", name) == self.signature_field_name:
-                self._use_native_reasoning = False
-                self._wire_field_name = name
-                self.adapter_identifiers["ChatAdapter"]["start_identifier"] = f"[[ ## {name} ## ]]"
-                self.adapter_identifiers["JSONAdapter"]["start_identifier"] = f'"{name}":'
-                self.adapter_identifiers["XMLAdapter"]["start_identifier"] = f"<{name}>"
-                self.adapter_identifiers["XMLAdapter"]["end_identifier"] = re.compile(rf"</{name}>")
-                break
+        name = wire_names.get(self.signature_field_name, self.signature_field_name)
+        self._use_native_reasoning = name not in signature.output_fields
+        if not self._use_native_reasoning:
+            self._wire_field_name = name
+            self.adapter_identifiers["ChatAdapter"]["start_identifier"] = f"[[ ## {name} ## ]]"
+            self.adapter_identifiers["JSONAdapter"]["start_identifier"] = f'"{name}":'
+            self.adapter_identifiers["XMLAdapter"]["start_identifier"] = f"<{name}>"
+            self.adapter_identifiers["XMLAdapter"]["end_identifier"] = re.compile(rf"</{name}>")
 
     def receive(self, chunk: ModelResponseStream):
         adapter_name = settings.adapter.__class__.__name__ if settings.adapter else "ChatAdapter"

@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import logging
 from typing import Any, get_origin
@@ -7,6 +8,7 @@ import pydantic
 import regex
 from pydantic.fields import FieldInfo
 
+from dspy.adapters.base import _AdapterPlan
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import ToolCalls
@@ -53,31 +55,32 @@ class JSONAdapter(ChatAdapter):
             parallel_tool_calls=parallel_tool_calls,
         )
 
-    def _prepare_response_format(self, lm, lm_kwargs, signature):
+    def _response_format(self, lm, signature):
         """Choose a format before execution; schema fallback never encloses an LM call."""
         if "response_format" not in lm.supported_params:
-            return
+            return None
         has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
         if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls) or not lm.supports_response_schema:
-            lm_kwargs["response_format"] = {"type": "json_object"}
-            return
+            return {"type": "json_object"}
         try:
-            format_ = _get_structured_outputs_response_format(signature, self.use_native_function_calling)
+            return _get_structured_outputs_response_format(signature, self.use_native_function_calling)
         except (ValueError, pydantic.PydanticInvalidForJsonSchema, pydantic.PydanticSchemaGenerationError):
             logger.warning("Failed to build structured output schema; using JSON mode before execution.")
-            format_ = {"type": "json_object"}
-        lm_kwargs["response_format"] = format_
+            return {"type": "json_object"}
 
-    def _call_preprocess(
+    def _plan(
         self,
         lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
+        demos: list[dict[str, Any]],
         inputs: dict[str, Any],
-    ) -> type[Signature]:
-        signature = super()._call_preprocess(lm, lm_kwargs, signature, inputs)
-        self._prepare_response_format(lm, lm_kwargs, signature)
-        return signature
+    ) -> _AdapterPlan:
+        plan = super()._plan(lm, lm_kwargs, signature, demos, inputs)
+        response_format = self._response_format(lm, plan.render_signature)
+        if response_format is None:
+            return plan
+        return dataclasses.replace(plan, lm_kwargs={**plan.lm_kwargs, "response_format": response_format})
 
     def format_field_structure(self, signature: type[Signature]) -> str:
         parts = []
