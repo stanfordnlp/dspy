@@ -2,6 +2,7 @@
 
 import pytest
 
+from dspy.lm15 import Config, Message, Request, Response
 from dspy.primitives.facade import SANDBOX_LM_KWARGS, SandboxLM
 from dspy.utils.dummies import DummyLM
 
@@ -18,9 +19,12 @@ def _lm():
 
 def test_generation_parameters_pass_and_the_wrapped_lm_does_the_work():
     lm = _lm()
-    outputs = SandboxLM(lm)(messages=[{"role": "user", "content": "hi"}], temperature=0.3, max_tokens=5)
-    assert outputs == ["[[ ## answer ## ]]\na"]
+    request = Request(model=lm.model, messages=(Message.user("hi"),), config=Config(temperature=0.3, max_tokens=5))
+    output = SandboxLM(lm)(request)
+    assert isinstance(output, Response)
+    assert output.message.text == "[[ ## answer ## ]]\na"
     assert len(lm.history) == 1
+    assert lm.history[0]["request"].config == request.config
 
 
 @pytest.mark.parametrize(
@@ -41,22 +45,31 @@ def test_routing_credential_and_transport_options_are_rejected_before_any_reques
 @pytest.mark.asyncio
 async def test_acall_applies_the_same_allowlist():
     lm = _lm()
+    request = Request(model=lm.model, messages=(Message.user("prompt"),), config=Config(temperature=0.2))
     with pytest.raises(TypeError, match=r"may not set LM option\(s\) \['api_key'\]"):
-        await SandboxLM(lm).acall("prompt", api_key="sk-x")
+        await SandboxLM(lm).acall(request, api_key="sk-x")
     assert lm.history == []
-    assert await SandboxLM(lm).acall("prompt", temperature=0.2) == ["[[ ## answer ## ]]\na"]
+    output = await SandboxLM(lm).acall(request)
+    assert isinstance(output, Response)
+    assert output.message.text == "[[ ## answer ## ]]\na"
 
 
 def test_reserve_meters_admitted_calls_only():
     reserved = []
-    sandbox = SandboxLM(_lm(), reserve=reserved.append)
-    sandbox("one")
+    lm = _lm()
+    lm.kwargs["n"] = 4  # Typed requests remain singular despite a legacy sampling default.
+    sandbox = SandboxLM(lm, reserve=reserved.append)
+
+    def request(text):
+        return Request(model=lm.model, messages=(Message.user(text),))
+
+    sandbox(request("one"))
     with pytest.raises(TypeError):
-        sandbox("two", api_key="sk-x")
-    sandbox.copy(temperature=0.9)("three")
-    sandbox.forward("four")
+        sandbox(request("two"), api_key="sk-x")
+    sandbox.copy(temperature=0.9)(request("three"))
+    sandbox(request=request("four"))
     with pytest.raises(TypeError):
-        sandbox.forward("five", api_base="http://evil.example")
+        sandbox(request("five"), api_base="http://evil.example")
     assert reserved == [1, 1, 1]
 
 

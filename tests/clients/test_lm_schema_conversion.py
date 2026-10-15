@@ -1,4 +1,4 @@
-"""Generated Pydantic schemas receive the same preparation on both LM paths."""
+"""Canonical requests preserve strict preparation of generated Pydantic schemas."""
 
 import copy
 
@@ -6,12 +6,12 @@ import pydantic
 import pytest
 
 import dspy
-from dspy.clients.execution import _canonical, prepare
-from dspy.clients.legacy_requests import _strict_json_schema, chat_to_responses
+from dspy.clients.execution import prepare
+from dspy.clients.requests import build_request, close_object_schemas
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])
-def test_generated_nested_schema_matches_legacy_preparation(asynchronous):
+def test_generated_nested_schema_is_prepared_without_mutation(asynchronous):
     class Item(pydantic.BaseModel):
         name: str
 
@@ -21,15 +21,12 @@ def test_generated_nested_schema_matches_legacy_preparation(asynchronous):
 
     original = copy.deepcopy(Answer.model_json_schema())
     lm = dspy.LM("openai/gpt-4.1-mini", model_type="responses", engine="lm15", cache=False)
-    call = prepare(lm, "Return an answer.", None, {"response_format": Answer}, asynchronous=asynchronous)
-    canonical = _canonical(call)
-    schema = canonical.config.response_format["schema"]
-    legacy = chat_to_responses(call.legacy)["text"]["format"]["schema"]
+    call = prepare(lm, "Return an answer.", {"response_format": Answer}, asynchronous=asynchronous)
+    schema = call.request.config.response_format["schema"]
 
-    assert schema == legacy
     assert schema["additionalProperties"] is False
     assert schema["$defs"]["Item"]["additionalProperties"] is False
-    assert canonical.config.response_format["strict"] is True
+    assert call.request.config.response_format["strict"] is True
     assert Answer.model_json_schema() == original
     assert "additionalProperties" not in original
 
@@ -42,9 +39,9 @@ def test_raw_schema_is_not_rewritten(additional_properties):
     format_ = {"type": "json_schema", "json_schema": {"name": "Answer", "schema": schema, "strict": True}}
     original = copy.deepcopy(format_)
     lm = dspy.LM("openai/gpt-4.1-mini", model_type="responses", engine="lm15", cache=False)
-    call = prepare(lm, "Return an answer.", None, {"response_format": format_})
+    call = prepare(lm, "Return an answer.", {"response_format": format_})
 
-    assert _canonical(call).config.response_format["schema"] == original["json_schema"]["schema"]
+    assert call.request.config.response_format["schema"] == original["json_schema"]["schema"]
     assert format_ == original
 
 
@@ -67,7 +64,8 @@ def test_strict_schema_requires_every_property_and_drops_none_defaults():
     # OpenAI strict mode rejected any pydantic model with defaults or an
     # optional submodel ("required must include every key"). The shape now
     # follows the OpenAI SDK's own to_strict_json_schema rules.
-    schema = _strict_json_schema(_Record.model_json_schema())
+    lm = dspy.LM("openai/gpt-4o", engine="lm15", cache=False)
+    schema = build_request(lm, "hi", {"response_format": _Record}).config.response_format["schema"]
     assert schema["required"] == ["name", "count", "tag", "inner", "items"]
     assert schema["additionalProperties"] is False
     assert "default" not in schema["properties"]["tag"]  # None default dropped
@@ -81,23 +79,17 @@ def test_strict_schema_unravels_a_ref_with_siblings_and_a_lone_allof():
     schema = {"type": "object", "properties": {"a": {"$ref": "#/$defs/A", "description": "d"},
                                                "b": {"allOf": [{"$ref": "#/$defs/A"}]}},
               "$defs": {"A": {"type": "string"}}}
-    out = _strict_json_schema(schema)
+    out = close_object_schemas(schema)
     assert out["properties"]["a"] == {"type": "string", "description": "d"}
     assert out["properties"]["b"] == {"$ref": "#/$defs/A"}  # a bare ref stays a ref
     assert out["required"] == ["a", "b"]
 
 
-def test_pydantic_response_format_is_sent_strict_on_both_paths():
-    lm = dspy.LM("openai/gpt-4o", engine="lm15", api_key="k", cache=False)
-    request = _canonical(prepare(lm, "hi", None, {"response_format": _Record}))
+@pytest.mark.parametrize("engine", ["lm15", "litellm"])
+def test_pydantic_response_format_is_strict_on_both_engines(engine):
+    lm = dspy.LM("openai/gpt-4o", engine=engine, api_key="k", cache=False)
+    request = prepare(lm, "hi", {"response_format": _Record}).request
     fmt = request.config.response_format
     assert fmt["type"] == "json_schema" and fmt.get("strict") is True
-    assert fmt["schema"]["required"] == ["name", "count", "tag", "inner", "items"]
-    # The forced LiteLLM Responses path converts the legacy body itself and
-    # must mean the same contract.
-    data = chat_to_responses({"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}],
-                              "response_format": _Record})
-    fmt = data["text"]["format"]
-    assert fmt["type"] == "json_schema" and fmt["strict"] is True
     assert fmt["schema"]["required"] == ["name", "count", "tag", "inner", "items"]
     assert "default" not in fmt["schema"]["properties"]["tag"]

@@ -1,6 +1,5 @@
 import asyncio
 import importlib
-import json
 import sys
 from importlib.metadata import version
 from pathlib import Path
@@ -10,7 +9,6 @@ import pytest
 
 import dspy
 from dspy import Tool
-from dspy.dsp.utils.utils import dotdict
 from dspy.utils.mcp import _convert_mcp_tool_result, convert_mcp_tool
 
 if importlib.util.find_spec("mcp") is None:
@@ -233,54 +231,45 @@ async def test_react_v2_native_mcp_end_to_end():
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
-    class NativeMCPLM(dspy.BaseLM):
-        def __init__(self):
-            super().__init__("native-mcp-test")
-            self.requests = []
+    from dspy.lm15 import ToolResultPart
+    from tests.test_utils.engines import make_response
 
-        @property
-        def supports_function_calling(self):
-            return True
+    class SyncRefused:
+        supports_function_calling = True
 
-        def forward(self, *args, **kwargs):
+        def complete(self, request):
             pytest.fail("ReActV2 must use the async LM path")
 
-        async def aforward(self, prompt=None, messages=None, **kwargs):
-            self.requests.append({"messages": messages, "kwargs": kwargs})
+    class NativeMCPEngine:
+        def __init__(self):
+            self.requests = []
+
+        async def complete(self, request):
+            self.requests.append(request)
             if len(self.requests) == 1:
                 calls = [
                     ("mcp_error", "wrong_tool", {}),
                     ("mcp_add", "add", {"a": 25, "b": 17}),
                 ]
             else:
-                observations = {m["tool_call_id"]: m["content"] for m in messages if m["role"] == "tool"}
+                observations = {
+                    part.id: "".join(p.text for p in part.content)
+                    for message in request.messages if message.role == "tool"
+                    for part in message.parts_of(ToolResultPart)
+                }
                 assert "error!" in observations["mcp_error"]
                 assert observations["mcp_add"] == "42"
                 calls = [("final", "submit", {"answer": int(observations["mcp_add"])})]
-            return dotdict(
-                choices=[
-                    dotdict(
-                        message=dotdict(
-                            content=None,
-                            tool_calls=[
-                                dotdict(
-                                    id=call_id, type="function", function=dotdict(name=name, arguments=json.dumps(args))
-                                )
-                                for call_id, name, args in calls
-                            ],
-                        ),
-                        finish_reason="tool_calls",
-                    )
-                ],
-                usage=dotdict(prompt_tokens=0, completion_tokens=0, total_tokens=0),
-                model=self.model,
-            )
+            return make_response(tool_calls=calls, model=request.model)
+
+    def native_mcp_lm():
+        return dspy.LM("native-mcp-test", engine=SyncRefused(), async_engine=NativeMCPEngine(), cache=False)
 
     server_params = StdioServerParameters(
         command=sys.executable,
         args=[str(Path(__file__).parent / "resources" / "mcp_server.py")],
     )
-    lm = NativeMCPLM()
+    lm = native_mcp_lm()
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
             await asyncio.wait_for(session.initialize(), timeout=5)
@@ -294,10 +283,9 @@ async def test_react_v2_native_mcp_end_to_end():
 
     assert pred.answer == 42
     assert pred.termination_reason == "submit"
-    assert len(lm.requests) == 2
-    assert {t["function"]["name"] for t in lm.requests[0]["kwargs"]["tools"]} == {tool.name for tool in tools} | {
-        "submit"
-    }
+    requests = lm.async_engine.requests
+    assert len(requests) == 2
+    assert {t.name for t in requests[0].tools} == {tool.name for tool in tools} | {"submit"}
     results = pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results
     assert [(r.call_id, r.is_error) for r in results] == [("mcp_error", True), ("mcp_add", False)]
     assert results[1].value == "42"

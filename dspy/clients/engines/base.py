@@ -8,9 +8,8 @@ accepted as terminal failures by DSPy's shared stream guard, never as Responses.
 SDK-specific errors are translated by the owning engine; engines do not import
 DSPy's public error hierarchy or implement a second retry loop.
 
-DSPy 3.5 uses this contract throughout adapters and engines. Legacy forward()
-plugins, LegacyEngine/AsyncLegacyEngine, and complete_legacy() shortcuts are
-3.4 transition interfaces, deprecated for removal in 3.5.
+This is the only integration contract: DSPy's adapters build Requests and
+read Responses, and every engine, built-in or custom, speaks the same objects.
 """
 
 from collections.abc import AsyncIterator, Iterator

@@ -149,10 +149,18 @@ If you run into errors, please refer to the [LiteLLM Docs](https://docs.litellm.
 
 It's easy to call the `lm` you configured above directly. This gives you a unified API and lets you benefit from utilities like automatic caching.
 
-```python linenums="1"       
+```python linenums="1"
 lm("Say this is a test!", temperature=0.7)  # => ['This is a test!']
-lm(messages=[{"role": "user", "content": "Say this is a test!"}])  # => ['This is a test!']
-``` 
+```
+
+For a multi-turn or richer call, pass a `dspy.lm15.Request` and get a `Response` back:
+
+```python linenums="1"
+from dspy.lm15 import Message, Request
+
+request = Request(model=lm.model, system="Be brief.", messages=(Message.user("Say this is a test!"),))
+lm(request).text  # => 'This is a test!'
+```
 
 ## Using the LM with DSPy modules.
 
@@ -300,7 +308,7 @@ Please note that not all models or providers support the Responses API, check [L
 
 ## Advanced: Building custom LMs and writing your own Adapters.
 
-Though rarely needed, you can write custom LMs by inheriting from `dspy.BaseLM`. Another advanced layer in the DSPy ecosystem is that of _adapters_, which sit between DSPy signatures and LMs. A future version of this guide will discuss these advanced features, though you likely don't need them.
+Though rarely needed, you can plug your own backend into DSPy by writing an *engine*: an object with `complete(request) -> response` that speaks the `dspy.lm15` types, passed as `dspy.LM(model, engine=...)`. See the [custom engine tutorial](../../tutorials/custom_lm_engines/index.md). Another advanced layer in the DSPy ecosystem is that of _adapters_, which sit between DSPy signatures and LMs; see [Adapters](../../diving-deeper/adapters.md).
 
 ### Saving programs that use custom LMs
 
@@ -312,7 +320,7 @@ import dspy
 
 class MyLM(dspy.BaseLM):
     def __init__(self, model: str, *, deployment: str, **kwargs):
-        super().__init__(model=model, **kwargs)
+        super().__init__(model=model, engine=MyEngine(deployment), **kwargs)
         self.deployment = deployment
 
     def dump_state(self):
@@ -325,9 +333,6 @@ class MyLM(dspy.BaseLM):
         state = dict(state)
         state.pop("_dspy_lm_class", None)
         return cls(**state)
-
-    def forward(self, prompt=None, messages=None, **kwargs):
-        ...
 ```
 
 Custom LM classes are reloaded from their module-qualified class path, so they must be importable when you load the saved program. Loading a saved state that imports a custom LM class requires trusted opt-in:

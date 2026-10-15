@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 import dspy
 from dspy.adapters.types.tool import ToolCallResults, ToolCalls
+from dspy.lm15 import ImagePart, TextPart
 from dspy.primitives.repl_types import REPLHistory
 from dspy.teleprompt.gepa import InstructionProposer
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
@@ -22,6 +23,7 @@ from dspy.teleprompt.gepa.instruction_proposal import (
     compact_repl_history,
 )
 from dspy.utils.dummies import DummyLM
+from tests.test_utils.engines import spy_lm
 
 GEPA_PARAGRAPH_1 = (
     "Read the inputs carefully and identify the input format and infer detailed task description about the "
@@ -665,14 +667,14 @@ def test_examples_reach_adapter_as_structured_values():
             "Feedback": "ok",
         }
     ]
-    lm = json_lm("New instruction.")
+    lm = spy_lm(replies=[json.dumps({"new_instruction": "New instruction."})])
     propose(InstructionProposer(adapter=InspectAdapter()), lm, examples=examples)
     assert seen == [examples]
     assert seen[0][0]["Inputs"]["Context"] is history
     assert seen[0][0]["Inputs"]["repl"] is repl
-    content = lm.history[-1]["messages"][-1]["content"]
-    assert any(part.get("type") == "image_url" for part in content)
-    text = "".join(part.get("text", "") for part in content)
+    content = lm.engine.requests[-1].messages[-1].parts
+    assert any(isinstance(part, ImagePart) for part in content)
+    text = "".join(part.text for part in content if isinstance(part, TextPart))
     assert '"amount": "1200", "claim": "claim #7"' in text
     assert '"Feedback": "ok"' in text
 

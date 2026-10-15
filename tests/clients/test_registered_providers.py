@@ -181,17 +181,17 @@ def test_replacing_a_registration_never_splits_an_lm(server):
     base, _ = server
     register_provider(_definition(base, max_tokens_field="max_tokens"))
     lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
-    call = prepare(lm, "hi", None, {"max_tokens": 7})
-    sync_engine, _, _ = _select_engine(lm, call, False)
+    call = prepare(lm, "hi", {"max_tokens": 7})
+    sync_engine, _ = _select_engine(lm, call, False)
     register_provider(_definition("http://127.0.0.1:9/v1", max_tokens_field="max_completion_tokens"), replace=True)
     # Selection, the cached sync engine and a fresh async engine all read the
     # LM's own binding, not the registry as it is now.
     assert select_backend(lm).resolution.compat.max_tokens_field == "max_tokens"
-    same, _, _ = _select_engine(lm, call, False)
+    same, _ = _select_engine(lm, call, False)
     assert same is sync_engine and same.config.providers[0].access.base_url == base
 
     async def async_engine():
-        engine, _, _ = _select_engine(lm, call, True)
+        engine, _ = _select_engine(lm, call, True)
         return engine.config.providers[0].access.base_url
 
     assert asyncio.run(async_engine()) == base

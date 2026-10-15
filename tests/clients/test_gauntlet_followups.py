@@ -49,7 +49,7 @@ def test_dotted_reasoning_model_gets_validation_and_token_field():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("engine", ["auto", "lm15", "litellm"])
-@pytest.mark.parametrize("where", ["prompt", "messages", "request", "system"])
+@pytest.mark.parametrize("where", ["prompt", "request_keyword", "request", "system"])
 async def test_lone_surrogate_is_refused_before_execution(asynchronous, engine, where, monkeypatch):
     import litellm
 
@@ -59,8 +59,8 @@ async def test_lone_surrogate_is_refused_before_execution(asynchronous, engine, 
     bad = "hello \ud800 world"
     if where == "prompt":
         args, kwargs = (bad,), {}
-    elif where == "messages":
-        args, kwargs = (), {"messages": [{"role": "user", "content": bad}]}
+    elif where == "request_keyword":
+        args, kwargs = (), {"request": lm15.Request(model=lm.model, messages=(lm15.Message.user(bad),))}
     elif where == "system":
         args, kwargs = (lm15.Request(model=lm.model, system=bad, messages=(lm15.Message.user("hi"),)),), {}
     else:
@@ -76,8 +76,8 @@ async def test_lone_surrogate_is_refused_before_execution(asynchronous, engine, 
 
 def test_valid_unicode_is_not_refused():
     lm = dspy.LM("openai/gpt-4o", engine="lm15", api_key="k", cache=False)
-    call = prepare(lm, "héllo 🌍 \u200f", None, {})
-    assert call.legacy["messages"][0]["content"] == "héllo 🌍 \u200f"
+    call = prepare(lm, "héllo 🌍 \u200f", {})
+    assert call.request.messages[0] == lm15.Message.user("héllo 🌍 \u200f")
 
 
 # ─── disabled timeouts are not silently replaced by 600 seconds ─────
@@ -157,6 +157,7 @@ def test_typed_litellm_responses_records_a_dropped_top_k(monkeypatch):
 
 def test_native_anthropic_top_k_stays_native():
     lm = dspy.LM("anthropic/claude-haiku-4-5", api_key="k", cache=False)
-    backend, canonical, provider = _engine(lm, prepare(lm, "hi", None, {"top_k": 7}), False)
-    assert provider == "anthropic" and canonical.config.top_k == 7
+    call = prepare(lm, "hi", {"top_k": 7})
+    backend, provider = _engine(lm, call, False)
+    assert provider == "anthropic" and call.request.config.top_k == 7
     assert type(backend).__name__ == "LM15Engine"
