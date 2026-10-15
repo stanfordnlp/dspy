@@ -84,12 +84,27 @@ __all__ = [
     "write_xai_credential",
 ]
 
-CLAUDE_CODE_CREDENTIALS_PATH = Path("~/.claude/.credentials.json").expanduser()
+def _user_path(*parts: str) -> Path:
+    """Resolve a path under the user's home without raising where there is none.
+
+    Evaluated at import to define the credential-path constants below, so it must not
+    raise. `Path.expanduser()` raises RuntimeError wherever no home directory can be
+    determined -- a WASI guest, some container setups -- and these constants are
+    defaults a caller can always override, so an unexpanded path is a better answer
+    than a failed import. Anything that actually opens it still fails, and says why.
+    """
+    try:
+        return Path("~", *parts).expanduser()
+    except RuntimeError:
+        return Path("~", *parts)
+
+
+CLAUDE_CODE_CREDENTIALS_PATH = _user_path(".claude", ".credentials.json")
 CLAUDE_CODE_CLIENT_ID = "9d1c250a-e61b-44d5-88ed-5944d1962f5e"
 CLAUDE_CODE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 CLAUDE_CODE_LOGIN_HINT = "Log in again: run `claude` and use /login (Claude subscription auth)"
 
-CODEX_CLI_AUTH_PATH = Path("~/.codex/auth.json").expanduser()
+CODEX_CLI_AUTH_PATH = _user_path(".codex", "auth.json")
 OPENAI_CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 OPENAI_CODEX_TOKEN_URL = "https://auth.openai.com/oauth/token"
 OPENAI_CODEX_JWT_CLAIM_PATH = "https://api.openai.com/auth"
@@ -506,7 +521,7 @@ XAI_DEVICE_CODE_URL = "https://auth.x.ai/oauth2/device/code"
 XAI_TOKEN_URL = "https://auth.x.ai/oauth2/token"
 XAI_OAUTH_SCOPE = "openid profile email offline_access grok-cli:access api:access"
 XAI_LOGIN_HINT = "Log in again: run lm15.auth.login_xai() (SuperGrok / X Premium subscription auth)"
-PI_AGENT_AUTH_PATH = Path("~/.pi/agent/auth.json").expanduser()
+PI_AGENT_AUTH_PATH = _user_path(".pi", "agent", "auth.json")
 
 _XAI_PROVIDER_KEY = "xai"
 _XAI_DEFAULT_TOKEN_LIFETIME_S = 3600

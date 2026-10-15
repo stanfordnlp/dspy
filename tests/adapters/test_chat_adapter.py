@@ -370,9 +370,13 @@ def test_chat_adapter_format_exact_messages_with_history():
                  "[[ ## completed ## ]]\n"
                  "In adhering to this structure, your objective is: \n"
                  "        Given the fields `history`, `question`, produce the fields `answer`."},
-     {"role": "user", "content": "[[ ## question ## ]]\nWhat is 1+1?"},
+     {"role": "user", "content": "[[ ## question ## ]]\nWhat is 1+1?\n\n"
+      "Respond with the corresponding output fields, starting with the field `[[ ## answer ## ]]`, "
+      "and then ending with the marker for `[[ ## completed ## ]]`."},
      {"role": "assistant", "content": "[[ ## answer ## ]]\n2\n\n[[ ## completed ## ]]\n"},
-     {"role": "user", "content": "[[ ## question ## ]]\nWhat is 2+2?"},
+     {"role": "user", "content": "[[ ## question ## ]]\nWhat is 2+2?\n\n"
+      "Respond with the corresponding output fields, starting with the field `[[ ## answer ## ]]`, "
+      "and then ending with the marker for `[[ ## completed ## ]]`."},
      {"role": "assistant", "content": "[[ ## answer ## ]]\n4\n\n[[ ## completed ## ]]\n"},
      {"role": "user",
       "content": "[[ ## question ## ]]\n"
@@ -669,7 +673,10 @@ def test_chat_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
                  '["math", "machines"]}\n'
                  '\n'
                  '[[ ## question ## ]]\n'
-                 'Who is Ada?'},
+                 'Who is Ada?\n\n'
+                 'Respond with the corresponding output fields, starting with the field `[[ ## answer ## ]]` '
+                 '(must be formatted as a valid Python AnswerCard), and then ending with the marker '
+                 'for `[[ ## completed ## ]]`.'},
      {"role": "assistant",
       "content": '[[ ## answer ## ]]\n'
                  '{"answer": "Ada is a mathematician.", "sources": ["memory"]}\n'
@@ -1042,6 +1049,73 @@ def test_chat_adapter_nonnative_strips_native_tool_kwargs():
             "tool_choice": {"type": "function", "function": {"name": "submit"}},
             "parallel_tool_calls": True,
         },
+    )
+
+    assert "tools" not in lm_kwargs
+    assert "tool_choice" not in lm_kwargs
+    assert "parallel_tool_calls" not in lm_kwargs
+
+
+def test_chat_adapter_native_preserves_caller_tools_on_ordinary_signature():
+    """An ordinary signature (no `dspy.ToolCalls` output field) never has its tool
+    wiring managed by the adapter, with or without native function calling - so a
+    caller passing native `tools`/`tool_choice` directly (outside the ToolCalls
+    mechanism, e.g. via `config=`) must keep reaching the LM untouched. Regression
+    test for a #10397 fix that briefly over-stripped this case too."""
+
+    class OrdinarySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    _, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=True),
+        OrdinarySignature,
+        [],
+        {"question": "Q?"},
+        lm_kwargs={
+            "tools": [{"type": "function", "function": {"name": "search"}}],
+            "tool_choice": "auto",
+            "parallel_tool_calls": True,
+        },
+        # Default DummyLM: supports_function_calling is False - shouldn't matter here,
+        # since this signature never opts into the ToolCalls mechanism at all.
+    )
+
+    assert lm_kwargs["tools"] == [{"type": "function", "function": {"name": "search"}}]
+    assert lm_kwargs["tool_choice"] == "auto"
+    assert lm_kwargs["parallel_tool_calls"] is True
+
+
+def test_chat_adapter_native_strips_tool_choice_when_lm_lacks_function_calling():
+    """Regression test for #10397.
+
+    ReActV2's forced-submit path always sets `tool_choice` (to force a final
+    `submit` call), regardless of whether the LM is marked as supporting
+    native function calling. When it isn't (e.g. a model missing from DSPy's
+    capability catalog), the adapter never adds `tools` - so a `tool_choice`
+    the caller already passed in must be dropped too, or OpenAI and
+    OpenAI-compatible gateways reject the request with a 400.
+    """
+
+    def search(query: str) -> str:
+        return query
+
+    class NativeToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    _, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=True),
+        NativeToolSignature,
+        [],
+        {"question": "Q?", "tools": [dspy.Tool(search)]},
+        lm_kwargs={
+            "tool_choice": {"type": "function", "function": {"name": "submit"}},
+            "parallel_tool_calls": True,
+        },
+        # Default DummyLM: supports_function_calling is False, matching a model
+        # missing from DSPy's catalog - the exact condition that triggers #10397.
     )
 
     assert "tools" not in lm_kwargs
@@ -1522,7 +1596,10 @@ def test_chat_adapter_format_exact_messages_with_non_native_tool_history():
             "        Given the fields `question`, `history`, `tools`, produce the fields `next_thought`, "
             "`tool_calls`.",
         },
-        {"role": "user", "content": "[[ ## question ## ]]\nQ1"},
+        {"role": "user", "content": "[[ ## question ## ]]\nQ1\n\n"
+         "Respond with the corresponding output fields, starting with the field `[[ ## next_thought ## ]]`, then "
+         '`[[ ## tool_calls ## ]]` (must be a JSON object like {"tool_calls": [{"name": "...", "args": {...}}]}), '
+         "and then ending with the marker for `[[ ## completed ## ]]`."},
         {
             "role": "assistant",
             "content": "[[ ## next_thought ## ]]\n"
@@ -1927,7 +2004,12 @@ def test_chat_adapter_format_exact_messages_kitchen_sink():
                  '[2] «older note»\n'
                  '\n'
                  '[[ ## question ## ]]\n'
-                 'Who is Ada?'},
+                 'Who is Ada?\n\n'
+                 'Respond with the corresponding output fields, starting with the field `[[ ## answer ## ]]` '
+                 '(must be formatted as a valid Python AnswerCard), then `[[ ## verdict ## ]]` '
+                 "(must be formatted as a valid Python Literal['yes', 'no']), then `[[ ## confidence ## ]]` "
+                 '(must be formatted as a valid Python float), and then ending with the marker '
+                 'for `[[ ## completed ## ]]`.'},
      {"role": "assistant",
       "content": '[[ ## answer ## ]]\n'
                  '{"answer": "Ada is a mathematician.", "sources": ["memory"]}\n'
@@ -2313,6 +2395,23 @@ def test_citations_output_field_keeps_json_schema_in_prompt():
     assert "Type description of Citations" in system_content
 
 
+@pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter(), dspy.XMLAdapter()])
+def test_history_replay_preserves_previous_request_prefix(adapter):
+    class Conversation(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    history = dspy.History(messages=[])
+    previous = None
+    for question, answer in [("What is 3+4?", "7"), ("Double that?", "14"), ("Subtract five?", "9")]:
+        messages = adapter.format(Conversation, [], {"question": question, "history": history})
+        if previous is not None:
+            assert messages[:len(previous)] == previous
+        history.messages.append({"question": question, "answer": answer})
+        previous = messages
+
+
 def test_chat_adapter_formats_conversation_history():
     class MySignature(dspy.Signature):
         question: str = dspy.InputField()
@@ -2330,9 +2429,13 @@ def test_chat_adapter_formats_conversation_history():
     messages = adapter.format(MySignature, [], {"question": "What is the capital of France?", "history": history})
 
     assert len(messages) == 6
-    assert messages[1]["content"] == "[[ ## question ## ]]\nWhat is the capital of France?"
+    reminder = (
+        "\n\nRespond with the corresponding output fields, starting with the field `[[ ## answer ## ]]`, "
+        "and then ending with the marker for `[[ ## completed ## ]]`."
+    )
+    assert messages[1]["content"] == "[[ ## question ## ]]\nWhat is the capital of France?" + reminder
     assert messages[2]["content"] == "[[ ## answer ## ]]\nParis\n\n[[ ## completed ## ]]\n"
-    assert messages[3]["content"] == "[[ ## question ## ]]\nWhat is the capital of Germany?"
+    assert messages[3]["content"] == "[[ ## question ## ]]\nWhat is the capital of Germany?" + reminder
     assert messages[4]["content"] == "[[ ## answer ## ]]\nBerlin\n\n[[ ## completed ## ]]\n"
 
 
@@ -2579,7 +2682,8 @@ def test_chat_adapter_toolcalls_vague_match():
         )
 
 
-def test_chat_adapter_native_reasoning():
+@mock.patch("litellm.supports_reasoning", return_value=True)
+def test_chat_adapter_native_reasoning(_supports_reasoning):
     class MySignature(dspy.Signature):
         question: str = dspy.InputField()
         reasoning: dspy.Reasoning = dspy.OutputField()
@@ -2946,3 +3050,15 @@ def test_optional_type_syntax_missing_required_output_field_still_raises():
     with dspy.context(lm=DummyLM(responses), adapter=dspy.ChatAdapter()):
         with pytest.raises(AdapterParseError):
             dspy.Predict(OptionalSyntaxSignature)(question="anything")
+
+
+def test_chat_adapter_formats_pep604_union_like_typing_union():
+    class QA(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: int | None = dspy.OutputField()
+
+    messages = dspy.ChatAdapter().format(QA, [], {"question": "How many?"})
+
+    assert "1. `answer` (Union[int, NoneType])" in messages[0]["content"]
+    assert "must be formatted as a valid Python Union[int, NoneType]" in messages[-1]["content"]
+    assert "UnionType" not in messages[0]["content"] + messages[-1]["content"]

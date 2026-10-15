@@ -367,12 +367,15 @@ async def test_materializing_backend_keeps_completed_usage_on_cleanup_failure(as
 
     engine = Backend()
     lm = dspy.LM("custom", engine=engine, async_engine=AsyncBackend(engine), cache=True, num_retries=2)
-    with track_usage() as tracker, pytest.raises(dspy.LMStreamAssemblyError) as caught:
-        await invoke(lm, asynchronous, "hello")
-    assert caught.value.partial.text == "ok"
+    # lm15 1.0.0rc1 (contract 2026-09-11-stream-completion): a failure after
+    # the end event never withholds the complete Response — it is returned,
+    # the failure is a StreamCleanupWarning.  No retry, usage kept, cached.
+    with track_usage() as tracker, pytest.warns(lm15.StreamCleanupWarning):
+        outputs = await invoke(lm, asynchronous, "hello")
+    assert outputs == ["ok"]
     assert tracker.get_total_tokens()[lm.model]["total_tokens"] == 3
     assert engine.calls == 1
-    assert not dspy.cache.memory_cache
+    assert dspy.cache.memory_cache
 
 
 @pytest.mark.asyncio

@@ -76,6 +76,17 @@ ANTHROPIC_API = AccessPolicy(
     auth_scheme=("x-api-key",),
 )
 
+# TypeSafe System One (Jev): one judgment call per request, no stream, a
+# models list (changes/2026-09-17-judgments.md D1/D10/D11; receipts
+# 2026-09-17).  Bearer key from the console (console.typesafe.ai/keys).
+TYPESAFE_API = AccessPolicy(
+    provider="typesafe",
+    supports=EndpointSupport(complete=True, stream=False, models=True),
+    auth_modes=("bearer",),
+    env_keys=("TYPESAFE_API_KEY",),
+    auth_scheme=("bearer",),
+)
+
 DEFAULT_CLAUDE_CODE_VERSION = "2.1.170"
 DEFAULT_CLAUDE_CODE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official CLI for Claude."
 
@@ -340,6 +351,23 @@ MOONSHOTAI_ANTHROPIC = AccessPolicy(
 # use of the ``backend`` seam: the dialect is unchanged; the door changes
 # the URL, the signing, a closed set of rewrites, and the stream framing.
 
+# Endpoint overrides (AUTH-10, amended 2026-09-19): the vendor's own
+# variables naming a full URL root for a door, consulted by the router
+# after an explicit ``base_urls`` entry and before the ``{resource}`` /
+# ``{region}`` template.  AWS: ``AWS_ENDPOINT_URL_<SERVICE_ID>`` then the
+# generic ``AWS_ENDPOINT_URL`` (aws-sdkref-endpoints.md; the service id is
+# the SigV4 service name upper-cased with ``-`` → ``_``, the SDK's rule —
+# ``BEDROCK_MANTLE`` and ``AWS_EXTERNAL_ANTHROPIC`` follow the rule, not a
+# cited page).  Azure OpenAI: ``AZURE_OPENAI_ENDPOINT`` (the OpenAI SDK's
+# ``AzureOpenAI`` reads it).  Foundry Claude: ``ANTHROPIC_FOUNDRY_BASE_URL``
+# (anthropic-on-foundry.md:180-182).  Vertex: no vendor variable is cited;
+# ``base_urls`` only.
+_AWS_ENDPOINT = ("AWS_ENDPOINT_URL_BEDROCK_RUNTIME", "AWS_ENDPOINT_URL")
+_AWS_MANTLE_ENDPOINT = ("AWS_ENDPOINT_URL_BEDROCK_MANTLE", "AWS_ENDPOINT_URL")
+_AWS_ANTHROPIC_ENDPOINT = ("AWS_ENDPOINT_URL_AWS_EXTERNAL_ANTHROPIC", "AWS_ENDPOINT_URL")
+_AZURE_OPENAI_ENDPOINT = ("AZURE_OPENAI_ENDPOINT",)
+_AZURE_FOUNDRY_ENDPOINT = ("ANTHROPIC_FOUNDRY_BASE_URL",)
+
 _AWS_REGION = HostSetting("region", env=("AWS_REGION", "AWS_DEFAULT_REGION"))  # no default: a wrong region is a residency bug
 _AWS_WORKSPACE = HostSetting("workspace", env=("ANTHROPIC_AWS_WORKSPACE_ID",))
 _GCP_PROJECT = HostSetting("project", env=("GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT"))
@@ -366,6 +394,7 @@ AWS_ANTHROPIC = AccessPolicy(
         settings=(_AWS_REGION, _AWS_WORKSPACE),
         required_headers=(("anthropic-workspace-id", "workspace"),),
         sigv4_service="aws-external-anthropic",
+        endpoint_env=_AWS_ANTHROPIC_ENDPOINT,
     ),
 )
 
@@ -386,6 +415,7 @@ BEDROCK_ANTHROPIC = AccessPolicy(
         base_url="https://bedrock-mantle.{region}.api.aws/anthropic/v1",
         settings=(_AWS_REGION,),
         sigv4_service="bedrock-mantle",
+        endpoint_env=_AWS_MANTLE_ENDPOINT,
     ),
 )
 
@@ -410,6 +440,7 @@ BEDROCK_CHAT = AccessPolicy(
         base_url="https://bedrock-runtime.{region}.amazonaws.com/openai/v1",
         settings=(_AWS_REGION,),
         sigv4_service="bedrock",
+        endpoint_env=_AWS_ENDPOINT,
     ),
 )
 
@@ -433,6 +464,7 @@ BEDROCK_MANTLE_CHAT = AccessPolicy(
         base_url="https://bedrock-mantle.{region}.api.aws/v1",
         settings=(_AWS_REGION,),
         sigv4_service="bedrock-mantle",
+        endpoint_env=_AWS_MANTLE_ENDPOINT,
     ),
 )
 
@@ -443,6 +475,18 @@ BEDROCK_MANTLE_CHAT = AccessPolicy(
 # listing control-plane only, but GET /openai/v1/models answers 200 with the
 # api-key — the resource's whole catalog (dall-e, whisper, gpt-*), not just its
 # deployments (receipts/2026-09-04-azure/models.json; cases/azure/models.json).
+#
+# Host, decided 2026-09-19 (changes/2026-09-19-cloud-identity-and-endpoints.md
+# D5): the template stays `{resource}.openai.azure.com` because it is the
+# one host every resource kind answers on — a classic `OpenAI`-kind
+# resource has no `services.ai.azure.com` name at all (DNS: NXDOMAIN for
+# the lab's lm15-oai-* resource, 2026-09-19), while a Foundry
+# (`AIServices`) resource answers on both.  The Foundry console shows
+# `https://{account}.services.ai.azure.com`: paste it as
+# AZURE_OPENAI_ENDPOINT (or base_urls={"azure": ...}) and the door appends
+# /openai/v1.  That endpoint serves OpenAI and non-OpenAI deployments
+# alike; the alias saves one internal hop for OpenAI models today
+# (issue #10, Pamela Fox, 2026-09-18).
 AZURE = AccessPolicy(
     provider="azure",
     # Live 2026-09-04 on an OpenAI-kind Azure resource: Files and Batches
@@ -458,6 +502,7 @@ AZURE = AccessPolicy(
     host=HostSpec(
         base_url="https://{resource}.openai.azure.com/openai/v1",
         settings=(_AZURE_OPENAI_RESOURCE, _AZURE_AUTHORITY, _AZURE_SCOPE),
+        endpoint_env=_AZURE_OPENAI_ENDPOINT,
     ),
 )
 
@@ -472,6 +517,7 @@ AZURE_CHAT = AccessPolicy(
     host=HostSpec(
         base_url="https://{resource}.openai.azure.com/openai/v1",
         settings=(_AZURE_OPENAI_RESOURCE, _AZURE_AUTHORITY, _AZURE_SCOPE),
+        endpoint_env=_AZURE_OPENAI_ENDPOINT,
     ),
 )
 
@@ -492,6 +538,7 @@ AZURE_ANTHROPIC = AccessPolicy(
     host=HostSpec(
         base_url="https://{resource}.services.ai.azure.com/anthropic/v1",
         settings=(_AZURE_FOUNDRY_RESOURCE, _AZURE_AUTHORITY, _AZURE_SCOPE),
+        endpoint_env=_AZURE_FOUNDRY_ENDPOINT,
     ),
 )
 
@@ -721,19 +768,17 @@ def auth_header(
     scheme = select_scheme(policy, value)
     if scheme in ("api-key", "x-api-key") and "bearer" in policy.auth_scheme and _looks_like_jwt(value.value):
         # A plain string reads as an API key, and on this door the key header
-        # comes before bearer.  A JWT is never an API key on these doors: it
-        # is an Entra/OAuth access token that a token-provider callable
-        # (azure-identity's get_bearer_token_provider returns a str) handed
-        # over as a string.  Sent as a key it is a bare 401 ("invalid
-        # subscription key", live 2026-09-04); name the fix instead.
-        raise NotConfiguredError(
-            f"{policy.provider}: the credential is a JWT (a bearer token), but a plain string travels as an"
-            f" API key here (`{'x-api-key' if scheme == 'x-api-key' else 'api-key'}` header); wrap it:"
-            " lm15.credentials.BearerToken(token)",
-            provider=policy.provider,
-            env_keys=policy.env_keys,
-            credential_hint="api_key=lambda: BearerToken(provider())",
-        )
+        # comes before bearer.  A JWT is never an API key on any door lm15
+        # has: it is an Entra/OAuth access token that a token-provider
+        # callable (azure-identity's get_bearer_token_provider returns a
+        # str) handed over as a string.  Sent as a key it is a bare 401
+        # ("invalid subscription key", live 2026-09-04).  AUTH-2, amended
+        # 2026-09-19: it travels as a bearer token — the only reading under
+        # which the request can succeed — and the doctor says so.  Before
+        # that date this was a refusal naming the BearerToken wrap; the
+        # wrap is still accepted and still the form to use when nothing
+        # should be read from a token's shape.
+        scheme = "bearer"
     if scheme == "bearer":
         return ("Authorization", f"Bearer {value.value}")
     if scheme == "x-api-key":

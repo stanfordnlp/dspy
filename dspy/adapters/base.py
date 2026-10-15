@@ -8,13 +8,14 @@ from dspy.adapters._legacy_type_markers import (
     _expand_legacy_custom_type_markers_in_chat_message,
 )
 from dspy.adapters.types import History, Type
+from dspy.adapters.types.citation import Citations
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls
 from dspy.adapters.utils import apply_output_field_defaults, serialize_for_json
 from dspy.clients._deprecation import adapter_message_call
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.capabilities import with_capability_planning
-from dspy.experimental import Citations
+from dspy.dsp.utils.settings import settings
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
@@ -88,6 +89,7 @@ class Adapter:
         # stacked PR should replace this with an explicit `_AdapterPlan` that
         # records deleted fields, native tools, native output fields, inserted
         # messages/parts, and LM config patches.
+        original_signature = signature
         if not self.use_native_function_calling:
             for key in ("tools", "tool_choice", "parallel_tool_calls"):
                 lm_kwargs.pop(key, None)
@@ -114,6 +116,9 @@ class Adapter:
 
                 signature = signature.delete(tool_call_output_field_name)
                 signature = signature.delete(tool_call_input_field_name)
+            elif tool_call_output_field_name:
+                for key in ("tools", "tool_choice", "parallel_tool_calls"):
+                    lm_kwargs.pop(key, None)
 
         # TODO(adapters-plan): Built-in/native response planning should move out
         # of `Type.adapt_to_native_lm_feature()` and into adapter-owned planning
@@ -126,6 +131,16 @@ class Adapter:
                 and issubclass(field.annotation, Type)
             ):
                 signature = field.annotation.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
+
+        # Only surviving default reasoning fields need the explicit plan fallback.
+        for name in signature.output_fields:
+            fallback_name = Reasoning._fallback_field_name(original_signature, name)
+            if fallback_name != name:
+                signature = signature.with_updated_fields(name, __dspy_reasoning_field=name)
+                signature = Signature(
+                    {fallback_name if key == name else key: field for key, field in signature.fields.items()},
+                    signature.instructions,
+                )
 
         return signature
 
@@ -166,6 +181,11 @@ class Adapter:
                     message="The LM returned an empty or null response.",
                 )
 
+            for name, field in processed_signature.output_fields.items():
+                if original_name := field.json_schema_extra.get("__dspy_reasoning_field"):
+                    if name in value:
+                        value[original_name] = value.pop(name)
+
             # Fields removed for native features are absent from the processed parse
             value = apply_output_field_defaults(original_signature, value)
             for field_name in original_signature.output_fields:
@@ -184,6 +204,10 @@ class Adapter:
                     isinstance(field.annotation, type)
                     and field.annotation in self.native_response_types
                     and issubclass(field.annotation, Type)
+                    and not (
+                        field.annotation is Reasoning
+                        and Reasoning._fallback_field_name(original_signature, name) in processed_signature.output_fields
+                    )
                 ):
                     parsed_value = field.annotation.parse_lm_response(output)
                     if parsed_value is not None:
@@ -225,6 +249,10 @@ class Adapter:
         messages = self.format(processed_signature, demos, inputs)
         if lm_kwargs.get("parallel_tool_calls") is not None:
             lm_kwargs.setdefault("tool_choice", "auto")
+        if settings.send_stream and settings.stream_listeners:
+            from dspy.streaming.messages import _StreamSignature, sync_send_to_stream
+
+            sync_send_to_stream(settings.send_stream, _StreamSignature(id(settings.caller_predict), processed_signature))
         # TODO(3.5): build Request and parse Response directly; remove this marker.
         with adapter_message_call(lm, messages):
             outputs = lm(messages=messages, **lm_kwargs)
@@ -243,6 +271,10 @@ class Adapter:
         messages = self.format(processed_signature, demos, inputs)
         if lm_kwargs.get("parallel_tool_calls") is not None:
             lm_kwargs.setdefault("tool_choice", "auto")
+        if settings.send_stream and settings.stream_listeners:
+            from dspy.streaming.messages import _StreamSignature
+
+            await settings.send_stream.send(_StreamSignature(id(settings.caller_predict), processed_signature))
         # TODO(3.5): share the canonical request/response boundary with __call__.
         with adapter_message_call(lm, messages):
             outputs = await lm.acall(messages=messages, **lm_kwargs)
@@ -294,6 +326,20 @@ class Adapter:
             A list of multiturn messages as expected by the LM.
         """
         inputs_copy = dict(inputs)
+        fallback_names = {
+            field.json_schema_extra["__dspy_reasoning_field"]: name
+            for name, field in signature.output_fields.items()
+            if "__dspy_reasoning_field" in field.json_schema_extra
+        }
+        if fallback_names:
+            def remap(values):
+                return {fallback_names.get(key, key): value for key, value in values.items()}
+
+            demos = [remap(demo) for demo in demos]
+            for name, field in signature.input_fields.items():
+                if field.annotation is History and name in inputs_copy:
+                    history = inputs_copy[name]
+                    inputs_copy[name] = history.model_copy(update={"messages": [remap(m) for m in history.messages]})
 
         # If the signature and inputs have conversation history, we need to format the conversation history and
         # remove the history field from the signature.
@@ -485,13 +531,13 @@ class Adapter:
 
         return messages
 
-    def _get_history_field_name(self, signature: type[Signature]) -> bool:
+    def _get_history_field_name(self, signature: type[Signature]) -> str | None:
         for name, field in signature.input_fields.items():
             if field.annotation == History:
                 return name
         return None
 
-    def _get_tool_call_input_field_name(self, signature: type[Signature]) -> bool:
+    def _get_tool_call_input_field_name(self, signature: type[Signature]) -> str | None:
         for name, field in signature.input_fields.items():
             # Look for annotation `list[dspy.Tool]` or `dspy.Tool`
             origin = get_origin(field.annotation)
@@ -501,7 +547,7 @@ class Adapter:
                 return name
         return None
 
-    def _get_tool_call_output_field_name(self, signature: type[Signature]) -> bool:
+    def _get_tool_call_output_field_name(self, signature: type[Signature]) -> str | None:
         for name, field in signature.output_fields.items():
             if field.annotation == ToolCalls:
                 return name
@@ -539,7 +585,11 @@ class Adapter:
                 else None
             )
 
-            user_content = self.format_user_message_content(signature, message)
+            # Preserve the format reminder from the original request for prompt-cache reuse.
+            # Output-only events must not acquire a synthetic user message containing just the reminder.
+            user_content = self.format_user_message_content(
+                signature, message, main_request=any(name in message for name in signature.input_fields)
+            )
             if user_content:
                 messages.append({"role": "user", "content": user_content})
 

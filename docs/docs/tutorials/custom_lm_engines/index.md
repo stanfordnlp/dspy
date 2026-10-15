@@ -1,6 +1,11 @@
 # Custom LM Engines
 
-In the DSPy 3.4 development API, you can supply your own execution engine to `dspy.LM`. The minimum synchronous interface is:
+You can supply your own execution engine to `dspy.LM`. Before you do, check which of two situations you are in:
+
+- **An HTTP provider lm15 can already speak to** — an OpenAI-compatible service, a company gateway, a host DSPy's bundled lm15 does not list yet. Do not write an engine: [declare the provider](#declaring-a-provider-instead-of-writing-an-engine) and `dspy.LM("<provider>/<model>")` routes natively, with `api_key`, `api_base`, `timeout`, saving and loading all behaving as for a built-in provider.
+- **Not an HTTP provider at all** — a CLI, an in-process model, an agent harness. Write an engine. It owns its whole connection, so the [rules below](#what-a-custom-engine-owns) apply.
+
+The minimum synchronous engine interface is:
 
 ```python
 class MyEngine:
@@ -18,6 +23,75 @@ Expected backend failures should raise specific errors from `dspy.lm15`, such as
 family and owns retries. Unexpected exceptions retain their original cause and
 are not guessed to be retryable from their message text. See
 [errors and retry ownership](../../community/normalized-lm-api-migration.md#errors-and-retry-ownership).
+
+## Declaring a provider instead of writing an engine
+
+lm15 routes model strings through a registry of providers it has verified against the wire. A provider it does not list can be declared for the process with the same three facts a registry entry is made of — an access policy (name, key variable, address), a wire dialect, and a compat policy describing the server's spellings:
+
+```python
+import dspy
+from dspy.lm15 import AccessPolicy, EndpointSupport, ModelSupport, OpenAIChatCompat, ProviderDefinition
+
+dspy.lm15.register_provider(
+    ProviderDefinition.chat(
+        AccessPolicy(
+            provider="fireworks",
+            supports=EndpointSupport(complete=True, stream=True, models=True),
+            auth_modes=("bearer",),
+            env_keys=("FIREWORKS_API_KEY",),
+            base_url="https://api.fireworks.ai/inference/v1",
+        ),
+        compat=OpenAIChatCompat(max_tokens_field="max_tokens", thinking_format="reasoning_effort"),
+        aliases=("fireworks-ai",),          # accept LiteLLM's spelling, fireworks_ai/, as a model prefix
+    ),
+    metadata_namespaces=("fireworks_ai",),  # this endpoint IS Fireworks: its snapshot entries may describe and price the models
+)
+
+lm = dspy.LM("fireworks/accounts/fireworks/models/deepseek-v4p1-flash")   # or fireworks_ai/...
+```
+
+Do this at import time of your application, before the LMs that use it are constructed. **Each `dspy.LM` binds the registrations present when it is constructed and keeps them for its whole life** — selection, capabilities, pricing, and both its sync and async engines read that one binding. `register_provider(..., replace=True)` therefore changes only LMs constructed afterwards; it never moves an existing LM, and it can never leave one LM's sync calls on one definition and its async calls on another.
+
+After that the provider behaves like a built-in one:
+
+- `dspy.LM(..., api_key=..., api_base=..., timeout=...)` are honored; with no key given, `FIREWORKS_API_KEY` is read, and a missing key names that variable. A `FIREWORKS_API_BASE` variable in the environment does not redirect a declared provider (it does for registry providers, to preserve LiteLLM-era gateways): the declaration states its address itself.
+- `engine="auto"` plans each request against the declared compat. A client setting only LiteLLM carries (`extra_headers`, `organization`, …) selects LiteLLM before any I/O — **at the declared address, with the declared credential**, through LiteLLM's generic OpenAI-compatible door (`openai/`, or `anthropic/` for that dialect). The credential travels only under the scheme the declaration selects for it — the `openai/` door sends a bearer header, the `anthropic/` door `x-api-key` — and a declaration whose scheme the door cannot send gets no fallback rather than its secret in an undeclared header. The LM's aliases are never handed to LiteLLM as a provider prefix, because LiteLLM may know that name as a different service. The call is still that provider's: errors name it and pricing comes from its `metadata_namespaces`, never from LiteLLM's reading of the door's model string. A refusal the declared compat produces (a reasoning dial on a wire with no reasoning field, say) is final: the declaration is the authority on what that server cannot do, and sending the request through LiteLLM anyway would drop the setting silently. `engine="lm15"` refuses both cases instead.
+- `dump_state()`/`load_state()` and program `save()`/`load()` need nothing extra — the state is the model string. A registration is an environment fact, like the key variable: it must be in place when the program is loaded.
+
+**Aliases are spellings, nothing more.** Which models a declared provider's endpoint supports, and what they cost, are separate statements:
+
+- `metadata_namespaces=("fireworks_ai",)` says DSPy's model-metadata snapshot entries under that LiteLLM namespace describe (capabilities) and price this provider's models. Give it only when the endpoint really is that service. Without it nothing is inherited, and cost is reported as unknown.
+- `supports=ModelSupport(function_calling=True, ...)` states model support for the whole provider; `models={"private-v1": ModelSupport(...)}` per model id. A snapshot entry, when one is found, is the more specific fact and wins over a statement. What neither states is treated as unsupported — the rule built-in providers already live with — and a statement never prices anything.
+- The compat object still bounds everything: a wire with `thinking_format="none"` has no reasoning whatever the statement says.
+
+What a declaration is not: a receipt. lm15's own registry entries are pinned from live captures; a declaration is your word, and the route says so (`Resolution.declared`). Registering the same registration twice is a no-op; a different one under the same id needs `replace=True`; a spelling lm15 or LiteLLM already uses is refused.
+
+## What a custom engine owns
+
+A custom engine is borrowed by `dspy.LM` and owns its connection. Three rules follow, and DSPy enforces each rather than guessing:
+
+**Connection settings are refused.** `dspy.LM(engine=MyEngine(), api_key=...)` raises `ValueError`, and so do `api_base`, `base_url`, `timeout`, `headers`, `extra_headers` and the other client settings — on construction, on `copy()`, and on every call (`lm("hi", api_key=...)`), before any cache lookup. There is no channel from the LM to the engine for them, and dropping them silently would let a call run with the engine's key while the LM said another. Give them to the engine's constructor.
+
+**The engine pair is one unit.** `async_engine=` is only accepted with a custom `engine=`, and each side must be its kind: the sync engine's `complete` is a plain function returning a `Response`, the async engine's is a coroutine function (`async def complete`). A sync method on the async side, or the reverse, is refused at construction rather than on the first call. `lm.copy(engine=...)` replaces both: the copy has no async engine unless you pass a new `async_engine=` in the same call. A copy that does not mention `engine` keeps the pair.
+
+**Saving needs the engine's own state.** An engine is saved when it implements `dump_state() -> dict` (JSON-serializable, no secrets) and the classmethod `load_state(state) -> engine`:
+
+```python
+class MyEngine:
+    def __init__(self, model="gpt-6-astra"):
+        self.model = model
+
+    def complete(self, request): ...
+
+    def dump_state(self):
+        return {"model": self.model}
+
+    @classmethod
+    def load_state(cls, state):
+        return cls(**state)
+```
+
+`lm.dump_state()` then records `{"engine": {"class": "your.module:MyEngine", "state": {...}}}` (and `async_engine` likewise). Loading imports that class from the file, which is the same trust decision as a custom LM class, so it is gated the same way: `program.load(path, allow_unsafe_lm_state=True)` or `dspy.LM.load_state(state, allow_custom_lm_class=True)`. The class must be importable by that path in the process that loads the state. Define it at module level, not inside a function — `dump_state()` refuses a class it cannot import back — and for state that must outlive the session, in an importable module: a class defined in a script or notebook is recorded as `__main__:MyEngine`, which loads only in a process whose `__main__` defines it again. `dump_state()` also refuses engine state JSON cannot carry. An engine without the two methods cannot be saved either; `dump_state()` says so and the way out is to save the program without that LM and set it again after loading. Keep secrets out of engine state, as DSPy keeps `api_key` out of LM state.
 
 This tutorial wraps the [Pi CLI](https://pi.dev) as a custom engine. Pi keeps its normal system prompt and tools, so a DSPy program can ask it to inspect a repository. The entire agent run, including tool calls, becomes one DSPy LM response.
 
@@ -78,7 +152,7 @@ program(
 )
 ```
 
-Here `"pi"` is a DSPy model label for history; the engine's CLI arguments select the actual provider and model.
+Here `"pi"` is a DSPy model label for history; the engine's CLI arguments select the actual provider and model. `PiEngine` holds no state, so to make it saveable add `dump_state` returning `{}` and `load_state` returning `cls()`.
 
 An answer for the DSPy repository can look like:
 

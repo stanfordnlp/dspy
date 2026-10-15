@@ -30,7 +30,9 @@ Hierarchy:
 from __future__ import annotations
 
 import builtins
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Mapping, Sequence
+
+from .rate_limits import diagnostics_text, freeze_rate_limits
 
 if TYPE_CHECKING:  # pragma: no cover
     from .types import Response
@@ -56,7 +58,9 @@ class LM15Error(Exception):
         status: int | None = None,
         request_id: str | None = None,
         retry_after: float | None = None,
+        rate_limit_headers: Mapping[str, Sequence[str]] | None = None,
     ) -> None:
+        self.rate_limit_headers = freeze_rate_limits(rate_limit_headers)
         self.message = message
         self.code = code or self.default_code
         self.provider = provider
@@ -109,19 +113,69 @@ class LockTimeoutError(LM15Error):
         super().__init__(message, **kwargs)
 
 
+class CollectionLimitError(LM15Error):
+    """A local turn collector reached its budget, not a provider failure.
+
+    Non-retryable. ``partial_events`` preserves the accepted events without
+    copying their payloads. ``partial`` materializes them on demand as an
+    incomplete Turn. A byte-limit failure also exposes ``rejected_event``:
+    it was received but not yielded or added to the collection. Process it
+    before resuming raw session reads if that content is needed.
+    """
+
+    default_code = "collection_limit"
+
+    def __init__(
+        self, message: str = "", *, limit: str | None = None,
+        maximum: int | None = None, retained_bytes: int = 0,
+        partial_events: tuple = (), rejected_event=None, **kwargs,
+    ) -> None:
+        self.limit = limit
+        self.maximum = maximum
+        self.retained_bytes = retained_bytes
+        self.partial_events = tuple(partial_events)
+        self.retained_events = len(self.partial_events)
+        self.rejected_event = rejected_event
+        super().__init__(message, **kwargs)
+
+    @property
+    def partial(self):
+        # Lazy: allocating combined text/audio while handling a collection
+        # limit would amplify memory pressure. Raw events are always available.
+        from dataclasses import replace
+        from .live import _materialize_turn
+
+        return replace(_materialize_turn(self.partial_events), ended_by="incomplete")
+
+
 class StreamAssemblyError(LM15Error):
     """A stream could not be assembled into a Response without inventing a fact.
 
-    Raised by the accumulator (MAP-9) when a tool call's fragments never
-    carried a name: an unnamed call is not actionable (MAP-1), and guessing
-    a name from the request dispatches the wrong function silently.  This is
-    an adapter defect, not model behaviour — every shipped dialect names a
-    call on its first fragment — so the message points at the adapter.
+    Three defects raise it (MAP-9 and MAP-3, contract change
+    2026-09-11-stream-completion):
+
+    - a tool call's fragments never carried a name (MAP-9): an unnamed call
+      is not actionable (MAP-1), and guessing a name from the request
+      dispatches the wrong function silently;
+    - the stream ended without an end event: the finish reason and usage
+      never arrived, and reporting the text as a finished turn would invent
+      both;
+    - an event arrived after the end event (MAP-3): it has no place in the
+      Response, and dropping it would be silent loss.
+
+    All three are adapter or source defects, not model behaviour — every
+    shipped dialect names a call on its first fragment and ends exactly
+    once — so the message points at the adapter.
 
     ``partial`` is everything that did assemble (text, thinking, other
-    parts, usage, finish reason) with the unnamed call(s) left out, so a
+    parts, usage, finish reason) with the offending material left out, so a
     caller that wants to salvage the turn can; ``part_index`` is the first
-    offending part.
+    offending part (MAP-9 only).
+
+    What does NOT raise it: a failure after the end event that is not an
+    event — the source raising while it drains, or its ``close()`` raising.
+    The Response is complete; it is returned, and the failure is reported
+    as a :class:`StreamCleanupWarning`.
     """
 
     default_code = "stream_assembly"
@@ -139,6 +193,19 @@ class StreamAssemblyError(LM15Error):
         self.part_index = part_index
 
 
+class StreamCleanupWarning(RuntimeWarning):
+    """A stream's source failed after the Response was already complete.
+
+    Emitted (``warnings.warn``) when, after the end event has been yielded,
+    the source raises while draining or its ``close()``/``aclose()`` raises.
+    The provider finished the turn and billed it; the Response is returned
+    unchanged.  The failure is about the connection's afterlife, not the
+    answer, so it is never raised from ``response`` — a caller who wants it
+    programmatically reads ``ResponseStream.cleanup_errors``, and a caller
+    who wants it fatal runs with ``-W error::lm15.errors.StreamCleanupWarning``.
+    """
+
+
 class ConfigurationError(LM15Error):
     """Local SDK or provider-adapter configuration failure."""
 
@@ -146,9 +213,20 @@ class ConfigurationError(LM15Error):
 
 
 class CapabilityError(LM15Error):
-    """Requested capability is not supported by this provider adapter."""
+    """Requested capability is not supported by this provider adapter.
+
+    ``feature`` (MAP-13, 2026-09-14) is the config path of what was
+    refused — ``config.top_k``, ``config.reasoning.thinking_budget``,
+    ``messages[0].parts[1]``, ``tools[2]`` — so the caller's own policy
+    layer can drop it and retry without parsing the message.  Absent
+    when the refusal is not about one addressable field.
+    """
 
     default_code = "unsupported_feature"
+
+    def __init__(self, message: str = "", *, feature: str | None = None, **kwargs) -> None:
+        self.feature = feature
+        super().__init__(message, **kwargs)
 
 
 class ProviderError(LM15Error):
@@ -170,11 +248,10 @@ class ProviderError(LM15Error):
             if item
         )
         base = self.message or self.code
-        if not context:
-            return base
         head, sep, tail = base.partition("\n\n")
-        suffix = f" ({context})"
-        return f"{head}{suffix}\n\n{tail}" if sep else f"{base}{suffix}"
+        suffix = f" ({context})" if context else ""
+        details = diagnostics_text(self.rate_limit_headers, self.retry_after)
+        return f"{head}{suffix}{details}" + (f"\n\n{tail}" if sep else "")
 
 
 class AuthError(ProviderError):
@@ -196,6 +273,9 @@ class AuthError(ProviderError):
         provider_name = provider or kwargs.get("provider")
         self.env_keys = tuple(env_keys)
         self.credential_hint = credential_hint
+        # AUTH-1 provenance: where the rejected credential came from (a
+        # label, never the value); set by ``with_credential_origin``.
+        self.credential_origin: str | None = None
 
         if credential_hint:
             # Subscription/OAuth adapters: guidance is how to re-login, not
@@ -209,9 +289,9 @@ class AuthError(ProviderError):
             )
             if self.env_keys:
                 keys = " or ".join(f"{key}=..." for key in self.env_keys)
-                guidance += f"    - Set the provider API key in your environment: {keys}\n"
+                guidance += f"    - Pass the key explicitly (api_key, or RouterConfig api_keys), or on a host with an environment set {keys}\n"
             else:
-                guidance += "    - Set the provider API key in your environment\n"
+                guidance += "    - Pass the key explicitly (api_key, or RouterConfig api_keys)\n"
             if provider_name:
                 guidance += f"    - Verify your {provider_name} account/project has access\n"
 
@@ -229,7 +309,7 @@ class RateLimitError(ProviderError):
             "  To fix:\n"
             "    - Wait a moment and retry\n"
             "    - Retry with backoff in your application layer (lm15 never retries for you)\n"
-            "    - Reduce request rate or upgrade your API plan\n"
+            "    - Check the reported limits and deployment capacity; a 429 does not prove the endpoint is unsupported\n"
         )
         super().__init__(_append_guidance(message, guidance), **kwargs)
 
@@ -323,7 +403,7 @@ class NotConfiguredError(ConfigurationError):
             guidance = "\n\n  To fix:\n"
             if self.env_keys:
                 keys = " or ".join(f"{key}=..." for key in self.env_keys)
-                guidance += f"    - Set the provider API key in your environment: {keys}\n"
+                guidance += f"    - Pass the key explicitly (api_key, or RouterConfig api_keys), or on a host with an environment set {keys}\n"
             if provider_name:
                 guidance += f"    - Configure credentials for {provider_name}\n"
 
@@ -386,6 +466,36 @@ class AmbiguousModelError(ConfigurationError):
 _GUIDANCE_MARKER = "\n\n  To fix:"
 
 
+_ORIGIN_MARKER = "\n\n  credential came from: "
+
+
+def with_credential_origin(error: ProviderError, origin: str) -> ProviderError:
+    """Name where an AuthError's credential came from (AUTH-1 provenance,
+    amended 2026-09-19): its own line under the provider's message (a
+    paragraph of its own, so ``__str__`` keeps the provider/HTTP suffix
+    on the provider's line), before the guidance, so a log line at 3 a.m.
+    answers "which identity?" without a second investigation.  Non-auth
+    errors pass through."""
+    if not isinstance(error, AuthError) or not origin:
+        return error
+    base = error.message.split(_GUIDANCE_MARKER, 1)[0]
+    if _ORIGIN_MARKER in base:
+        return error
+    out = AuthError(
+        base.rstrip() + _ORIGIN_MARKER + origin,
+        provider=error.provider,
+        env_keys=error.env_keys,
+        credential_hint=error.credential_hint,
+        provider_code=error.provider_code,
+        status=error.status,
+        request_id=error.request_id,
+        retry_after=error.retry_after,
+        rate_limit_headers=error.rate_limit_headers,
+    )
+    out.credential_origin = origin
+    return out
+
+
 def with_credential_hint(error: ProviderError, hint: str) -> ProviderError:
     """Rewrite an AuthError's guidance for subscription (OAuth) adapters.
 
@@ -404,6 +514,7 @@ def with_credential_hint(error: ProviderError, hint: str) -> ProviderError:
         status=error.status,
         request_id=error.request_id,
         retry_after=error.retry_after,
+        rate_limit_headers=error.rate_limit_headers,
     )
 
 
@@ -469,6 +580,7 @@ _CLASS_TO_CODE: dict[type[LM15Error], str] = {
     TransportError: "transport",
     LockTimeoutError: "lock_timeout",
     StreamAssemblyError: "stream_assembly",
+    CollectionLimitError: "collection_limit",
     ProviderError: "provider",
 }
 

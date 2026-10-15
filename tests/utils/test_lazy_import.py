@@ -1,3 +1,4 @@
+import importlib
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -37,6 +38,31 @@ def test_require_returns_lazy_module_when_present():
 def test_require_returns_cached_module():
     mod = require("json")
     assert mod is sys.modules["json"]
+
+
+def test_require_initializes_package_before_importing_submodule(tmp_path, monkeypatch):
+    package_name = "dspy_lazy_submodule_package"
+    package = tmp_path / package_name
+    package.mkdir()
+    (package / "__init__.py").write_text("initialized = True\nfrom .models import Model\n")
+    (package / "models.py").write_text("from .constants import VALUE\nclass Model:\n    value = VALUE\n")
+    (package / "constants.py").write_text("VALUE = 42\n")
+    monkeypatch.syspath_prepend(tmp_path)
+
+    try:
+        proxy = require(package_name)
+        assert "initialized" not in vars(proxy)
+        assert f"{package_name}.models" not in sys.modules
+
+        # Binding constants to the parent must not initialize it while models is still importing.
+        models = importlib.import_module(f"{package_name}.models")
+
+        assert proxy.initialized is True
+        assert proxy.Model is models.Model
+        assert models.Model.value == 42
+    finally:
+        for name in (package_name, f"{package_name}.models", f"{package_name}.constants"):
+            sys.modules.pop(name, None)
 
 
 def test_require_is_safe_under_concurrent_first_use(tmp_path, monkeypatch):

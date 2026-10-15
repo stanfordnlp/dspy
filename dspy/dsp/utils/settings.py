@@ -35,6 +35,8 @@ DEFAULT_CONFIG = dotdict(
     max_history_size=10000,
     max_trace_size=10000,
     warn_on_type_mismatch=True,  # Whether to log warnings when a module's input type doesn't match the signature type.
+    # Replaces `dspy.PythonInterpreter` in code-executing modules that carry no factory of their own.
+    interpreter_factory=None,
 )
 
 # Global base configuration and owner tracking
@@ -281,13 +283,11 @@ class Settings:
             "verified sources within a trusted environment."
         )
         try:
-            modules_to_serialize = modules_to_serialize or []
-            for module in modules_to_serialize:
-                cloudpickle.register_pickle_by_value(module)
+            from dspy.utils.pickle_by_value import serialize_by_value
 
             exclude_keys = exclude_keys or []
             data = {key: value for key, value in self.config.items() if key not in exclude_keys}
-            with open(path, "wb") as f:
+            with serialize_by_value(modules_to_serialize), open(path, "wb") as f:
                 cloudpickle.dump(data, f)
         except Exception as e:
             raise RuntimeError(

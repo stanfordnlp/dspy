@@ -31,12 +31,15 @@ explicitly (``api_key=`` / ``RouterConfig.api_keys``).  Run
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import base64
 import json
 import os
 from typing import Any, ClassVar
 
 from ..access import DEFAULT_XAI_BASE_URL, XAI
+from ..adaptation import adapt
 from ..errors import ProviderError, UnsupportedFeatureError
 from ..features import ProviderManifest
 from ..transports import TransportRequest
@@ -65,6 +68,7 @@ class XaiLM(OpenAIChatLM):
         credentials_path: str | os.PathLike[str] | None = None,
         transport: SyncTransport | None = None,
         base_url: str = DEFAULT_XAI_BASE_URL,
+        adaptations: "AdaptationPolicy" = "note",
     ) -> None:
         super().__init__(
             api_key=api_key,
@@ -73,6 +77,7 @@ class XaiLM(OpenAIChatLM):
             compat="xai",
             access=XAI,
             credentials_path=credentials_path,
+            adaptations=adaptations,
         )
 
     def _payload(self, request: Request, stream: bool) -> dict[str, Any]:
@@ -85,12 +90,13 @@ class XaiLM(OpenAIChatLM):
         # (Config(reasoning=None)) — they never reason anyway.
         reasoning = request.config.reasoning
         if reasoning is not None and reasoning.is_off:
-            raise UnsupportedFeatureError(
-                "xai: reasoning cannot be disabled — Grok reasoning models have no "
-                "off switch, and xAI silently ignores disable fields on the wire. "
-                "Omit the reasoning config, or pick a non-reasoning Grok model.",
-                provider=self.provider,
-            )
+            # MAP-13 (decision 2026-09-14 §4.2): no off switch exists; the
+            # lowest level is the closest and the spend shows in usage.
+            adapt("config.reasoning.effort", "substituted",
+                  "Grok reasoning models have no off switch and api.x.ai ignores disable fields "
+                  "(158 reasoning tokens on an explicit off, live 2026-09-01); the lowest level was sent",
+                  asked="off", applied="low", provider=self.provider)
+            request = replace(request, config=replace(request.config, reasoning=replace(reasoning, effort="low")))
         # docs.x.ai (models page, 2026-09-01): "logprobs and top_logprobs are
         # not supported by models grok-4.20 and newer. These fields will be
         # silently ignored if set."  Verified live 2026-09-01 on grok-4.6:
@@ -98,30 +104,33 @@ class XaiLM(OpenAIChatLM):
         # model served today is 4.20 or newer, so sending the field is a
         # guaranteed silent no-op — raise instead.
         if request.config.logprobs is not None:
-            raise UnsupportedFeatureError(
-                "xai: config.logprobs is not supported — grok-4.20 and newer "
-                "silently ignore logprobs/top_logprobs on the wire (docs.x.ai, "
-                "verified live 2026-09-01). OpenAI and Gemini carry logprobs.",
-                provider=self.provider,
-            )
+            adapt("config.logprobs", "dropped",
+                  "grok-4.20 and newer ignore logprobs/top_logprobs (docs.x.ai, live 2026-09-01); "
+                  "Response.logprobs will be absent (OpenAI and Gemini carry them)",
+                  asked=request.config.logprobs, provider=self.provider)
+            request = replace(request, config=replace(request.config, logprobs=None))
         tc = request.config.tool_choice
         if tc is not None and tc.allowed and not (len(tc.allowed) == 1 and tc.mode == "required"):
-            # MAP-8 rule 1 (live 2026-09-02): api.x.ai accepts allowed_tools and
-            # ignores it — with {lookup} allowed and weather asked, it called
-            # weather.  A silent widen; the forced single-function form held.
-            raise UnsupportedFeatureError(
-                "xai: tool_choice.allowed subsets are silently ignored by api.x.ai "
-                "(verified live 2026-09-02); force a single tool with mode='required', "
-                "or send only the allowed tools in Request.tools",
-                provider=self.provider,
-            )
+            # api.x.ai accepts allowed_tools and ignores it (live 2026-09-02:
+            # with {lookup} allowed and weather asked, it called weather).
+            # MAP-13 client_side: send only the allowed tools — what the
+            # allowlist means — and record it.
+            kept = tuple(t for t in request.tools if t.name in tc.allowed)
+            adapt("config.tool_choice.allowed", "client_side",
+                  "api.x.ai ignores tool_choice allowlists (live 2026-09-02); only the allowed tools "
+                  "were sent, which is what the allowlist means",
+                  asked=list(tc.allowed), applied=[t.name for t in kept], provider=self.provider)
+            request = replace(request, tools=kept,
+                              config=replace(request.config, tool_choice=replace(tc, allowed=())))
+            tc = request.config.tool_choice
         if tc is not None and tc.mode == "required" and request.config.response_format is not None:
             # MAP-8 rule 3 (live 2026-09-02): a forced tool next to a
             # response_format returned JSON text and no call.
+            # MAP-13 rule 4(b): the program depends on the call.
             raise UnsupportedFeatureError(
                 "xai: a forced tool (mode='required') cannot be combined with response_format — "
                 "api.x.ai returns JSON text and drops the call (verified live 2026-09-02)",
-                provider=self.provider,
+                provider=self.provider, feature="config.tool_choice.mode",
             )
         return super()._payload(request, stream)
 
@@ -136,14 +145,14 @@ class XaiLM(OpenAIChatLM):
                 provider=self.provider,
             )
         if not request.images:
-            return self._emit(method="POST", url=f"{base}/images/generations", headers=self._headers(), payload=payload, read_timeout=300.0)
+            return self._emit(method="POST", url=f"{base}/images/generations", headers=self._headers(), payload=payload)
         if len(request.images) > 1:
             raise UnsupportedFeatureError(
                 "xai: image edits take exactly one input image; the wire has no slot for more",
                 provider=self.provider,
             )
         payload["image"] = _xai_image_input(request.images[0], self.provider)
-        return self._emit(method="POST", url=f"{base}/images/edits", headers=self._headers(), payload=payload, read_timeout=300.0)
+        return self._emit(method="POST", url=f"{base}/images/edits", headers=self._headers(), payload=payload)
 
     def _image_generation_from_response(self, request: ImageGenerationRequest, resp: HttpResponse) -> ImageGenerationResponse:
         data = resp.json()
@@ -195,7 +204,7 @@ class XaiLM(OpenAIChatLM):
         payload: dict[str, Any] = {"model": request.model, "prompt": request.prompt, **(request.extensions or {})}
         return self._emit(
             method="POST", url=f"{self.base_url.rstrip('/')}/videos/generations",
-            headers=self._headers(), payload=payload, read_timeout=120.0,
+            headers=self._headers(), payload=payload,
         )
 
     def _video_job_from_body(self, body: str, video_id: "str | None" = None) -> VideoJobInfo:
@@ -211,7 +220,7 @@ class XaiLM(OpenAIChatLM):
     def _video_status_request(self, video_id: str) -> TransportRequest:
         return self._emit(
             method="GET", url=f"{self.base_url.rstrip('/')}/videos/{path_id(video_id)}",
-            headers=self._headers(), read_timeout=60.0,
+            headers=self._headers(),
         )
 
     def _video_status_info(self, video_id: str, data: "dict[str, Any]") -> VideoJobInfo:

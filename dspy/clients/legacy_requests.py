@@ -10,6 +10,55 @@ from typing import Any
 import pydantic
 
 
+def _strict_json_schema(schema: Any, *, root: dict | None = None) -> Any:
+    """The schema as OpenAI's strict structured outputs take it — the rules of
+    the OpenAI SDK's ``to_strict_json_schema``: every property required,
+    objects closed, ``None`` defaults dropped, a lone ``allOf`` and a ``$ref``
+    with siblings unravelled. A generated pydantic schema with defaults or an
+    optional submodel was refused by the API before this.
+    """
+    if not isinstance(schema, dict):
+        return schema
+    root = schema if root is None else root
+    out = dict(schema)
+    for key in ("$defs", "definitions"):
+        if isinstance(out.get(key), dict):
+            out[key] = {name: _strict_json_schema(sub, root=root) for name, sub in out[key].items()}
+    if out.get("type") == "object" and "additionalProperties" not in out:
+        out["additionalProperties"] = False
+    if isinstance(out.get("properties"), dict):
+        out["required"] = list(out["properties"])
+        out["properties"] = {name: _strict_json_schema(sub, root=root) for name, sub in out["properties"].items()}
+    if isinstance(out.get("items"), dict):
+        out["items"] = _strict_json_schema(out["items"], root=root)
+    if isinstance(out.get("anyOf"), list):
+        out["anyOf"] = [_strict_json_schema(item, root=root) for item in out["anyOf"]]
+    if isinstance(out.get("allOf"), list):
+        if len(out["allOf"]) == 1:
+            out.update(_strict_json_schema(out.pop("allOf")[0], root=root))
+        else:
+            out["allOf"] = [_strict_json_schema(item, root=root) for item in out["allOf"]]
+    if "default" in out and out["default"] is None:
+        del out["default"]
+    ref = out.get("$ref")
+    if isinstance(ref, str) and len(out) > 1:
+        resolved = _resolve_ref(root, ref)
+        if isinstance(resolved, dict):
+            out = {**_strict_json_schema(resolved, root=root), **{k: v for k, v in out.items() if k != "$ref"}}
+    return out
+
+
+def _resolve_ref(root: dict, ref: str) -> Any:
+    if not ref.startswith("#/"):
+        raise ValueError(f"Unexpected $ref format {ref!r}; only internal references are supported")
+    node: Any = root
+    for part in ref[2:].split("/"):
+        node = node.get(part) if isinstance(node, dict) else None
+        if node is None:
+            raise ValueError(f"Could not resolve $ref {ref!r}")
+    return node
+
+
 def _close_object_schemas(schema: Any) -> Any:
     if not isinstance(schema, dict):
         return schema
@@ -111,7 +160,10 @@ def chat_to_responses(request: dict[str, Any]) -> dict[str, Any]:
     format_ = data.pop("response_format", None)
     if format_ is not None:
         if isinstance(format_, type) and issubclass(format_, pydantic.BaseModel):
-            format_ = {"name": format_.__name__, "type": "json_schema", "schema": _close_object_schemas(format_.model_json_schema())}
+            # The same contract as the canonical path: a generated schema is
+            # sent strict and shaped for strict mode, on either engine.
+            format_ = {"name": format_.__name__, "type": "json_schema",
+                       "schema": _strict_json_schema(format_.model_json_schema()), "strict": True}
         data["text"] = {**data.get("text", {}), "format": format_}
     # The former config serializer omitted absent common generation parameters.
     for key in ("temperature", "top_p", "n", "logprobs", "reasoning", "tool_choice"):

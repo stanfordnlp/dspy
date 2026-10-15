@@ -11,14 +11,21 @@ Mirror of _sync.py but async end-to-end.  Key differences:
   CancelledError without awaiting anything that could itself be cancelled.
 - Timeouts use a cancellation-safe wait helper, including on Python 3.10/3.11
   where asyncio.wait_for can swallow simultaneous caller cancellation.
+- Lifetime: `aclose()` (or `async with`) closes every connection.  A
+  transport collected without it closes its idle connections from a
+  finalizer; when their event loop is already gone the socket underneath
+  is closed directly, since the asyncio transport can no longer do it.
+- TLS lives in `_ssl.py`, which this module imports on the first https request
+  and not before.  That module needs the stdlib `ssl`; this one does not, so a
+  CPython build without `ssl` still carries plain HTTP through here.
 """
 from __future__ import annotations
 
 import asyncio
 import select
 import socket
-import ssl
-from typing import AsyncIterator
+import weakref
+from typing import TYPE_CHECKING, AsyncIterator
 
 from ._exceptions import (
     ConnectError,
@@ -34,16 +41,25 @@ from ._http11 import (
     ResponseHeadParser,
     build_request_head,
 )
+from ._limits import (
+    DEFAULT_CONNECT_TIMEOUT,
+    DEFAULT_MAX_CONNECTIONS,
+    DEFAULT_POOL_TIMEOUT,
+    DEFAULT_READ_TIMEOUT,
+    DEFAULT_WRITE_TIMEOUT,
+    check_max_connections,
+    pool_timeout_hint,
+    read_timeout_hint,
+)
 from ._proxy import ProxyRoute, connect_payload, proxy_route_for, route_origin
-from ._ssl import make_ssl_context
 from ._timeouts import wait_for
 from ._types import AsyncTransportResponse, TransportRequest
 from ._url import ParsedURL, parse_url
 
+if TYPE_CHECKING:
+    from ._ssl import TLS
 
-_DEFAULT_CONNECT_TIMEOUT = 10.0
-_DEFAULT_READ_TIMEOUT = 60.0
-_DEFAULT_WRITE_TIMEOUT = 60.0
+
 _READ_CHUNK = 64 * 1024
 
 
@@ -90,10 +106,40 @@ class _AsyncConnection:
         if self.closed:
             return
         self.closed = True
-        try:
-            self.writer.close()
-        except Exception:
-            pass
+        _close_writer(self.writer)
+
+
+def _close_writer(writer: asyncio.StreamWriter) -> None:
+    """Close a StreamWriter; when its loop is already closed (the owner was
+    collected after ``asyncio.run`` returned) asyncio cannot schedule the
+    close, so the socket underneath is closed directly.
+
+    The fallback reaches asyncio's private ``_sock`` (through the TLS
+    protocol's inner transport when there is one) and does what the
+    loop's own ``_call_connection_lost`` would have done: close it and
+    forget it, so the transport's finalizer neither warns nor double-
+    closes.  Best effort by construction; a future asyncio that renames
+    the field degrades to the warning, never to an exception."""
+    try:
+        writer.close()
+        return
+    except Exception:
+        pass
+    transport = getattr(writer, "transport", None)
+    ssl_protocol = getattr(transport, "_ssl_protocol", None)
+    if ssl_protocol is not None:
+        transport = getattr(ssl_protocol, "_transport", None)
+    sock = getattr(transport, "_sock", None)
+    if sock is None:
+        return
+    try:
+        sock.close()
+    except Exception:
+        pass
+    try:
+        transport._sock = None
+    except Exception:
+        pass
 
 
 # ─── Async pool ──────────────────────────────────────────────────────
@@ -108,6 +154,7 @@ class _AsyncConnectionPool:
         self._slot = asyncio.Semaphore(max_connections)
         self._total_opened = 0
         self._closed = False
+        weakref.finalize(self, _close_idle, self._idle)
 
     async def acquire_slot(self, timeout: float | None = None) -> None:
         if self._closed:
@@ -118,7 +165,7 @@ class _AsyncConnectionPool:
         try:
             await wait_for(self._slot.acquire(), timeout=timeout, cancel_result=lambda _: self._slot.release())
         except asyncio.TimeoutError:
-            raise TransportError("timed out waiting for connection pool slot")
+            raise TransportError(pool_timeout_hint(timeout, self._max))
 
     def release_slot(self) -> None:
         self._slot.release()
@@ -172,17 +219,30 @@ class _AsyncConnectionPool:
             self._in_use.clear()
 
 
+def _close_idle(idle: dict) -> None:
+    for q in list(idle.values()):
+        for conn in q:
+            conn.close()
+    idle.clear()
+
+
 # ─── Transport ───────────────────────────────────────────────────────
 
 
 class StdlibAsyncTransport:
+    """Async HTTP/1.1 transport on asyncio streams.  Same knobs and per-
+    operation timeout semantics as :class:`StdlibTransport`.  Its pool
+    belongs to the event loop that first used it; one transport per loop.
+    """
+
     def __init__(
         self,
         *,
-        connect_timeout: float = _DEFAULT_CONNECT_TIMEOUT,
-        read_timeout: float = _DEFAULT_READ_TIMEOUT,
-        write_timeout: float = _DEFAULT_WRITE_TIMEOUT,
-        max_connections: int = 10,
+        connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
+        read_timeout: float = DEFAULT_READ_TIMEOUT,
+        write_timeout: float = DEFAULT_WRITE_TIMEOUT,
+        pool_timeout: float | None = DEFAULT_POOL_TIMEOUT,
+        max_connections: int = DEFAULT_MAX_CONNECTIONS,
         verify: bool = True,
         ca_bundle: str | None = None,
         user_agent: str = "lm15/stdlib",
@@ -192,21 +252,45 @@ class StdlibAsyncTransport:
         self._connect_timeout = connect_timeout
         self._read_timeout = read_timeout
         self._write_timeout = write_timeout
+        self._pool_timeout = pool_timeout
+        self._max_connections = check_max_connections(max_connections)
         self._user_agent = user_agent
         self._verify = verify
         self._ca_bundle = ca_bundle
         self._proxy = proxy
         self._trust_env = trust_env
-        self._ssl_ctx: ssl.SSLContext | None = None
-        self._pool = _AsyncConnectionPool(max_connections)
+        self._tls: TLS | None = None
+        self._pool = _AsyncConnectionPool(self._max_connections)
         self._closed = False
 
-    def _get_ssl_ctx(self) -> ssl.SSLContext:
-        if self._ssl_ctx is None:
-            self._ssl_ctx = make_ssl_context(
-                verify=self._verify, ca_bundle=self._ca_bundle
-            )
-        return self._ssl_ctx
+    @property
+    def max_connections(self) -> int:
+        return self._max_connections
+
+    def copy(self) -> "StdlibAsyncTransport":
+        """A fresh, open transport with this one's configuration and none of
+        its connections (an interactive runner closed the original)."""
+        return type(self)(
+            connect_timeout=self._connect_timeout,
+            read_timeout=self._read_timeout,
+            write_timeout=self._write_timeout,
+            pool_timeout=self._pool_timeout,
+            max_connections=self._max_connections,
+            verify=self._verify,
+            ca_bundle=self._ca_bundle,
+            user_agent=self._user_agent,
+            proxy=self._proxy,
+            trust_env=self._trust_env,
+        )
+
+    def _tls_half(self) -> "TLS":
+        """Build the TLS half on first https use. `._ssl` needs the stdlib `ssl` module,
+        which a reduced build may not have — and a plain-HTTP caller never asks for it."""
+        from ._ssl import TLS
+
+        if self._tls is None:
+            self._tls = TLS(verify=self._verify, ca_bundle=self._ca_bundle)
+        return self._tls
 
     def pool_stats(self) -> dict:
         return self._pool.stats()
@@ -240,7 +324,7 @@ class StdlibAsyncTransport:
         read_timeout = request.read_timeout or self._read_timeout
         write_timeout = request.write_timeout or self._write_timeout
 
-        await self._pool.acquire_slot(timeout=connect_timeout * 5)
+        await self._pool.acquire_slot(timeout=self._pool_timeout)
         slot_released = {"done": False}
 
         def release_slot_once() -> None:
@@ -301,7 +385,9 @@ class StdlibAsyncTransport:
                             )
                         except asyncio.TimeoutError as exc:
                             aborted = True
-                            raise ReadTimeout("read timed out mid-body") from exc
+                            raise ReadTimeout(
+                                f"read timed out mid-body: {read_timeout_hint(read_timeout)}"
+                            ) from exc
                         except asyncio.CancelledError:
                             aborted = True
                             raise
@@ -314,6 +400,9 @@ class StdlibAsyncTransport:
                             except ProtocolError:
                                 aborted = True
                                 raise
+                            tail = decoder.drain()
+                            if tail:
+                                yield tail
                             break
                         try:
                             for out in decoder.feed(data):
@@ -356,55 +445,42 @@ class StdlibAsyncTransport:
         origin: tuple[str, str, int],
         connect_timeout: float,
     ) -> _AsyncConnection:
-        ctx = self._get_ssl_ctx() if parsed.is_tls else None
+        tls = self._tls_half() if parsed.is_tls else None
 
-        if proxy is not None and parsed.is_tls:
+        if proxy is not None and tls is not None:
             # CONNECT over a raw socket, then hand it to open_connection
             # for the end-to-end TLS handshake (works on 3.10; StreamWriter
             # gained start_tls only in 3.11).
             tunnel = await self._connect_tunnel(parsed, proxy, timeout=connect_timeout)
-            try:
-                reader, writer = await wait_for(
-                    asyncio.open_connection(
-                        sock=tunnel, ssl=ctx, server_hostname=parsed.host
-                    ),
-                    timeout=connect_timeout,
-                    cancel_result=lambda pair: pair[1].close(),
-                )
-            except asyncio.TimeoutError as exc:
-                tunnel.close()
-                raise ConnectTimeout("TLS handshake through proxy timed out") from exc
-            except ssl.SSLError as exc:
-                tunnel.close()
-                raise ConnectError(f"TLS handshake failed: {exc}") from exc
-            except OSError as exc:
-                tunnel.close()
-                raise ConnectError(f"TLS handshake through proxy failed: {exc}") from exc
+            reader, writer = await tls.connect_over(
+                tunnel, server_hostname=parsed.host, timeout=connect_timeout
+            )
             return _AsyncConnection(origin, reader, writer)
 
         connect_host = proxy.host if proxy is not None else parsed.host
         connect_port = proxy.port if proxy is not None else parsed.port
-        try:
-            reader, writer = await wait_for(
-                asyncio.open_connection(
-                    host=connect_host,
-                    port=connect_port,
-                    ssl=ctx,
-                    server_hostname=parsed.host if ctx else None,
-                ),
+        if tls is not None:
+            reader, writer = await tls.connect(
+                host=connect_host,
+                port=connect_port,
+                server_hostname=parsed.host,
                 timeout=connect_timeout,
-                cancel_result=lambda pair: pair[1].close(),
             )
-        except asyncio.TimeoutError as exc:
-            raise ConnectTimeout(
-                f"timed out connecting to {connect_host}:{connect_port}"
-            ) from exc
-        except ssl.SSLError as exc:
-            raise ConnectError(f"TLS handshake failed: {exc}") from exc
-        except OSError as exc:
-            raise ConnectError(
-                f"failed to connect to {connect_host}:{connect_port}: {exc}"
-            ) from exc
+        else:
+            try:
+                reader, writer = await wait_for(
+                    asyncio.open_connection(host=connect_host, port=connect_port),
+                    timeout=connect_timeout,
+                    cancel_result=lambda pair: pair[1].close(),
+                )
+            except asyncio.TimeoutError as exc:
+                raise ConnectTimeout(
+                    f"timed out connecting to {connect_host}:{connect_port}"
+                ) from exc
+            except OSError as exc:
+                raise ConnectError(
+                    f"failed to connect to {connect_host}:{connect_port}: {exc}"
+                ) from exc
 
         # TCP_NODELAY on the underlying socket
         sock = writer.get_extra_info("socket")
@@ -526,7 +602,9 @@ class StdlibAsyncTransport:
                     conn.reader.read(_READ_CHUNK), timeout=read_timeout
                 )
             except asyncio.TimeoutError as exc:
-                raise ReadTimeout("read timed out waiting for headers") from exc
+                raise ReadTimeout(
+                    f"read timed out waiting for headers: {read_timeout_hint(read_timeout)}"
+                ) from exc
             except OSError as exc:
                 raise ReadError(f"read failed: {exc}") from exc
             if not data:

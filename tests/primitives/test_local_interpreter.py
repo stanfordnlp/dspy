@@ -161,7 +161,7 @@ def test_guest_cannot_corrupt_interpreter_owned_globals_across_executions():
 
 
 def test_errors_are_recoverable_but_timeout_is_terminal():
-    interpreter = dspy.LocalInterpreter(execution_timeout=0.1)
+    interpreter = dspy.LocalInterpreter(execution_timeout=1)
     with pytest.raises(SyntaxError):
         interpreter.execute("if")
     with pytest.raises(CodeExecutionError, match="ZeroDivisionError"):
@@ -223,20 +223,23 @@ with ThreadPoolExecutor(max_workers=2) as pool:
 
 def test_execution_timeout_does_not_wait_for_blocked_host_tool():
     tool_started = threading.Event()
+    release_tool = threading.Event()
 
     def blocked():
         tool_started.set()
-        time.sleep(1)
+        release_tool.wait(timeout=10)
         return 42
 
-    interpreter = dspy.LocalInterpreter(tools={"blocked": blocked}, execution_timeout=0.1)
+    interpreter = dspy.LocalInterpreter(tools={"blocked": blocked}, execution_timeout=1)
+    interpreter.start()
     started = time.monotonic()
     with pytest.raises(CodeInterpreterError, match="exceeded execution timeout"):
         interpreter.execute("blocked()")
     elapsed = time.monotonic() - started
+    release_tool.set()
 
-    assert tool_started.is_set()
-    assert elapsed < 0.5
+    assert tool_started.wait(timeout=5)
+    assert elapsed < 5
     with pytest.raises(CodeInterpreterError, match="shut down"):
         interpreter.execute("1")
 

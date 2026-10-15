@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 # expansion at the `Prediction(**final_outputs, history=..., termination_reason=...)` call sites.
 _RESERVED_PREDICTION_KEYS = frozenset({"history", "termination_reason"})
 
+# Internal input field names ReActV2 injects into its inner Predict signature. A user
+# input with one of these names would be silently overwritten by `_make_react_signature`
+# and popped out of the caller's kwargs by `forward`/`aforward`, so it must be rejected.
+_RESERVED_INPUT_KEYS = frozenset({"history", "tools"})
+
 if TYPE_CHECKING:
     from dspy.signatures.signature import Signature
 
@@ -50,6 +55,14 @@ class ReActV2(Module):
             raise ValueError(
                 f"Output field name(s) {names} are reserved by ReActV2 and attached to every "
                 "returned Prediction. Rename these output fields on your signature."
+            )
+
+        reserved_inputs = _RESERVED_INPUT_KEYS.intersection(self.signature.input_fields)
+        if reserved_inputs:
+            names = ", ".join(f"`{name}`" for name in sorted(reserved_inputs))
+            raise ValueError(
+                f"Input field name(s) {names} are reserved by ReActV2 for its internal "
+                "conversation history and tool list. Rename these input fields on your signature."
             )
 
         user_tools = [tool if isinstance(tool, Tool) else Tool(tool) for tool in tools]

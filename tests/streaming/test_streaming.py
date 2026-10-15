@@ -353,6 +353,40 @@ async def test_streaming_handles_space_correctly():
     assert "".join([chunk.chunk for chunk in all_chunks]) == "How are you doing?"
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "parts",
+    [
+        ["[[ ## answer ## ]]\n", "How ", "are ", "you ", "doing?\n\n", "[[ ## completed ## ]]"],
+        ["[[ ## answer ## ]]", "\nHow ", "are ", "you ", "doing?", "\n\n", "[[ ## completed ## ]]"],
+        ["[[ ## answer", " ## ]]", "\nHow ", "are ", "you ", "doing?", "\n\n[[ ## completed ## ]]"],
+        ["[[ ## answer ## ]]\n", "How\n", "are you\n", "doing?", "\n\n[[ ## completed ## ]]"],
+        ["[[ ## answer ## ]]\n", "How ", "are ", "you ", "doing?\n\n"],
+    ],
+)
+async def test_streaming_strips_boundary_whitespace_regardless_of_chunking(parts):
+    program = dspy.streamify(
+        dspy.Predict("question->answer"),
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+    )
+
+    async def stream(*args, **kwargs):
+        for part in parts:
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=part))])
+
+    with mock.patch("litellm.acompletion", side_effect=stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.ChatAdapter()):
+            all_chunks = []
+            final = None
+            async for value in program(question="What is the capital of France?"):
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    all_chunks.append(value)
+                elif isinstance(value, dspy.Prediction):
+                    final = value
+
+    assert "".join([chunk.chunk for chunk in all_chunks]) == final.answer
+
+
 @pytest.mark.llm_call
 def test_sync_streaming(lm_for_test):
     class MyProgram(dspy.Module):
@@ -2078,3 +2112,103 @@ async def test_streaming_reasoning_fallback():
                 assert final_prediction.reasoning.content == "Let's think step by step about this question."
                 # Verify Reasoning object is str-like
                 assert str(final_prediction.reasoning) == "Let's think step by step about this question."
+
+
+# ─── errors inside streamify are the program's own exception ─────────
+
+
+class _FailingEngine:
+    def complete(self, request):
+        from dspy.lm15 import AuthError
+
+        raise AuthError("bad key", provider="x")
+
+    def stream(self, request):
+        from dspy.lm15 import AuthError
+
+        raise AuthError("bad key", provider="x")
+        yield  # a generator that fails before its first event
+
+
+def test_streamify_raises_the_public_error_itself():
+    # The task group reported every failure as an exception group, so
+    # `except dspy.LMError` missed it.
+    lm = dspy.LM("custom/failing", engine=_FailingEngine(), cache=False, num_retries=0)
+    stream = dspy.streamify(dspy.Predict("q -> a"), async_streaming=False)
+    with dspy.context(lm=lm), pytest.raises(dspy.LMAuthError) as info:
+        for _ in stream(q="x"):
+            pass
+    assert not hasattr(info.value, "exceptions")  # not a group
+
+
+@pytest.mark.asyncio
+async def test_async_streamify_raises_the_public_error_itself():
+    lm = dspy.LM("custom/failing", engine=_FailingEngine(), cache=False, num_retries=0)
+    stream = dspy.streamify(dspy.Predict("q -> a"), async_streaming=True)
+    with dspy.context(lm=lm), pytest.raises(dspy.LMAuthError):
+        async for _ in stream(q="x"):
+            pass
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
+@pytest.mark.parametrize("mode", ["native", "unsupported", None, "none"])
+async def test_default_cot_fallback_streams_reasoning(adapter_type, mode):
+    texts = {
+        dspy.ChatAdapter: "[[ ## plan ## ]]\nCount the signed items.\n\n[[ ## answer ## ]]\n17\n\n[[ ## completed ## ]]",
+        dspy.JSONAdapter: '{"plan": "Count the signed items.", "answer": "17"}',
+        dspy.XMLAdapter: "<plan>Count the signed items.</plan><answer>17</answer>",
+    }
+    if mode == "native":
+        texts = {
+            dspy.ChatAdapter: "[[ ## answer ## ]]\n17\n\n[[ ## completed ## ]]",
+            dspy.JSONAdapter: '{"answer": "17"}',
+            dspy.XMLAdapter: "<answer>17</answer>",
+        }
+
+    async def stream(*args, **kwargs):
+        text = texts[adapter_type]
+        for offset in range(0, len(text), 4):
+            # Providers can return thinking even when disabled, including alongside content.
+            yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(
+                content=text[offset:offset + 4], reasoning_content="Native thinking." if offset == 0 else None,
+            ))])
+
+    model = "openai/gpt-4o-mini" if mode == "unsupported" else "openai/gpt-5"
+    lm = dspy.LM(model, engine="litellm", cache=False, max_tokens=16000)
+    lm.kwargs["reasoning_effort"] = "high"
+    config = {"reasoning_effort": mode} if mode in (None, "none") else {}
+    program = dspy.streamify(
+        dspy.ChainOfThought("question -> answer"),
+        stream_listeners=[dspy.streaming.StreamListener("reasoning")],
+    )
+    with mock.patch("litellm.acompletion", side_effect=stream), dspy.context(lm=lm, adapter=adapter_type()):
+        values = [value async for value in program(question="Count items", config=config)]
+    chunks = [value for value in values if isinstance(value, StreamResponse)]
+    assert chunks and all(c.signature_field_name == "reasoning" for c in chunks)
+    expected = "Native thinking." if mode == "native" else "Count the signed items."
+    streamed = "".join(c.chunk for c in chunks).strip()
+    if adapter_type is dspy.JSONAdapter and mode != "native":
+        # JSON listeners emit raw JSON fragments, not decoded strings.
+        assert f'"{expected}"' in streamed
+        assert "Native thinking." not in streamed
+    else:
+        assert streamed == expected
+    assert values[-1].reasoning == expected
+    assert values[-1].answer == "17"
+
+
+def test_streamify_keeps_a_group_of_several_failures():
+    import builtins
+
+    from dspy.streaming.streamify import _single_failure
+
+    group_class = getattr(builtins, "BaseExceptionGroup", None)
+    if group_class is None:  # Python 3.10: anyio's backport
+        import exceptiongroup
+
+        group_class = exceptiongroup.BaseExceptionGroup
+
+    assert _single_failure(group_class("two", [ValueError("a"), ValueError("b")])) is None
+    assert isinstance(_single_failure(group_class("outer", [group_class("inner", [KeyError("k")])])), KeyError)
+    assert _single_failure(ValueError("plain")) is None

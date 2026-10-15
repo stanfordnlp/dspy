@@ -191,6 +191,7 @@ OPENAI_RESPONSES_PRESETS: dict[str, OpenAIResponsesCompat] = {
         cache_control="none",
         tool_result_media="reject",  # MAP-10: no receipt on this door — reject until one exists
     ),
+    "lmstudio": None,  # type: ignore[dict-item]  # filled below: ollama's policy object
     "vllm": OpenAIResponsesCompat(
         developer_role="system",
         max_output_tokens_field="max_tokens",
@@ -278,8 +279,19 @@ OPENAI_RESPONSES_PRESETS: dict[str, OpenAIResponsesCompat] = {
 
 # Default base URLs for the Responses presets that name a server (the
 # registry's access policies point here so each URL has one copy).
+OPENAI_RESPONSES_PRESETS["lmstudio"] = OPENAI_RESPONSES_PRESETS["ollama"]
+
+# A server's OpenAI root is one address whichever OpenAI-shaped path is
+# used; the local engines' roots are the chat table's.  A preset that names
+# a server absent here (qwen, deepseek, zai: no documented Responses root)
+# is REFUSED at construction without an explicit base_url — never sent to
+# the OpenAI cloud (preset_base_url below, 2026-09-11).
 OPENAI_RESPONSES_PRESET_BASE_URLS: dict[str, str] = {
     "openai": "https://api.openai.com/v1",
+    "ollama": "http://localhost:11434/v1",
+    "lmstudio": "http://localhost:1234/v1",
+    "vllm": "http://localhost:8000/v1",
+    "sglang": "http://localhost:30000/v1",
     "openrouter": "https://openrouter.ai/api/v1",
     # dev.meta.ai overview.md: one base URL for every Meta Model API surface.
     "meta": "https://api.meta.ai/v1",
@@ -379,6 +391,11 @@ OpenAIChatForcedToolChoice = Literal["auto", "send", "reject"]
 # answers 200 with free-form, fenced JSON that ignores the schema (live
 # 2026-09-03) — silent, so the adapter must refuse.
 OpenAIChatJsonSchema = Literal["auto", "send", "reject"]
+# MAP-14 §4: can the server score named tokens (``logprob_token_ids`` on
+# the completions endpoint) so lm15 can deliver a distribution over
+# declared keys?  Receipted on vLLM 0.29.0 (honoured) and 0.25.1 (200,
+# silently absent) 2026-09-17; the response-side check catches the latter.
+OpenAIChatTokenScoring = Literal["auto", "none", "logprob_token_ids"]
 # The server's native reasoning-effort levels, when the server does NOT
 # refuse the others.  MAP-7 rule 2: a word with no native level raises
 # client-side rather than downgrading silently.  Most servers answer 400 to
@@ -413,6 +430,7 @@ class OpenAIChatCompat:
     user_field: OpenAIChatUserField | None = None
     forced_tool_choice: OpenAIChatForcedToolChoice | None = None
     json_schema: OpenAIChatJsonSchema | None = None
+    token_scoring: OpenAIChatTokenScoring | None = field(default=None, kw_only=True)
     reasoning_efforts: OpenAIChatReasoningEfforts | None = field(default=None, kw_only=True)
     routing: JsonObject | None = None
     extensions: JsonObject | None = None
@@ -456,6 +474,7 @@ class OpenAIChatCompat:
         _check_literal_or_none(self.tool_result_media, ToolResultMedia, "tool_result_media")
         _check_literal_or_none(self.cache_control, OpenAICacheControl, "cache_control")
         _check_literal_or_none(self.user_field, OpenAIChatUserField, "user_field")
+        _check_literal_or_none(self.token_scoring, OpenAIChatTokenScoring, "token_scoring")
         _check_literal_or_none(self.forced_tool_choice, OpenAIChatForcedToolChoice, "forced_tool_choice")
         _check_literal_or_none(self.json_schema, OpenAIChatJsonSchema, "json_schema")
         if self.reasoning_efforts is not None:
@@ -496,6 +515,33 @@ def _preset_key(name: str) -> str:
     return _OPENAI_CHAT_PRESET_ALIASES.get(key, key)
 
 
+def preset_base_url(table: dict[str, str], name: str, *, dialect: str, default_preset: str) -> str:
+    """The address a preset name supplies for one dialect.
+
+    A name that names a server supplies that server's root.  The dialect's
+    own default (``default_preset``: ``openai`` / ``anthropic``) is the
+    only name that resolves to the cloud default.  Any other name with no
+    entry in ``table`` is refused with :class:`NotConfiguredError`: a
+    request meant for a named server must never be sent to the OpenAI
+    cloud with whatever key is around because a table lacked a row
+    (2026-09-11; before, ``compat="lmstudio"`` did exactly that).
+    """
+    key = _preset_key(name)
+    try:
+        return table[key]
+    except KeyError:
+        pass
+    if key == default_preset:
+        return table[default_preset]
+    from .errors import NotConfiguredError
+
+    raise NotConfiguredError(
+        f"compat {name!r} names a server whose {dialect} address lm15 does not "
+        f"know; pass base_url= (the server's OpenAI-compatible root, e.g. "
+        f"'http://localhost:PORT/v1')"
+    )
+
+
 # Spelling aliases → canonical preset key.  Every alias is permanent.  One
 # map serves all three dialect tables: a name means the same server in each.
 _OPENAI_CHAT_PRESET_ALIASES: dict[str, str] = {
@@ -504,8 +550,7 @@ _OPENAI_CHAT_PRESET_ALIASES: dict[str, str] = {
     "chat_completions": "openai",
     "responses": "openai",
     "openai_responses": "openai",
-    "lmstudio": "ollama",
-    "lm_studio": "ollama",
+    "lm_studio": "lmstudio",
     "dashscope_qwen": "qwen",
     "z_ai": "zai",
 }
@@ -528,8 +573,31 @@ OPENAI_CHAT_PRESETS: dict[str, OpenAIChatCompat] = {
         cache_control="openai",
         tool_result_media="reject",  # MAP-10: text-only tool row; gpt-5.4 received the USER image and not the tool image
     ),
-    # ollama / LM Studio: max_tokens, no reasoning dial on the wire.
+    # ollama: max_tokens; reasoning_effort (and `reasoning: {effort}`) on
+    # the wire, mapped to Ollama's `think` by openai/openai.go
+    # `thinkFromReasoningEffort` (lm15-contract/research/tool-result-content/
+    # sources/ollama.txt:536-560): none → think:false, minimal → low,
+    # low|medium|high|max verbatim, xhigh → max; an unknown word is a 400.
+    # Until 2026-09-14 this said thinking_format="none" with "no receipt";
+    # THEORY.md §3.17.  Source receipt; live receipt still owed.
     "ollama": OpenAIChatCompat(
+        instruction_role="system",
+        max_tokens_field="max_tokens",
+        stream_usage="include",
+        thinking_format="reasoning_effort",
+        reasoning_efforts=("minimal", "low", "medium", "high", "xhigh", "max"),
+        tool_result_name="omit",
+        strict_tools="omit",
+        cache_control="none",
+        tool_result_media="reject",  # MAP-10: openai.go builds image rows without ToolCallID; no receipt — reject until one exists
+    ),
+    # LM Studio: its own policy at http://localhost:1234/v1
+    # (OPENAI_CHAT_PRESET_BASE_URLS).  HYPOTHESIS, no receipt (THEORY.md
+    # §3.17): lmstudio.ai lists max_tokens and no reasoning dial, so
+    # thinking_format="none" — under MAP-13 a set dial is dropped and
+    # recorded, never refused on this unverified line.  Until 2026-09-11
+    # the name was an alias of "ollama".
+    "lmstudio": OpenAIChatCompat(
         instruction_role="system",
         max_tokens_field="max_tokens",
         stream_usage="include",
@@ -537,7 +605,7 @@ OPENAI_CHAT_PRESETS: dict[str, OpenAIChatCompat] = {
         tool_result_name="omit",
         strict_tools="omit",
         cache_control="none",
-        tool_result_media="reject",  # MAP-10: openai.go builds image rows without ToolCallID; no receipt — reject until one exists
+        tool_result_media="reject",
     ),
     # Groq: server-executed builtin tools (browser_search / code_interpreter,
     # live 2026-09-01); reasoning_effort dial; no cache_control field.
@@ -586,6 +654,9 @@ OPENAI_CHAT_PRESETS: dict[str, OpenAIChatCompat] = {
         strict_tools="omit",
         cache_control="none",
         tool_result_media="reject",  # MAP-10: parser carries it; no server reachable in the pass — reject until a receipt
+        # MAP-14 §4, receipts/2026-09-17-judgments/vllm-0.29-lfm-trie.json (honoured)
+        # and vllm-0.25.1-qwen-trie-negative.json (silently absent; caught on parse).
+        token_scoring="logprob_token_ids",
     ),
     "sglang": OpenAIChatCompat(
         instruction_role="system",
@@ -756,9 +827,12 @@ OPENAI_CHAT_PRESETS: dict[str, OpenAIChatCompat] = {
 # Used by OpenAIChatLM when a compat preset is given by name and no
 # explicit base_url overrides it; the provider registry's access policies
 # point here so there is one copy of each URL.
+
 OPENAI_CHAT_PRESET_BASE_URLS: dict[str, str] = {
     "openai": "https://api.openai.com/v1",
     "ollama": "http://localhost:11434/v1",
+    # lmstudio.ai docs (Local Server): "http://localhost:1234/v1".
+    "lmstudio": "http://localhost:1234/v1",
     "groq": "https://api.groq.com/openai/v1",
     "openrouter": "https://openrouter.ai/api/v1",
     "xai": "https://api.x.ai/v1",
@@ -808,6 +882,7 @@ class ResolvedOpenAIChatCompat:
     user_field: Literal["user", "user_id"] = "user"
     forced_tool_choice: Literal["send", "reject"] = "send"
     json_schema: Literal["send", "reject"] = "send"
+    token_scoring: Literal["none", "logprob_token_ids"] = field(default="none", kw_only=True)
     reasoning_efforts: tuple[str, ...] | None = field(default=None, kw_only=True)
     routing: JsonObject | None = None
     extensions: JsonObject | None = None
@@ -829,6 +904,7 @@ _CHAT_AUTO_DEFAULTS: dict[str, str] = {
     "user_field": "user",
     "forced_tool_choice": "send",
     "json_schema": "send",
+    "token_scoring": "none",
 }
 
 

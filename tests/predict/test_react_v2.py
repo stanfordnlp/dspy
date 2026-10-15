@@ -199,6 +199,31 @@ def test_react_v2_forced_submit_on_empty_tool_calls():
     assert lm.history[1]["kwargs"].get("reasoning_effort") is None
 
 
+def test_react_v2_forced_submit_with_native_flag_but_unsupported_lm():
+    adapter = dspy.JSONAdapter(use_native_function_calling=True)
+    lm = dspy.utils.DummyLM(
+        [
+            {"next_thought": "No action.", "tool_calls": dspy.ToolCalls(tool_calls=[])},
+            {
+                "next_thought": "Forced final.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"answer": "forced"}}]
+                ),
+            },
+        ],
+        adapter=adapter,
+    )
+    assert lm.supports_function_calling is False
+
+    with dspy.context(lm=lm, adapter=adapter):
+        pred = dspy.ReActV2("question -> answer", tools=[])(question="cats")
+
+    assert pred.answer == "forced"
+    assert pred.termination_reason == "forced_submit"
+    assert "tool_choice" not in lm.history[1]["kwargs"]
+    assert "tools" not in lm.history[1]["kwargs"]
+
+
 class NativeToolLM(dspy.BaseLM):
     def __init__(self):
         super().__init__("native-tool-lm", "chat", 0.0, 1000, True)
@@ -335,6 +360,12 @@ def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed():
 def test_react_v2_rejects_reserved_output_field_names(reserved):
     with pytest.raises(ValueError, match=reserved):
         dspy.ReActV2(f"question -> answer, {reserved}: str", tools=[])
+
+
+@pytest.mark.parametrize("reserved", ["history", "tools"])
+def test_react_v2_rejects_reserved_input_field_names(reserved):
+    with pytest.raises(ValueError, match=reserved):
+        dspy.ReActV2(f"{reserved}: str -> answer: str", tools=[])
 
 
 @pytest.mark.asyncio

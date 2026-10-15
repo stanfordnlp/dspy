@@ -1,4 +1,3 @@
-import sys
 from unittest import mock
 
 import pydantic
@@ -454,7 +453,7 @@ def test_xml_adapter_full_prompt():
     assert messages[0]["role"] == "system"
     assert messages[1]["role"] == "user"
 
-    union_type_repr = "Union[str, NoneType]" if sys.version_info >= (3, 14) else "UnionType[str, NoneType]"
+    union_type_repr = "Union[str, NoneType]"
 
     expected_system = (
         "Your input fields are:\n"
@@ -829,7 +828,10 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                  '\n'
                  '<question>\n'
                  'Who is Ada?\n'
-                 '</question>'},
+                 '</question>\n\n'
+                 'Respond with the corresponding output fields wrapped in XML tags `<answer>`. '
+                 'Use this nested XML structure: '
+                 '<answer><answer>...</answer><sources><item>...</item></sources></answer>'},
      {"role": "assistant",
       "content": "<answer><answer>Ada is a mathematician.</answer><sources><item>memory</item></sources></answer>"},
      {"role": "user",

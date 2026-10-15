@@ -86,7 +86,7 @@ class LocalInterpreter:
         self.execution_timeout = execution_timeout
         self.callbacks = list(callbacks or [])
         self._process: subprocess.Popen[str] | None = None
-        self._responses: queue.Queue[str | None] = queue.Queue()
+        self._responses: queue.Queue[str | BaseException | None] = queue.Queue()
         self._lock = threading.Lock()
         self._send_lock = threading.Lock()
         self._ended = False
@@ -168,6 +168,9 @@ class LocalInterpreter:
             self._raise_terminal_error(timeout_message)
         if line is None:
             self._raise_terminal_error("Python worker exited unexpectedly.")
+        if isinstance(line, BaseException):
+            self.shutdown()
+            raise line
         try:
             message = json.loads(line)
         except json.JSONDecodeError as exc:
@@ -220,6 +223,11 @@ class LocalInterpreter:
             response = {"type": "tool_result", "id": request["id"], "value": value}
         except Exception as exc:
             response = {"type": "tool_error", "id": request["id"], "error": f"{type(exc).__name__}: {exc}"}
+        except BaseException as exc:
+            # Like PythonInterpreter, propagate cancellation/interrupts to the caller.
+            # Wake execute(): the worker cannot reply while this tool is unanswered.
+            self._responses.put(exc)
+            return
         self._send(response, process)
 
     @with_callbacks

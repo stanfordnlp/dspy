@@ -24,6 +24,7 @@ EXPECTED = {
     lm15.TransportError: dspy.LMTransportError,
     lm15.LockTimeoutError: dspy.LMLockTimeoutError,
     lm15.StreamAssemblyError: dspy.LMStreamAssemblyError,
+    lm15.CollectionLimitError: dspy.LMCollectionLimitError,
     lm15.ConfigurationError: dspy.LMConfigurationError,
     lm15.NotConfiguredError: dspy.LMNotConfiguredError,
     lm15.UnknownModelError: dspy.LMConfigurationError,
@@ -282,7 +283,7 @@ async def test_custom_request_refusal_is_projected_before_adapter_fallback(async
     lm = dspy.LM("custom", engine=engine, async_engine=AsyncEngine(engine), cache=False)
     adapter = dspy.ChatAdapter()
     monkeypatch.setattr(adapter, "_make_json_adapter_fallback", lambda: pytest.fail("Setup failures are not parse failures"))
-    args = (lm, {"prediction": {"type": "content", "content": "x"}}, dspy.Signature("question -> answer"), [], {"question": "hi"})
+    args = (lm, {"audio": {"voice": "alloy", "format": "wav"}}, dspy.Signature("question -> answer"), [], {"question": "hi"})
     with pytest.raises(dspy.LMUnsupportedFeatureError) as caught:
         if asynchronous:
             await adapter.acall(*args)
@@ -292,7 +293,7 @@ async def test_custom_request_refusal_is_projected_before_adapter_fallback(async
     assert engine.calls == 0
 
 
-@pytest.mark.parametrize("code", ["auth", "billing", "rate_limit", "invalid_request", "context_length", "timeout", "server", "unsupported_model", "unsupported_feature", "not_configured", "unknown_model", "ambiguous_model", "transport", "lock_timeout", "stream_assembly", "provider"])
+@pytest.mark.parametrize("code", sorted(lm15.ERROR_CODES))
 def test_every_canonical_error_event_uses_the_same_projection(code):
     from dspy._vendor.lm15.errors import error_class_for_code
     from dspy.clients.engines.stream_guard import error_from_event

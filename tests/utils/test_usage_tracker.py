@@ -1,5 +1,7 @@
+import asyncio
 from unittest import mock
 
+import pytest
 from pydantic import BaseModel
 
 import dspy
@@ -392,3 +394,165 @@ def test_parallel_executor_with_usage_tracker():
 
     # Parent tracker should remain unchanged (workers have independent copies)
     assert len(parent_tracker.usage_data) == 0
+
+
+def test_non_numeric_usage_values_are_not_accumulated():
+    """Non-count fields a provider reports in `usage` are kept, not concatenated or tallied."""
+    tracker = UsageTracker()
+    tracker.add_usage(
+        "openai/gpt-4o-mini",
+        {
+            "prompt_tokens": 10,
+            "completion_tokens": 2,
+            "service_tier": "standard",
+            "inference_geo": "us",
+            "iterations": None,
+            "is_byok": False,
+        },
+    )
+    tracker.add_usage(
+        "openai/gpt-4o-mini",
+        {
+            "prompt_tokens": 10,
+            "completion_tokens": 2,
+            "service_tier": "flex",
+            "inference_geo": "us",
+            "iterations": None,
+            "is_byok": False,
+        },
+    )
+
+    assert tracker.get_total_tokens()["openai/gpt-4o-mini"] == {
+        "prompt_tokens": 20,
+        "completion_tokens": 4,
+        "service_tier": "standard",  # Keeps first
+        "inference_geo": "us",  # Keeps value
+        "iterations": None,  # Keeps value
+        "is_byok": False,  # Keeps bool as-is
+    }
+
+
+def test_non_numeric_usage_value_present_in_only_some_entries():
+    """A field only some calls report must not raise when merged with the entries missing it."""
+    tracker = UsageTracker()
+    tracker.add_usage("openai/gpt-4o-mini", {"prompt_tokens": 10, "service_tier": "standard"})
+    tracker.add_usage("openai/gpt-4o-mini", {"prompt_tokens": 10})
+
+    assert tracker.get_total_tokens()["openai/gpt-4o-mini"] == {
+        "prompt_tokens": 20,
+        "service_tier": "standard",
+    }
+
+
+def test_nested_usage_trackers_roll_up():
+    """Test that nested usage trackers still reflect usage on the parent."""
+
+    with track_usage() as orchestrator_cost:
+        orchestrator_cost.add_usage(
+            "openai/gpt-4o-mini",
+            {
+                "prompt_tokens": 100,
+                "completion_tokens": 10,
+                "total_tokens": 110,
+            },
+        )
+        with track_usage() as subagent_cost:
+            subagent_cost.add_usage(
+                "openai/gpt-4o-mini",
+                {
+                    "prompt_tokens": 1000,
+                    "completion_tokens": 100,
+                    "total_tokens": 1100,
+                },
+            )
+        orchestrator_cost.add_usage(
+            "openai/gpt-4o-mini",
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 1,
+                "total_tokens": 11,
+            },
+        )
+
+    total_prompt_tokens = 1110
+    total_completion_tokens = 111
+    total_tokens = total_prompt_tokens + total_completion_tokens
+    assert orchestrator_cost.get_total_tokens()["openai/gpt-4o-mini"] == {
+        "prompt_tokens": total_prompt_tokens,
+        "completion_tokens": total_completion_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
+def test_nested_usage_trackers_roll_up_despite_errors():
+    """Test that nested usage trackers still reflect usage on the parent even when child raises."""
+
+    def erroring_subagent():
+        with track_usage() as subagent_cost:
+            subagent_cost.add_usage(
+                "openai/gpt-4o-mini",
+                {
+                    "prompt_tokens": 1000,
+                    "completion_tokens": 100,
+                    "total_tokens": 1100,
+                },
+            )
+            raise RuntimeError("!")
+
+    with track_usage() as orchestrator_cost:
+        orchestrator_cost.add_usage(
+            "openai/gpt-4o-mini",
+            {
+                "prompt_tokens": 100,
+                "completion_tokens": 10,
+                "total_tokens": 110,
+            },
+        )
+        try:
+            erroring_subagent()
+        except RuntimeError:
+            pass
+
+    total_prompt_tokens = 1100
+    total_completion_tokens = 110
+    total_tokens = total_prompt_tokens + total_completion_tokens
+    assert orchestrator_cost.get_total_tokens()["openai/gpt-4o-mini"] == {
+        "prompt_tokens": total_prompt_tokens,
+        "completion_tokens": total_completion_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
+@pytest.mark.asyncio
+async def test_nested_usage_trackers_support_async_work():
+    """Test that nested usage trackers work well with asyncio.gather."""
+
+    async def llm_call():
+        dspy.settings.usage_tracker.add_usage(
+            "openai/gpt-4o-mini",
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 1,
+                "total_tokens": 11,
+            },
+        )
+
+    async def subagent():
+        with track_usage():
+            await llm_call()
+
+    with track_usage() as orchestrator_cost:
+        tasks = [
+            asyncio.create_task(subagent())
+            for _ in range(5)
+        ]
+        await asyncio.gather(*tasks)
+
+    total_prompt_tokens = 10 * 5
+    total_completion_tokens = 1 * 5
+    total_tokens = total_prompt_tokens + total_completion_tokens
+    assert orchestrator_cost.get_total_tokens()["openai/gpt-4o-mini"] == {
+        "prompt_tokens": total_prompt_tokens,
+        "completion_tokens": total_completion_tokens,
+        "total_tokens": total_tokens,
+    }

@@ -11,6 +11,7 @@ from ..types import (
     AudioPart,
     BinaryPart,
     CitationPart,
+    DataPart,
     DocumentPart,
     ImagePart,
     Message,
@@ -74,10 +75,12 @@ def parts_to_text(parts: tuple[Part, ...], *, provider: str | None = None,
             raise UnsupportedFeatureError(
                 f"{head}a {part.type} part cannot reach {where}, which takes text only; "
                 "no text rendering of a media part is made (MAP-10)",
-                provider=provider,
+                provider=provider, feature=f"messages[*].parts[{part.type}]",
             )
         if isinstance(part, TextPart):
             out.append(part.text)
+        elif isinstance(part, DataPart):
+            out.append(data_part_text(part))
         elif isinstance(part, ThinkingPart) and part.text:
             out.append(part.text)
         elif isinstance(part, CitationPart):
@@ -91,12 +94,22 @@ def message_text(msg: Message) -> str:
     return parts_to_text(msg.parts)
 
 
+def data_part_text(part: DataPart) -> str:
+    """A data part on a wire that takes only text: its ``value`` as compact
+    canonical JSON, nothing added (changes/2026-09-19-jev-state.md D3;
+    types.md §DataPart). An opaque payload: numbers as written."""
+    return json.dumps(part.value, separators=(",", ":"), ensure_ascii=False)
+
+
 def media_base64(part: ImagePart | AudioPart | VideoPart | DocumentPart | BinaryPart) -> str:
     """The part's bytes as base64: inline `data`, or the `path` read now.
     A url/file_id-addressed part has no bytes here; the caller maps those."""
     if part.data is not None:
         return part.data
     if part.path is not None:
+        from ..adaptation import is_planning
+        if is_planning():
+            return ""  # Discarded preview bytes, never a sendable request.
         return base64.b64encode(part.path.read_bytes()).decode("ascii")
     raise ValueError(f"{part.type} part has no inline data or path")
 
@@ -137,7 +150,7 @@ def check_tool_result_media(provider: str, part: ToolResultPart, policy: str, *,
                 f"(compat tool_result_media={policy!r}, measured: lm15-contract/research/tool-result-content/). "
                 f"Carried natively by {_MEDIA_DOORS.get(p.type, 'no lm15 door yet')}; "
                 "or render the part to text yourself before building the tool result (MAP-10)",
-                provider=provider,
+                provider=provider, feature=f"messages[*].tool_result[{part.id}].content[{p.type}]",
             )
 
 
@@ -147,6 +160,9 @@ def tool_result_error_text(part: ToolResultPart, text: str) -> str:
 
 
 def media_bytes(part: ImagePart | AudioPart | VideoPart | DocumentPart | BinaryPart) -> bytes:
+    from ..adaptation import is_planning
+    if part.path is not None and is_planning():
+        return b""
     return part.bytes
 
 
@@ -155,7 +171,22 @@ def extension_config(value: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def json_dumps(value: Any) -> bytes:
-    return json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    """Canonical request bytes.  Text that is not valid Unicode (a lone
+    surrogate, U+D800..U+DFFF unpaired) has no UTF-8 form and cannot be
+    sent to ANY provider; it is refused here, before the wire, as the
+    input error it is — the alternative is an encode failure deep in the
+    transport that reads as a network fault."""
+    text = json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+    try:
+        return text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        bad = text[exc.start:exc.end]
+        codepoints = " ".join(f"U+{ord(ch):04X}" for ch in bad)
+        raise ValueError(
+            f"request contains text that is not valid Unicode (lone surrogate {codepoints}), "
+            "which no provider can receive; repair the text first, e.g. "
+            "text.encode('utf-8', 'replace').decode('utf-8')"
+        ) from exc
 
 
 def path_id(value: str, *, resource_name: bool = False) -> str:
@@ -251,6 +282,8 @@ def part_to_openai_input(part: Part, *, provider: str | None = None) -> dict[str
 
     if isinstance(part, TextPart):
         return {"type": "input_text", "text": part.text}
+    if isinstance(part, DataPart):
+        return {"type": "input_text", "text": data_part_text(part)}
 
     if isinstance(part, ImagePart):
         if part.file_id is not None:
@@ -294,6 +327,7 @@ def part_to_openai_input(part: Part, *, provider: str | None = None) -> dict[str
     head = f"{provider}: " if provider else ""
     raise UnsupportedFeatureError(
         f"{head}a {part.type} part has no input block on the Responses wire (MAP-10)", provider=provider,
+        feature=f"messages[*].parts[{part.type}]",
     )
 
 
@@ -330,8 +364,7 @@ def anthropic_source(part: ImagePart | DocumentPart | BinaryPart) -> dict[str, A
     if part.data is not None:
         return {"type": "base64", "media_type": part.media_type, "data": part.data}
     if part.path is not None:
-        data = base64.b64encode(part.path.read_bytes()).decode("ascii")
-        return {"type": "base64", "media_type": part.media_type, "data": data}
+        return {"type": "base64", "media_type": part.media_type, "data": media_base64(part)}
     raise ValueError(f"{part.type} part has no usable source")
 
 

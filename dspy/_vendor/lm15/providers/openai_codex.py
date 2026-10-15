@@ -24,6 +24,7 @@ from ..access import (  # noqa: F401
     OPENAI_CODEX,
 )
 from ..features import ProviderManifest
+from ..adaptation import AdaptationPolicy
 from .base import Credential, SyncTransport, default_transport
 from .openai import MODEL_LIST_HINT, OpenAILM  # noqa: F401
 
@@ -43,6 +44,7 @@ class OpenAICodexLM(OpenAILM):
         base_url: str = DEFAULT_CODEX_BASE_URL,
         originator: str = DEFAULT_CODEX_ORIGINATOR,
         client_version: str = DEFAULT_CODEX_CLIENT_VERSION,
+        adaptations: "AdaptationPolicy" = "note",
     ) -> None:
         self.originator = originator
         self.client_version = client_version
@@ -61,6 +63,7 @@ class OpenAICodexLM(OpenAILM):
             access=policy,
             credentials_path=auth_path,
             account_id=account_id,
+            adaptations=adaptations,
         )
 
     @classmethod

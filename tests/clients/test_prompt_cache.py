@@ -121,7 +121,7 @@ def test_unrepresentable_input_does_not_fallback_with_prompt_cache(monkeypatch):
     monkeypatch.setattr(LiteLLMEngine, "complete_legacy", forbidden)
     lm = dspy.LM("openai/gpt-4o", cache=False, prompt_cache=CacheConfig(prefix="stable"))
     with pytest.raises(dspy.LMUnsupportedFeatureError):
-        lm("hello", prediction={"type": "content", "content": "hello"})
+        lm("hello", audio={"voice": "alloy", "format": "wav"})
 
 
 def test_provider_cache_options_cannot_conflict():

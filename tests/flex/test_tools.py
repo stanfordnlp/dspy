@@ -20,9 +20,9 @@ import pytest
 
 import dspy
 from dspy.predict.flex import Flex
-from dspy.predict.flex.bridge import SHIM_SETUP
 from dspy.predict.flex.primitives_doc import PRIMITIVES_CATALOG
 from dspy.primitives.code_interpreter import CodeInterpreterError
+from dspy.primitives.facade import SHIM_SETUP
 from dspy.teleprompt.gepa.gepa_flex_utils import CodeProposalSignature
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM

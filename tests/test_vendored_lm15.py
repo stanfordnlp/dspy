@@ -17,9 +17,19 @@ def test_public_exports_are_the_vendored_objects():
 
     assert importlib.import_module("dspy.lm15") is dspy.lm15
     assert Request is vendored.Request
-    assert lm15.__all__ == vendored.__all__
-    for name in lm15.__all__:
+    # Every vendored export is the vendored object; the facade adds only the
+    # process-level provider registry and the compat/definition types it takes.
+    assert lm15.__all__[: len(vendored.__all__)] == vendored.__all__
+    for name in vendored.__all__:
         assert getattr(lm15, name) is getattr(vendored, name)
+    assert set(lm15.__all__) - set(vendored.__all__) == {
+        "AnthropicCompat", "ModelSupport", "OpenAIChatCompat", "OpenAIResponsesCompat", "ProviderDefinition",
+        "RegisteredProvider", "register_provider", "registered_providers", "unregister_provider",
+    }
+    from dspy._vendor.lm15 import compat, registry
+
+    assert lm15.OpenAIChatCompat is compat.OpenAIChatCompat
+    assert lm15.ProviderDefinition is registry.ProviderDefinition
     request = Request(model="example", messages=(lm15.Message.user("Hello"),))
     restored = pickle.loads(pickle.dumps(request))
     assert type(restored) is Request
