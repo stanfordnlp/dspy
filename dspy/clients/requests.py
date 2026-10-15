@@ -130,7 +130,8 @@ def _typed_tool_choice(choice, tools):
         return None
     kind = choice.get("type")
     names = {tool.name for tool in tools}
-    if kind == "function" and choice.get("name") in names:
+    # Request validates the name against all tools after Chat-shaped tools are read.
+    if kind == "function" and isinstance(choice.get("name"), str):
         return ToolChoice(mode="required", allowed=(choice["name"],))
     if isinstance(kind, str) and kind in names:
         return ToolChoice(mode="required", allowed=(kind,))

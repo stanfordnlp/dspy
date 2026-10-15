@@ -76,10 +76,10 @@ def test_invalid_values_are_rejected(value):
 
 def test_answer_cache_keys_serialize_and_separate_prompt_policies():
     lm = dspy.LM("openai/gpt-4o")
-    plain = prepare(lm, "hello", {}).key()
-    disabled = prepare(lm, "hello", {"prompt_cache": None}).key()
-    stable = prepare(lm, "hello", {"prompt_cache": CacheConfig(prefix="stable")}).key()
-    history = prepare(lm, "hello", {"prompt_cache": CacheConfig(prefix="history")}).key()
+    plain = prepare(lm, "hello", {}).key(lm.model_type)
+    disabled = prepare(lm, "hello", {"prompt_cache": None}).key(lm.model_type)
+    stable = prepare(lm, "hello", {"prompt_cache": CacheConfig(prefix="stable")}).key(lm.model_type)
+    history = prepare(lm, "hello", {"prompt_cache": CacheConfig(prefix="history")}).key(lm.model_type)
     assert plain == disabled
     assert dspy.cache.cache_key(stable) != dspy.cache.cache_key(history)
     assert json.loads(json.dumps(stable))["request"]["config"]["cache"] == {"mode": "auto", "prefix": "stable"}

@@ -1373,6 +1373,41 @@ def _responses_text_response():
     )
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("order", [("chat", "responses"), ("responses", "chat")])
+async def test_cache_keeps_chat_and_responses_calls_separate(asynchronous, order):
+    lms = {kind: dspy.LM("openai/dspy-test-model", engine="litellm", model_type=kind) for kind in order}
+    expected = {"chat": ["chat answer"], "responses": [{"text": "OK"}]}
+    completion_name = "litellm.acompletion" if asynchronous else "litellm.completion"
+    responses_name = "litellm.aresponses" if asynchronous else "litellm.responses"
+    with mock.patch(completion_name, return_value=litellm_response("chat answer")) as chat, \
+         mock.patch(responses_name, return_value=_responses_text_response()) as responses:
+        for _ in range(2):
+            for kind in order:
+                lm = lms[kind]
+                output = await lm.acall("same prompt") if asynchronous else lm("same prompt")
+                assert output == expected[kind]
+    assert chat.call_count == responses.call_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("choice", [
+    {"type": "function", "name": "get_weather"},
+    {"type": "function", "function": {"name": "get_weather"}},
+])
+async def test_responses_named_choice_accepts_chat_shaped_tools(asynchronous, choice):
+    lm = dspy.LM("openai/dspy-test-model", engine="litellm", model_type="responses", cache=False)
+    options = {"tools": [_chat_shaped_weather_tool()], "tool_choice": choice}
+    responses_name = "litellm.aresponses" if asynchronous else "litellm.responses"
+    with mock.patch(responses_name, return_value=_responses_text_response()) as responses:
+        output = await lm.acall("weather", **options) if asynchronous else lm("weather", **options)
+    assert output == [{"text": "OK"}]
+    assert responses.call_args.kwargs["tool_choice"] == {"type": "function", "name": "get_weather"}
+    assert responses.call_args.kwargs["tools"][0]["name"] == "get_weather"
+
+
 class ContractSchema(pydantic.BaseModel):
     answer: str
 

@@ -48,9 +48,9 @@ class PreparedCall:
     n: int
     convenience: bool
 
-    def key(self):
+    def key(self, model_type):
         key = {"_fn_identifier": "dspy.clients.lm15.complete", "request": request_to_dict(self.request),
-               "rollout_id": self.rollout_id}
+               "model_type": model_type, "rollout_id": self.rollout_id}
         if self.n != 1:
             key["n"] = self.n
         return key
@@ -233,7 +233,7 @@ def _cached(lm, call):
         return None
     import dspy
 
-    record = dspy.cache.get(call.key(), IGNORED_CACHE_KEYS)
+    record = dspy.cache.get(call.key(lm.model_type), IGNORED_CACHE_KEYS)
     if isinstance(record, dict) and record.get("_dspy_format") == CACHE_FORMAT:
         return CallResult.load(record)
     return None
@@ -243,7 +243,7 @@ def _store(lm, call, result):
     if call.cache:
         import dspy
 
-        dspy.cache.put(call.key(), result.dump(), IGNORED_CACHE_KEYS)
+        dspy.cache.put(call.key(lm.model_type), result.dump(), IGNORED_CACHE_KEYS)
 
 
 def _delay(exc, attempt):
