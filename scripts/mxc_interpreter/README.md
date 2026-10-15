@@ -1,0 +1,214 @@
+# MXC-backed CPython: prototype and default-migration plan
+
+**Draft, Linux-only, opt-in. Not a production security boundary.** This change
+does not change DSPy's default interpreter, exports, dependencies, or supported
+platforms. It proposes Microsoft [MXC](https://github.com/microsoft/mxc) as the
+launcher for DSPy's existing persistent CPython worker, rather than another
+Python implementation or a new tool protocol.
+
+## What this draft establishes
+
+```text
+RLM / Flex / ProgramOfThought
+           |
+     CodeInterpreter
+           |
+ LocalInterpreter protocol <----> registered host tools / LM
+           | JSON pipes                 (outside sandbox)
+     MXC native launcher
+           |
+   confined CPython worker
+   + installed Python packages
+   + private session filesystem
+```
+
+`MXCInterpreter` subclasses `LocalInterpreter`, overriding launch and session
+cleanup. The only core change extracts `_spawn_worker()` without changing the
+local backend's behavior. The existing worker source is staged read-only for
+each session; its protocol, output capture, callbacks, tool dispatch, deadlines,
+and process-group cleanup are reused. There is no `runner.js`, Node, Pyodide,
+source translation, or second evaluator on this path.
+
+Flex still installs its existing shared DSPy facade: generated classes run as
+ordinary Python, while predictors and sub-agents call the host. This does not
+make every DSPy API available in the guest. Provider credentials stay on the
+host; direct guest networking is disabled. Tools are explicitly granted host
+capabilities, not operations confined by MXC.
+
+## Run the prototype
+
+Use a disposable Linux x86-64 development environment with working unprivileged
+namespaces, `bwrap >= 0.5.0` on PATH, and this DSPy checkout installed. Do not relax
+host security settings to make it run. macOS and Windows are rejected, and missing
+dependencies fail rather than falling back to unsandboxed execution.
+
+```sh
+mkdir -p /tmp/dspy-mxc-runtime
+curl -fL https://github.com/microsoft/mxc/releases/download/v1.0.0/mxc-release-binaries.zip \
+  -o /tmp/dspy-mxc-runtime/release.zip
+unzip -p /tmp/dspy-mxc-runtime/release.zip x64/lxc-exec > /tmp/dspy-mxc-runtime/lxc-exec
+echo '31b747a6a31b20fabd9e19ec30dfff3acf844c25ae4507a41ccac76e11916b2a  /tmp/dspy-mxc-runtime/lxc-exec' | sha256sum -c -
+chmod 755 /tmp/dspy-mxc-runtime/lxc-exec
+export MXC_EXECUTABLE=/tmp/dspy-mxc-runtime/lxc-exec
+
+# Additional test-only packages; no DSPy dependency changes in this draft.
+uv pip install --python .venv/bin/python cmpnd numpy pillow opencv-python-headless pytest pytest-asyncio
+.venv/bin/python -m pytest scripts/mxc_interpreter/test_interpreter.py \
+  tests/primitives/test_local_interpreter.py tests/primitives/test_interpreter_factory_config.py -q
+.venv/bin/python -m scripts.mxc_interpreter.benchmark
+```
+
+The official release ZIP is about 536 MB, but the extracted executor is
+12,461,672 bytes and links to libc/libgcc_s. The ZIP is not the runtime payload.
+Neither binaries nor upstream source are vendored here. Runtime downloads and
+package installation never happen during interpreter execution.
+
+```python
+import os
+import dspy
+from scripts.mxc_interpreter.interpreter import MXCInterpreter
+
+factory = MXCInterpreter.configured(
+    runtime=os.environ["MXC_EXECUTABLE"], execution_timeout=30,
+)
+with factory() as interpreter:
+    interpreter.execute("value = 17")
+    assert interpreter.execute("value + 26") == 43
+
+# Configure an LM as usual before invoking the agent.
+with dspy.context(interpreter_factory=factory):
+    agent = dspy.RLM("question -> answer")
+```
+
+Packages come from the current Python environment. Its prefixes are readable
+inside the guest and must not contain secrets. Editable packages outside those
+prefixes, system libraries, GPUs and arbitrary host paths are not automatically
+supported. Session files persist between execute calls, not after shutdown.
+
+## Evidence and its limits
+
+The opt-in suite has 15 cases covering native Python inheritance, dataclasses,
+context managers, item access/assignment, NumPy/Pillow/OpenCV, persistent state
+and files, recoverable errors, concurrent/async tools, typed SUBMIT, Flex modules
+and predictors, recursive RLM, ReActV2 delegation, and async RLM. Image checks
+round-trip encoded PNGs and assert asymmetric pixels; they do **not** establish
+typed `dspy.Image` integration through RLM on main. LMs are scripted/DummyLM,
+with cmpnd callbacks enabled; these are not live Azure/GEPA quality results.
+
+Isolation checks use synthetic secrets, symlinks, native `ctypes` IO, a reachable
+host listener control, concurrent sessions, and detached children. Child cleanup
+has a survival control and an open inode retained after workspace deletion, so
+deletion cannot hide a surviving process. These are functional probes, not an
+adversarial security audit. The suite is outside `tests/` and must be explicitly
+invoked; ordinary repository CI does not provision or test MXC yet.
+
+Cached-runtime medians on Linux 6.1, Python 3.11.6, bwrap 0.8.0, MXC 1.0.0:
+
+| Runtime | Startup + first expression | Warm expression | Simple Flex forward |
+| --- | ---: | ---: | ---: |
+| Local CPython, **unsandboxed control** | 36.0 ms | 0.46 ms | 42.3 ms |
+| MXC/CPython | 48.6 ms | 0.48 ms | 55.9 ms |
+| Deno/Pyodide | 2035.8 ms | 3.17 ms | 1979.3 ms |
+
+`benchmark.py` runs five sessions and 50 warm expressions per runtime. Flex sums
+squares without an LM call. Timings exclude installation and importing DSPy;
+they do not measure optimization quality or guarantee a speedup on other hosts.
+An earlier comparison on the experimental Monty/image stack measured MXC at
+61 ms and SRT at 341 ms startup. That comparison favored MXC for network-disabled
+execution, but was not a profiler attribution. SRT's hostname-filtered guest
+networking may suit different requirements. This draft maintains only MXC.
+
+## Changes required before changing the default
+
+These are proposed follow-up stages, not capabilities delivered by this draft.
+
+### 1. Finish the native backend and lifecycle contract
+
+- [x] Demonstrate a persistent native worker with the existing transport.
+- [ ] Promote the prototype into `dspy/primitives/mxc_interpreter.py` and export
+  `dspy.MXCInterpreter`; keep `LocalInterpreter` explicitly unsandboxed.
+- [ ] Finalize runtime discovery, version checks, diagnostics, finite default
+  deadlines, interruption, failed startup, unexpected worker exit, repeated
+  shutdown, and descendant cleanup. Keep protocol ownership in
+  `local_interpreter.py` / `local_interpreter_worker.py`, not in each launcher.
+- [ ] Test callbacks, cancellation and concurrent tools under the real launcher.
+  Document that a host callable can outlive an execution timeout; guest process
+  termination cannot stop a Python thread executing on the host.
+
+### 2. Establish a defensible sandbox policy
+
+- [ ] Resolve MXC's broad baseline mounts: system binaries/libraries and `/etc`
+  remain readable. This prototype is **not an exact runtime-only allowlist**.
+  A separate v1.0.0 probe found denying `/bin` canonicalizes to `/usr/bin` while
+  MXC's separately mounted `/bin` stays readable. Resolve or explicitly exclude
+  those semantics before promising path-denial guarantees.
+- [ ] Specify private workspace, temporary files, read-only runtime, explicit
+  user file mounts, symlink handling, environment/credential isolation, and
+  network denial. Test native syscalls, child processes, shared temp paths and
+  cross-session access. Do not implement an ad hoc policy engine in DSPy.
+- [ ] Set and verify memory, process-count, disk and output limits. Bound RPC
+  message sizes and outstanding tool calls; reject malformed messages and
+  unregistered capabilities. No resource-exhaustion audit has been run here.
+- [ ] Test startup failure races. MXC's own 1-second timer orphaned bwrap during
+  a separate slow-start probe with thousands of path masks. This prototype sets
+  that timer to zero and uses DSPy's startup/execution deadlines and process-group
+  cleanup. Normal timeout cleanup passes; the workaround is not a general proof.
+- [ ] Review the threat model independently. Process isolation shares the host
+  kernel; do not present it as VM isolation or a multi-tenant service boundary.
+
+### 3. Deliver installation and platform support
+
+- [ ] Arrange an upstream or separately maintained, version-pinned Python runtime
+  distribution for MXC and its platform dependencies. Prefer documented native
+  entry points; do not depend on Node wrappers or fork MXC's policy engine.
+- [ ] Build and test wheels, provenance/checksums, licenses, supported ABI/CPU
+  combinations, dependency updates and security-response ownership. A smoke test
+  with the actual `bubblewrap-bin==0.11.0` executable worked, but its provenance
+  and companion libcap packaging still require review. **A complete pip-only
+  distribution has not been built or verified.**
+- [ ] Prove fresh-environment `pip install dspy` on every advertised platform
+  before making this a required/default runtime. An opt-in extra can precede it.
+  No silent runtime download or unsandboxed fallback on unsupported hosts.
+- [ ] Verify Linux namespaces/AppArmor/container restrictions, then native macOS
+  and Windows confinement and cleanup. Windows provisioning/elevation and host
+  capabilities cannot be solved by putting an executable in a wheel.
+
+### 4. Close compatibility gaps without an adapter redesign
+
+- [ ] Differentially test `CodeInterpreter.execute`, errors, printed output,
+  final expressions, tools and SUBMIT against the supported Deno behavior.
+  Native transport requires JSON-compatible values; Pyodide has additional
+  conversions/string fallbacks. Specify conversions deliberately, without pickle
+  or executing guest-provided deserialization code in the host.
+- [ ] Keep ordinary generated `dspy.Module` code and the existing
+  `facade.py` / `_facade_shim.py` bridge. Validate host predictor behavior,
+  custom types, sub-agent budgets, settings and nested backend propagation.
+  Do not add a Flex translator or promise the complete DSPy API in the facade.
+- [ ] Support documented preinstalled native-library environments, including
+  dependency failures and read-only packages. Keep `SandboxSerializable`'s
+  Pyodide-specific setup on the existing `PythonInterpreter` path; it is not a
+  universal native package installer. Define native data transfer independently.
+- [ ] Integrate the RLM image work using native Pillow/OpenCV plus explicit
+  serialization across the host boundary. Test image inputs, outputs, tools,
+  transforms and nested RLM; do not infer typed image support from import success.
+- [ ] Run diverse Azure-backed Flex/GEPA optimizations on seeded dspy-bench
+  training subsets. Compare generated programs, errors, scores and end-to-end
+  time on equivalent tasks, not only interpreter startup. Record seeds and
+  replay failing candidates on both backends before classifying regressions.
+
+### 5. Roll out the default explicitly
+
+- [ ] First ship the supported backend opt-in, with dedicated real-runtime CI
+  for isolation, lifecycle and compatibility. Update API docs and tutorials.
+- [ ] Change the default in `code_interpreter.resolve_interpreter_factory`,
+  preserving precedence: explicit per-module factory > scoped/global setting >
+  default. RLM, Flex and ProgramOfThought currently use `PythonInterpreter` as
+  both a literal default and an "unset" sentinel. Separate those meanings so an
+  explicit Deno selection still works after the switch; preserve caller-owned
+  interpreter lifetimes and test nested calls on the resolved backend.
+- [ ] Keep `PythonInterpreter` available as the explicit Deno/Pyodide alternative
+  during migration. Document dependency, filesystem, serialization and isolation
+  differences, saved-program compatibility, rollback and deprecation policy.
+- [ ] Flip only after installation, isolation, platform and real-workload gates
+  pass. This draft intentionally does not commit to a release date or change
+  `runner.js`, `SandboxSerializable`, LM adapters, or DSPy's default today.
