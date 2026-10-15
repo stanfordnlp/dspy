@@ -103,7 +103,11 @@ class DecisionAdapter:
                 elif issubclass(kind, Score):
                     properties[name] = score(name, [str(i) for i in range(len(kind.criteria()))])
                 else:
-                    properties[name] = choice(name, list(kind.criteria()))
+                    criteria = questions[name]["criteria"]
+                    if "" in criteria:
+                        # lm15 requires nonempty keys; longer than every declared label cannot collide.
+                        criteria[max(kind.criteria(), key=len) + "_"] = criteria.pop("")
+                    properties[name] = choice(name, list(criteria))
             # The schema declares answer spaces; native questions retain structured instructions and criteria.
             response_format = {"type": "json_schema", "schema": {"type": "object", "properties": properties}}
             return Request(
@@ -133,6 +137,11 @@ class DecisionAdapter:
                 if isinstance(answer, BaseModel):
                     answer = answer.model_dump(by_alias=True)
                 answer = copy.deepcopy(answer)
+                if self.system_one and issubclass(kind, Choice) and "" in kind.criteria():
+                    key = max(kind.criteria(), key=len) + "_"
+                    answer["probabilities"][""] = answer["probabilities"].pop(key)
+                    if answer.get("choice") == key:
+                        answer["choice"] = ""
                 if issubclass(kind, Score):
                     keys = answer["probabilities"]
                     labels = {str(i) for i in range(len(kind.criteria()))}
