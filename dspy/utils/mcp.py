@@ -68,9 +68,16 @@ def convert_mcp_tool(
     Args:
         session: An MCP client or session with an async ``call_tool`` method.
         tool: The MCP tool to convert.
-        result_mode: ``"text"`` preserves DSPy's existing text/non-text
-            conversion. ``"structured"`` returns MCP structured content
-            exactly when present, with the existing conversion as fallback.
+        result_mode: ``"text"`` converts the result's content blocks in
+            their original order: text blocks become their strings and
+            non-text blocks stay as native MCP content objects, so a
+            mixed result never collapses into the same value as a
+            text-only result holding the same text. A result consisting
+            of a single text block returns that block's text (or ``[]``
+            when the text is empty), and a result with no text blocks
+            returns its non-text blocks as a list. ``"structured"``
+            returns MCP structured content exactly when present, with
+            the text conversion as fallback.
 
     Returns:
         A dspy Tool object.
