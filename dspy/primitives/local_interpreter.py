@@ -126,15 +126,7 @@ class LocalInterpreter:
         if self._process is not None:
             return
         try:
-            process = subprocess.Popen(
-                [sys.executable, "-I", str(Path(__file__).with_name("local_interpreter_worker.py"))],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
-                start_new_session=os.name == "posix",
-                text=True,
-            )
+            process = self._spawn_worker()
         except OSError as exc:
             raise CodeInterpreterError(f"Unable to start Python worker: {exc}") from exc
         self._process = process
@@ -142,6 +134,18 @@ class LocalInterpreter:
         message = self._receive(time.monotonic() + 10, "Python worker did not start within 10 seconds.")
         if message.get("type") != "ready":
             self._raise_terminal_error(f"Python worker returned an invalid startup message: {message!r}")
+
+    def _spawn_worker(self) -> subprocess.Popen[str]:
+        """Launch the worker with text pipes and its own process group for cleanup."""
+        return subprocess.Popen(
+            [sys.executable, "-I", str(Path(__file__).with_name("local_interpreter_worker.py"))],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+            start_new_session=os.name == "posix",
+            text=True,
+        )
 
     def _read_responses(self, process: subprocess.Popen[str]) -> None:
         assert process.stdout is not None
