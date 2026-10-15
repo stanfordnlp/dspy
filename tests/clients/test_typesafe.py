@@ -1,4 +1,5 @@
 import json
+from typing import Literal
 
 import pytest
 
@@ -80,6 +81,50 @@ async def test_predict_uses_lm15_and_reinterprets_cached_evidence(transport, eng
         first.rating.probabilities[0] = 0.99
         third = await module.acall(text="x") if asynchronous else module(text="x")
         assert third.rating.probabilities[0] == 0.1
+    finally:
+        await lm.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("rich", [False, True])
+async def test_empty_choice_labels_survive_jev_and_cached_recalibration(monkeypatch, asynchronous, rich):
+    criteria = {"": "No match", "match": "Match", "_": "Other match"}
+    probabilities = {"No match": 0.7, "Match": 0.2, "Other match": 0.1}
+    calls = []
+
+    def respond(self, request):
+        body = json.loads(request.body)
+        calls.append(body)
+        options = body["questions"]["label"]["criteria"]
+        assert len(options) == 3
+        assert all(options)
+        answer = {
+            "type": "choice", "choice": next(k for k, v in options.items() if v == "No match"),
+            "confidence": 0.73, "probabilities": {k: probabilities[v] for k, v in options.items()},
+        }
+        return DualResponse(200, json.dumps({"model": "jev-test", "answers": {"label": answer}}).encode())
+
+    monkeypatch.setattr(StdlibTransport, "stream", respond)
+    monkeypatch.setattr(StdlibAsyncTransport, "stream", respond)
+    annotation = Choice[tuple(criteria.items())] if rich else Literal["", "match", "_"]
+    module = dspy.Predict(dspy.Signature({
+        "text": (str, dspy.InputField()), "label": (annotation, dspy.OutputField(desc="Select a match.")),
+    }))
+    lm = dspy.LM("typesafe:jev-test", engine="lm15", api_key="test-empty-label")
+    module.set_lm(lm)
+    module.fields = {"label": {"criteria": criteria}}
+    try:
+        first = await module.acall(text="x") if asynchronous else module(text="x")
+        module.fields["label"]["weights"] = {"": 0.1}
+        second = await module.acall(text="x") if asynchronous else module(text="x")
+        assert (first.label.value if rich else first.label) == ""
+        assert (second.label.value if rich else second.label) == "match"
+        if rich:
+            assert first.label.probabilities == second.label.probabilities == {"": 0.7, "match": 0.2, "_": 0.1}
+            assert first.label.confidence == second.label.confidence == 0.73
+        assert module.fields["label"]["criteria"] == criteria
+        assert len(calls) == 1
     finally:
         await lm.aclose()
 
