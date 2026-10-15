@@ -269,8 +269,11 @@ def test_direct_tool_calls_go_through_the_tool_wrapper() -> None:
         program(q="x")
 
 
-@deno_required
-def test_direct_tool_calls_receive_restored_custom_type_inputs() -> None:
+@pytest.mark.parametrize(
+    "interpreter_factory",
+    [dspy.LocalInterpreter, pytest.param(dspy.PythonInterpreter, marks=deno_required)],
+)
+def test_direct_tool_calls_receive_restored_custom_type_inputs(interpreter_factory) -> None:
     """A custom-type input (dspy.Image) crosses into the sandbox as its serialized string; a
     direct tool call must hand the tool the original object, exactly as a bridged predictor
     receives it via ``_Invocation.call``."""
@@ -296,7 +299,7 @@ def test_direct_tool_calls_receive_restored_custom_type_inputs() -> None:
         """
     ).strip()
 
-    program = Flex(Caption, tools=[describe], interpreter_factory=lambda: dspy.PythonInterpreter())
+    program = Flex(Caption, tools=[describe], interpreter_factory=interpreter_factory)
     program._bind_code(src)
     image = dspy.Image(url="https://example.com/x.png")
     assert program(image=image).a == "a cat"
