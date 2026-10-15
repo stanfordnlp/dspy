@@ -5,20 +5,20 @@ import json
 import pytest
 
 import dspy
+from dspy._vendor.lm15.transports import StdlibAsyncTransport, StdlibTransport
 from dspy.experimental import TypeSafe
+from tests.clients.test_lm_engine_execution import DualResponse
 from tests.predict.test_decision_parameters import predict, signature
-
-sdk = pytest.importorskip("typesafe_sdk")
-httpx = pytest.importorskip("httpx2")
 
 
 @pytest.fixture
 def transport(monkeypatch):
     calls = []
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-default-key")
 
     def respond(request):
-        body = json.loads(request.content)
-        calls.append((str(request.url), body))
+        body = json.loads(request.body)
+        calls.append((str(request.url), body, dict(request.headers)))
         answers = {}
         for name, q in body["questions"].items():
             if q["type"] == "noul":
@@ -38,19 +38,18 @@ def transport(monkeypatch):
                     "confidence": 0.73,
                     "probabilities": {"2": 0.8, "other": 0.2},
                 }
-        return httpx.Response(
-            200, json={"model": body["model"], "answers": answers, "usage": {"input_tokens": 10, "output_tokens": 2}}
+        return DualResponse(
+            200, json.dumps({
+                "model": body["model"], "answers": answers, "usage": {"input_tokens": 10, "output_tokens": 2},
+            }).encode(),
         )
 
-    sync, asynchronous = sdk.TypeSafeClient, sdk.AsyncTypeSafeClient
-    monkeypatch.setattr(sdk, "TypeSafeClient", lambda **kwargs: sync(**kwargs, transport=httpx.MockTransport(respond)))
-    monkeypatch.setattr(
-        sdk, "AsyncTypeSafeClient", lambda **kwargs: asynchronous(**kwargs, transport=httpx.MockTransport(respond))
-    )
+    monkeypatch.setattr(StdlibTransport, "stream", lambda self, request: respond(request))
+    monkeypatch.setattr(StdlibAsyncTransport, "stream", lambda self, request: respond(request))
     return calls
 
 
-def test_real_sdk_request_cache_usage_and_local_parameters(transport):
+def test_lm15_request_cache_usage_and_local_parameters(transport):
     client = TypeSafe("jev-test", api_key="test-only", base_url="https://example.test")
     module = predict(True, client)
     with dspy.context(track_usage=True):
@@ -74,8 +73,9 @@ def test_real_sdk_request_cache_usage_and_local_parameters(transport):
     assert first.get_lm_usage() == {"jev-test": {"prompt_tokens": 10, "completion_tokens": 2}}
     assert second.get_lm_usage() == {}
     assert len(transport) == 1
-    url, body = transport[0]
+    url, body, headers = transport[0]
     assert url == "https://example.test/v1/systemone"
+    assert headers["Authorization"] == "Bearer test-only"
     assert body["state"] == {
         "instructions": "Assess the document.",
         "input_fields": "1. `text` (str):",
@@ -92,7 +92,7 @@ def test_real_sdk_request_cache_usage_and_local_parameters(transport):
 
 
 @pytest.mark.asyncio
-async def test_async_sdk_and_shared_cache(transport):
+async def test_async_lm15_and_shared_cache(transport):
     module = predict(client=TypeSafe("jev-test", api_key="test-only"))
     asynchronous = await module.acall(text="x")
     synchronous = module(text="x")
@@ -150,6 +150,7 @@ def test_client_copy_and_environment(monkeypatch, transport):
     assert module(text="x").flag is True
     assert transport[0][0] == "https://environment.test/v1/systemone"
     assert transport[0][1]["model"] == "jev-environment"
+    assert transport[0][2]["Authorization"] == "Bearer test-environment-key"
     duplicate = copy.deepcopy(client)
     duplicate.history.clear()
     assert len(client.history) == 1
@@ -157,7 +158,7 @@ def test_client_copy_and_environment(monkeypatch, transport):
 
 
 @pytest.mark.asyncio
-async def test_predict_demos_sdk_cache_history_and_usage(transport, monkeypatch):
+async def test_predict_demos_lm15_cache_history_and_usage(transport, monkeypatch):
     monkeypatch.setenv("TYPESAFE_API_KEY", "test-sdk-key")
     module = dspy.Predict(signature(True))
     module.set_lm(TypeSafe("jev-test"))
@@ -219,3 +220,30 @@ async def test_standalone_client_callbacks_copy_and_reload(transport, tmp_path):
     assert len(transport) == 2
     with pytest.raises(TypeError):
         client.copy(temperature=0.7)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_structured_questions_and_raw_evidence(transport, asynchronous):
+    client = TypeSafe("jev-test")
+    state = {"inputs": {"text": "query"}, "demos": [{"text": "example", "name": False}]}
+    questions = {
+        "name": {
+            "type": "noul", "instructions": {"focus": ["impact"]},
+            "criteria": {"true": {"examples": ["Outage"]}, "false": None},
+        },
+        "rating": {
+            "type": "score", "instructions": ["Assess severity.", {"ignore": "tone"}],
+            "criteria": [{"what": "bad"}, "fair", {"examples": ["Resolved"]}],
+        },
+        "strict": {
+            "type": "choice", "instructions": None, "criteria": {"2": {"what": "Known"}, "other": None},
+        },
+    }
+    response = await client.acall(state, questions) if asynchronous else client(state, questions)
+    assert transport[0][1] == {"model": "jev-test", "state": state, "questions": questions}
+    assert response == {
+        "name": {"noul": 0.8},
+        "rating": {"score": 1.5, "confidence": 0.61, "probabilities": {"0": 0.1, "1": 0.3, "2": 0.6}},
+        "strict": {"choice": "2", "confidence": 0.73, "probabilities": {"2": 0.8, "other": 0.2}},
+    }
