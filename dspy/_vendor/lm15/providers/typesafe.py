@@ -5,8 +5,12 @@ the messages become Jev's ``state`` (D6), the judgment properties of the
 ``json_schema`` become its ``questions`` (MAP-14 §2), and the answers come
 back as one ``DataPart`` with the distribution per judgment and
 ``method="provider_classification"`` (§3).  Jev generates no text: a
-request without judgments, with tools, or with media is refused before
-the wire (D8).  Wire facts: receipts/2026-09-17-judgments/ (jev-*.json).
+request without judgments or with tools is refused before the wire (D8).
+Images reach Jev as top-level ``assets`` named by a reference string
+written where the image belongs in the state
+(changes/2026-10-14-jev-images.md); audio, video and documents are
+refused (MAP-10).  Wire facts: receipts/2026-09-17-judgments/,
+receipts/2026-10-14-typesafe/.
 """
 from __future__ import annotations
 
@@ -32,9 +36,9 @@ from ..errors import (
 from ..features import ProviderManifest
 from ..judgments import MAX_CHOICE_KEYS, MAX_ORDERED_LEVELS, Judgment, non_judgment_properties, request_judgments
 from ..transports import TransportRequest
-from ..types import DataPart, Message, Request, Response, StreamEvent, TextPart, Usage
+from ..types import DataPart, ImagePart, Message, Part, Request, Response, StreamEvent, TextPart, Usage
 from .base import BaseProviderLM, Credential, HttpResponse, SyncTransport, default_transport, _attach_error_metadata
-from .common import model_infos_from_entries
+from .common import media_base64, model_infos_from_entries
 from ..sse import SSEEvent
 
 _DEFAULT_BASE_URL = "https://api.typesafe.ai"
@@ -44,6 +48,21 @@ _DROPPED_KNOBS: tuple[str, ...] = (
     "max_tokens", "temperature", "top_p", "top_k", "stop", "seed", "frequency_penalty",
     "presence_penalty", "reasoning", "logprobs", "store", "user_id", "service_tier", "cache",
 )
+
+# changes/2026-10-14-jev-images.md.  The asset formats systemone reads
+# (docs.typesafe.ai/images "Asset fields"): PNG and JPEG, nothing else.
+_IMAGE_FORMATS: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg"}
+# Images are off unless each request that carries one sends this header
+# (live 400 without it, 2026-10-14: "Images are experimental. Send the header
+# TypeSafe-Danger-Zone-Images: true to use them.").
+_IMAGES_HEADER = "TypeSafe-Danger-Zone-Images"
+
+
+def _image_reference(n: int) -> str:
+    """The n-th image's reference (1-based, in part order).  The angle
+    brackets close it, so `<lm15-image-1>` never matches inside
+    `<lm15-image-10>` (systemone replaces references as plain text)."""
+    return f"<lm15-image-{n}>"
 
 
 @dataclass
@@ -72,18 +91,43 @@ class TypeSafeLM(BaseProviderLM):
     def _refuse(self, feature: str, why: str) -> UnsupportedFeatureError:
         return UnsupportedFeatureError(f"{self.provider}: {why}", provider=self.provider, feature=feature)
 
-    def _state(self, request: Request) -> Any:
+    def _check_image(self, part: ImagePart, where: str) -> None:
+        """An image reaches systemone as inline PNG or JPEG bytes, or not at
+        all (MAP-10 rule 1); lm15 never fetches or converts media."""
+        if part.url is not None or part.file_id is not None:
+            how = "a URL" if part.url is not None else "a file id"
+            raise self._refuse(
+                where,
+                f"systemone takes image bytes, not {how}; fetch the image and pass "
+                "image(data=...) or image(path=...) (changes/2026-10-14-jev-images.md)",
+            )
+        if part.media_type.lower() not in _IMAGE_FORMATS:
+            raise self._refuse(
+                where,
+                f"systemone reads PNG or JPEG images, got {part.media_type!r}; convert the image "
+                "first (lm15 never converts media)",
+            )
+
+    def _state(self, request: Request) -> tuple[Any, dict[str, Any]]:
         """changes/2026-09-19-jev-state.md D1/D2: the state is the one user
         part, verbatim — a text's string or a data part's value. Jev has
         no system prompt and no conversation; anything else is refused
         with the native place named, never merged into a shape of ours.
-        A media part is refused first, as the specific fault it is (MAP-10)."""
+        A media part is refused first, as the specific fault it is (MAP-10).
+
+        changes/2026-10-14-jev-images.md: an image part is its reference
+        string, its bytes an asset; a message holding an image and other
+        parts is the array of its parts in order.  Returns (state, assets)."""
         for m_index, message in enumerate(request.messages):
             for p_index, part in enumerate(message.parts):
-                if not isinstance(part, (TextPart, DataPart)):
+                where = f"messages[{m_index}].parts[{p_index}]"
+                if isinstance(part, ImagePart):
+                    self._check_image(part, where)
+                elif not isinstance(part, (TextPart, DataPart)):
                     raise self._refuse(
-                        f"messages[{m_index}].parts[{p_index}]",
-                        f"a {part.type} part has no slot on the systemone wire (MAP-10); Jev reads text or data",
+                        where,
+                        f"a {part.type} part has no slot on the systemone wire (MAP-10); "
+                        "Jev reads text, data, or PNG/JPEG images",
                     )
         if request.system is not None:
             raise self._refuse(
@@ -102,14 +146,31 @@ class TypeSafeLM(BaseProviderLM):
         message = request.messages[0]
         if message.role != "user":
             raise self._refuse("messages[0].role", f"Jev's state is a user message, got role {message.role!r}")
-        if len(message.parts) != 1:
+        has_image = any(isinstance(part, ImagePart) for part in message.parts)
+        if len(message.parts) != 1 and not has_image:
             raise self._refuse(
                 "messages[0].parts",
                 f"Jev's state is one text or data part, got {len(message.parts)} parts; put several pieces "
                 "in one data part as named keys",
             )
-        only = message.parts[0]
-        return only.text if isinstance(only, TextPart) else only.value  # type: ignore[union-attr]
+        assets: dict[str, Any] = {}
+
+        def element(part: Part) -> Any:
+            if isinstance(part, TextPart):
+                return part.text
+            if isinstance(part, DataPart):
+                return part.value
+            reference = _image_reference(len(assets) + 1)
+            assets[reference] = {
+                "type": "image",
+                "format": _IMAGE_FORMATS[part.media_type.lower()],  # type: ignore[union-attr]
+                "data_base64": media_base64(part),  # type: ignore[arg-type]
+            }
+            return reference
+
+        if len(message.parts) == 1:
+            return element(message.parts[0]), assets
+        return [element(part) for part in message.parts], assets
 
     def _questions(self, request: Request) -> dict[str, Any]:
         fmt = request.config.response_format
@@ -168,7 +229,11 @@ class TypeSafeLM(BaseProviderLM):
             adapt(f"config.{name}", "dropped", "no such control on the systemone wire (Jev returns decisions, not samples)",
                   asked=value if isinstance(value, (int, float, str, bool)) else str(value), provider=self.provider)
         questions = self._questions(request)
-        payload: dict[str, Any] = {"model": request.model, "state": self._state(request), "questions": questions}
+        state, assets = self._state(request)
+        payload: dict[str, Any] = {"model": request.model, "state": state}
+        if assets:
+            payload["assets"] = assets
+        payload["questions"] = questions
         if cfg.extensions:
             for key, value in cfg.extensions.items():
                 if key == "n" and isinstance(value, (int, float)) and value > 1:
@@ -180,13 +245,19 @@ class TypeSafeLM(BaseProviderLM):
         request = self._wire_request(request)
         if stream:
             raise self._refuse("stream", "systemone answers in one piece; there is no stream to wrap")
+        payload = self._payload(request)
+        headers = {"Content-Type": "application/json"}
+        if "assets" in payload:
+            # The caller put an image in the request: that is the opt-in the
+            # header exists for (changes/2026-10-14-jev-images.md D3).
+            headers[_IMAGES_HEADER] = "true"
         return self._emit(
             method="POST",
             url=f"{self.base_url.rstrip('/')}/v1/systemone",
             endpoint="systemone",
             model=request.model,
-            headers={"Content-Type": "application/json"},
-            payload=self._payload(request),
+            headers=headers,
+            payload=payload,
         )
 
     # ─── Response parsing (pure) ────────────────────────────────────
