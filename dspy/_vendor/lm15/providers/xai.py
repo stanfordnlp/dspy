@@ -39,7 +39,7 @@ import os
 from typing import Any, ClassVar
 
 from ..access import DEFAULT_XAI_BASE_URL, XAI
-from ..adaptation import adapt
+from ..adaptation import AdaptationPolicy, adapt
 from ..errors import ProviderError, UnsupportedFeatureError
 from ..features import ProviderManifest
 from ..transports import TransportRequest

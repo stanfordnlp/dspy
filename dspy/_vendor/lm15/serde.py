@@ -8,6 +8,7 @@ in memory.  No name translation (no "arguments" vs "input" split).
 
 from __future__ import annotations
 
+from pathlib import PurePath, PureWindowsPath
 from typing import Any
 
 from .adaptation import adaptation_from_dict, adaptation_to_dict
@@ -192,7 +193,7 @@ def part_to_dict(part: Part) -> dict[str, Any]:
         if part.file_id is not None:
             d["file_id"] = part.file_id
         if part.path is not None:
-            d["path"] = str(part.path)
+            d["path"] = _wire_path(part.path)
         if hasattr(part, "detail") and part.detail is not None:
             d["detail"] = part.detail
 
@@ -925,6 +926,18 @@ def batch_entry_from_dict(d: dict[str, Any]) -> BatchEntry:
 
 # ─── Files ─────────────────────────────────────────────────────────
 
+def _wire_path(path: PurePath | str) -> str:
+    """A local path on the wire: ``/`` as the separator on every OS (INV-009,
+    clarified 2026-09-24), so the same request serializes identically on
+    Windows, where ``str(Path("/data/x"))`` is ``\\data\\x``; Windows reads
+    ``/`` back (``C:/Users/...``). Only a Windows path's ``\\`` is replaced: on
+    POSIX a backslash is an ordinary character in a name. (Not
+    ``as_posix()``: Python 3.10 turns ``\\data\\x`` into ``\\/data/x``.)"""
+    p = PurePath(path) if isinstance(path, str) else path
+    text = str(p)
+    return text.replace("\\", "/") if isinstance(p, PureWindowsPath) else text
+
+
 def file_upload_request_to_dict(r: FileUploadRequest) -> dict[str, Any]:
     """Bytes travel as base64 (the media-part precedent); a path-backed
     request serializes its path as a plain string, exactly like
@@ -937,7 +950,7 @@ def file_upload_request_to_dict(r: FileUploadRequest) -> dict[str, Any]:
         "bytes_data": base64.b64encode(r.bytes_data).decode("ascii") if r.bytes_data is not None else None,
         "media_type": r.media_type,
         "extensions": r.extensions,
-        "path": str(r.path) if r.path is not None else None,
+        "path": _wire_path(r.path) if r.path is not None else None,
     })
 
 

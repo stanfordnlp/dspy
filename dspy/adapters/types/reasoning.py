@@ -25,6 +25,20 @@ class Reasoning(Type):
     def format(self):
         return f"{self.content}"
 
+    @staticmethod
+    def _fallback_field_name(signature: type["Signature"], field_name: str) -> str:
+        """Resolve the default CoT/RLM wire name without colliding with task fields."""
+        field = signature.output_fields[field_name]
+        name = field.json_schema_extra.get("__dspy_reasoning_fallback") if field.annotation is Reasoning else None
+        if not name:
+            return field_name
+        candidate = name
+        suffix = 2
+        while candidate in signature.fields:
+            candidate = f"{name}_{suffix}"
+            suffix += 1
+        return candidate
+
     @pydantic.model_validator(mode="before")
     @classmethod
     def validate_input(cls, data: Any):
@@ -61,17 +75,11 @@ class Reasoning(Type):
             # reasoning effort is set in `lm_kwargs` or `lm.kwargs`.
             reasoning_effort = "low"
 
-        if reasoning_effort is None or not lm.supports_reasoning:
-            # If users explicitly set `reasoning_effort` to None or the LM doesn't support reasoning, we don't enable
-            # native reasoning.
+        if reasoning_effort in (None, "none") or not lm.supports_reasoning:
+            # Respect explicit disabling as well as models without native reasoning.
             return signature
 
-        if "gpt-5" in lm.model and lm.model_type == "chat":
-            # OpenAI's Chat Completions API does not return reasoning content for
-            # GPT-5 family models (only the Responses API does), so native
-            # reasoning would leave the field empty. Keep the text field instead.
-            return signature
-
+        # Native reasoning need not expose a summary (including GPT-5 chat).
         lm_kwargs["reasoning_effort"] = reasoning_effort
         # Delete the reasoning field from the signature to use the native reasoning feature.
         return signature.delete(field_name)

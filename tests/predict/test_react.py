@@ -39,7 +39,7 @@ def test_tool_observation_preserves_custom_type():
                 "next_tool_name": "finish",
                 "next_tool_args": {},
             },
-            {"reasoning": "image ready", "answer": "done"},
+            {"plan": "image ready", "answer": "done"},
         ],
         adapter=adapter,
     )
@@ -97,7 +97,7 @@ def test_tool_calling_with_pydantic_args():
                 "next_tool_args": {},
             },
             {
-                "reasoning": "This is a very rigorous reasoning process, trust me bro!",
+                "plan": "This is a very rigorous reasoning process, trust me bro!",
                 "invitation_letter": "It's my honor to invite Alice to the Science Fair event on Friday.",
             },
         ]
@@ -166,7 +166,7 @@ def test_react_with_tools_skips_native_response_issubclass_for_generic_alias(mon
                 "next_tool_args": {},
             },
             {
-                "reasoning": "I fetched the user profile and can answer the request.",
+                "plan": "I fetched the user profile and can answer the request.",
                 "process_result": "Resolved Adam's request.",
             },
         ]
@@ -190,7 +190,7 @@ def test_tool_calling_without_typehint():
         [
             {"next_thought": "I need to add two numbers.", "next_tool_name": "foo", "next_tool_args": {"a": 1, "b": 2}},
             {"next_thought": "I have the sum, now I can finish.", "next_tool_name": "finish", "next_tool_args": {}},
-            {"reasoning": "I added the numbers successfully", "c": 3},
+            {"plan": "I added the numbers successfully", "c": 3},
         ]
     )
     dspy.configure(lm=lm)
@@ -360,7 +360,7 @@ def test_error_retry():
                 "next_tool_args": {"a": 1, "b": 2},
             },
             # (The model *would* succeed on the 3rd turn, but max_iters=2 stops earlier.)
-            {"reasoning": "I added the numbers successfully", "c": 3},
+            {"plan": "I added the numbers successfully", "c": 3},
         ]
     )
     dspy.configure(lm=lm)
@@ -400,7 +400,7 @@ def test_tool_error_observation_format():
                 "next_tool_name": "failing_tool",
                 "next_tool_args": {},
             },
-            {"reasoning": "The tool failed.", "answer": "n/a"},
+            {"plan": "The tool failed.", "answer": "n/a"},
         ]
     )
     dspy.configure(lm=lm)
@@ -454,7 +454,7 @@ async def test_async_tool_calling_with_pydantic_args():
                 "next_tool_args": {},
             },
             {
-                "reasoning": "This is a very rigorous reasoning process, trust me bro!",
+                "plan": "This is a very rigorous reasoning process, trust me bro!",
                 "invitation_letter": "It's my honor to invite Alice to the Science Fair event on Friday.",
             },
         ]
@@ -510,7 +510,7 @@ async def test_async_error_retry():
                 "next_tool_args": {"a": 1, "b": 2},
             },
             # (The model *would* succeed on the 3rd turn, but max_iters=2 stops earlier.)
-            {"reasoning": "I added the numbers successfully", "c": 3},
+            {"plan": "I added the numbers successfully", "c": 3},
         ]
     )
     with dspy.context(lm=lm):

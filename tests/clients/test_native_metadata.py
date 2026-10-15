@@ -164,3 +164,20 @@ def test_family_rule_provider_limits_only_known_entries(monkeypatch):
     unknown = metadata.model_info("proxy", "gpt-unlisted")
     assert unknown["supports_reasoning"] is True
     assert "input_cost_per_token" not in unknown
+
+
+@pytest.mark.parametrize("provider,namespace", [("fireworks", "fireworks_ai"), ("together", "together_ai")])
+def test_native_inference_hosts_use_their_metadata_namespace(monkeypatch, provider, namespace):
+    monkeypatch.setattr(metadata, "_data", {
+        f"{namespace}/vendor/model": {
+            "litellm_provider": namespace, "supports_function_calling": True,
+            "input_cost_per_token": 2e-6, "output_cost_per_token": 7e-6,
+        },
+        "vendor/model": {"litellm_provider": "openai", "input_cost_per_token": 99},
+    })
+    lm = dspy.LM(f"{namespace}/vendor/model", engine="lm15", api_key="test")
+    assert lm.supports_function_calling
+    cost, details = estimate_cost(answer("vendor/model", input_tokens=3, output_tokens=5),
+                                  provider=provider, requested_model="vendor/model")
+    assert cost == pytest.approx(41e-6)
+    assert details["provider"] == provider

@@ -14,6 +14,7 @@ from dspy.adapters.utils import apply_output_field_defaults, serialize_for_json
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.capabilities import with_capability_planning
 from dspy.clients.requests import build_request
+from dspy.dsp.utils.settings import settings
 from dspy.lm15 import Message, Response, TextPart, ToolCallPart
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature
@@ -127,6 +128,7 @@ class Adapter:
         native feature (tool calling, reasoning, ...) are removed from it and
         filled in from the `Response` in `_call_postprocess`.
         """
+        original_signature = signature
         if not self.use_native_function_calling:
             for key in ("tools", "tool_choice", "parallel_tool_calls"):
                 lm_kwargs.pop(key, None)
@@ -166,6 +168,16 @@ class Adapter:
             ):
                 signature = field.annotation.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
 
+        # Only surviving default reasoning fields need the explicit plan fallback.
+        for name in signature.output_fields:
+            fallback_name = Reasoning._fallback_field_name(original_signature, name)
+            if fallback_name != name:
+                signature = signature.with_updated_fields(name, __dspy_reasoning_field=name)
+                signature = Signature(
+                    {fallback_name if key == name else key: field for key, field in signature.fields.items()},
+                    signature.instructions,
+                )
+
         return signature
 
     def _call_postprocess(
@@ -198,6 +210,11 @@ class Adapter:
                     message="The LM returned an empty or null response.",
                 )
 
+            for name, field in processed_signature.output_fields.items():
+                if original_name := field.json_schema_extra.get("__dspy_reasoning_field"):
+                    if name in value:
+                        value[original_name] = value.pop(name)
+
             # Fields removed for native features are absent from the processed parse
             value = apply_output_field_defaults(original_signature, value)
             for field_name in original_signature.output_fields:
@@ -214,6 +231,10 @@ class Adapter:
                     isinstance(field.annotation, type)
                     and field.annotation in self.native_response_types
                     and issubclass(field.annotation, Type)
+                    and not (
+                        field.annotation is Reasoning
+                        and Reasoning._fallback_field_name(original_signature, name) in processed_signature.output_fields
+                    )
                 ):
                     parsed_value = field.annotation.parse_lm_response(response)
                     if parsed_value is not None:
@@ -254,6 +275,10 @@ class Adapter:
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         prompt = self.format(processed_signature, demos, inputs)
         request = build_request(lm, prompt, lm_kwargs)
+        if settings.send_stream and settings.stream_listeners:
+            from dspy.streaming.messages import _StreamSignature, sync_send_to_stream
+
+            sync_send_to_stream(settings.send_stream, _StreamSignature(id(settings.caller_predict), processed_signature))
         responses = [lm(request, **options) for options in _execution_options(lm, lm_kwargs)]
         return self._call_postprocess(processed_signature, signature, responses)
 
@@ -269,6 +294,10 @@ class Adapter:
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         prompt = self.format(processed_signature, demos, inputs)
         request = build_request(lm, prompt, lm_kwargs)
+        if settings.send_stream and settings.stream_listeners:
+            from dspy.streaming.messages import _StreamSignature
+
+            await settings.send_stream.send(_StreamSignature(id(settings.caller_predict), processed_signature))
         responses = [await lm.acall(request, **options) for options in _execution_options(lm, lm_kwargs)]
         return self._call_postprocess(processed_signature, signature, responses)
 
@@ -313,6 +342,20 @@ class Adapter:
             The rendered `Prompt`.
         """
         inputs_copy = dict(inputs)
+        fallback_names = {
+            field.json_schema_extra["__dspy_reasoning_field"]: name
+            for name, field in signature.output_fields.items()
+            if "__dspy_reasoning_field" in field.json_schema_extra
+        }
+        if fallback_names:
+            def remap(values):
+                return {fallback_names.get(key, key): value for key, value in values.items()}
+
+            demos = [remap(demo) for demo in demos]
+            for name, field in signature.input_fields.items():
+                if field.annotation is History and name in inputs_copy:
+                    history = inputs_copy[name]
+                    inputs_copy[name] = history.model_copy(update={"messages": [remap(m) for m in history.messages]})
 
         # If the signature and inputs have conversation history, we need to format the conversation history and
         # remove the history field from the signature.

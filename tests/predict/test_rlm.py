@@ -129,6 +129,33 @@ class TestMockInterpreter:
 # ============================================================================
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_mode", [False, True])
+@pytest.mark.parametrize("mode", ["native", "omitted", "unsupported"])
+async def test_default_reasoning_trajectory(mode, async_mode):
+    class Model(DummyLM):
+        @property
+        def supports_reasoning(self):
+            return mode != "unsupported"
+
+    responses = [{"code": "print(13)"}, {"code": "print(missing)"}, {"code": "SUBMIT(13)"}]
+    if mode == "unsupported":
+        for response in responses:
+            response["plan"] = "Check the value before submitting."
+    lm = Model(responses, reasoning=mode == "native")
+    factory = MockInterpreterFactory(responses=[
+        "13", CodeExecutionError("name 'missing' is not defined"), FinalOutput({"answer": 13}),
+    ])
+    program = RLM("query -> answer: int", max_iters=3, interpreter_factory=factory)
+    with dspy.context(lm=lm):
+        result = await program.acall(query="Return thirteen") if async_mode else program(query="Return thirteen")
+    expected = "Some reasoning" if mode == "native" else "" if mode == "omitted" else responses[0]["plan"]
+    assert result.answer == 13
+    assert result.final_reasoning == expected
+    assert len(result.trajectory) == 3
+    assert all(entry["reasoning"] == expected and isinstance(entry["reasoning"], str) for entry in result.trajectory)
+
+
 class TestRLMInitialization:
     """Tests for RLM module initialization."""
 
@@ -1491,7 +1518,7 @@ class TestRLMWithDummyLM:
         """Test full RLM pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
         configured = MockInterpreterFactory()
         with dummy_lm_context([
-            {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
+            {"plan": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
         ]):
             rlm = RLM("query -> answer: int", max_iters=3)
             with dspy.context(interpreter_factory=configured):
@@ -1504,8 +1531,8 @@ class TestRLMWithDummyLM:
     def test_multi_turn_computation_e2e(self):
         """Test RLM with multiple turns before SUBMIT."""
         with dummy_lm_context([
-            {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-            {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+            {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
         ]):
             rlm = RLM("query -> answer: int", max_iters=5)
             result = rlm.forward(query="Double ten", interpreter_factory=PythonInterpreter)
@@ -1516,7 +1543,7 @@ class TestRLMWithDummyLM:
     def test_with_input_variables_e2e(self):
         """Test RLM with input variables passed to sandbox."""
         with dummy_lm_context([
-            {"reasoning": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
+            {"plan": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
         ]):
             rlm = RLM("numbers: list[int] -> total: int", max_iters=3)
             result = rlm.forward(numbers=[1, 2, 3, 4, 5], interpreter_factory=PythonInterpreter)
@@ -1529,7 +1556,7 @@ class TestRLMWithDummyLM:
             return {"apple": "red", "banana": "yellow"}.get(key, "unknown")
 
         with dummy_lm_context([
-            {"reasoning": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
+            {"plan": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
         ]):
             rlm = RLM("fruit -> color: str", max_iters=3, tools=[lookup])
             result = rlm.forward(fruit="apple", interpreter_factory=PythonInterpreter)
@@ -1570,7 +1597,7 @@ class TestRLMWithDummyLM:
 
         with dummy_lm_context([
             {
-                "reasoning": "Call the tool",
+                "plan": "Call the tool",
                 "code": 'result = score_payload({"value": 3})\nSUBMIT(result)',
             },
         ]):
@@ -1588,7 +1615,7 @@ class TestRLMWithDummyLM:
     async def test_aforward_simple_computation_e2e(self):
         """Test aforward() full pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
         with dummy_lm_context([
-            {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
+            {"plan": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
         ]):
             rlm = RLM("query -> answer: int", max_iters=3)
             result = await rlm.aforward(query="What is 2 + 3?")
@@ -1600,8 +1627,8 @@ class TestRLMWithDummyLM:
     async def test_aforward_multi_turn_e2e(self):
         """Test aforward() with multiple turns before SUBMIT."""
         with dummy_lm_context([
-            {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-            {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+            {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
         ]):
             rlm = RLM("query -> answer: int", max_iters=5)
             result = await rlm.aforward(query="Double ten")
@@ -1613,7 +1640,7 @@ class TestRLMWithDummyLM:
     async def test_aforward_with_input_variables_e2e(self):
         """Test aforward() with input variables passed to sandbox."""
         with dummy_lm_context([
-            {"reasoning": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
+            {"plan": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
         ]):
             rlm = RLM("numbers: list[int] -> total: int", max_iters=3)
             result = await rlm.aforward(numbers=[1, 2, 3, 4, 5])

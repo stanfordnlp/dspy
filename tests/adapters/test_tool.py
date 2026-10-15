@@ -812,3 +812,29 @@ def test_tool_call_execute_with_local_functions():
             globals().pop("local_add", None)
 
     main()
+
+
+def test_tool_calls_none_and_empty_dict_mean_no_calls():
+    """`"tool_calls": null` / `{}` are how JSON-mode models say "no tool calls
+    this turn" -- they must parse like `[]`, not raise AdapterParseError (#10612)."""
+    for empty in (None, {}):
+        calls = dspy.ToolCalls.model_validate(empty)
+        assert calls.tool_calls == []
+    # And through the wrapping form: {"tool_calls": None}
+    calls = dspy.ToolCalls.model_validate({"tool_calls": None})
+    assert calls.tool_calls == []
+
+
+def test_tool_calls_none_reaches_empty_tool_calls_semantics():
+    """End-to-end: ReActV2 with a JSON-mode model writing `"tool_calls": null`
+    must take the usual empty_tool_calls path (like `[]`), not a parse error."""
+    adapter = dspy.JSONAdapter()
+    lm = dspy.utils.DummyLM([{"next_thought": "Nothing to call.", "tool_calls": None}] * 2, adapter=adapter)
+    with dspy.context(lm=lm, adapter=adapter):
+        try:
+            dspy.ReActV2("question -> answer", tools=[])(question="hi")
+            raised = None
+        except Exception as e:
+            raised = e
+    assert raised is not None
+    assert "empty_tool_calls" in str(raised), f"expected empty_tool_calls semantics, got: {raised}"

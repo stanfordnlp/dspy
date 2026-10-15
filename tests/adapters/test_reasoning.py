@@ -93,7 +93,7 @@ def test_reasoning_with_chain_of_thought():
     lm = DummyLM([{"reasoning": "Let me think step by step", "answer": "42"}])
     dspy.configure(lm=lm)
 
-    cot = dspy.ChainOfThought("question -> answer")
+    cot = dspy.ChainOfThought("question -> answer", rationale_field_type=str)
     result = cot(question="What is the answer?")
 
     # Test that we can use string methods on result.reasoning

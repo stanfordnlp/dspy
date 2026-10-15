@@ -90,7 +90,6 @@ These are community-maintained projects and are not officially supported by the 
 | **Lightning AI** | [Link](https://lightning.ai/lightning-ai/studios/dspy-programming-with-foundation-models) |
 | **Haystack** | [Link](https://towardsdatascience.com/automating-prompt-engineering-with-dspy-and-haystack-926a637a3f43) |
 | **Arize** | [Link](https://docs.arize.com/phoenix/tracing/integrations-tracing/dspy) |
-| **LlamaIndex** | [Link](https://github.com/stanfordnlp/dspy/blob/main/examples/llamaindex/dspy_llamaindex_rag.ipynb) |
 | **Langtrace** | [Link](https://docs.langtrace.ai/supported-integrations/llm-frameworks/dspy) |
 | **Langfuse** | [Link](https://langfuse.com/docs/integrations/dspy) |
 | **OpenLIT** | [Link](https://docs.openlit.io/latest/sdk/integrations/dspy) |
