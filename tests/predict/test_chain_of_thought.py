@@ -34,7 +34,11 @@ def test_chain_of_thought_with_native_reasoning():
     lm = dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", cache=False)
     dspy.settings.configure(lm=lm)
 
-    with mock.patch("litellm.completion") as mock_completion:
+    # Match the mocked response's capability independently of LiteLLM's bundled model catalog.
+    with (
+        mock.patch("litellm.supports_reasoning", return_value=True),
+        mock.patch("litellm.completion") as mock_completion,
+    ):
         mock_completion.return_value = ModelResponse(
             choices=[
                 Choices(
