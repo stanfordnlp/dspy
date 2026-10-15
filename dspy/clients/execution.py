@@ -25,7 +25,7 @@ from dspy.clients.engines.stream_guard import achecked_stream, checked_stream
 from dspy.clients.engines.streaming import ListenerBridge
 from dspy.clients.errors import error_boundary
 from dspy.clients.lm15_boundary import snapshot_request
-from dspy.clients.requests import CLIENT_KEYS, EXECUTION_KEYS, build_request
+from dspy.clients.requests import CLIENT_KEYS, build_request
 from dspy.dsp.utils.settings import settings
 from dspy.lm15 import Request, Response, RouterConfig, StreamAssemblyError
 from dspy.utils.exceptions import LMConfigurationError, LMUnsupportedFeatureError, is_retryable_lm_error
@@ -47,7 +47,6 @@ class PreparedCall:
     rollout_id: Any
     n: int
     convenience: bool
-    candidates: bool
 
     def key(self):
         key = {"_fn_identifier": "dspy.clients.lm15.complete", "request": request_to_dict(self.request),
@@ -85,7 +84,7 @@ def _count(value, lm):
     return value
 
 
-def prepare(lm, prompt, options, *, cache=None, rollout_id=None, n=None, candidates=False, asynchronous=False):
+def prepare(lm, prompt, options, *, cache=None, rollout_id=None, asynchronous=False):
     options = dict(options)
     if not isinstance(lm.engine, str):
         from dspy.clients.lm import _refuse_client_settings
@@ -101,26 +100,24 @@ def prepare(lm, prompt, options, *, cache=None, rollout_id=None, n=None, candida
     if rollout_id is None:
         rollout_id = lm.kwargs.get("rollout_id")
     if isinstance(prompt, Request):
-        extra = set(options) - EXECUTION_KEYS - CLIENT_KEYS
+        if set(options) & {"n", "num_generations"}:
+            raise TypeError("lm(Request) returns one Response; use Predict(n=...) for multiple candidates")
+        extra = set(options) - CLIENT_KEYS
         if extra:
             raise TypeError(f"Generation options belong in Request.config: {sorted(extra)}")
         if prompt.model != lm.model:
             raise ValueError("Request.model must match LM.model")
         validate_request(prompt)
         _check_encodable(request_to_dict(prompt), "request")
-        count = _count(n if n is not None else options.get("n"), lm) if candidates else 1
-        return PreparedCall(snapshot_request(prompt), None, options, bool(use_cache), rollout_id, count,
-                            False, candidates)
+        return PreparedCall(snapshot_request(prompt), None, options, bool(use_cache), rollout_id, 1, False)
     if not isinstance(prompt, str):
         raise TypeError("An LM call takes a dspy.lm15.Request or a prompt string")
-    if candidates:
-        raise TypeError("generate() takes a dspy.lm15.Request")
     count = _count(options.pop("n", options.pop("num_generations", None)), lm)
     if hasattr(lm, "_warn_zero_temp_rollout"):
         lm._warn_zero_temp_rollout({**lm.kwargs, **options}.get("temperature"), rollout_id)
     _check_encodable(prompt, "prompt")
     request = snapshot_request(build_request(lm, prompt, options))
-    return PreparedCall(request, prompt, options, bool(use_cache), rollout_id, count, True, False)
+    return PreparedCall(request, prompt, options, bool(use_cache), rollout_id, count, True)
 
 
 _LITELLM_GENERIC_DOOR = {
@@ -530,8 +527,6 @@ def finalize(lm, call, result):
         if adaptations:
             entry["adaptations"] = adaptations
         lm.update_history(entry)
-    if call.candidates:
-        return list(result.responses)
     if call.convenience:
         return result.outputs
     return result.responses[0]

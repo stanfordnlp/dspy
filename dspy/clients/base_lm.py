@@ -4,7 +4,6 @@ import inspect
 from typing import Any, TextIO
 
 from dspy.dsp.utils import settings
-from dspy.lm15 import Request, Response
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 
@@ -76,8 +75,8 @@ class BaseLM:
     retries, candidate fan-out, usage accounting, callbacks and history around
     that single-request contract, so engines never add a second layer of those.
 
-    Calls speak lm15 objects: `lm(request)` returns one `dspy.lm15.Response`,
-    `lm.generate(request, n=...)` returns several, and `lm("text")` is a
+    Calls speak lm15 objects: `lm(request)` returns one `dspy.lm15.Response`.
+    Adapters call the LM separately for each candidate. `lm("text")` remains a
     convenience that renders one user message and returns a list of outputs.
     OpenAI-style `messages=` dictionaries and `forward()` implementations were
     removed in DSPy 3.5; see the migration guide at
@@ -116,7 +115,7 @@ class BaseLM:
                 transient failure.
             engine: An object implementing `complete(Request) -> Response`.
                 Engines are borrowed; DSPy never closes them.
-            async_engine: The async counterpart used by `acall`/`agenerate`.
+            async_engine: The async counterpart used by `acall`.
             **kwargs: Additional default generation options stored in
                 `self.kwargs`, in the OpenAI vocabulary (`top_p`, `stop`,
                 `reasoning_effort`, ...).
@@ -199,30 +198,6 @@ class BaseLM:
         # propagate to the worker; callbacks/finalization stay on the caller.
         call = await asyncio.to_thread(prepare, self, prompt, options, cache=cache, rollout_id=rollout_id,
                                        asynchronous=True)
-        return finalize(self, call, await aexecute(self, call))
-
-    @with_callbacks
-    def generate(self, request: Request, *, n: int = 1, cache=None, rollout_id=None, **client_options) -> list[Response]:
-        """Return `n` responses for one request, as DSPy adapters do.
-
-        Candidates are separate engine requests, cached and recorded together
-        as one call. Each response contains exactly one assistant message.
-        `client_options` are per-call client settings such as `api_base`.
-        """
-        from dspy.clients.execution import execute, finalize, prepare
-
-        call = prepare(self, request, client_options, cache=cache, rollout_id=rollout_id, n=n, candidates=True)
-        return finalize(self, call, execute(self, call))
-
-    @with_callbacks
-    async def agenerate(self, request: Request, *, n: int = 1, cache=None, rollout_id=None, **client_options) -> list[Response]:
-        """Async equivalent of `generate`."""
-        import asyncio
-
-        from dspy.clients.execution import aexecute, finalize, prepare
-
-        call = await asyncio.to_thread(prepare, self, request, client_options, cache=cache, rollout_id=rollout_id, n=n,
-                                       candidates=True, asynchronous=True)
         return finalize(self, call, await aexecute(self, call))
 
     def dump_state(self) -> dict[str, Any]:

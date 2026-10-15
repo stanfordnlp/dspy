@@ -4,7 +4,7 @@ import pytest
 
 import dspy
 from dspy.lm15 import Config, Message, Request, Response
-from tests.test_utils.engines import make_response, recording_lm
+from tests.test_utils.engines import RecordingEngine, make_response, recording_lm
 
 
 @pytest.mark.asyncio
@@ -39,7 +39,7 @@ def test_string_prompt_accepts_generation_overrides_and_candidates():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
 async def test_request_returns_one_response(asynchronous):
-    lm = recording_lm([make_response("hello", thinking="thought")])
+    lm = recording_lm([make_response("hello", thinking="thought")], n=3)
     request = Request(model=lm.model, system="Be brief.", messages=(Message.user("hi"),), config=Config(max_tokens=5))
 
     response = await lm.acall(request) if asynchronous else lm(request)
@@ -53,16 +53,116 @@ async def test_request_returns_one_response(asynchronous):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
-async def test_generate_returns_n_responses_from_separate_requests(asynchronous):
-    lm = recording_lm(["one", "two", "three"])
-    request = Request(model=lm.model, messages=(Message.user("count"),))
+@pytest.mark.parametrize("override", [None, 2, 1])
+async def test_predict_candidates_are_individually_intercepted_cached_and_recorded(asynchronous, override):
+    from dspy.primitives.facade import SandboxLM
+    from dspy.utils.callback import BaseCallback
+    from dspy.utils.usage_tracker import track_usage
 
-    responses = await lm.agenerate(request, n=3) if asynchronous else lm.generate(request, n=3)
+    class Calls(BaseCallback):
+        def __init__(self):
+            self.inputs = []
+            self.outputs = []
 
-    assert [r.text for r in responses] == ["one", "two", "three"]
+        def on_lm_start(self, call_id, instance, inputs):
+            self.inputs.append(inputs)
+
+        def on_lm_end(self, call_id, outputs, exception):
+            assert exception is None
+            self.outputs.append(outputs)
+
+    callback = Calls()
+    answers = [f'{{"answer":"{i}"}}' for i in range(6)]
+    lm = recording_lm(answers, cache=True, n=3, rollout_id=7, seed=41, temperature=0.7, callbacks=[callback])
+    reserved = []
+    predictor = dspy.Predict("question -> answer")
+    predictor.set_lm(SandboxLM(lm, reserve=reserved.append))
+    n = 3 if override is None else override
+    config = {} if override is None else {"n": override}
+
+    async def predict(**options):
+        if asynchronous:
+            return await predictor.acall(question="count", config={**config, **options})
+        return predictor(question="count", config={**config, **options})
+
+    with dspy.context(adapter=dspy.JSONAdapter()), track_usage() as usage:
+        first = await predict()
+        repeated = await predict(rollout_id=7)
+        adjacent = await predict(rollout_id=8)
+
+    assert first.completions.answer == repeated.completions.answer == [str(i) for i in range(n)]
+    assert adjacent.completions.answer == [str(i) for i in range(n, 2 * n)]
+    assert reserved == [1] * (3 * n)
+    assert len(lm.engine.requests) == 2 * n
+    assert all(r.config.seed == 41 for r in lm.engine.requests)
+    assert len(lm.history) == len(callback.inputs) == len(callback.outputs) == 3 * n
+    assert all(isinstance(r, Response) for r in callback.outputs)
+    assert all(isinstance(h["response"], Response) and len(h["outputs"]) == 1 for h in lm.history)
+    assert usage.get_total_tokens()[lm.model]["total_tokens"] == 4 * n
+    if n == 1:
+        assert [inputs["rollout_id"] for inputs in callback.inputs] == [None, 7, 8]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_failed_candidate_preserves_completed_calls_and_their_cache(asynchronous):
+    from dspy.utils.usage_tracker import track_usage
+
+    lm = recording_lm(['{"answer":"first"}', dspy.LMInvalidRequestError("bad candidate"), '{"answer":"second"}'],
+                      cache=True, num_retries=0)
+    predictor = dspy.Predict("question -> answer", n=2)
+
+    async def predict():
+        if asynchronous:
+            return await predictor.acall(question="count", lm=lm)
+        return predictor(question="count", lm=lm)
+
+    with dspy.context(adapter=dspy.JSONAdapter()), track_usage() as usage:
+        with pytest.raises(dspy.LMInvalidRequestError, match="bad candidate"):
+            await predict()
+        assert len(lm.history) == 1
+        assert usage.get_total_tokens()[lm.model]["total_tokens"] == 2
+        result = await predict()
+
+    assert result.completions.answer == ["first", "second"]
     assert len(lm.engine.requests) == 3
+    assert len(lm.history) == 3  # first success, cached first candidate, second success
+    assert usage.get_total_tokens()[lm.model]["total_tokens"] == 4
+
+
+@pytest.mark.asyncio
+async def test_cancelled_prediction_keeps_completed_candidate_history_and_usage():
+    import asyncio
+
+    from dspy.utils.usage_tracker import track_usage
+
+    waiting = asyncio.Event()
+
+    class Engine:
+        def __init__(self):
+            self.calls = 0
+
+        async def complete(self, request):
+            self.calls += 1
+            if self.calls == 2:
+                waiting.set()
+                await asyncio.Event().wait()
+            return make_response('{"answer":"first"}')
+
+    lm = dspy.LM("test/model", engine=RecordingEngine(), async_engine=Engine(), cache=True)
+    predictor = dspy.Predict("question -> answer", n=2)
+    with dspy.context(adapter=dspy.JSONAdapter()), track_usage() as usage:
+        task = asyncio.create_task(predictor.acall(question="count", lm=lm))
+        try:
+            await asyncio.wait_for(waiting.wait(), timeout=5)
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
     assert len(lm.history) == 1
-    assert lm.history[-1]["outputs"] == ["one", "two", "three"]
+    assert lm.history[0]["response"].text == '{"answer":"first"}'
+    assert usage.get_total_tokens()[lm.model]["total_tokens"] == 2
 
 
 def test_openai_style_messages_are_refused_with_a_migration_hint():
@@ -77,6 +177,9 @@ def test_request_calls_take_no_generation_options():
     request = Request(model=lm.model, messages=(Message.user("hi"),))
     with pytest.raises(TypeError, match=r"Request\.config"):
         lm(request, temperature=0.5)
+    for count_option in ("n", "num_generations"):
+        with pytest.raises(TypeError, match="returns one Response"):
+            lm(request, **{count_option: 2})
     with pytest.raises(ValueError, match="Request.model must match"):
         lm(Request(model="other", messages=(Message.user("hi"),)))
     with pytest.raises(TypeError, match="Request or a prompt string"):

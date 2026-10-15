@@ -73,9 +73,10 @@ def test_two_step_adapter_format_exact_messages_with_typed_outputs():
     assert lm_kwargs == expected_lm_kwargs
 
 
-def _assert_two_step_requests(main_lm, extraction_lm):
+def _assert_two_step_requests(main_lm, extraction_lm, n=1):
     # main LM call
-    [main_request] = main_lm.engine.requests
+    assert len(main_lm.engine.requests) == n
+    main_request = main_lm.engine.requests[0]
     assert len(main_request.messages) == 1
     assert "1. `question` (str)" in main_request.system
     assert "1. `solution` (str)" in main_request.system
@@ -85,7 +86,8 @@ def _assert_two_step_requests(main_lm, extraction_lm):
     assert "What is 5 + 7?" in main_request.messages[0].text
 
     # extraction LM call
-    [extraction_request] = extraction_lm.engine.requests
+    assert len(extraction_lm.engine.requests) == n
+    extraction_request = extraction_lm.engine.requests[0]
     assert len(extraction_request.messages) == 1
     assert "`text` (str)" in extraction_request.system
     assert "`solution` (str)" in extraction_request.system
@@ -120,21 +122,23 @@ def test_two_step_adapter_call():
 
 
 @pytest.mark.asyncio
-async def test_two_step_adapter_async_call():
+@pytest.mark.parametrize("n", [1, 2])
+async def test_two_step_adapter_async_call(n):
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField(desc="The math question to solve")
         solution: str = dspy.OutputField(desc="Step by step solution")
         answer: float = dspy.OutputField(desc="The final numerical answer")
 
     program = dspy.Predict(TestSignature)
-    main_lm = recording_lm(["text from main LM"], model="openai/gpt-4o-mini", temperature=1.0)
-    extraction_lm = recording_lm([EXTRACTED], model="openai/gpt-4o", temperature=1.0)
+    main_lm = recording_lm(["text from main LM", "second candidate"], model="openai/gpt-4o-mini", temperature=1.0, n=n)
+    extraction_lm = recording_lm([EXTRACTED, EXTRACTED.replace("12", "13")], model="openai/gpt-4o", temperature=1.0)
 
     with dspy.context(lm=main_lm, adapter=dspy.TwoStepAdapter(extraction_model=extraction_lm)):
         result = await program.acall(question="What is 5 + 7?")
 
-    assert result.answer == 12
-    _assert_two_step_requests(main_lm, extraction_lm)
+    assert result.completions.answer == [12, 13][:n]
+    assert len(main_lm.history) == len(extraction_lm.history) == n
+    _assert_two_step_requests(main_lm, extraction_lm, n)
 
 
 def test_two_step_adapter_parse():

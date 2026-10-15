@@ -81,7 +81,7 @@ The base class. Subclass it when you want a new prompt shape — implement `form
 You’ll only override these methods when writing a custom adapter, but reading them helps when debugging a malformed prompt or a parse failure.
 
 **`Adapter.__call__(lm, lm_kwargs, signature, demos, inputs)` / `Adapter.acall(...)`**  
-Public entry. The flow inside is preprocess → format → LM call → postprocess. `lm_kwargs` (temperature, max_tokens, response_format, etc.) is where adapters reach during preprocess to request structured output or function calling. The rendered `Prompt` and these options become one lm15 `Request` (`dspy.clients.requests.build_request`), sent with `lm.generate(request, n=...)`.
+Public entry. The flow inside is preprocess → format → LM call → postprocess. `lm_kwargs` (temperature, max_tokens, response_format, etc.) is where adapters reach during preprocess to request structured output or function calling. The rendered `Prompt` and these options become one lm15 `Request` (`dspy.clients.requests.build_request`). Each candidate is a separate `lm(request)` / `await lm.acall(request)` call, with its own rollout identity, callbacks, history and usage accounting.
 
 **`Adapter.format(signature, demos, inputs)` → `dspy.adapters.Prompt`**  
 Turns the signature, demos, and inputs into a `Prompt(system=..., messages=(...))` of lm15 `Message`s. The pieces it composes from:

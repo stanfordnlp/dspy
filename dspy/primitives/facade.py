@@ -149,18 +149,20 @@ class SandboxLM(BaseLM):
                 f"Sandboxed code may not set LM option(s) {rejected}; allowed per call: {sorted(SANDBOX_LM_KWARGS)}."
             )
 
-    def _admit(self, kwargs: dict[str, Any]) -> None:
+    def _admit(self, kwargs: dict[str, Any], args: tuple = ()) -> None:
         self._check(kwargs)
         if self._reserve is not None:
-            # `n` completions cost `n` calls, so it cannot multiply the budget.
-            self._reserve(max(1, int(kwargs.get("n", self.kwargs.get("n")) or 1)))
+            prompt = args[0] if args else kwargs.get("request", kwargs.get("prompt"))
+            # Typed requests are singular even when the wrapped LM defaults to n > 1.
+            count = 1 if isinstance(prompt, dspy.lm15.Request) else max(1, int(kwargs.get("n", self.kwargs.get("n")) or 1))
+            self._reserve(count)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        self._admit(kwargs)
+        self._admit(kwargs, args)
         return self._lm(*args, **kwargs)
 
     async def acall(self, *args: Any, **kwargs: Any) -> Any:
-        self._admit(kwargs)
+        self._admit(kwargs, args)
         return await self._lm.acall(*args, **kwargs)
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:

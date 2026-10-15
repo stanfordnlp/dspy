@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any, get_origin
 
@@ -253,7 +254,7 @@ class Adapter:
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         prompt = self.format(processed_signature, demos, inputs)
         request = build_request(lm, prompt, lm_kwargs)
-        responses = lm.generate(request, **_execution_options(lm_kwargs))
+        responses = [lm(request, **options) for options in _execution_options(lm, lm_kwargs)]
         return self._call_postprocess(processed_signature, signature, responses)
 
     @with_capability_planning
@@ -268,7 +269,7 @@ class Adapter:
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         prompt = self.format(processed_signature, demos, inputs)
         request = build_request(lm, prompt, lm_kwargs)
-        responses = await lm.agenerate(request, **_execution_options(lm_kwargs))
+        responses = [await lm.acall(request, **options) for options in _execution_options(lm, lm_kwargs)]
         return self._call_postprocess(processed_signature, signature, responses)
 
     def format(
@@ -616,21 +617,31 @@ class Adapter:
         raise NotImplementedError
 
 
-def _execution_options(lm_kwargs: dict[str, Any]) -> dict[str, Any]:
-    """Execution controls and client settings an adapter forwards to `generate`.
+def _execution_options(lm: BaseLM, lm_kwargs: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    """One callable LM invocation per candidate, with independent cache identity.
 
-    Generation options are already inside the Request; these are the keys the
-    DSPy LM layer (`n`, `cache`, `rollout_id`) and engines (`api_base`, ...) own.
+    Sampling options, including the user's seed, stay in the Request. A single
+    candidate keeps the caller's rollout; multiple candidates use a namespaced
+    pair of caller rollout and index, so adjacent caller rollouts cannot overlap.
     """
     from dspy.clients.requests import CLIENT_KEYS
 
+    n = lm_kwargs.get("n", lm_kwargs.get("num_generations"))
+    if n is None:
+        n = lm.kwargs.get("n", lm.kwargs.get("num_generations", 1))
+    if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+        raise ValueError("n must be a positive integer")
+
     options = {}
-    if lm_kwargs.get("n", lm_kwargs.get("num_generations")) is not None:
-        options["n"] = lm_kwargs.get("n", lm_kwargs.get("num_generations"))
     for key in ("cache", "rollout_id", *CLIENT_KEYS):
         if lm_kwargs.get(key) is not None:
             options[key] = lm_kwargs[key]
-    return options
+    rollout_id = options.get("rollout_id", lm.kwargs.get("rollout_id"))
+    for index in range(n):
+        if n == 1:
+            yield options
+        else:
+            yield {**options, "rollout_id": ("dspy.adapter.candidate", rollout_id, index)}
 
 
 def _tool_calls_from_message(message: dict[str, Any]) -> tuple[str | None, ToolCalls | None]:

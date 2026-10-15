@@ -11,8 +11,7 @@ original lm15 classes, not DSPy wrappers or subclasses.
 | Interface | DSPy 3.4 | DSPy 3.5 |
 | --- | --- | --- |
 | `lm("Hello")` | List-returning convenience | Kept: one user message with the LM's defaults, returns a list |
-| `lm(Request(...))` / `await lm.acall(Request(...))` | Returns an lm15 `Response` | The contract for one call |
-| `lm.generate(Request(...), n=3)` | — | New: `n` responses for one request (what adapters use) |
+| `lm(Request(...))` / `await lm.acall(Request(...))` | Returns an lm15 `Response` | The adapter and integration contract; one call per candidate |
 | OpenAI-style `lm(messages=[{"role": ..., "content": ...}])` | Deprecated | **Removed**; raises `TypeError` with this guide's link |
 | Custom `BaseLM.forward()` / `aforward()` implementations | Deprecated | **Removed**; custom LMs are engines |
 | `LegacyEngine` / `AsyncLegacyEngine`, `complete_legacy()` | Deprecated transition tools | **Removed** |
@@ -111,19 +110,28 @@ entries written by DSPy 3.4's ordinary calls used the old dictionary key and are
 **not** read anymore: after upgrading, previously cached answers are generated
 again once. Nothing errors; the cost is one regeneration per cached prompt.
 
-`n` answers are `n` separate requests in sequence. `num_retries` counts
-additional attempts with exponential delays capped at 60 seconds unless the
-provider specifies `retry_after`. A stream is not retried once a chunk has been
-sent to the caller.
+Adapters produce `n` answers with `n` separate `lm(request)` calls in sequence
+(`await lm.acall(request)` for async). Each candidate has its own cache entry,
+callbacks, history and usage accounting. A single candidate keeps the caller's
+`rollout_id`; multiple candidates derive stable, separate identities from that
+rollout and the candidate index. The user's sampling `seed` is unchanged.
+Repeated predictions reuse the corresponding candidates, while adjacent caller
+rollouts do not overlap. A later failure or cancellation leaves earlier completed
+calls recorded and cached.
+
+`num_retries` counts additional attempts per call, with exponential delays capped
+at 60 seconds unless the provider specifies `retry_after`. A stream is not retried
+once a chunk has been sent to the caller.
 
 `dspy.streamify` keeps its listener-facing chunks (`chunk.choices[0].delta`),
 built from lm15 stream events. Streaming through the LiteLLM engine now uses the
 same event mapping as native streaming, so every chunk has the same shape.
 
 Token usage is recorded once per public call, and cache hits add no billed usage.
-`lm.history[-1]` holds the `Request` under `"request"`, the `Response` (or tuple
-of responses for `n > 1`) under `"response"`, and a display copy of the messages
-under `"messages"`.
+For adapter calls, `lm.history[-1]` holds the `Request` under `"request"`, one
+`Response` under `"response"`, and a display copy of the messages under
+`"messages"`. The string convenience `lm("text", n=...)` retains its existing
+grouped history and list-returning behavior.
 
 ## Migrating OpenAI-style messages
 
@@ -157,7 +165,9 @@ The request's model must match the LM. `lm(request)` accepts only DSPy's
 execution controls (`cache`, `rollout_id`) and client settings (`api_key`,
 `api_base`, ...); generation options belong in `Config`. To continue a
 conversation, add `response.message` to the next request's messages. For several
-candidates, `lm.generate(request, n=3)` returns a list of `Response`s.
+candidates, use `dspy.Predict("question -> answer", n=3)` and read
+`prediction.completions`. Direct `lm(request)` calls always return one response;
+they do not accept `n` or `num_generations`, or inherit the LM's candidate count.
 
 ## Errors and retry ownership
 
@@ -282,7 +292,8 @@ class MyAdapter(dspy.ChatAdapter):
 `Message`s; `format_user_message_content` and `format_assistant_message_content`
 still return text. `Adapter.__call__` turns the prompt and `lm_kwargs` into one
 `Request` with `dspy.clients.requests.build_request`, calls
-`lm.generate(request, n=...)`, and parses each `Response`.
+`lm(request)` separately for each candidate, and parses each `Response`. Custom
+LM wrappers continue to intercept adapter calls through `__call__` and `acall`.
 
 A custom `dspy.Type` returns lm15 content parts from `format()`:
 

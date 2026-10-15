@@ -2078,11 +2078,15 @@ class TestRLMSubAgents:
 
     def test_facade_n_completions_draw_n_calls(self):
         invocation = _facade_invocation(RLM("query -> answer", max_llm_calls=2))
-        dspy.configure(lm=DummyLM([{"answer": "x"}] * 4))
+        lm = DummyLM([{"answer": "first"}, {"answer": "second"}, {"answer": "third"}])
+        dspy.configure(lm=lm)
 
         handle = invocation.construct("Predict", "question -> answer", "sub", {"n": 3})
-        with pytest.raises(RuntimeError, match=r"LLM call limit exceeded: 0 \+ 3 > 2"):
+        with pytest.raises(RuntimeError, match=r"LLM call limit exceeded: 2 \+ 1 > 2"):
             invocation.call(handle, {"question": "ping"})
+        assert len(lm.history) == 2
+        assert "first" in lm.history[0]["response"].text
+        assert "second" in lm.history[1]["response"].text
 
     def test_facade_resolves_the_lm_per_call_like_llm_query(self):
         # With no sub_lm, the facade serves dspy.settings.lm as it is when the sub-agent runs.

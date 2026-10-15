@@ -176,7 +176,7 @@ class LM(BaseLM):
     A language model supporting chat or text completion requests for use with DSPy modules.
 
     `lm(request)` runs one `dspy.lm15.Request` and returns a `dspy.lm15.Response`;
-    `lm.generate(request, n=...)` returns several. `lm("hello")` is a convenience
+    adapters call it once per candidate. `lm("hello")` is a convenience
     that renders one user message with this LM's generation defaults and returns
     a list of outputs. Custom backends are engines passed with `engine=`; see
     https://dspy.ai/community/normalized-lm-api-migration/.

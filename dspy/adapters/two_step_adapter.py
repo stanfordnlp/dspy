@@ -108,7 +108,7 @@ class TwoStepAdapter(Adapter):
         from dspy.adapters.base import _execution_options
 
         request = build_request(lm, self.format(signature, demos, inputs), lm_kwargs)
-        responses = await lm.agenerate(request, **_execution_options(lm_kwargs))
+        responses = [await lm.acall(request, **options) for options in _execution_options(lm, lm_kwargs)]
         # The signature is supposed to be "text -> {original output fields}"
         extractor_signature = self._create_extractor_signature(signature)
 
