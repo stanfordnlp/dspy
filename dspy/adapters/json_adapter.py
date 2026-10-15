@@ -6,10 +6,9 @@ from typing import Any, get_origin
 import json_repair
 import pydantic
 import regex
-from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import _AdapterPlan
-from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
+from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName, field_header
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
@@ -83,23 +82,42 @@ class JSONAdapter(ChatAdapter):
         return dataclasses.replace(plan, lm_kwargs={**plan.lm_kwargs, "response_format": response_format})
 
     def format_field_structure(self, signature: type[Signature]) -> str:
-        parts = []
-        parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
+        """Inputs are ChatAdapter-style `[[ ## name ## ]]` sections; outputs are one JSON object."""
+        input_sections = "\n\n".join(
+            f"{field_header(name)}\n{translate_field_type(name, field)}" for name, field in signature.input_fields.items()
+        )
+        output_object = {name: translate_field_type(name, field) for name, field in signature.output_fields.items()}
+        return "\n\n".join(
+            [
+                "All interactions will be structured in the following way, with the appropriate values filled in.",
+                "Inputs will have the following structure:",
+                input_sections,
+                "Outputs will be a JSON object with the following fields.",
+                json.dumps(output_object, indent=2, ensure_ascii=False),
+            ]
+        )
 
-        def format_signature_fields_for_instructions(fields: dict[str, FieldInfo], role: str):
-            return self.format_field_with_value(
-                fields_with_values={
-                    FieldInfoWithName(name=field_name, info=field_info): translate_field_type(field_name, field_info)
-                    for field_name, field_info in fields.items()
-                },
-                role=role,
-            )
+    def format_user_message_content(
+        self,
+        signature: type[Signature],
+        inputs: dict[str, Any],
+        prefix: str = "",
+        suffix: str = "",
+        main_request: bool = False,
+    ) -> str:
+        """Inputs use ChatAdapter's `[[ ## name ## ]]` sections; only the reply is JSON."""
+        messages = [prefix]
+        for name, field in signature.input_fields.items():
+            if name in inputs:
+                messages.append(f"{field_header(name)}\n{format_field_value(field_info=field, value=inputs[name])}")
 
-        parts.append("Inputs will have the following structure:")
-        parts.append(format_signature_fields_for_instructions(signature.input_fields, role="user"))
-        parts.append("Outputs will be a JSON object with the following fields.")
-        parts.append(format_signature_fields_for_instructions(signature.output_fields, role="assistant"))
-        return "\n\n".join(parts).strip()
+        if main_request:
+            output_requirements = self.user_message_output_requirements(signature)
+            if output_requirements is not None:
+                messages.append(output_requirements)
+
+        messages.append(suffix)
+        return "\n\n".join(messages).strip()
 
     def user_message_output_requirements(self, signature: type[Signature]) -> str:
         def type_info(v):
@@ -185,7 +203,7 @@ class JSONAdapter(ChatAdapter):
             output = []
             for field, field_value in fields_with_values.items():
                 formatted_field_value = format_field_value(field_info=field.info, value=field_value)
-                output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
+                output.append(f"{field_header(field.name)}\n{formatted_field_value}")
             return "\n\n".join(output).strip()
         else:
             d = fields_with_values.items()

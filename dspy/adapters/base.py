@@ -1,5 +1,6 @@
 import json
 import logging
+import textwrap
 from dataclasses import dataclass
 from typing import Any, get_origin
 
@@ -12,7 +13,7 @@ from dspy.adapters.types import History, Type
 from dspy.adapters.types.citation import Citations
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls
-from dspy.adapters.utils import apply_output_field_defaults, serialize_for_json
+from dspy.adapters.utils import apply_output_field_defaults, get_field_description_string, serialize_for_json
 from dspy.clients._deprecation import adapter_message_call
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.capabilities import with_capability_planning
@@ -404,7 +405,10 @@ class Adapter:
         Returns:
             A string that contains the field description for the input fields and the output fields.
         """
-        raise NotImplementedError
+        return (
+            f"Your input fields are:\n{get_field_description_string(signature.input_fields)}\n"
+            f"Your output fields are:\n{get_field_description_string(signature.output_fields)}"
+        )
 
     def format_field_structure(self, signature: type[Signature]) -> str:
         """Format the field structure for the system message.
@@ -430,7 +434,9 @@ class Adapter:
         Returns:
             A string that describes the task.
         """
-        raise NotImplementedError
+        instructions = textwrap.dedent(signature.instructions)
+        objective = ("\n" + " " * 8).join([""] + instructions.splitlines())
+        return f"In adhering to this structure, your objective is: {objective}"
 
     def format_user_message_content(
         self,
