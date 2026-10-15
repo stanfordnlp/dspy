@@ -356,16 +356,16 @@ async def test_streaming_handles_space_correctly():
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "parts",
+    "parts, expected",
     [
-        ["[[ ## answer ## ]]\n", "How ", "are ", "you ", "doing?\n\n", "[[ ## completed ## ]]"],
-        ["[[ ## answer ## ]]", "\nHow ", "are ", "you ", "doing?", "\n\n", "[[ ## completed ## ]]"],
-        ["[[ ## answer", " ## ]]", "\nHow ", "are ", "you ", "doing?", "\n\n[[ ## completed ## ]]"],
-        ["[[ ## answer ## ]]\n", "How\n", "are you\n", "doing?", "\n\n[[ ## completed ## ]]"],
-        ["[[ ## answer ## ]]\n", "How ", "are ", "you ", "doing?\n\n"],
+        (["[[ ## answer ## ]]\n", "How ", "are ", "you ", "doing?\n\n", "[[ ## completed ## ]]"], "How are you doing?"),
+        (["[[ ## answer ## ]]", "\nHow ", "are ", "you ", "doing?", "\n\n", "[[ ## completed ## ]]"], "How are you doing?"),
+        (["[[ ## answer", " ## ]]", "\nHow ", "are ", "you ", "doing?", "\n\n[[ ## completed ## ]]"], "How are you doing?"),
+        (["[[ ## answer ## ]]\n", "How\n", "are you\n", "doing?", "\n\n[[ ## completed ## ]]"], "How\nare you\ndoing?"),
+        (["[[ ## answer ## ]]\n", "How ", "are ", "you ", "doing?\n\n"], "How are you doing?"),
     ],
 )
-async def test_streaming_strips_boundary_whitespace_regardless_of_chunking(parts):
+async def test_streaming_strips_boundary_whitespace_regardless_of_chunking(parts, expected):
     program = dspy.streamify(
         dspy.Predict("question->answer"),
         stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
@@ -375,7 +375,7 @@ async def test_streaming_strips_boundary_whitespace_regardless_of_chunking(parts
         for part in parts:
             yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=part))])
 
-    with mock.patch("litellm.acompletion", side_effect=stream):
+    with patch_litellm_streaming(side_effect=stream):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.ChatAdapter()):
             all_chunks = []
             final = None
@@ -385,7 +385,7 @@ async def test_streaming_strips_boundary_whitespace_regardless_of_chunking(parts
                 elif isinstance(value, dspy.Prediction):
                     final = value
 
-    assert "".join([chunk.chunk for chunk in all_chunks]) == final.answer
+    assert "".join([chunk.chunk for chunk in all_chunks]) == final.answer == expected
 
 
 @pytest.mark.llm_call
