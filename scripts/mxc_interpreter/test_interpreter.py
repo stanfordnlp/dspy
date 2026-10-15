@@ -215,6 +215,8 @@ def test_secret_file_environment_and_native_io_denied(factory, tmp_path, monkeyp
     monkeypatch.setenv("DSPY_SYNTHETIC_SECRET", "canary-not-a-real-secret")
     with factory() as worker:
         assert worker.execute("import os; 'DSPY_SYNTHETIC_SECRET' in os.environ") is False
+        # MXC otherwise exposes the host's entire /etc as a read-only baseline.
+        assert worker.execute("from pathlib import Path; list(Path('/etc').iterdir())") == []
         worker.execute(f"from pathlib import Path; secret = {str(secret)!r}")
         for code in [
             "Path(secret).read_text()",

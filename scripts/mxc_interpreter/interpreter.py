@@ -81,7 +81,7 @@ class MXCInterpreter(LocalInterpreter):
                 # DSPy owns per-execution deadlines; no competing session timer.
                 "timeout": 0,
             },
-            "filesystem": {"readonlyPaths": readonly, "readwritePaths": writable},
+            "filesystem": {"readonlyPaths": readonly, "readwritePaths": writable, "deniedPaths": ["/etc"]},
             "network": {
                 "egress": {"default": "deny"},
                 "ingress": {"default": "deny", "hostLoopback": "deny"},

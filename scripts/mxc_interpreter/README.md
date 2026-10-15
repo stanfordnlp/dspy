@@ -93,7 +93,7 @@ and files, recoverable errors, concurrent/async tools, typed SUBMIT, Flex module
 and predictors, recursive RLM, ReActV2 delegation, and async RLM. Image checks
 round-trip encoded PNGs and assert asymmetric pixels; they do **not** establish
 typed `dspy.Image` integration through RLM on main. LMs are scripted/DummyLM,
-with cmpnd callbacks enabled; these are not live Azure/GEPA quality results.
+with cmpnd callbacks enabled. Separate live Azure/GEPA results follow below.
 
 Isolation checks use synthetic secrets, symlinks, native `ctypes` IO, a reachable
 host listener control, concurrent sessions, and detached children. Child cleanup
@@ -118,6 +118,34 @@ An earlier comparison on the experimental Monty/image stack measured MXC at
 execution, but was not a profiler attribution. SRT's hostname-filtered guest
 networking may suit different requirements. This draft maintains only MXC.
 
+### Live Flex/GEPA compatibility runs
+
+Seed 20260926 selected Iris, Oolong and BFCL parallel non-native from a six-task
+dspy-bench pool. Each run used 16 training, 8 validation and 8 held-out examples,
+a 112-metric-call budget, four evaluation threads, Azure-served GPT-4o for task
+calls and GPT-5.6 Luna for reflection, with cmpnd callbacks enabled. Oolong used
+the first 180 streamed rows with 1K–8K contexts before splitting.
+
+| Task | Candidate sources | Optimization forwards | Execution errors | Held-out baseline MXC / Deno | Held-out winner MXC / Deno |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Iris | 11 | 112 | 0 | 1.000 / 1.000 | 1.000 / 1.000 |
+| Oolong | 10 | 112 | 0 | 0.820 / 0.820 | 0.719 / 0.599 |
+| BFCL, after serialization fix | 14 | 112 | 0 | 1.000 / 1.000 | 1.000 / 1.000 |
+
+The first BFCL attempt had 100 failures in 100 optimization forwards: Flex passed
+`Tool` objects to the native JSON-only variable transport. All 64 distinct failed
+source/input pairs succeeded on Deno. Normalizing inputs in Flex fixed that
+backend dependency; a full new optimization then completed without execution
+errors. The retained native image-input regression exercises the same boundary.
+
+Generated code included modules, nested predictors/RLMs, imports, branching,
+loops, comparisons, tuples and item access. These small runs demonstrate useful
+compatibility coverage, not universal quality parity. The Oolong winner embeds
+an RLM: backend-specific execution instructions change its LM requests, so this
+is not a deterministic replay of identical inner programs. Both winner scores
+are below the baseline on this held-out subset; do not claim optimization always
+improves quality or attribute the score difference to execution speed.
+
 ## Changes required before changing the default
 
 These are proposed follow-up stages, not capabilities delivered by this draft.
@@ -125,8 +153,10 @@ These are proposed follow-up stages, not capabilities delivered by this draft.
 ### 1. Finish the native backend and lifecycle contract
 
 - [x] Demonstrate a persistent native worker with the existing transport.
-- [ ] Promote the prototype into `dspy/primitives/mxc_interpreter.py` and export
-  `dspy.MXCInterpreter`; keep `LocalInterpreter` explicitly unsandboxed.
+- [ ] Fold verified confinement into `LocalInterpreter` rather than adding a
+  second public native backend. This changes its host-access contract and needs
+  the packaging and platform gates below; never silently fall back to an
+  unsandboxed worker when confinement is unavailable.
 - [ ] Finalize runtime discovery, version checks, diagnostics, finite default
   deadlines, interruption, failed startup, unexpected worker exit, repeated
   shutdown, and descendant cleanup. Keep protocol ownership in
@@ -137,7 +167,9 @@ These are proposed follow-up stages, not capabilities delivered by this draft.
 
 ### 2. Establish a defensible sandbox policy
 
-- [ ] Resolve MXC's broad baseline mounts: system binaries/libraries and `/etc`
+- [x] Mask MXC's default host `/etc` mount with an empty directory; verify native
+  package imports and absence of host configuration through the real launcher.
+- [ ] Resolve the remaining broad baseline mounts: system binaries/libraries
   remain readable. This prototype is **not an exact runtime-only allowlist**.
   A separate v1.0.0 probe found denying `/bin` canonicalizes to `/usr/bin` while
   MXC's separately mounted `/bin` stays readable. Resolve or explicitly exclude
@@ -149,6 +181,11 @@ These are proposed follow-up stages, not capabilities delivered by this draft.
 - [ ] Set and verify memory, process-count, disk and output limits. Bound RPC
   message sizes and outstanding tool calls; reject malformed messages and
   unregistered capabilities. No resource-exhaustion audit has been run here.
+- [x] Bound received frames to 16 Mi characters, buffer at most four protocol
+  messages, validate tool requests before dispatch, and cap outstanding host
+  tool calls at 32. Observe completed futures and propagate cancellation without
+  blocking on a full response queue. These bounds do not provide guest disk or
+  aggregate resource quotas, and host writes still need backpressure testing.
 - [ ] Test startup failure races. MXC's own 1-second timer orphaned bwrap during
   a separate slow-start probe with thousands of path masks. This prototype sets
   that timer to zero and uses DSPy's startup/execution deadlines and process-group
@@ -173,6 +210,16 @@ These are proposed follow-up stages, not capabilities delivered by this draft.
   and Windows confinement and cleanup. Windows provisioning/elevation and host
   capabilities cannot be solved by putting an executable in a wheel.
 
+Native macOS verification found a release blocker, not just missing coverage:
+MXC v1.0.0 arm64 on macOS 27.0.1 / CPython 3.14.7 ran the same persistent worker,
+host-tool roundtrip and synthetic filesystem/network isolation probes, but a
+detached child survived launcher-group SIGKILL, graceful worker shutdown, and
+MXC's 2-second timeout. Its heartbeat inode kept growing after unlink; the
+attached-child timeout control stopped. The Microsoft-signed executor passed
+codesign and notarization verification. Keep the Linux-only guard. A process
+scanner or copied/custom Seatbelt policy is not a reliable lifecycle fix, and
+this draft does not add either. Windows remains untested.
+
 ### 4. Close compatibility gaps without an adapter redesign
 
 - [ ] Differentially test `CodeInterpreter.execute`, errors, printed output,
@@ -184,6 +231,11 @@ These are proposed follow-up stages, not capabilities delivered by this draft.
   `facade.py` / `_facade_shim.py` bridge. Validate host predictor behavior,
   custom types, sub-agent budgets, settings and nested backend propagation.
   Do not add a Flex translator or promise the complete DSPy API in the facade.
+- [x] Normalize Flex inputs through Pydantic at the Flex boundary, instead of
+  relying on Deno to serialize them. Live BFCL evaluation exposed rejection of
+  `list[dspy.Tool]` by the native JSON transport; the same issue affected
+  `dspy.Image`. The existing image-to-host-tool regression now covers native
+  CPython as well as Deno. No interpreter-specific DSPy serializer was added.
 - [ ] Support documented preinstalled native-library environments, including
   dependency failures and read-only packages. Keep `SandboxSerializable`'s
   Pyodide-specific setup on the existing `PythonInterpreter` path; it is not a
@@ -191,10 +243,10 @@ These are proposed follow-up stages, not capabilities delivered by this draft.
 - [ ] Integrate the RLM image work using native Pillow/OpenCV plus explicit
   serialization across the host boundary. Test image inputs, outputs, tools,
   transforms and nested RLM; do not infer typed image support from import success.
-- [ ] Run diverse Azure-backed Flex/GEPA optimizations on seeded dspy-bench
-  training subsets. Compare generated programs, errors, scores and end-to-end
-  time on equivalent tasks, not only interpreter startup. Record seeds and
-  replay failing candidates on both backends before classifying regressions.
+- [x] Run three seeded Azure-backed Flex/GEPA optimizations and replay failures
+  on Deno; fix the discovered typed-input regression and rerun BFCL. See above.
+- [ ] Broaden quality coverage and compare end-to-end time on equivalent tasks,
+  controlling inner RLM programs/LM responses when attributing backend differences.
 
 ### 5. Roll out the default explicitly
 
