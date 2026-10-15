@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.types import Type
+from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.dsp.utils.settings import settings
 from dspy.streaming.messages import StreamResponse
@@ -45,6 +46,8 @@ class StreamListener:
                 hurt the performance because the same stream chunk is sent to multiple listeners.
         """
         self.signature_field_name = signature_field_name
+        self._wire_field_name = signature_field_name
+        self._use_native_reasoning = True
         self.predict = predict
         self.predict_name = predict_name
 
@@ -118,6 +121,19 @@ class StreamListener:
 
         return False
 
+    def _set_signature(self, signature):
+        # Use the adapter's decision, after per-call overrides and native adaptation.
+        self._use_native_reasoning = True
+        for name, field in signature.output_fields.items():
+            if field.json_schema_extra.get("__dspy_reasoning_field", name) == self.signature_field_name:
+                self._use_native_reasoning = False
+                self._wire_field_name = name
+                self.adapter_identifiers["ChatAdapter"]["start_identifier"] = f"[[ ## {name} ## ]]"
+                self.adapter_identifiers["JSONAdapter"]["start_identifier"] = f'"{name}":'
+                self.adapter_identifiers["XMLAdapter"]["start_identifier"] = f"<{name}>"
+                self.adapter_identifiers["XMLAdapter"]["end_identifier"] = re.compile(rf"</{name}>")
+                break
+
     def receive(self, chunk: ModelResponseStream):
         adapter_name = settings.adapter.__class__.__name__ if settings.adapter else "ChatAdapter"
         if adapter_name not in self.adapter_identifiers:
@@ -149,6 +165,7 @@ class StreamListener:
             and inspect.isclass(self._output_type)
             and issubclass(self._output_type, Type)
             and self._output_type.is_streamable()
+            and (self._output_type is not Reasoning or self._use_native_reasoning)
         ):
             if parsed_chunk := self._output_type.parse_stream_chunk(chunk):
                 return StreamResponse(
@@ -279,7 +296,7 @@ class StreamListener:
                 keys = list(parsed.keys())
                 next_field_name = None
                 for key in keys:
-                    if key != self.signature_field_name:
+                    if key != self._wire_field_name:
                         next_field_name = key
                         break
 
@@ -340,7 +357,7 @@ class StreamListener:
         if isinstance(settings.adapter, JSONAdapter):
             return last_tokens
         elif isinstance(settings.adapter, XMLAdapter):
-            boundary_index = last_tokens.find(f"</{self.signature_field_name}>")
+            boundary_index = last_tokens.find(f"</{self._wire_field_name}>")
             if boundary_index == -1:
                 boundary_index = len(last_tokens)
             return last_tokens[:boundary_index]
