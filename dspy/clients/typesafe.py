@@ -5,6 +5,7 @@ import json
 import os
 
 import dspy
+from dspy import lm15
 from dspy.clients.base_lm import LM_CLASS_STATE_KEY, record_history
 from dspy.dsp.utils.settings import settings
 from dspy.utils.annotation import experimental
@@ -16,7 +17,7 @@ from dspy.utils.inspect_history import pretty_print_history
 class TypeSafe:
     """Call TypeSafe's System One API with DSPy's shared request cache.
 
-    Install ``dspy[typesafe]`` to use this client. Model, API key, and endpoint
+    Uses bundled lm15. Model, API key, and endpoint
     default to TYPESAFE_DEFAULT_MODEL, TYPESAFE_API_KEY, and TYPESAFE_BASE_URL.
     Configure with ``dspy.configure(lm=dspy.experimental.TypeSafe(...))`` or pass
     ``lm=`` when calling a predictor. Predict selects System One translation automatically.
@@ -105,22 +106,42 @@ class TypeSafe:
             del self.history[: -settings.max_history_size]
         return copy.deepcopy(response["answers"])
 
-    def _sdk_kwargs(self):
-        return {"model": self.model, "api_key": self.api_key, "base_url": self.base_url, "timeout": self.timeout}
+    def _config(self):
+        return lm15.RouterConfig(
+            api_keys={"typesafe": self.api_key} if self.api_key else None,
+            base_urls={"typesafe": self.base_url},
+            timeouts=lm15.Timeouts(connect=self.timeout, read=self.timeout, write=self.timeout, pool=self.timeout),
+        )
+
+    def _lm15_request(self, state, questions):
+        properties = {}
+        for name, question in questions.items():
+            kind = question["type"]
+            if kind == "noul":
+                properties[name] = lm15.yes_no(name)
+            elif kind == "score":
+                properties[name] = lm15.score(name, [str(i) for i in range(len(question["criteria"]))])
+            else:
+                properties[name] = lm15.choice(name, list(question["criteria"]))
+        # The schema declares answer spaces; native questions retain structured instructions and criteria.
+        response_format = {"type": "json_schema", "schema": {"type": "object", "properties": properties}}
+        return lm15.Request(
+            model=f"typesafe:{self.model}", messages=(lm15.Message.user(lm15.DataPart(value=state)),),
+            config=lm15.Config(response_format=response_format, extensions={"questions": questions}),
+        )
 
     @staticmethod
     def _response(response):
-        # Both SDK 0.6's dataclasses and 0.7's Pydantic models expose these attributes.
         return {
             "model": response.model,
             "usage": {"prompt_tokens": response.usage.input_tokens, "completion_tokens": response.usage.output_tokens},
             "answers": {
                 name: {
-                    key: getattr(answer, key)
+                    key: answer[key]
                     for key in ("noul", "score", "choice", "confidence", "probabilities")
-                    if hasattr(answer, key)
+                    if key in answer
                 }
-                for name, answer in response.answers.items()
+                for name, answer in response.provider_data["typesafe"]["answers"].items()
             },
         }
 
@@ -130,25 +151,17 @@ class TypeSafe:
         response = dspy.cache.get(request) if self.cache else None
         cache_hit = response is not None
         if not cache_hit:
-            try:
-                from typesafe_sdk import TypeSafeClient
-            except ImportError:
-                raise ImportError('Install TypeSafe support with `pip install "dspy[typesafe]"`.') from None
-            with TypeSafeClient(**self._sdk_kwargs()) as client:
-                response = self._response(client.system_one(state=state, questions=questions))
+            with lm15.LMRouter(self._config()) as client:
+                response = self._response(client.complete(self._lm15_request(state, questions)))
         return self._finish(request, response, cache_hit)
 
     @with_callbacks
     async def acall(self, state, questions):
-        """Async equivalent using the SDK's native asynchronous client."""
+        """Async equivalent using lm15's native asynchronous client."""
         request = self._request(state, questions)
         response = dspy.cache.get(request) if self.cache else None
         cache_hit = response is not None
         if not cache_hit:
-            try:
-                from typesafe_sdk import AsyncTypeSafeClient
-            except ImportError:
-                raise ImportError('Install TypeSafe support with `pip install "dspy[typesafe]"`.') from None
-            async with AsyncTypeSafeClient(**self._sdk_kwargs()) as client:
-                response = self._response(await client.system_one(state=state, questions=questions))
+            async with lm15.AsyncLMRouter(self._config()) as client:
+                response = self._response(await client.complete(self._lm15_request(state, questions)))
         return self._finish(request, response, cache_hit)
