@@ -244,6 +244,72 @@ def test_execution_timeout_does_not_wait_for_blocked_host_tool():
         interpreter.execute("1")
 
 
+def test_malformed_guest_tool_request_cannot_invoke_host_tool():
+    calls = []
+    with dspy.LocalInterpreter(tools={"record": lambda: calls.append("called")}, execution_timeout=1) as interpreter:
+        # Native Python can access the wire directly; the host cannot trust worker validation.
+        with pytest.raises(CodeInterpreterError, match="invalid tool request"):
+            interpreter.execute(
+                "import __main__, time\n"
+                "__main__.send({'type': 'tool_request', 'name': 'record', 'args': [], 'kwargs': {}})\n"
+                "time.sleep(5)"
+            )
+        assert calls == []
+        with pytest.raises(CodeInterpreterError, match="shut down"):
+            interpreter.execute("1")
+
+
+def test_oversized_guest_response_terminates_session():
+    with dspy.LocalInterpreter(execution_timeout=5) as interpreter:
+        with pytest.raises(CodeInterpreterError, match="message exceeds"):
+            interpreter.execute("'x' * (16 * 1024 * 1024)")
+        with pytest.raises(CodeInterpreterError, match="shut down"):
+            interpreter.execute("1")
+
+
+def test_guest_cannot_create_unbounded_host_tool_threads():
+    with dspy.LocalInterpreter(tools={"echo": lambda value: value}, execution_timeout=5) as interpreter:
+        # The budget is concurrent, not a limit on total calls in a valid program.
+        assert interpreter.execute("sum(echo(i) for i in range(40))") == 780
+
+    release = threading.Event()
+    finished = threading.Event()
+    lock = threading.Lock()
+    completed = []
+
+    def blocked():
+        release.wait(timeout=10)
+        with lock:
+            completed.append(True)
+            if len(completed) == 32:
+                finished.set()
+
+    try:
+        with dspy.LocalInterpreter(tools={"blocked": blocked}, execution_timeout=5) as interpreter:
+            with pytest.raises(CodeInterpreterError, match="32 outstanding"):
+                interpreter.execute(
+                    "import __main__, time\n"
+                    "for i in range(33):\n"
+                    "    __main__.send({'type': 'tool_request', 'id': i, 'name': 'blocked', 'args': [], 'kwargs': {}})\n"
+                    "time.sleep(10)"
+                )
+    finally:
+        release.set()
+    assert finished.wait(timeout=5)
+    assert len(completed) == 32
+
+
+def test_host_tool_interrupt_terminates_session():
+    def interrupt():
+        raise KeyboardInterrupt("cancelled")
+
+    with dspy.LocalInterpreter(tools={"interrupt": interrupt}, execution_timeout=5) as interpreter:
+        with pytest.raises(KeyboardInterrupt, match="cancelled"):
+            interpreter.execute("interrupt()")
+        with pytest.raises(CodeInterpreterError, match="shut down"):
+            interpreter.execute("1")
+
+
 def test_interpreter_callbacks():
     events = []
 
