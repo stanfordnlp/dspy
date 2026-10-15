@@ -85,6 +85,30 @@ inside the guest and must not contain secrets. Editable packages outside those
 prefixes, system libraries, GPUs and arbitrary host paths are not automatically
 supported. Session files persist between execute calls, not after shutdown.
 
+## Accepted macOS lifecycle limitation
+
+For a future macOS backend, timeout and shutdown do **not** guarantee termination
+of every descendant. A subprocess that creates a new Unix session (for example,
+with `subprocess.Popen(..., start_new_session=True)` or `os.setsid()`) can survive
+the worker and MXC launcher. It can continue consuming resources, writing to
+allowed paths, or holding files open after those paths are deleted. Do not detach
+background processes; finish and reap subprocesses before returning from execution.
+
+This is a lifecycle limitation, not a demonstrated filesystem/network escape.
+Our probe verified survival, but did not retest the survivor's access restrictions.
+The related [MXC report #1459](https://github.com/microsoft/mxc/issues/1459) also
+observed survival through the Node SDK and verified that its surviving process
+still received permission errors for forbidden file access. Neither result is a
+general guarantee against resource exhaustion or all forms of sandbox escape.
+
+We accept this documented limitation rather than make complete detached-process
+cleanup a prerequisite for macOS support. Applications requiring guaranteed
+termination of every job descendant need a separately verified execution boundary
+that provides that guarantee. DSPy will not add process scanning or a custom
+Seatbelt policy as a purported fix. This decision does not waive the remaining
+installation, isolation or platform-integration checks: the current prototype
+still rejects macOS and Windows.
+
 ## Evidence and its limits
 
 The opt-in suite has 15 cases covering native Python inheritance, dataclasses,
@@ -159,7 +183,8 @@ These are proposed follow-up stages, not capabilities delivered by this draft.
   unsandboxed worker when confinement is unavailable.
 - [ ] Finalize runtime discovery, version checks, diagnostics, finite default
   deadlines, interruption, failed startup, unexpected worker exit, repeated
-  shutdown, and descendant cleanup. Keep protocol ownership in
+  shutdown, and platform-specific descendant cleanup, subject to the accepted
+  macOS limitation above. Keep protocol ownership in
   `local_interpreter.py` / `local_interpreter_worker.py`, not in each launcher.
 - [ ] Test callbacks, cancellation and concurrent tools under the real launcher.
   Document that a host callable can outlive an execution timeout; guest process
@@ -207,18 +232,19 @@ These are proposed follow-up stages, not capabilities delivered by this draft.
   before making this a required/default runtime. An opt-in extra can precede it.
   No silent runtime download or unsandboxed fallback on unsupported hosts.
 - [ ] Verify Linux namespaces/AppArmor/container restrictions, then native macOS
-  and Windows confinement and cleanup. Windows provisioning/elevation and host
-  capabilities cannot be solved by putting an executable in a wheel.
+  and Windows confinement and their documented cleanup contracts. Windows
+  provisioning/elevation and host capabilities cannot be solved by putting an
+  executable in a wheel.
 
-Native macOS verification found a release blocker, not just missing coverage:
+Native macOS verification established the accepted lifecycle limitation above:
 MXC v1.0.0 arm64 on macOS 27.0.1 / CPython 3.14.7 ran the same persistent worker,
 host-tool roundtrip and synthetic filesystem/network isolation probes, but a
 detached child survived launcher-group SIGKILL, graceful worker shutdown, and
 MXC's 2-second timeout. Its heartbeat inode kept growing after unlink; the
 attached-child timeout control stopped. The Microsoft-signed executor passed
-codesign and notarization verification. Keep the Linux-only guard. A process
-scanner or copied/custom Seatbelt policy is not a reliable lifecycle fix, and
-this draft does not add either. Windows remains untested.
+codesign and notarization verification. This was a worker/launcher probe, not
+verification of a macOS DSPy backend; the Linux-only guard remains until that
+integration and its remaining checks are implemented. Windows remains untested.
 
 ### 4. Close compatibility gaps without an adapter redesign
 
