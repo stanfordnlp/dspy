@@ -162,7 +162,7 @@ Unlike ReAct, ReActV2 does not currently truncate old history events on context 
 
 By default, ReActV2 tells the model how many turns it has. The instructions say the run has a limited number of turns and must end with `submit`, and every LM call carries a `turn_budget` input showing the current turn, for example `Turn 3 of 10 (7 more after this one).`. The count follows the effective `max_iters`, including a per-call override. The forced final call shows ``No turns remain. Call `submit` now with your final outputs.``
 
-`turn_budget` is rendered only in the newest user message and is never stored in `history`, so earlier turns' counts are not replayed and the cached history prefix stays unchanged. Pass `show_turn_budget=False` to hide the budget. While it is enabled, `turn_budget` is a reserved field name.
+Each turn's `turn_budget` is stored in that turn's `history` event, so the model sees the count it was given at every earlier turn. Storing it also means replay rebuilds each request exactly as it was sent: with native function calling, every request is a prefix of the next, so provider prompt caching can reuse it. Pass `show_turn_budget=False` to hide the budget. While it is enabled, `turn_budget` is a reserved field name.
 
 Showing an agent its remaining budget follows [Budget-Aware Tool-Use Enables Effective Agent Scaling](https://arxiv.org/abs/2511.17006), where a per-step budget status let ReAct agents keep improving with larger tool budgets at lower cost.
 

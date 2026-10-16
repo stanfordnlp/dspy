@@ -407,12 +407,23 @@ async def test_react_v2_shows_current_turn_budget_each_call(use_async):
         "No turns remain. Call `submit` now with your final outputs.",
     ]
     for call, budget in zip(lm.history, expected, strict=True):
-        current_message = call["messages"][-1]["content"]
-        assert f"[[ ## turn_budget ## ]]\n{budget}" in current_message
-        # Only the current turn's budget is shown; earlier counts are not replayed from history.
-        conversation = "".join(message["content"] for message in call["messages"][1:])
-        assert conversation.count("[[ ## turn_budget ## ]]") == 1
-    assert all("turn_budget" not in event for event in pred.history.messages)
+        assert f"[[ ## turn_budget ## ]]\n{budget}" in call["messages"][-1]["content"]
+    # Each turn's budget is stored with that turn so replay rebuilds the exact request.
+    assert [event["turn_budget"] for event in pred.history.messages] == expected
+
+
+def test_react_v2_native_requests_are_prefixes_for_prompt_caching():
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = NativeToolLM()
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=True)):
+        pred = dspy.ReActV2("question -> answer", tools=[lookup])(question="cats")
+
+    assert pred.answer == "found cats"
+    first, second = (call["messages"] for call in lm.calls)
+    assert second[: len(first)] == first
+    assert "[[ ## turn_budget ## ]]\nTurn 2 of 20" in second[-1]["content"]
 
 
 def test_react_v2_turn_budget_can_be_disabled():
@@ -432,6 +443,13 @@ def test_react_v2_turn_budget_can_be_disabled():
     assert pred.answer == "done"
     assert "turn_budget" not in react.react.signature.input_fields
     assert all("turn_budget" not in message["content"] for message in lm.history[0]["messages"])
+
+
+def test_react_v2_unpickled_agent_without_turn_budget_flag_keeps_old_behavior():
+    react = dspy.ReActV2("question -> answer", tools=[], show_turn_budget=False)
+    del react.__dict__["show_turn_budget"]  # as if pickled before the flag existed
+
+    assert react._turn_budget_inputs(0, 20) == {}
 
 
 def test_react_v2_reserves_turn_budget_field_name():

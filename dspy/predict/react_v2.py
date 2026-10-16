@@ -25,8 +25,9 @@ _RESERVED_PREDICTION_KEYS = frozenset({"history", "termination_reason"})
 # and popped out of the caller's kwargs by `forward`/`aforward`, so it must be rejected.
 _RESERVED_INPUT_KEYS = frozenset({"history", "tools"})
 
-# Per-turn input that tells the model where it is in its turn budget. It is passed on every
-# LM call but never stored in history, so only the current turn's count is visible.
+# Per-turn input that tells the model where it is in its turn budget. Each turn's value is
+# stored in that turn's history event, so replay rebuilds the exact request that was sent and
+# every request stays a prefix of the next one for provider prompt caching.
 _TURN_BUDGET_FIELD = "turn_budget"
 _FINAL_TURN_BUDGET = "No turns remain. Call `submit` now with your final outputs."
 
@@ -50,6 +51,10 @@ class ReActV2(Module):
         show_turn_budget: Whether to show the model its current turn and how many turns
             remain on every call, so it can plan around the ``max_iters`` limit.
     """
+
+    # Fallback for agents pickled before `show_turn_budget` existed: unpickling skips `__init__`,
+    # and their signature has no `turn_budget` field, so they keep the old behavior.
+    show_turn_budget = False
 
     def __init__(
         self,
@@ -159,12 +164,12 @@ class ReActV2(Module):
 
         break_reason = "max_iters"
         for turn_index in range(max_iters):
+            turn_inputs = {**pending_inputs, **self._turn_budget_inputs(turn_index, max_iters)}
             try:
                 pred = self.react(
                     history=history,
                     tools=list(self.tools.values()),
-                    **self._turn_budget_inputs(turn_index, max_iters),
-                    **pending_inputs,
+                    **turn_inputs,
                 )
                 tool_calls = _coerce_tool_calls(getattr(pred, "tool_calls", None))
             except (AdapterParseError, ValueError) as err:
@@ -182,7 +187,7 @@ class ReActV2(Module):
 
             tool_calls = _ensure_tool_call_ids(tool_calls, turn_index)
             tool_call_results, final_outputs = self._execute_tool_calls(tool_calls)
-            event = self._history_event(pending_inputs, pred, tool_calls, tool_call_results)
+            event = self._history_event(turn_inputs, pred, tool_calls, tool_call_results)
             if final_outputs is not None:
                 event.update(final_outputs)
             _append_history_event(history, event)
@@ -200,12 +205,12 @@ class ReActV2(Module):
 
         break_reason = "max_iters"
         for turn_index in range(max_iters):
+            turn_inputs = {**pending_inputs, **self._turn_budget_inputs(turn_index, max_iters)}
             try:
                 pred = await self.react.acall(
                     history=history,
                     tools=list(self.tools.values()),
-                    **self._turn_budget_inputs(turn_index, max_iters),
-                    **pending_inputs,
+                    **turn_inputs,
                 )
                 tool_calls = _coerce_tool_calls(getattr(pred, "tool_calls", None))
             except (AdapterParseError, ValueError) as err:
@@ -223,7 +228,7 @@ class ReActV2(Module):
 
             tool_calls = _ensure_tool_call_ids(tool_calls, turn_index)
             tool_call_results, final_outputs = await self._aexecute_tool_calls(tool_calls)
-            event = self._history_event(pending_inputs, pred, tool_calls, tool_call_results)
+            event = self._history_event(turn_inputs, pred, tool_calls, tool_call_results)
             if final_outputs is not None:
                 event.update(final_outputs)
             _append_history_event(history, event)
@@ -314,6 +319,7 @@ class ReActV2(Module):
         break_reason: str,
         turn_index: int,
     ) -> Prediction:
+        turn_inputs = {**pending_inputs, **self._turn_budget_inputs(None, None)}
         try:
             pred = self.react(
                 history=history,
@@ -322,8 +328,7 @@ class ReActV2(Module):
                     "tool_choice": {"type": "function", "function": {"name": "submit"}},
                     "reasoning_effort": None,
                 },
-                **self._turn_budget_inputs(None, None),
-                **pending_inputs,
+                **turn_inputs,
             )
             tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
         except (AdapterParseError, ValueError, ContextWindowExceededError) as err:
@@ -335,7 +340,7 @@ class ReActV2(Module):
             raise ValueError(f"ReActV2 failed to produce final outputs after {break_reason}: no submit call.")
 
         tool_call_results, final_outputs = self._execute_tool_calls(submit_calls)
-        event = self._history_event(pending_inputs, pred, submit_calls, tool_call_results)
+        event = self._history_event(turn_inputs, pred, submit_calls, tool_call_results)
         if final_outputs is not None:
             event.update(final_outputs)
         _append_history_event(history, event)
@@ -355,6 +360,7 @@ class ReActV2(Module):
         break_reason: str,
         turn_index: int,
     ) -> Prediction:
+        turn_inputs = {**pending_inputs, **self._turn_budget_inputs(None, None)}
         try:
             pred = await self.react.acall(
                 history=history,
@@ -363,8 +369,7 @@ class ReActV2(Module):
                     "tool_choice": {"type": "function", "function": {"name": "submit"}},
                     "reasoning_effort": None,
                 },
-                **self._turn_budget_inputs(None, None),
-                **pending_inputs,
+                **turn_inputs,
             )
             tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
         except (AdapterParseError, ValueError, ContextWindowExceededError) as err:
@@ -376,7 +381,7 @@ class ReActV2(Module):
             raise ValueError(f"ReActV2 failed to produce final outputs after {break_reason}: no submit call.")
 
         tool_call_results, final_outputs = await self._aexecute_tool_calls(submit_calls)
-        event = self._history_event(pending_inputs, pred, submit_calls, tool_call_results)
+        event = self._history_event(turn_inputs, pred, submit_calls, tool_call_results)
         if final_outputs is not None:
             event.update(final_outputs)
         _append_history_event(history, event)
