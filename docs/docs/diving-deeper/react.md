@@ -207,7 +207,7 @@ Runs the synchronous or asynchronous loop and returns output fields plus `trajec
 Drops the oldest complete tool-call group after a context-window error. Override to change the policy.
 
 **`dspy.ReActV2(signature, tools, max_iters=20)`**
-Runs the experimental structured-history loop and reserves `submit` for final outputs. Each call shows the model its current turn and how many remain.
+Runs the experimental structured-history loop and reserves `submit` for final outputs.
 
 **`ReActV2.forward(history=None, max_iters=None, **inputs)`**
 Accepts optional continuation history and a per-call iteration override. Returns `history` and `termination_reason` alongside outputs when submission succeeds.
