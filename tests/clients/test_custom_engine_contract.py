@@ -264,7 +264,7 @@ def test_saved_state_loads_in_a_fresh_process(tmp_path):
         "print(type(p.lm.engine).__name__, p.lm.engine.tag)\n"
     )
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True,
-                            cwd=str(tmp_path), env={**os.environ, "PYTHONPATH": ":".join(sys.path)})
+                            cwd=str(tmp_path), env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)})
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "Echo portable"
 
