@@ -89,7 +89,7 @@ dspy.configure(lm=lm)
         ```
 
     === "Local LMs on a GPU server"
-          First, install [SGLang](https://sgl-project.github.io/start/install.html) and launch its server with your LM.
+          First, install [SGLang](https://docs.sglang.ai/docs/get-started/install) and launch its server with your LM.
 
           ```bash
           > pip install "sglang[all]"

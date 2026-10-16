@@ -92,7 +92,10 @@ for step, value in result.trajectory.items():
     print(f"{step}: {value}")
 ```
 
-For tool authoring patterns, MCP integration, and trajectory debugging, see [Tools, ReAct, and MCP](../diving-deeper/tools-react-and-mcp.md).
+For tool authoring patterns and MCP integration, see [Tools and MCP](../diving-deeper/tools.md). For the ReAct loop's execution model and trajectory debugging, see [ReAct and ReActV2](../diving-deeper/react.md).
+
+!!! note "Experimental: ReActV2"
+    `dspy.ReActV2` is the experimental, structured-history replacement for the current ReAct implementation. It will become `dspy.ReAct` in DSPy 3.5, bringing native multi-turn and parallel tool calls and improved prompt-cache reuse. The `dspy.ReActV2` name will remain as a deprecated compatibility alias throughout 3.5 and will be removed in 3.6. See [The transition from ReAct to ReActV2](../diving-deeper/react.md#the-transition-from-react-to-reactv2).
 
 ---
 

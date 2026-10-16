@@ -10,7 +10,7 @@ DSPy's caching system is architected in three distinct layers:
 2.  **On-disk cache**: Leveraging `diskcache.FanoutCache`, this layer offers persistent storage for cached items.
 3.  **Prompt cache (Server-side cache)**: This layer is managed by the LLM service provider (e.g., OpenAI, Anthropic).
 
-While DSPy does not directly control the server-side prompt cache, it offers users the flexibility to enable, disable, and customize the in-memory and on-disk caches to suit their specific requirements.
+DSPy controls its in-memory and on-disk answer caches. Provider-side prompt caching is separate: DSPy can pass caching instructions, but the provider determines eligibility, retention, and billing.
 
 ## Using DSPy Cache
 
@@ -52,7 +52,48 @@ Total usage: {}
 
 In addition to DSPy's built-in caching mechanism, you can leverage provider-side prompt caching offered by LLM providers like Anthropic and OpenAI. This feature is particularly useful when working with modules like `dspy.ReAct()` that send similar prompts repeatedly, as it reduces both latency and costs by caching prompt prefixes on the provider's servers.
 
-You can enable prompt caching by passing the `cache_control_injection_points` parameter to `dspy.LM()`. This works with supported providers like Anthropic and OpenAI. For more details on this feature, see the [LiteLLM prompt caching documentation](https://docs.litellm.ai/docs/tutorials/prompt_caching#configuration).
+### Native lm15 engines (3.4 development API)
+
+Pass an actual `dspy.lm15.CacheConfig` as `prompt_cache`. This small bridge is intended for advanced users and adapter authors:
+
+```python
+import dspy
+
+lm = dspy.LM(
+    "anthropic/claude-haiku-4-5",
+    engine="lm15",
+    cache=False,  # disable DSPy's answer cache, not the provider's prompt cache
+    prompt_cache=dspy.lm15.CacheConfig(prefix="stable"),
+)
+dspy.configure(lm=lm, track_usage=True)
+program = dspy.Predict("question -> answer")
+first = program(question="What is the capital of France?")
+second = program(question="What is the capital of Germany?")
+second.get_lm_usage()
+```
+
+`prefix="stable"` asks lm15 to mark the reusable system/tool prefix where supported. Providers with automatic caching may need no marker. This does not select demonstrations automatically, and this short example may be below the provider's cache minimum. Savings require an eligible, identical prefix across requests; each changing input still gets a fresh answer.
+
+For ordinary calls, a call-time value overrides the LM default:
+
+```python
+lm("A new question", prompt_cache=dspy.lm15.CacheConfig(prefix="history"))
+lm("Another question", prompt_cache=None)  # remove the configured caching hint
+lm_without_hint = lm.copy(prompt_cache=None)
+```
+
+Adapter authors can put the same object in `lm_kwargs["prompt_cache"]`. DSPy attaches it to the canonical request **after** reading ordinary messages/options. `prefix_until_index`, when used, refers to lm15's canonical message list, not the original OpenAI-shaped rows. Use explicit lm15 requests when you need precise control of that boundary.
+
+- `cache=True/False` still controls DSPy's answer cache. `prompt_cache=None` removes this bridge's hint; it does **not** promise to disable the provider's automatic caching.
+- Explicit typed `Request` calls use only their own `Config.cache`, without inheriting `LM.prompt_cache` defaults or accepting a call-time `prompt_cache` override.
+- The option works with native lm15 and canonical custom engines. An ordinary request that needs LiteLLM raises rather than silently dropping or translating the policy. Do not combine it with provider-shaped options such as `prompt_cache_key`; use `CacheConfig.key` instead.
+- The policy survives `copy()` and JSON LM-state saving/loading. Different policies have distinct DSPy answer-cache keys; calls without a policy retain their existing keys.
+- Cache reads/writes appear in usage/history where the provider reports them. Cache writes and longer retention may cost extra, and cost estimates may be unknown when the pricing metadata is incomplete.
+- No stored cache is created, refreshed, or deleted automatically. `CacheConfig.resource`, if supplied, must identify a resource you already manage yourself.
+
+### LiteLLM compatibility engine
+
+With `engine="litellm"`, use LiteLLM's own options, such as `cache_control_injection_points`, rather than `prompt_cache`. See the [LiteLLM prompt caching documentation](https://docs.litellm.ai/docs/tutorials/prompt_caching#configuration) for provider-specific support.
 
 ```python
 import dspy
@@ -61,6 +102,7 @@ import os
 os.environ["ANTHROPIC_API_KEY"] = "{your_anthropic_key}"
 lm = dspy.LM(
     "anthropic/claude-sonnet-4-5-20250929",
+    engine="litellm",
     cache_control_injection_points=[
         {
             "location": "message",

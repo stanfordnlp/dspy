@@ -64,10 +64,12 @@ class Document(Type):
         Returns:
             A list containing the document block in the format expected by citation-enabled language models.
         """
+        # PDFs use a base64 source; only text/plain uses a text source.
+        source_type = "base64" if self.media_type == "application/pdf" else "text"
         document_block = {
             "type": "document",
             "source": {
-                "type": "text",
+                "type": source_type,
                 "media_type": self.media_type,
                 "data": self.data
             },

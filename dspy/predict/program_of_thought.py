@@ -52,7 +52,8 @@ class ProgramOfThought(Module):
             signature: The signature of the module.
             max_iters: The maximum number of iterations to retry code generation and execution.
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
-                callable may be invoked concurrently, and DSPy shuts down each interpreter it returns.
+                callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. Defaults to
+                ``dspy.PythonInterpreter``. ``dspy.configure(interpreter_factory=...)`` replaces this default.
         """
         super().__init__()
         warnings.warn(
@@ -172,7 +173,7 @@ class ProgramOfThought(Module):
             return code, "Error: Code format is not correct."
         lines = code_block.split("\n")
         last_line_match = re.match(r"^(\w+)\s*=", lines[-1].strip())
-        if last_line_match and len(lines) > 1:
+        if last_line_match:
             code_block += "\n" + last_line_match.group(1)
         return code_block, None
 

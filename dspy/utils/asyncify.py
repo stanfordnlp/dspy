@@ -1,8 +1,9 @@
 import functools
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
-import anyio
-from anyio import CapacityLimiter
+from dspy.utils.lazy_import import require
+
+anyio = require("anyio")
 
 if TYPE_CHECKING:
     from dspy.primitives.module import Module
@@ -21,7 +22,7 @@ def get_limiter():
 
     global _limiter
     if _limiter is None:
-        _limiter = CapacityLimiter(async_max_workers)
+        _limiter = anyio.CapacityLimiter(async_max_workers)
     elif _limiter.total_tokens != async_max_workers:
         _limiter.total_tokens = async_max_workers
 

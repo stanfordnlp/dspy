@@ -67,6 +67,29 @@ highest_score_achieved_per_task = new_prog.detailed_results.highest_score_achiev
 best_outputs = new_prog.detailed_results.best_outputs_valset
 ```
 
+### Objective-Aware Frontier Tracking
+
+Metrics can return named `objective_scores` alongside the scalar score and feedback:
+
+```python
+def metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
+    quality = measure_quality(gold, pred)
+    privacy = measure_privacy(gold, pred)
+    return dspy.Prediction(
+        score=(quality + privacy) / 2,
+        objective_scores={"quality": quality, "privacy": privacy},
+        feedback="...",
+    )
+
+gepa = dspy.GEPA(metric=metric, gepa_kwargs={"frontier_type": "objective"}, track_stats=True)
+```
+
+`frontier_type` can be `"instance"` (the default), `"objective"`, `"hybrid"` (both instance and objective),
+or `"cartesian"` (each validation-instance/objective pair). The scalar score still gates acceptance and determines
+the final candidate; objectives only affect parent and merge selection. Each objective is maximized and averaged
+over examples that report it. Predictor-level objective scores are ignored. `objective_pareto_front` contains the
+independent maximum for each objective, not nondominated objective vectors.
+
 ## How Does GEPA Work?
 
 ### 1. **Reflective Prompt Mutation**

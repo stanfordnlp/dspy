@@ -23,6 +23,15 @@ DSPy disables ambient `deno.json`, lockfile, `package.json`, and local `node_mod
 runner. A `package.json` in the current directory or an ancestor therefore cannot redirect the sandbox's pinned
 Pyodide dependency. No `DENO_NO_PACKAGE_JSON` environment variable is required.
 
+## Execution Instructions
+
+`PythonInterpreter.execution_instructions` describes stable constraints of its Pyodide execution environment. It
+is class metadata, so code-generating modules can inspect it without starting Deno or allocating an interpreter.
+`RLM` includes these instructions in its action prompt, which adapters render in the model's system prompt.
+
+Custom interpreter factories may expose their own `execution_instructions` string. This metadata is optional; a
+factory without it remains valid and uses RLM's generic action prompt.
+
 <!-- START_API_REF -->
 ::: dspy.PythonInterpreter
     handler: python

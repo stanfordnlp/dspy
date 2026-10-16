@@ -224,17 +224,41 @@ def test_enable_write_flag(tmp_path):
 
 
 def test_enable_net_flag():
-    test_url = "https://example.com"
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
 
-    with PythonInterpreter(enable_network_access=None) as interpreter:
-        code = f"import js\nresp = await js.fetch({test_url!r})\nresp.status"
-        with pytest.raises(CodeInterpreterError, match="PythonError"):
-            interpreter.execute(code)
+    requests = []
 
-    with PythonInterpreter(enable_network_access=["example.com"]) as interpreter:
-        code = f"import js\nresp = await js.fetch({test_url!r})\nresp.status"
-        result = interpreter.execute(code)
-        assert int(result) == 200, "Network access is permitted with enable_network_access"
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            requests.append(self.path)
+            self.send_response(200)
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    address = f"127.0.0.1:{server.server_port}"
+    code = f"import js\nresp = await js.fetch('http://{address}/')\nawait resp.text()\nresp.status"
+    try:
+        with PythonInterpreter(enable_network_access=None) as interpreter:
+            with pytest.raises(CodeInterpreterError):
+                interpreter.execute(code)
+        assert requests == [], "Denied requests must not reach the server"
+
+        with PythonInterpreter(enable_network_access=[address]) as interpreter:
+            result = interpreter.execute(code)
+            assert int(result) == 200, "Network access is permitted with enable_network_access"
+        assert requests == ["/"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
 
 
 def test_interpreter_security_filesystem_access(tmp_path):
@@ -469,7 +493,10 @@ def test_rejects_alias_basename_colliding_with_another_file(tmp_path):
     alias = tmp_path / "alias" / "shared.txt"
     second.parent.mkdir()
     alias.parent.mkdir()
-    alias.symlink_to(first)
+    try:
+        alias.symlink_to(first)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
 
     with pytest.raises(CodeInterpreterError, match="unique basenames"):
         PythonInterpreter(deno_command=["deno"], enable_read_paths=[first, alias, second])
@@ -1623,3 +1650,11 @@ def test_base_exceptions_do_not_desync_interpreter():
             with pytest.raises(CodeExecutionError, match=error_type):
                 interpreter.execute(code)
             assert interpreter.execute("print('still alive')") == "still alive\n"
+
+
+def test_execution_instructions_are_class_metadata():
+    interpreter = PythonInterpreter(deno_command=["deno", "run"])
+
+    assert interpreter.execution_instructions == PythonInterpreter.execution_instructions
+    assert "Pyodide" in interpreter.execution_instructions
+    assert "standard libraries" in interpreter.execution_instructions

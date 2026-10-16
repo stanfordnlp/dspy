@@ -25,7 +25,7 @@ class ReAct(Module):
         Args:
             signature: The signature of the module, which defines the input and output of the react module.
             tools (list[Callable]): A list of functions, callable objects, or `dspy.Tool` instances.
-            max_iters (Optional[int]): The maximum number of iterations to run. Defaults to 10.
+            max_iters (Optional[int]): The maximum number of iterations to run. Defaults to 20.
 
         Examples:
 

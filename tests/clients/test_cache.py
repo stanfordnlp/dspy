@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 from dataclasses import dataclass
 from unittest.mock import patch
 
@@ -554,3 +556,12 @@ def test_prepare_cached_response_marks_strict_models_as_cache_hit(cache):
     # The original response is not mutated.
     assert getattr(response, "cache_hit", False) is False
     assert response.usage == {"total_tokens": 3}
+
+
+def test_import_dspy_does_not_build_the_default_cache():
+    """Run in a subprocess: this process imported dspy long ago."""
+    probe = "import dspy; print('cache' in vars(dspy))"
+    result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=False)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "False", "`import dspy` built the default cache"

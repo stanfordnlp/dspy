@@ -6,6 +6,8 @@ import typing
 from dataclasses import dataclass, field
 from typing import Any, get_args, get_origin
 
+from dspy.primitives.facade import is_reserved_sandbox_name
+
 
 @dataclass
 class FlexContext:
@@ -25,10 +27,10 @@ class FlexContext:
                     f"referenced by name in the generated code — but got {name!r}. Use a `def` "
                     f"function or `dspy.Tool(func, name='my_tool')`."
                 )
-            if name == "dspy" or name.startswith(("_dspy", "__dspy")):
+            if is_reserved_sandbox_name(name):
                 raise ValueError(
-                    f"Tool name {name!r} is reserved: 'dspy' and names starting with '_dspy' belong "
-                    f"to the dspy.Flex sandbox. Rename it, e.g. `dspy.Tool(func, name='my_tool')`."
+                    f"Tool name {name!r} is reserved: 'dspy' and names starting with '_dspy' belong to the "
+                    "sandbox. Rename it, e.g. `dspy.Tool(func, name='my_tool')`."
                 )
             out[name] = tool
         return out
@@ -93,7 +95,7 @@ class FlexContext:
         if sandboxed:
             parts.append(
                 "This module runs in a sandbox: only the tools listed above may be passed to "
-                "dspy.ReAct/dspy.RLM (their functions live on the host). A function you define inside "
+                "dspy.ReActV2/dspy.RLM (their functions live on the host). A function you define inside "
                 "the module can be called directly in forward, but cannot be handed to those predictors."
             )
         return "\n\n".join(parts) if parts else "(no extra context)"

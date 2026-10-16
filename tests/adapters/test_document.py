@@ -55,3 +55,17 @@ def test_document_format():
     assert doc_block["source"]["data"] == "The sky is blue."
     assert doc_block["title"] == "Color Facts"
     assert doc_block["citations"]["enabled"] is True
+
+
+def test_document_format_pdf_uses_base64_source():
+    doc = Document(
+        data="base64pdfdata",
+        media_type="application/pdf",
+    )
+
+    doc_block = doc.format()[0]
+
+    # PDF documents must use a base64 source, not a text source.
+    assert doc_block["source"]["type"] == "base64"
+    assert doc_block["source"]["media_type"] == "application/pdf"
+    assert doc_block["source"]["data"] == "base64pdfdata"

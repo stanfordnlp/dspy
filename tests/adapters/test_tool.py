@@ -6,8 +6,8 @@ from pydantic import BaseModel, TypeAdapter
 
 import dspy
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls, convert_input_schema_to_tool_args
-from dspy.clients.openai_format import to_openai_chat_request
-from dspy.core.types import LMMessage, LMRequest, LMToolResultPart
+from dspy.clients.lm15_boundary import request_kwargs
+from dspy.lm15 import Message, Request, ToolResultPart, tool_result
 
 
 # Test fixtures
@@ -144,6 +144,42 @@ def test_tool_from_function():
     assert tool.args["x"]["type"] == "integer"
     assert tool.args["y"]["type"] == "string"
     assert tool.args["y"]["default"] == "hello"
+
+
+def test_tool_defaults_are_json_serializable():
+    import datetime
+    import enum
+    import json
+    from decimal import Decimal
+
+    class Unit(enum.Enum):
+        CELSIUS = "celsius"
+        FAHRENHEIT = "fahrenheit"
+
+    def forecast(
+        city: str,
+        unit: Unit = Unit.CELSIUS,
+        start: datetime.date = datetime.date(2026, 1, 2),
+        price: Decimal = Decimal("1.5"),
+        factor: float = Decimal("0.1"),
+    ) -> str:
+        return city
+
+    tool = Tool(forecast)
+    assert tool.args["unit"]["default"] == "celsius"
+    assert tool.args["start"]["default"] == "2026-01-02"
+    assert tool.args["price"]["default"] == 1.5
+    assert tool.args["factor"]["default"] == 0.1
+    assert tool(city="x", price=tool.args["price"]["default"], factor=tool.args["factor"]["default"]) == "x"
+    json.dumps(tool.format_as_litellm_function_call())
+
+
+def test_tool_defaults_without_json_form_are_kept():
+    def scale(data: bytes = b"\xff") -> str:
+        return "ok"
+
+    tool = Tool(scale)
+    assert tool.args["data"]["default"] == b"\xff"
 
 
 def test_format_as_litellm_function_call_excludes_defaulted_args_from_required():
@@ -378,22 +414,23 @@ async def test_async_tool_with_kwargs():
 @pytest.mark.asyncio
 async def test_async_concurrent_calls():
     """Test that multiple async tools can run concurrently."""
-    tool = Tool(async_dummy_function)
+    all_started = asyncio.Event()
+    started = set()
 
-    # Create multiple concurrent calls
+    async def wait_for_peers(x: int, y: str) -> str:
+        started.add(x)
+        if len(started) == 5:
+            all_started.set()
+        await all_started.wait()
+        return f"{y} {x}"
+
+    tool = Tool(wait_for_peers)
     tasks = [tool.acall(x=i, y=f"hello{i}") for i in range(5)]
-
-    # Run them concurrently and measure time
-    start_time = asyncio.get_event_loop().time()
-    results = await asyncio.gather(*tasks)
-    end_time = asyncio.get_event_loop().time()
+    # No call can finish until all five have entered. The timeout only bounds a deadlock.
+    results = await asyncio.wait_for(asyncio.gather(*tasks), timeout=10)
 
     # Verify results, `asyncio.gather` returns results in the order of the tasks
     assert results == [f"hello{i} {i}" for i in range(5)]
-
-    # Check that it ran concurrently (should take ~0.1s, not ~0.5s)
-    # We use 0.3s as threshold to account for some overhead
-    assert end_time - start_time < 0.3
 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
@@ -406,6 +443,14 @@ def test_async_tool_call_in_sync_mode():
     with dspy.context(allow_tool_async_sync_conversion=True):
         result = tool(x=1, y="hello")
         assert result == "hello 1"
+
+
+@pytest.mark.asyncio
+async def test_async_tool_sync_call_within_running_loop():
+    tool = Tool(async_dummy_function)
+    with dspy.context(allow_tool_async_sync_conversion=True):
+        with pytest.raises(ValueError, match=r".*await tool\.acall.*"):
+            tool(x=1, y="hello")
 
 
 TOOL_CALL_TEST_CASES = [
@@ -558,17 +603,17 @@ def test_tool_call_results_can_round_trip_as_native_tool_result_message():
     results = ToolCallResults.from_tool_calls_and_values([tool_call], ['{"items": ["cat"]}'])
     result = results.tool_call_results[0]
 
-    message = LMMessage(role="tool", tool_call_id=result.call_id, name=result.name, content=result.value)
+    message = Message.tool(tool_result(result.call_id, result.value, name=result.name))
 
     assert len(message.parts) == 1
-    assert isinstance(message.parts[0], LMToolResultPart)
-    assert message.parts[0].call_id == "call_1"
+    assert isinstance(message.parts[0], ToolResultPart)
+    assert message.parts[0].id == "call_1"
     assert message.parts[0].name == "search"
     assert message.parts[0].content[0].text == '{"items": ["cat"]}'
 
-    request = LMRequest(model="test-model", messages=[message])
-    assert to_openai_chat_request(request)["messages"] == [
-        {"role": "tool", "content": '{"items": ["cat"]}', "tool_call_id": "call_1", "name": "search"}
+    request = Request(model="test-model", messages=[message])
+    assert request_kwargs(request, "chat")["messages"] == [
+        {"role": "tool", "content": '{"items": ["cat"]}', "tool_call_id": "call_1"}
     ]
 
 
@@ -766,6 +811,32 @@ def test_tool_call_execute_with_local_functions():
             globals().pop("local_add", None)
 
     main()
+
+
+def test_tool_calls_none_and_empty_dict_mean_no_calls():
+    """`"tool_calls": null` / `{}` are how JSON-mode models say "no tool calls
+    this turn" -- they must parse like `[]`, not raise AdapterParseError (#10612)."""
+    for empty in (None, {}):
+        calls = dspy.ToolCalls.model_validate(empty)
+        assert calls.tool_calls == []
+    # And through the wrapping form: {"tool_calls": None}
+    calls = dspy.ToolCalls.model_validate({"tool_calls": None})
+    assert calls.tool_calls == []
+
+
+def test_tool_calls_none_reaches_empty_tool_calls_semantics():
+    """End-to-end: ReActV2 with a JSON-mode model writing `"tool_calls": null`
+    must take the usual empty_tool_calls path (like `[]`), not a parse error."""
+    adapter = dspy.JSONAdapter()
+    lm = dspy.utils.DummyLM([{"next_thought": "Nothing to call.", "tool_calls": None}] * 2, adapter=adapter)
+    with dspy.context(lm=lm, adapter=adapter):
+        try:
+            dspy.ReActV2("question -> answer", tools=[])(question="hi")
+            raised = None
+        except Exception as e:
+            raised = e
+    assert raised is not None
+    assert "empty_tool_calls" in str(raised), f"expected empty_tool_calls semantics, got: {raised}"
 
 
 class TestSortKeysPromptCache:

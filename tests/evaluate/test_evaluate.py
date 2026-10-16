@@ -1,3 +1,4 @@
+import csv
 import json
 import signal
 import tempfile
@@ -130,40 +131,58 @@ def test_multithread_evaluate_call():
 
 
 def test_multi_thread_evaluate_call_cancelled(monkeypatch):
-    # slow LM that sleeps for 1 second before returning the answer
+    from dspy.utils import parallelizer
+
+    started = threading.Barrier(3, timeout=10)  # two workers and the main thread
+    release = threading.Event()
+    worker_finished = threading.Event()
+    pools = []
+    running = []
+    original_pool = parallelizer.ThreadPoolExecutor
+
+    def make_pool(*args, **kwargs):
+        pool = original_pool(*args, **kwargs)
+        pools.append(pool)
+        return pool
+
     class SlowLM(DummyLM):
         def __call__(self, *args, **kwargs):
-            import time
+            try:
+                started.wait()
+                if not release.wait(10):
+                    raise TimeoutError("Test did not release the evaluation worker")
+                return super().__call__(*args, **kwargs)
+            finally:
+                worker_finished.set()
 
-            time.sleep(1)
-            return super().__call__(*args, **kwargs)
+    def interrupt_when_running(futures, **kwargs):
+        running.extend(futures)
+        started.wait()
+        # Deliver a real SIGINT with the evaluation handler installed, without
+        # a timer thread that could signal an unrelated test later.
+        signal.raise_signal(signal.SIGINT)
+        pytest.fail("SIGINT did not interrupt evaluation")
 
+    monkeypatch.setattr(parallelizer, "ThreadPoolExecutor", make_pool)
+    monkeypatch.setattr(parallelizer, "wait", interrupt_when_running)
     dspy.configure(lm=SlowLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
-
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
-    assert program(question="What is 1+1?").answer == "2"
-
-    # spawn a thread that will sleep for .1 seconds then send a KeyboardInterrupt
-    def sleep_then_interrupt():
-        import time
-
-        time.sleep(0.1)
-        import os
-
-        os.kill(os.getpid(), signal.SIGINT)
-
-    input_thread = threading.Thread(target=sleep_then_interrupt)
-    input_thread.start()
-
-    with pytest.raises(KeyboardInterrupt):
-        ev = Evaluate(
-            devset=devset,
-            metric=answer_exact_match,
-            display_progress=False,
-            num_threads=2,
-        )
-        ev(program)
+    ev = Evaluate(devset=devset, metric=answer_exact_match, display_progress=False, num_threads=2)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            ev(program)
+        # Cancellation must return while the LM calls are still blocked.
+        assert not worker_finished.is_set()
+        assert len(running) == 2 and all(future.running() for future in running)
+    finally:
+        started.abort()
+        release.set()
+        # Production intentionally uses shutdown(wait=False). The test owns
+        # these workers and must drain them before fixtures/patches are reset.
+        for pool in pools:
+            pool.shutdown(wait=True, cancel_futures=True)
+    assert all(future.done() for future in running)
 
 
 def test_evaluate_call_wrong_answer():
@@ -460,4 +479,102 @@ def test_evaluate_save_as_csv_with_history():
         import os
         if os.path.exists(temp_csv):
             os.unlink(temp_csv)
+
+
+@pytest.mark.parametrize("example_order", [(0, 1), (1, 0)])
+@pytest.mark.parametrize("num_threads", [1, 2])
+@pytest.mark.parametrize("failure_score", [0.0, 0.25])
+def test_evaluate_save_as_csv_with_failed_prediction(tmp_path, example_order, num_threads, failure_score):
+    class Program(dspy.Module):
+        def forward(self, x):
+            if x == 1:
+                raise RuntimeError("controlled failure")
+            return dspy.Prediction(answer="pred-0")
+
+    examples = [dspy.Example(x=i, answer=f"gold-{i}").with_inputs("x") for i in example_order]
+    csv_path = tmp_path / "results.csv"
+
+    def graded(example, prediction):
+        return 1.0
+
+    evaluator = Evaluate(
+        devset=examples,
+        metric=graded,
+        num_threads=num_threads,
+        max_errors=10,
+        display_progress=False,
+        failure_score=failure_score,
+        save_as_csv=str(csv_path),
+    )
+
+    result = evaluator(Program())
+
+    assert result.score == round(100 * (1 + failure_score) / 2, 2)
+    assert [score for _, _, score in result.results] == [1.0 if i == 0 else failure_score for i in example_order]
+
+    with csv_path.open(newline="", encoding="utf-8") as csvfile:
+        reader = csv.DictReader(csvfile)
+        rows = list(reader)
+
+    assert len(rows) == 2
+    assert [int(row["x"]) for row in rows] == list(example_order)
+    expected_fieldnames = (
+        ["x", "example_answer", "pred_answer", "graded", "answer"]
+        if example_order[0] == 0
+        else ["x", "answer", "graded", "example_answer", "pred_answer"]
+    )
+    assert reader.fieldnames == expected_fieldnames
+    successful_row = rows[example_order.index(0)]
+    failed_row = rows[example_order.index(1)]
+    assert successful_row["example_answer"] == "gold-0"
+    assert successful_row["pred_answer"] == "pred-0"
+    assert successful_row["answer"] == ""
+    assert successful_row["graded"] == "1.0"
+    assert failed_row["answer"] == "gold-1"
+    assert failed_row["example_answer"] == ""
+    assert failed_row["pred_answer"] == ""
+    assert failed_row["graded"] == str(failure_score)
+
+
+def test_evaluate_save_as_csv_with_later_prediction_fields(tmp_path):
+    class Program(dspy.Module):
+        def forward(self, x):
+            if x == 0:
+                return dspy.Prediction(answer="pred-0")
+            return dspy.Prediction(answer="pred-1", explanation="later field")
+
+    examples = [dspy.Example(x=i, answer=f"gold-{i}").with_inputs("x") for i in range(2)]
+    csv_path = tmp_path / "results.csv"
+
+    def graded(example, prediction):
+        return 1.0
+
+    evaluator = Evaluate(
+        devset=examples,
+        metric=graded,
+        display_progress=False,
+        save_as_csv=str(csv_path),
+    )
+
+    result = evaluator(Program())
+
+    assert result.score == 100.0
+    with csv_path.open(newline="", encoding="utf-8") as csvfile:
+        reader = csv.DictReader(csvfile)
+        rows = list(reader)
+
+    assert reader.fieldnames == ["x", "example_answer", "pred_answer", "graded", "explanation"]
+    assert rows[0]["explanation"] == ""
+    assert rows[1]["explanation"] == "later field"
+
+
+def test_evaluate_raises_on_empty_devset():
+    program = Predict("question -> answer")
+    ev = Evaluate(
+        devset=[],
+        metric=answer_exact_match,
+        display_progress=False,
+    )
+    with pytest.raises(ValueError, match="devset"):
+        ev(program)
 

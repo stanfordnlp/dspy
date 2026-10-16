@@ -1,5 +1,8 @@
+import importlib
 import sys
 import threading
+import time
+import types
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -39,6 +42,31 @@ def test_require_returns_cached_module():
     assert mod is sys.modules["json"]
 
 
+def test_require_initializes_package_before_importing_submodule(tmp_path, monkeypatch):
+    package_name = "dspy_lazy_submodule_package"
+    package = tmp_path / package_name
+    package.mkdir()
+    (package / "__init__.py").write_text("initialized = True\nfrom .models import Model\n")
+    (package / "models.py").write_text("from .constants import VALUE\nclass Model:\n    value = VALUE\n")
+    (package / "constants.py").write_text("VALUE = 42\n")
+    monkeypatch.syspath_prepend(tmp_path)
+
+    try:
+        proxy = require(package_name)
+        assert "initialized" not in vars(proxy)
+        assert f"{package_name}.models" not in sys.modules
+
+        # Binding constants to the parent must not initialize it while models is still importing.
+        models = importlib.import_module(f"{package_name}.models")
+
+        assert proxy.initialized is True
+        assert proxy.Model is models.Model
+        assert models.Model.value == 42
+    finally:
+        for name in (package_name, f"{package_name}.models", f"{package_name}.constants"):
+            sys.modules.pop(name, None)
+
+
 def test_require_is_safe_under_concurrent_first_use(tmp_path, monkeypatch):
     module_name = "dspy_lazy_threaded_module"
     counter_path = tmp_path / "imports.txt"
@@ -64,6 +92,123 @@ def test_require_is_safe_under_concurrent_first_use(tmp_path, monkeypatch):
         assert list(executor.map(read_value, range(threads))) == [42] * threads
 
     assert counter_path.read_text() == "1"
+
+
+def test_require_does_not_expose_module_accessed_during_its_own_initialization(tmp_path, monkeypatch):
+    module_name = "dspy_lazy_reentrant_module"
+    hooks = types.SimpleNamespace(started=threading.Event(), release=threading.Event())
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    monkeypatch.setitem(sys.modules, "dspy_lazy_test_hooks", hooks)
+    (tmp_path / f"{module_name}.py").write_text(
+        "import dspy_lazy_test_hooks as hooks\n"
+        "early = 1\n"
+        "assert hooks.proxy.early == 1\n"
+        "hooks.started.set()\n"
+        "assert hooks.release.wait(5)\n"
+        "value = 42\n"
+    )
+    hooks.proxy = require(module_name)
+
+    class ContentionLock:
+        """RLock that records when a thread has to wait for another thread's hold."""
+
+        def __init__(self):
+            self._lock = threading.RLock()
+            self.contended = threading.Event()
+
+        def __enter__(self):
+            if not self._lock.acquire(blocking=False):
+                self.contended.set()
+                self._lock.acquire()
+
+        def __exit__(self, *exc_info):
+            self._lock.release()
+
+    lock = ContentionLock()
+    hooks.proxy._dspy_lazy_lock = lock
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(lambda: hooks.proxy.value)
+        assert hooks.started.wait(5)
+        # The module is still initializing, so another thread must wait instead of seeing the partial module.
+        second = executor.submit(lambda: hooks.proxy.value)
+        # Release only after the second read has returned or is blocked on the proxy lock.
+        deadline = time.monotonic() + 5
+        while not (second.done() or lock.contended.is_set()) and time.monotonic() < deadline:
+            time.sleep(0.001)
+        hooks.release.set()
+
+        assert first.result() == 42
+        assert second.result() == 42
+
+
+def test_require_resolves_module_that_replaces_itself_during_initialization(tmp_path, monkeypatch):
+    module_name = "dspy_lazy_replacing_module"
+    hooks = types.SimpleNamespace()
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    monkeypatch.setitem(sys.modules, "dspy_lazy_test_hooks", hooks)
+    (tmp_path / f"{module_name}.py").write_text(
+        "import sys\n"
+        "import types\n"
+        "import dspy_lazy_test_hooks as hooks\n"
+        "early = 1\n"
+        "assert hooks.proxy.early == 1\n"
+        "sys.modules[__name__] = types.SimpleNamespace(value='replacement')\n"
+    )
+    hooks.proxy = require(module_name)
+
+    # A plain import, not the proxy, starts initialization, so the proxy only sees the partial module mid-import.
+    importlib.import_module(module_name)
+
+    assert hooks.proxy.value == "replacement"
+
+
+def test_require_reuses_loaded_module_until_sys_modules_changes(tmp_path, monkeypatch):
+    module_name = "dspy_lazy_cached_module"
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    (tmp_path / f"{module_name}.py").write_text("value = 1\n")
+    mod = require(module_name)
+    assert mod.value == 1
+
+    imports = []
+    import_module = importlib.import_module
+
+    def counting_import_module(name, *args, **kwargs):
+        imports.append(name)
+        return import_module(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib, "import_module", counting_import_module)
+
+    assert [mod.value for _ in range(3)] == [1, 1, 1]
+    assert imports == []
+
+    monkeypatch.setitem(sys.modules, module_name, types.SimpleNamespace(value=2))
+    assert mod.value == 2
+
+    del sys.modules[module_name]
+    assert mod.value == 1
+    assert imports == [module_name, module_name]
+
+
+def test_require_retries_after_failed_import(tmp_path, monkeypatch):
+    module_name = "dspy_lazy_flaky_module"
+    flag = tmp_path / "fail"
+    flag.touch()
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    (tmp_path / f"{module_name}.py").write_text(
+        f"import pathlib\nif pathlib.Path({str(flag)!r}).exists():\n    raise RuntimeError('boom')\nvalue = 42\n"
+    )
+
+    mod = require(module_name)
+    with pytest.raises(RuntimeError, match="boom"):
+        _ = mod.value
+
+    flag.unlink()
+    assert mod.value == 42
 
 
 def test_require_assignment_updates_materialized_module(tmp_path, monkeypatch):

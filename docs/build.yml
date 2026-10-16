@@ -1,0 +1,24 @@
+llms:
+    markdown_description: >
+      DSPy is the framework for programming—rather than prompting—language models.
+      DSPy unifies techniques for prompting, fine-tuning, reasoning, tool use, and evaluation of LMs.
+      It provides a systematic approach to building AI applications through composable modules,
+      optimization techniques, and evaluation frameworks.
+    sections:
+      Get Started:
+        - index.md: DSPy overview and quick start guide
+      Getting Started:
+        - getting-started/**.md
+      Diving Deeper:
+        - diving-deeper/**.md
+      Tutorials - Docs:
+        - tutorials/**.md
+      Tutorials - Notebooks:
+        - tutorials/**.ipynb
+      Community:
+        - community/**.md
+      FAQ:
+        - faqs.md: Common questions on DSPy usage, comparisons, optimization, and debugging
+        - cheatsheet.md: DSPy cheatsheet for quick reference
+      API Reference:
+        - api/**.md
