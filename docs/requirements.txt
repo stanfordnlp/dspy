@@ -4,6 +4,8 @@ mdformat==0.7.22
 mdformat-tables==1.0.0
 mkdocstrings==1.0.7
 mkdocstrings-python==2.0.9
+# mkdocstrings 1.0.6 does not pass the md argument required by pymdown 12.2.
+pymdown-extensions==12.1
 nbconvert==7.17.1
 pillow==12.3.0
 zensical==0.0.69
