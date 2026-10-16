@@ -464,7 +464,8 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             A new Signature class with the field inserted.
 
         Raises:
-            ValueError: If `index` falls outside the valid range for the chosen section.
+            ValueError: If `index` falls outside the valid range for the chosen section, or if `name` already
+                exists in the opposite section (inputs vs. outputs).
 
         Examples:
             ```python
@@ -493,6 +494,9 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
         # Choose the list to insert into based on the field type
         lst = input_fields if field.json_schema_extra["__dspy_field_type"] == "input" else output_fields
+        other = output_fields if lst is input_fields else input_fields
+        if name in dict(other):
+            raise ValueError(f"Input and output fields must have distinct names, but found duplicates: '{name}'.")
         # We support negative insert indices
         if index < 0:
             index += len(lst) + 1
