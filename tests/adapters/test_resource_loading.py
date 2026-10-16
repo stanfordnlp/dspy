@@ -1,5 +1,6 @@
 import base64
 
+import pydantic
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
@@ -72,6 +73,70 @@ def test_image_validation_rejects_download_without_host_io(monkeypatch):
 
     with pytest.raises((TypeError, ValidationError), match="only valid with a positional image source"):
         TypeAdapter(dspy.Image).validate_python({"url": "http://169.254.169.254/latest/meta-data", "download": True})
+
+
+def test_image_validation_accepts_bare_data_uri():
+    """Pydantic validation should match direct Image construction for data URIs."""
+    image_uri = "data:image/png;base64,AA=="
+
+    image = TypeAdapter(dspy.Image).validate_python(image_uri)
+
+    assert image.url == image_uri
+
+    class Wrapped(pydantic.BaseModel):
+        image: dspy.Image
+
+    assert Wrapped.model_validate({"image": image_uri}).image.url == image_uri
+
+
+_MALFORMED_DATA_URIS = [
+    "data:",
+    "data:image/png",
+    "data:image/png;base64",
+    "data:image/png;base64,not-valid-base64",
+    "data:image/png;base64,%%%",
+    "data:image/png;base64,A",
+    "data:image/png;base64,AA=A",
+    "data:image/png;base64,AA==AA==",
+]
+
+
+@pytest.mark.parametrize("malformed", _MALFORMED_DATA_URIS)
+def test_image_rejects_malformed_data_uris(malformed):
+    """A ``data:`` prefix alone must not be enough to pass the boundary."""
+    with pytest.raises(ValueError):
+        dspy.Image(malformed)
+
+    with pytest.raises(ValidationError):
+        TypeAdapter(dspy.Image).validate_python(malformed)
+
+    class Wrapped(pydantic.BaseModel):
+        image: dspy.Image
+
+    with pytest.raises(ValidationError):
+        Wrapped.model_validate({"image": malformed})
+
+
+def test_image_rejects_malformed_data_uri_without_host_io(monkeypatch):
+    _forbid_host_io(monkeypatch)
+
+    with pytest.raises(ValidationError):
+        TypeAdapter(dspy.Image).validate_python("data:image/png;base64,not-valid-base64")
+
+
+@pytest.mark.parametrize(
+    "accepted",
+    [
+        "data:image/png;base64,AA==",
+        "data:image/png;base64,iVBORw0KGgo=",
+        "data:image/png;base64,SGVsbG8",  # unpadded payloads are still unambiguous
+        "data:,Hello",
+        "data:text/plain;charset=utf-8,Hello%20World",
+    ],
+)
+def test_image_keeps_accepting_well_formed_data_uris(accepted):
+    """Validation checks syntax only: the payload is never decoded."""
+    assert TypeAdapter(dspy.Image).validate_python(accepted).url == accepted
 
 
 def test_image_validation_rejects_download_with_source_keyword_without_host_io(monkeypatch):
