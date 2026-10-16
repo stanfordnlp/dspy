@@ -22,6 +22,9 @@ from typing import Any, NoReturn
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
 from dspy.utils.callback import BaseCallback, with_callbacks
 
+_MAX_MESSAGE_CHARS = 16 * 1024 * 1024
+_MAX_PENDING_TOOLS = 32
+
 
 def _run_in_thread(function: Callable[[], Any]) -> Future[Any]:
     outcome = Future()
@@ -50,6 +53,10 @@ class LocalInterpreter:
     This separates generated code from DSPy's memory, stdout, and lifecycle,
     but it is not a security sandbox. The worker retains the host user's files,
     environment, credentials, subprocess, and network authority.
+
+    Guest protocol messages are limited to 16 Mi characters, with at most 32
+    outstanding host tool calls per execution. These transport bounds are not
+    aggregate guest memory, process, disk, or output quotas.
 
     Args:
         tools: Host functions exposed to executed code by name. Arguments and
@@ -86,7 +93,7 @@ class LocalInterpreter:
         self.execution_timeout = execution_timeout
         self.callbacks = list(callbacks or [])
         self._process: subprocess.Popen[str] | None = None
-        self._responses: queue.Queue[str | BaseException | None] = queue.Queue()
+        self._responses: queue.Queue[str | BaseException | None] = queue.Queue(maxsize=4)
         self._lock = threading.Lock()
         self._send_lock = threading.Lock()
         self._ended = False
@@ -126,15 +133,7 @@ class LocalInterpreter:
         if self._process is not None:
             return
         try:
-            process = subprocess.Popen(
-                [sys.executable, "-I", str(Path(__file__).with_name("local_interpreter_worker.py"))],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
-                start_new_session=os.name == "posix",
-                text=True,
-            )
+            process = self._spawn_worker()
         except OSError as exc:
             raise CodeInterpreterError(f"Unable to start Python worker: {exc}") from exc
         self._process = process
@@ -143,11 +142,37 @@ class LocalInterpreter:
         if message.get("type") != "ready":
             self._raise_terminal_error(f"Python worker returned an invalid startup message: {message!r}")
 
+    def _spawn_worker(self) -> subprocess.Popen[str]:
+        """Launch the worker with text pipes and its own process group for cleanup."""
+        return subprocess.Popen(
+            [sys.executable, "-I", str(Path(__file__).with_name("local_interpreter_worker.py"))],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+            start_new_session=os.name == "posix",
+            text=True,
+        )
+
     def _read_responses(self, process: subprocess.Popen[str]) -> None:
         assert process.stdout is not None
-        for line in process.stdout:
-            self._responses.put(line)
-        self._responses.put(None)
+        while self._process is process:
+            message: str | BaseException | None
+            try:
+                message = process.stdout.readline(_MAX_MESSAGE_CHARS + 1) or None
+                if message is not None and len(message) > _MAX_MESSAGE_CHARS:
+                    message = CodeInterpreterError("Python worker message exceeds the 16 Mi-character limit.")
+            except (OSError, ValueError) as exc:
+                message = CodeInterpreterError(f"Unable to read Python worker response: {exc}")
+            # Apply backpressure without stranding this reader after shutdown.
+            while self._process is process:
+                try:
+                    self._responses.put(message, timeout=0.1)
+                    break
+                except queue.Full:
+                    continue
+            if not isinstance(message, str):
+                return
 
     def _send(self, message: dict[str, Any], process: subprocess.Popen[str] | None = None) -> None:
         with self._send_lock:
@@ -173,10 +198,10 @@ class LocalInterpreter:
             raise line
         try:
             message = json.loads(line)
-        except json.JSONDecodeError as exc:
-            self._raise_terminal_error(f"Python worker returned invalid JSON: {line!r}", exc)
+        except (ValueError, RecursionError) as exc:
+            self._raise_terminal_error(f"Python worker returned invalid JSON: {line[:200]!r}", exc)
         if not isinstance(message, dict) or not isinstance(message.get("type"), str):
-            self._raise_terminal_error(f"Python worker returned an invalid message: {message!r}")
+            self._raise_terminal_error("Python worker returned an invalid message.")
         return message
 
     def _raise_terminal_error(self, message: str, cause: BaseException | None = None) -> NoReturn:
@@ -225,9 +250,11 @@ class LocalInterpreter:
             response = {"type": "tool_error", "id": request["id"], "error": f"{type(exc).__name__}: {exc}"}
         except BaseException as exc:
             # Like PythonInterpreter, propagate cancellation/interrupts to the caller.
-            # Wake execute(): the worker cannot reply while this tool is unanswered.
-            self._responses.put(exc)
-            return
+            # Wake execute(), but never strand a tool thread on a full guest queue.
+            # The Future also carries the exception if a response is already queued.
+            with contextlib.suppress(queue.Full):
+                self._responses.put_nowait(exc)
+            raise
         self._send(response, process)
 
     @with_callbacks
@@ -284,6 +311,25 @@ class LocalInterpreter:
             tool_calls: list[Future[Any]] = []
             message = self._receive(deadline, timeout_message)
             while message.get("type") == "tool_request":
+                if (
+                    type(message.get("id")) is not int
+                    or message["id"] < 0
+                    or not isinstance(message.get("name"), str)
+                    or message["name"] not in self.tools
+                    or not isinstance(message.get("args"), list)
+                    or not isinstance(message.get("kwargs"), dict)
+                ):
+                    self._raise_terminal_error("Python worker returned an invalid tool request.")
+                for tool_call in tuple(tool_calls):
+                    if tool_call.done():
+                        try:
+                            tool_call.result()
+                        except BaseException:
+                            self.shutdown()
+                            raise
+                        tool_calls.remove(tool_call)
+                if len(tool_calls) >= _MAX_PENDING_TOOLS:
+                    self._raise_terminal_error("Python worker exceeded the limit of 32 outstanding host tool calls.")
                 tool_calls.append(_run_in_thread(lambda request=message: self._handle_tool(request, process)))
                 message = self._receive(deadline, timeout_message)
             for tool_call in tool_calls:
@@ -292,6 +338,9 @@ class LocalInterpreter:
                     tool_call.result(timeout)
                 except FutureTimeoutError:
                     self._raise_terminal_error(timeout_message)
+                except BaseException:
+                    self.shutdown()
+                    raise
             kind = message.get("type")
             if kind == "terminal_error":
                 self._raise_terminal_error(f"Python worker failed: {message.get('error')}")

@@ -23,6 +23,7 @@ import logging
 from typing import Any, Callable
 
 from pydantic import TypeAdapter
+from pydantic_core import to_jsonable_python
 
 import dspy
 from dspy.adapters.types.base_type import Type as _CustomType
@@ -147,7 +148,7 @@ class BridgeRuntime:
                 f"import json as {_JSON_VAR}\n"
                 f"{_JSON_VAR}.dumps({_OUT_VAR}._fields if hasattr({_OUT_VAR}, '_fields') else {_OUT_VAR})"
             )
-            result = interp.execute(code, variables={_INPUTS_VAR: dict(inputs)})
+            result = interp.execute(code, variables={_INPUTS_VAR: to_jsonable_python(inputs)})
         except CodeInterpreterError as e:
             if invocation._lm_error is not None:
                 lm_error, tag = invocation._lm_error

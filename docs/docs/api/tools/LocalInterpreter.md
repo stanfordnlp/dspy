@@ -25,6 +25,11 @@ Python executable.
 Python cannot forcibly stop a running host callable, so that callable may finish in a detached daemon thread; its
 result is discarded and the interpreter session remains terminal.
 
+The host accepts guest protocol messages up to 16 Mi characters and at most 32 outstanding host-tool calls per
+execution. Invalid tool requests or exceeded limits terminate the session. Completed calls do not count toward the
+concurrency limit. The response queue is bounded; these transport protections do not limit aggregate guest memory,
+process count, filesystem usage, or output written before it reaches the host.
+
 Parallel guest code is supported when all threads finish before the current `execute()` call returns, such as a
 context-managed `ThreadPoolExecutor`. Leaving a guest thread running makes the session terminal because that thread
 could otherwise mutate state, write output, or invoke tools during a later execution. Shutdown and terminal failures
