@@ -184,8 +184,10 @@ class XMLAdapter(ChatAdapter):
     @classmethod
     def _elements_to_value(cls, elements: list[ET.Element], schema: dict, definitions: dict) -> Any:
         schema = definitions.get(schema.get("$ref", "").rsplit("/", 1)[-1], schema)
+        nullable = False
         if choices := schema.get("anyOf"):
-            if {"type": "null"} in choices and not list(elements[0]) and not (elements[0].text or "").strip():
+            nullable = {"type": "null"} in choices
+            if nullable and not list(elements[0]) and not (elements[0].text or "").strip():
                 return None
             choices = [choice for choice in choices if choice.get("type") != "null"]
             schema = choices[0]
@@ -196,6 +198,9 @@ class XMLAdapter(ChatAdapter):
                 text = (elements[0].text or "").strip()
                 if not text or text.startswith("["):
                     return [] if not text else text
+                if nullable and text == "None":
+                    # A missing value is formatted as the text `None`; it is not a one-item list.
+                    return None
             if len(elements) == 1 and (items := cls._group_children(elements[0]).get("item")):
                 elements = items
             return [cls._elements_to_value([element], schema.get("items", {}), definitions) for element in elements]
