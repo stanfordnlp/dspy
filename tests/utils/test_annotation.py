@@ -1,6 +1,28 @@
 from dspy.utils.annotation import experimental
 
 
+def test_experimental_retains_class_and_property_identity():
+    class Example:
+        @property
+        def value(self) -> int:
+            return 1
+
+    prop = Example.value
+    assert experimental(Example) is Example
+    assert experimental(version="3.4.1")(Example) is Example
+    assert experimental(prop) is prop
+    assert experimental(version="3.4.1")(prop) is prop
+
+
+def test_experimental_annotation_retains_the_input_type():
+    from typing import TypeVar, get_overloads, get_type_hints
+
+    direct = get_type_hints(get_overloads(experimental)[0])
+    # A Callable annotation preserves calls but erases classes as usable types.
+    assert isinstance(direct["f"], TypeVar)
+    assert direct["return"] is direct["f"]
+
+
 def test_experimental_decorator_on_function():
     @experimental
     def test_function():
