@@ -180,9 +180,18 @@ class Session:
         return outcome
 
 
+def image_to_json(value: Any) -> dict[str, str]:
+    # Do not import DSPy for ordinary JSON executions. If the guest imported it,
+    # encode its real Image values as data, never as executable host objects.
+    image_module = sys.modules.get("dspy.adapters.types.image")
+    if image_module is not None and isinstance(value, image_module.Image):
+        return {"url": value.url}
+    raise TypeError(f"{type(value).__name__} is not JSON serializable")
+
+
 def jsonable(value: Any) -> Any:
     try:
-        json.dumps(value, allow_nan=False)
+        json.dumps(value, allow_nan=False, default=image_to_json)
         return value
     except (TypeError, ValueError):
         return repr(value)
@@ -194,7 +203,11 @@ def describe(exc: BaseException) -> str:
 
 def send(message: dict[str, Any]) -> None:
     with _send_lock:
-        print(json.dumps(message, separators=(",", ":"), allow_nan=False), file=_protocol_output, flush=True)
+        print(
+            json.dumps(message, separators=(",", ":"), allow_nan=False, default=image_to_json),
+            file=_protocol_output,
+            flush=True,
+        )
 
 
 def receive() -> dict[str, Any]:

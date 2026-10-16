@@ -139,7 +139,29 @@ def _dspy_tool(func, **_kw):
     return func
 
 
+def _dspy_getattr(name):
+    if name != "Image":
+        raise AttributeError(name)
+    # Load the installed type only for image workloads. Temporarily restore
+    # normal package imports while DSPy's own __init__ runs, then keep the facade.
+    image_module = _dspy_sys.modules.get("dspy.adapters.types.image")
+    if image_module is None:
+        previous = _dspy_sys.modules.pop("dspy", None)
+        try:
+            import dspy.adapters.types.image as image_module
+        except ModuleNotFoundError as exc:
+            if exc.name != "dspy":
+                raise
+            raise AttributeError("This interpreter has no installed dspy.Image") from exc
+        finally:
+            if previous is not None:
+                _dspy_sys.modules["dspy"] = previous
+    _dspy.Image = image_module.Image
+    return _dspy.Image
+
+
 _dspy = _dspy_types.ModuleType("dspy")
+_dspy.__getattr__ = _dspy_getattr
 _dspy.Module = _DspyModule
 _dspy.Prediction = _DspyPrediction
 _dspy.Signature = _dspy_signature

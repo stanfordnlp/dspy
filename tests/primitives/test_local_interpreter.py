@@ -1,8 +1,10 @@
 import contextvars
 import os
+import signal
 import tempfile
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -240,6 +242,23 @@ def test_execution_timeout_does_not_wait_for_blocked_host_tool():
 
     assert tool_started.wait(timeout=5)
     assert elapsed < 5
+    with pytest.raises(CodeInterpreterError, match="shut down"):
+        interpreter.execute("1")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="SIGSTOP requires POSIX")
+def test_execution_timeout_includes_a_blocked_command_write():
+    interpreter = dspy.LocalInterpreter(execution_timeout=0.2)
+    interpreter.start()
+    # Stop a ready peer before sending more than the pipe buffer can hold.
+    os.kill(interpreter._process.pid, signal.SIGSTOP)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(interpreter.execute, "#" + "x" * (1024 * 1024))
+        try:
+            with pytest.raises(CodeInterpreterError, match="exceeded execution timeout"):
+                future.result(timeout=3)
+        finally:
+            interpreter.shutdown()
     with pytest.raises(CodeInterpreterError, match="shut down"):
         interpreter.execute("1")
 

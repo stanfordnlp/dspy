@@ -46,6 +46,41 @@ def test_missing_dependency_never_runs_generated_code(factory, tmp_path):
         worker.shutdown()
 
 
+@pytest.mark.parametrize("failure", ["exit", "interrupt", "blocked_tool"])
+def test_terminal_failures_close_the_real_session(factory, failure):
+    release = threading.Event()
+    entered = threading.Event()
+
+    def tool():
+        entered.set()
+        if failure == "interrupt":
+            raise KeyboardInterrupt("host cancelled")
+        release.wait(5)
+        return "late result"
+
+    worker = factory(tools={"tool": tool}, execution_timeout=0.5)
+    worker.start()
+    workspace = worker.workspace
+    started = time.monotonic()
+    try:
+        if failure == "interrupt":
+            with pytest.raises(KeyboardInterrupt, match="host cancelled"):
+                worker.execute("tool()")
+        else:
+            with pytest.raises(CodeInterpreterError, match=r"exited unexpectedly|execution timeout"):
+                worker.execute("import os; os._exit(9)" if failure == "exit" else "tool()")
+        assert time.monotonic() - started < 3
+        assert not workspace.exists()
+        if failure != "exit":
+            assert entered.is_set()
+        with pytest.raises(CodeInterpreterError, match="shut down"):
+            worker.execute("1")
+    finally:
+        release.set()
+        worker.shutdown()
+        worker.shutdown()
+
+
 def test_python_native_libraries_and_persistence(factory):
     with factory() as worker:
         assert worker.execute("""
@@ -99,6 +134,64 @@ Path('answer.txt').write_text(str(add(17, 26)))
 values
 """) == ["slow", "fast"]
         assert worker.execute("SUBMIT(answer=int(Path('answer.txt').read_text()))").output == {"answer": 43}
+
+
+def test_native_image_edit_queries_and_typed_output(factory):
+    class Edit(dspy.Signature):
+        source: dspy.Image = dspy.InputField()
+        edited: dspy.Image = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    seen = []
+
+    class Vision:
+        def __call__(self, *, messages):
+            content = messages[0]["content"]
+            image = dspy.Image(content[1]["image_url"]["url"]).to_pil()
+            assert image.size == (2, 1)
+            assert [image.getpixel((x, 0)) for x in range(2)] == [(43, 59, 71), (7, 19, 31)]
+            seen.append(content[0]["text"])
+            return [content[0]["text"] + ":ok"]
+
+    source = Image.new("RGB", (3, 2), (1, 2, 3))
+    source.putpixel((1, 1), (7, 19, 31))
+    source.putpixel((2, 1), (43, 59, 71))
+    program = dspy.RLM(Edit, interpreter_factory=factory, sub_lm=Vision(), max_iters=1, max_llm_calls=3)
+    program.generate_action = lambda **kwargs: dspy.Prediction(reasoning="crop and inspect", code="""
+assert type(source) is dspy.Image
+assert dspy.Image.__module__ == 'dspy.adapters.types.image'
+crop = np.asarray(source.to_pil().crop((1, 1, 3, 2)))
+ok, encoded = cv2.imencode('.png', cv2.flip(cv2.cvtColor(crop, cv2.COLOR_RGB2BGR), 1))
+assert ok
+edited = dspy.Image(encoded.tobytes())
+one = llm_query('single', images=edited)
+batch = llm_query_batched(['left', 'right'], images=[edited, [edited]])
+SUBMIT(edited=edited, answer='|'.join([one, *batch]))
+""")
+    result = program(source=dspy.Image(source))
+    assert isinstance(result.edited, dspy.Image)
+    assert [result.edited.to_pil().getpixel((x, 0)) for x in range(2)] == [(43, 59, 71), (7, 19, 31)]
+    assert result.answer == "single:ok|left:ok|right:ok"
+    assert sorted(seen) == ["left", "right", "single"]
+
+
+def test_native_image_crosses_recursive_rlm(factory):
+    class Edit(dspy.Signature):
+        source: dspy.Image = dspy.InputField()
+        edited: dspy.Image = dspy.OutputField()
+
+    program = dspy.RLM(Edit, interpreter_factory=factory, max_iters=1)
+    program.generate_action = lambda **kwargs: dspy.Prediction(reasoning="delegate", code="""
+child = dspy.RLM('source: dspy.Image -> edited: dspy.Image', max_iters=1)
+result = child(source=source)
+SUBMIT(dspy.Image(result.edited))
+""")
+    source = Image.new("RGB", (3, 2), (5, 13, 29))
+    source.putpixel((2, 1), (41, 67, 89))
+    with dspy.context(lm=DummyLM([{"plan": "crop", "code": "SUBMIT(dspy.Image(source.to_pil().crop((2, 1, 3, 2))))"}])):
+        result = program(source=dspy.Image(source))
+    assert result.edited.to_pil().size == (1, 1)
+    assert result.edited.to_pil().getpixel((0, 0)) == (41, 67, 89)
 
 
 def test_flex_module_predictor_and_native_packages(factory):

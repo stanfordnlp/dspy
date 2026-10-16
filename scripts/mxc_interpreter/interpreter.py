@@ -68,7 +68,13 @@ class MXCInterpreter(LocalInterpreter):
         }
         python = [sys.executable, "-I", str(worker)]
         # Do not expose the checkout just because its .venv supplies packages.
-        readonly = sorted({sys.prefix, sys.base_prefix, str(Path(sys.executable).resolve().parent), str(worker)})
+        readonly = {sys.prefix, sys.base_prefix, str(Path(sys.executable).resolve().parent), str(worker)}
+        # uv-managed venvs can point through an alias of the base installation.
+        # Preserve that spelling as well as the canonical prefix, or the venv's
+        # executable symlink dangles inside the sandbox.
+        base_alias = Path(sys._base_executable).parent.parent
+        if base_alias.resolve() == Path(sys.base_prefix).resolve():
+            readonly.add(str(base_alias))
         writable = [str(self.workspace), str(temporary)]
         policy_path = self.session / "policy.json"
         policy = {
@@ -81,7 +87,7 @@ class MXCInterpreter(LocalInterpreter):
                 # DSPy owns per-execution deadlines; no competing session timer.
                 "timeout": 0,
             },
-            "filesystem": {"readonlyPaths": readonly, "readwritePaths": writable, "deniedPaths": ["/etc"]},
+            "filesystem": {"readonlyPaths": sorted(readonly), "readwritePaths": writable, "deniedPaths": ["/etc"]},
             "network": {
                 "egress": {"default": "deny"},
                 "ingress": {"default": "deny", "hostLoopback": "deny"},

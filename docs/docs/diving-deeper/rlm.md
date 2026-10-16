@@ -22,7 +22,7 @@ Reasoning uses the same defaults as `ChainOfThought` and respects the LM's `reas
 
 ### 4. Built-in `llm_query` tools give the loop its recursion
 
-The recursion in an RLM is the model’s ability to call a model from inside its own code. `dspy.RLM` injects two functions into the sandbox, `llm_query(prompt)` for one call and `llm_query_batched(prompts)` for concurrent calls. For example, the outer model might use code to locate and slice relevant text, then hands a focused snippet to a sub-LLM for the semantic read. Results come back as Python values it can store and combine rather than as a text blob forced into the context window. One long-context question becomes many short-context ones.
+The recursion in an RLM is the model’s ability to call a model from inside its own code. `dspy.RLM` injects two functions into the sandbox: `llm_query(prompt, images=None)` for one text or multimodal call, and `llm_query_batched(prompts, images=None)` for concurrent calls. For example, the outer model might use code to locate and slice relevant text, or crop an image, then hand the focused input to a sub-LLM for the semantic read. Results come back as Python values it can store and combine rather than as a text blob forced into the context window. One large-context question becomes many focused ones.
 
 ### 5. A shared counter caps sub-LLM calls per run
 
@@ -66,11 +66,11 @@ The public call validates the inputs against the signature, builds the variable 
 
 The model writes these into its code blocks. You don’t call them, but knowing them tells you what the model can do.
 
-**`llm_query(prompt)`**
-One sub-LLM call. It sends the prompt to `sub_lm` or the configured LM, increments the counter, and returns the response text. It raises if the prompt is empty or the budget is spent.
+**`llm_query(prompt, images=None)`**
+One sub-LLM call. It sends the prompt and any image, or list of images, to `sub_lm` or the configured LM, increments the counter, and returns the response text. Images may be `dspy.Image` objects, URLs, data URIs, or `{"url": ...}` mappings. It raises if the prompt is empty or the budget is spent.
 
-**`llm_query_batched(prompts)`**
-Concurrent sub-LLM calls over a list, run on an eight-worker thread pool and returned in input order. A failed call comes back as an `[ERROR] ...` string in its slot rather than aborting the batch. This beats a Python loop of `llm_query` when the model has many independent snippets to read.
+**`llm_query_batched(prompts, images=None)`**
+Concurrent sub-LLM calls over a list, run on an eight-worker thread pool and returned in input order. When provided, `images` must have the same length as `prompts`; each entry may be one image, a list of images, or `None`, so text-only and multimodal requests can share a batch. For example, `llm_query_batched(prompts, images=[crop_a, None, [crop_b, crop_c]])` sends one image with the first prompt, no images with the second, and two images with the third. A failed LM call comes back as an `[ERROR] ...` string in its slot rather than aborting the batch, while malformed inputs raise immediately.
 
 **`SUBMIT(...)`**
 Ends the run and returns the final outputs. RLM validates the submitted dict against the signature’s output fields and parses each value to its declared type. On a type error or a missing field it feeds the message back to the model for another attempt instead of failing the call.
@@ -98,7 +98,11 @@ A zero-argument callable that returns a fresh `CodeInterpreter` for one invocati
 A per-invocation factory override, supplied by keyword. For example, `rlm(query=query, interpreter_factory=dspy.PythonInterpreter)` explicitly chooses PythonInterpreter even when another factory is configured. The factory must return a fresh interpreter; RLM injects tools and output metadata and always shuts it down. Its `execution_instructions` metadata controls the runtime guidance for that invocation without changing the shared predictor. Sub-agents built in the sandbox run their own code on this factory too. Live interpreter instances are no longer accepted at call time. The factory option is keyword-only, and `interpreter_factory` is reserved for runtime configuration rather than signature inputs.
 
 **`dspy.SandboxSerializable`**
-The base class for inputs that need custom loading. Implement `sandbox_setup`, `to_sandbox`, `sandbox_assignment`, and `rlm_preview`. It also defines a Pydantic schema hook, so a subclass can be a typed field in a signature, as in `data: DataFrame = dspy.InputField()`.
+The base class for inputs that need custom loading. Implement `sandbox_setup`, `to_sandbox`, `sandbox_assignment`, and `rlm_preview`; override `sandbox_packages` to let interpreters with dynamic provisioning install packages before setup. Package declarations must be a list of non-empty strings, but provisioning is an optional interpreter capability rather than part of `CodeInterpreter`. `sandbox_setup` is portable across interpreters and must import required dependencies so availability is checked during input injection. The class also defines a Pydantic schema hook, so a subclass can be a typed field in a signature, as in `data: DataFrame = dspy.InputField()`.
+
+`dspy.Image` implements this contract and declares Pillow and OpenCV as sandbox packages. Generated code uses `image.to_pil()` to decode pixels and `dspy.Image(edited_pil_image)` or `dspy.Image(encoded_bytes)` to wrap edits. For example, `crop = dspy.Image(image.to_pil().crop((0, 0, 100, 100)))` can be passed directly to `llm_query(..., images=[crop])` or submitted through an output field annotated as `dspy.Image`. For OpenCV, use `cv2.imencode` and wrap the encoded array's `.tobytes()`; account for OpenCV's BGR channel order when converting PIL/NumPy RGB pixels.
+
+Native Python uses the installed `dspy.Image` class. Pyodide exposes this image-editing interface through a lightweight string-compatible value; it is not the full Pydantic class. With `PythonInterpreter`, Pillow, OpenCV (`cv2`), and NumPy (`np`) are preloaded and imported during image injection. Custom interpreters own their package environment; they can consume the provisioning hint or provide these dependencies independently, and the setup imports verify the result. Wrap host-side PIL images explicitly with `dspy.Image(pil_image)` before passing them to RLM. `to_pil()` never fetches remote URLs: download an image on the host with `dspy.Image.from_url()` before asking sandboxed code to edit its pixels.
 
 ### Inspecting the trajectory
 

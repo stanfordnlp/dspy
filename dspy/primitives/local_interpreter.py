@@ -292,15 +292,6 @@ class LocalInterpreter:
             if self._process is None:
                 self.start()
             deadline = None if self.execution_timeout is None else time.monotonic() + self.execution_timeout
-            self._send(
-                {
-                    "type": "execute",
-                    "code": code,
-                    "variables": variables,
-                    "tools": list(self.tools),
-                    "output_fields": self.output_fields,
-                }
-            )
             timeout_message = (
                 "Python worker did not respond."
                 if self.execution_timeout is None
@@ -308,6 +299,20 @@ class LocalInterpreter:
             )
             process = self._process
             assert process is not None
+            request = {
+                "type": "execute",
+                "code": code,
+                "variables": variables,
+                "tools": list(self.tools),
+                "output_fields": self.output_fields,
+            }
+            # A stopped worker can fill stdin before there is a response to wait
+            # for. The same execution deadline must also cover that write.
+            send = _run_in_thread(lambda: self._send(request, process))
+            try:
+                send.result(None if deadline is None else max(0, deadline - time.monotonic()))
+            except FutureTimeoutError:
+                self._raise_terminal_error(timeout_message)
             tool_calls: list[Future[Any]] = []
             message = self._receive(deadline, timeout_message)
             while message.get("type") == "tool_request":
@@ -354,6 +359,9 @@ class LocalInterpreter:
                 value, stdout = message.get("value"), message.get("stdout")
                 return value if value is not None else (stdout or None)
             self._raise_terminal_error(f"Python worker returned an unknown message: {message!r}")
+        except (KeyboardInterrupt, SystemExit):
+            self.shutdown()
+            raise
         finally:
             self._lock.release()
 

@@ -23,6 +23,25 @@ DSPy disables ambient `deno.json`, lockfile, `package.json`, and local `node_mod
 runner. A `package.json` in the current directory or an ancestor therefore cannot redirect the sandbox's pinned
 Pyodide dependency. No `DENO_NO_PACKAGE_JSON` environment variable is required.
 
+## Pyodide Packages
+
+Use `packages` to preload packages from Pyodide's pinned package index before sandboxed code runs:
+
+```python
+interpreter = dspy.PythonInterpreter(packages=["Pillow"])
+interpreter.execute("from PIL import Image; print(Image.new('RGB', (2, 3)).size)")
+```
+
+DSPy temporarily grants the default runner access to Pyodide's package CDN and Deno package cache during startup,
+then revokes that access before executing submitted Python. Packages must be available in the Pyodide distribution;
+this option is not supported with a custom `deno_command`, whose runner and package lifecycle are caller-owned.
+RLM also calls `preload_packages()` automatically for package requirements declared by `SandboxSerializable` inputs;
+for example, `dspy.Image` declares Pillow and OpenCV. Package declarations can extend an unstarted interpreter, but the package
+set is fixed after its process starts. Configure all packages up front when reusing a caller-owned interpreter across
+inputs with different requirements. A custom interpreter may implement `preload_packages(packages)` if it supports
+dynamic provisioning, or provide dependencies through its environment. `sandbox_setup()` imports them to verify they
+are available before generated code runs. Custom Deno commands must provide their own package management.
+
 ## Execution Instructions
 
 `PythonInterpreter.execution_instructions` describes stable constraints of its Pyodide execution environment. It

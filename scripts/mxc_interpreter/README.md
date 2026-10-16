@@ -23,10 +23,11 @@ RLM / Flex / ProgramOfThought
 ```
 
 `MXCInterpreter` subclasses `LocalInterpreter`, overriding launch and session
-cleanup. The only core change extracts `_spawn_worker()` without changing the
-local backend's behavior. The existing worker source is staged read-only for
+cleanup. The existing worker source is staged read-only for
 each session; its protocol, output capture, callbacks, tool dispatch, deadlines,
-and process-group cleanup are reused. There is no `runner.js`, Node, Pyodide,
+and process-group cleanup are reused. Execution deadlines now also cover blocked
+command writes, rather than starting to protect the caller only while receiving.
+There is no `runner.js`, Node, Pyodide,
 source translation, or second evaluator on this path.
 
 Flex still installs its existing shared DSPy facade: generated classes run as
@@ -34,6 +35,33 @@ ordinary Python, while predictors and sub-agents call the host. This does not
 make every DSPy API available in the guest. Provider credentials stay on the
 host; direct guest networking is disabled. Tools are explicitly granted host
 capabilities, not operations confined by MXC.
+
+## Image stack
+
+This integration stacks RLM image support on the MXC prototype. Native sessions
+use the installed `dspy.Image` class, not a `DSPyImage` stand-in. Generated code
+uses `dspy.Image(pil_image_or_encoded_bytes)` and `image.to_pil()`. The Deno path
+retains a lightweight representation behind that same editing interface; it does
+not load the full DSPy package or claim full Pydantic-class parity.
+
+Images cross JSON pipes as `{"url": ...}` data. Typed RLM outputs reconstruct
+real host images; nested predictors restore directly Image-annotated inputs.
+Bridged predictor results remain JSON data: wrap an image field with
+`dspy.Image(result.edited)` before further guest-side editing. This is not a
+general native-object serializer or arbitrary nested custom-type restoration.
+Remote URLs are not downloaded by `to_pil()`; download on the host explicitly.
+
+The native suite checks actual class identity, asymmetric Pillow crops/OpenCV
+edits, single/batched vision requests, typed output and recursive RLM images.
+A live Azure GPT-4o task cropped a 120×80 red/blue image to its blue 60×80 right
+half, queried vision and returned the correct typed image and color in four
+REPL iterations (five LM calls), without execution errors. Its first version
+failed because the prompt advertised `DSPyImage.from_pil` after aliasing that
+name to the real class. Removing that conflicting API fixed the same task.
+
+Image imports are lazy: the ordinary no-LM Flex benchmark remains about 53 ms
+on this Linux host, rather than the approximately 663 ms measured with an eager
+DSPy import. Image sessions still pay the real package's import cost once.
 
 ## Run the prototype
 
@@ -46,6 +74,7 @@ dependencies fail rather than falling back to unsandboxed execution.
 mkdir -p /tmp/dspy-mxc-runtime
 curl -fL https://github.com/microsoft/mxc/releases/download/v1.0.0/mxc-release-binaries.zip \
   -o /tmp/dspy-mxc-runtime/release.zip
+echo '0bb483b3592d0f663f2c5a7a2ae17db89cc04b82238684b0a1a9384b0fe828ed  /tmp/dspy-mxc-runtime/release.zip' | sha256sum -c -
 unzip -p /tmp/dspy-mxc-runtime/release.zip x64/lxc-exec > /tmp/dspy-mxc-runtime/lxc-exec
 echo '31b747a6a31b20fabd9e19ec30dfff3acf844c25ae4507a41ccac76e11916b2a  /tmp/dspy-mxc-runtime/lxc-exec' | sha256sum -c -
 chmod 755 /tmp/dspy-mxc-runtime/lxc-exec
@@ -53,6 +82,10 @@ export MXC_EXECUTABLE=/tmp/dspy-mxc-runtime/lxc-exec
 
 # Additional test-only packages; no DSPy dependency changes in this draft.
 uv pip install --python .venv/bin/python cmpnd numpy pillow opencv-python-headless pytest pytest-asyncio
+# Native images need an installed DSPy wheel, not an editable link outside the
+# runtime prefixes. The prototype launcher itself still lives in this checkout.
+uv build --wheel --out-dir /tmp/dspy-mxc-wheels
+uv pip install --python .venv/bin/python --no-deps --reinstall /tmp/dspy-mxc-wheels/*.whl
 .venv/bin/python -m pytest scripts/mxc_interpreter/test_interpreter.py \
   tests/primitives/test_local_interpreter.py tests/primitives/test_interpreter_factory_config.py -q
 .venv/bin/python -m scripts.mxc_interpreter.benchmark
@@ -111,20 +144,33 @@ still rejects macOS and Windows.
 
 ## Evidence and its limits
 
-The opt-in suite has 15 cases covering native Python inheritance, dataclasses,
+The opt-in suite has 20 cases covering native Python inheritance, dataclasses,
 context managers, item access/assignment, NumPy/Pillow/OpenCV, persistent state
 and files, recoverable errors, concurrent/async tools, typed SUBMIT, Flex modules
-and predictors, recursive RLM, ReActV2 delegation, and async RLM. Image checks
-round-trip encoded PNGs and assert asymmetric pixels; they do **not** establish
-typed `dspy.Image` integration through RLM on main. LMs are scripted/DummyLM,
-with cmpnd callbacks enabled. Separate live Azure/GEPA results follow below.
+and predictors, recursive RLM, ReActV2 delegation, async RLM, unexpected worker
+exit, blocked host tools and host interruption. Image checks cover the stacked
+typed image integration above. Test LMs are scripted/DummyLM, with cmpnd callbacks
+enabled; the Azure image task and Azure/GEPA results are separate live checks.
 
 Isolation checks use synthetic secrets, symlinks, native `ctypes` IO, a reachable
 host listener control, concurrent sessions, and detached children. Child cleanup
 has a survival control and an open inode retained after workspace deletion, so
 deletion cannot hide a surviving process. These are functional probes, not an
-adversarial security audit. The suite is outside `tests/` and must be explicitly
-invoked; ordinary repository CI does not provision or test MXC yet.
+adversarial security audit. The suite is outside `tests/`. The added
+`.github/workflows/mxc.yml` provisions the checksum-pinned official executor and
+distro bubblewrap, then tests an installed DSPy wheel outside the checkout on
+Ubuntu 22.04/Python 3.11. Its wheel-install/test portion also passed locally in a
+clean uv-managed Python 3.12 environment (52 tests including LocalInterpreter).
+This local run is not evidence of a completed GitHub Actions run.
+
+Two earlier clean Python 3.11 installations, including a fully offline replay
+of 69 hash-pinned wheels, validated the **OS + pip** installation route. The
+Python 3.12 run additionally exposed a dangling uv runtime-alias path; the launcher
+now mounts that alias read-only without exposing its parent cache. There is
+still no published, supported MXC Python runtime wheel or pip-only installation.
+The CI job pins MXC and its test payloads, but resolves DSPy's transitive Python
+dependencies and current distro packages: it is a compatibility check, not a
+bit-for-bit reproducible build or immutable OS image.
 
 Cached-runtime medians on Linux 6.1, Python 3.11.6, bwrap 0.8.0, MXC 1.0.0:
 
@@ -210,7 +256,8 @@ These are proposed follow-up stages, not capabilities delivered by this draft.
   messages, validate tool requests before dispatch, and cap outstanding host
   tool calls at 32. Observe completed futures and propagate cancellation without
   blocking on a full response queue. These bounds do not provide guest disk or
-  aggregate resource quotas, and host writes still need backpressure testing.
+  aggregate resource quotas. A SIGSTOP/full-input-pipe regression now verifies
+  that blocked command writes respect the execution deadline too.
 - [ ] Test startup failure races. MXC's own 1-second timer orphaned bwrap during
   a separate slow-start probe with thousands of path masks. This prototype sets
   that timer to zero and uses DSPy's startup/execution deadlines and process-group
@@ -266,7 +313,7 @@ integration and its remaining checks are implemented. Windows remains untested.
   dependency failures and read-only packages. Keep `SandboxSerializable`'s
   Pyodide-specific setup on the existing `PythonInterpreter` path; it is not a
   universal native package installer. Define native data transfer independently.
-- [ ] Integrate the RLM image work using native Pillow/OpenCV plus explicit
+- [x] Integrate the RLM image work using native Pillow/OpenCV plus explicit
   serialization across the host boundary. Test image inputs, outputs, tools,
   transforms and nested RLM; do not infer typed image support from import success.
 - [x] Run three seeded Azure-backed Flex/GEPA optimizations and replay failures
@@ -289,4 +336,5 @@ integration and its remaining checks are implemented. Windows remains untested.
   differences, saved-program compatibility, rollback and deprecation policy.
 - [ ] Flip only after installation, isolation, platform and real-workload gates
   pass. This draft intentionally does not commit to a release date or change
-  `runner.js`, `SandboxSerializable`, LM adapters, or DSPy's default today.
+  DSPy's default today. The stacked image work changes the existing Pyodide
+  package-preload path too; the MXC launcher does not use that JavaScript runner.
