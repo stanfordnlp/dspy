@@ -1594,13 +1594,14 @@ def test_json_adapter_native_reasoning(_supports_reasoning):
             ],
             model="anthropic/claude-3-7-sonnet-20250219",
         )
-        modified_signature = adapter._call_preprocess(
+        plan = adapter._plan(
             dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
             {},
             MySignature,
+            [],
             {"question": "What is the capital of France?"},
         )
-        assert "reasoning" not in modified_signature.output_fields
+        assert "reasoning" not in plan.render_signature.output_fields
 
         result = adapter(
             dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),

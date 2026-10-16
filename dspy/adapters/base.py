@@ -1,5 +1,7 @@
 import json
 import logging
+import textwrap
+from dataclasses import dataclass
 from typing import Any, get_origin
 
 import json_repair
@@ -11,7 +13,7 @@ from dspy.adapters.types import History, Type
 from dspy.adapters.types.citation import Citations
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls
-from dspy.adapters.utils import apply_output_field_defaults, serialize_for_json
+from dspy.adapters.utils import apply_output_field_defaults, get_field_description_string, serialize_for_json
 from dspy.clients._deprecation import adapter_message_call
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.capabilities import with_capability_planning
@@ -25,6 +27,35 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
 _TOOL_CALL_RESULTS_SIGNATURE = Signature({"tool_call_results": (ToolCallResults, InputField())})
+
+
+@dataclass(frozen=True)
+class _AdapterPlan:
+    """What one adapter call sends to the LM, and how to map the reply back to the declared signature.
+
+    `Adapter._plan()` makes every decision that depends on the LM before rendering; `format()` renders
+    `render_signature`, `demos`, and `inputs`; `Adapter._parse_outputs()` reads the reply with the same plan.
+    """
+
+    # The caller's signature. Results are keyed by its output fields.
+    signature: type[Signature]
+    # The signature the prompt describes and `parse()` reads. Fields served natively (tools, reasoning,
+    # citations) are removed, and fallback reasoning fields are renamed.
+    render_signature: type[Signature]
+    demos: list[dict[str, Any]]
+    inputs: dict[str, Any]
+    lm_kwargs: dict[str, Any]
+    # The `dspy.ToolCalls` output, filled from provider tool calls whenever the reply has them.
+    tool_calls_field: str | None
+    # Outputs a provider reply can fill through `Type.parse_lm_response()`.
+    native_fields: tuple[str, ...]
+    # Declared output name -> name used in the prompt, for fallback reasoning fields.
+    wire_names: dict[str, str]
+
+
+def _drop_tool_kwargs(lm_kwargs: dict[str, Any]) -> None:
+    for key in ("tools", "tool_choice", "parallel_tool_calls"):
+        lm_kwargs.pop(key, None)
 
 
 class Adapter:
@@ -76,145 +107,139 @@ class Adapter:
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
 
-    def _call_preprocess(
+    def _plan(
         self,
         lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
+        demos: list[dict[str, Any]],
         inputs: dict[str, Any],
-    ) -> type[Signature]:
-        # TODO(adapters-plan): This remains the pre-normalized planning hook. It
-        # mutates `lm_kwargs` and returns only the render signature, which loses
-        # information we will need for plan-driven rendering/parsing. The next
-        # stacked PR should replace this with an explicit `_AdapterPlan` that
-        # records deleted fields, native tools, native output fields, inserted
-        # messages/parts, and LM config patches.
-        original_signature = signature
+    ) -> _AdapterPlan:
+        """Decide what this call sends to the LM and how the reply maps back to `signature`.
+
+        The caller's `lm_kwargs`, `demos`, and `inputs` are not modified.
+        """
+        lm_kwargs = dict(lm_kwargs)
+        render_signature = signature
+        tools_field = self._get_tool_call_input_field_name(signature)
+        tool_calls_field = self._get_tool_call_output_field_name(signature)
+
+        # Native tool calling sends tools through the provider API instead of the prompt.
         if not self.use_native_function_calling:
-            for key in ("tools", "tool_choice", "parallel_tool_calls"):
-                lm_kwargs.pop(key, None)
-        else:
-            tool_call_input_field_name = self._get_tool_call_input_field_name(signature)
-            tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
+            _drop_tool_kwargs(lm_kwargs)
+        elif tool_calls_field and tools_field is None:
+            raise ValueError(
+                f"You provided an output field {tool_calls_field} to receive the tool calls information, "
+                "but did not provide any tools as the input. Please provide a list of tools as the input by adding an "
+                "input field with type `list[dspy.Tool]`."
+            )
+        elif tool_calls_field and lm.supports_function_calling:
+            tools = inputs[tools_field]
+            tools = tools if isinstance(tools, list) else [tools]
+            lm_kwargs["tools"] = [tool.format_as_litellm_function_call() for tool in tools]
+            if self.parallel_tool_calls is not None and lm_kwargs.get("parallel_tool_calls") is None:
+                lm_kwargs["parallel_tool_calls"] = self.parallel_tool_calls
+            render_signature = render_signature.delete(tool_calls_field).delete(tools_field)
+        elif tool_calls_field:
+            _drop_tool_kwargs(lm_kwargs)
+        if lm_kwargs.get("parallel_tool_calls") is not None:
+            lm_kwargs.setdefault("tool_choice", "auto")
 
-            if tool_call_output_field_name and tool_call_input_field_name is None:
-                raise ValueError(
-                    f"You provided an output field {tool_call_output_field_name} to receive the tool calls information, "
-                    "but did not provide any tools as the input. Please provide a list of tools as the input by adding an "
-                    "input field with type `list[dspy.Tool]`."
-                )
+        # TODO(adapter-types): Built-in native response planning (reasoning, citations) should move out of
+        # `Type.adapt_to_native_lm_feature()`, which edits the signature and `lm_kwargs` it is given, into this plan.
+        for name, field in render_signature.output_fields.items():
+            if self._is_native_response_type(field.annotation):
+                render_signature = field.annotation.adapt_to_native_lm_feature(render_signature, name, lm, lm_kwargs)
 
-            if tool_call_output_field_name and lm.supports_function_calling:
-                tools = inputs[tool_call_input_field_name]
-                tools = tools if isinstance(tools, list) else [tools]
+        # A default CoT/RLM reasoning field that is not served natively is rendered under a fallback name.
+        wire_names = {}
+        for name in render_signature.output_fields:
+            wire_name = Reasoning._fallback_field_name(signature, name)
+            if wire_name != name:
+                wire_names[name] = wire_name
+        if wire_names:
+            render_signature = Signature(
+                {wire_names.get(key, key): field for key, field in render_signature.fields.items()},
+                render_signature.instructions,
+            )
 
-                lm_tools = [tool.format_as_litellm_function_call() for tool in tools]
+            def rename(values):
+                return {wire_names.get(key, key): value for key, value in values.items()}
 
-                lm_kwargs["tools"] = lm_tools
-                if self.parallel_tool_calls is not None and lm_kwargs.get("parallel_tool_calls") is None:
-                    lm_kwargs["parallel_tool_calls"] = self.parallel_tool_calls
+            demos = [rename(demo) for demo in demos]
+            inputs = dict(inputs)
+            for name, field in render_signature.input_fields.items():
+                if field.annotation is History and name in inputs:
+                    history = inputs[name]
+                    inputs[name] = history.model_copy(update={"messages": [rename(m) for m in history.messages]})
 
-                signature = signature.delete(tool_call_output_field_name)
-                signature = signature.delete(tool_call_input_field_name)
-            elif tool_call_output_field_name:
-                for key in ("tools", "tool_choice", "parallel_tool_calls"):
-                    lm_kwargs.pop(key, None)
+        return _AdapterPlan(
+            signature=signature,
+            render_signature=render_signature,
+            demos=demos,
+            inputs=inputs,
+            lm_kwargs=lm_kwargs,
+            tool_calls_field=tool_calls_field,
+            native_fields=tuple(
+                name
+                for name, field in signature.output_fields.items()
+                if self._is_native_response_type(field.annotation)
+                # Reasoning that the prompt asks for is read from the text, not from the provider.
+                and not (field.annotation is Reasoning and wire_names.get(name, name) in render_signature.output_fields)
+            ),
+            wire_names=wire_names,
+        )
 
-        # TODO(adapters-plan): Built-in/native response planning should move out
-        # of `Type.adapt_to_native_lm_feature()` and into adapter-owned planning
-        # renderers. Keep this compatibility hook for this boundary-only PR.
-        # Handle custom types that use native LM features, e.g., reasoning, citations, etc.
-        for name, field in signature.output_fields.items():
-            if (
-                isinstance(field.annotation, type)
-                and field.annotation in self.native_response_types
-                and issubclass(field.annotation, Type)
-            ):
-                signature = field.annotation.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
+    def _is_native_response_type(self, annotation: Any) -> bool:
+        return isinstance(annotation, type) and annotation in self.native_response_types and issubclass(annotation, Type)
 
-        # Only surviving default reasoning fields need the explicit plan fallback.
-        for name in signature.output_fields:
-            fallback_name = Reasoning._fallback_field_name(original_signature, name)
-            if fallback_name != name:
-                signature = signature.with_updated_fields(name, __dspy_reasoning_field=name)
-                signature = Signature(
-                    {fallback_name if key == name else key: field for key, field in signature.fields.items()},
-                    signature.instructions,
-                )
-
-        return signature
-
-    def _call_postprocess(
-        self,
-        processed_signature: type[Signature],
-        original_signature: type[Signature],
-        outputs: list[dict[str, Any] | str],
-        lm: BaseLM,
-        lm_kwargs: dict[str, Any],
-    ) -> list[dict[str, Any]]:
+    def _parse_outputs(self, plan: _AdapterPlan, outputs: list[dict[str, Any] | str]) -> list[dict[str, Any]]:
+        """Parse each LM output with `plan.render_signature` and key the result by `plan.signature`."""
         values = []
-
-        tool_call_output_field_name = self._get_tool_call_output_field_name(original_signature)
-
         for output in outputs:
-            output_logprobs = None
-            tool_calls = None
-            text = output
-
+            text, tool_calls, logprobs = output, None, None
             if isinstance(output, dict):
-                text = output.get("text")
-                output_logprobs = output.get("logprobs")
-                tool_calls = output.get("tool_calls")
+                text, tool_calls, logprobs = output.get("text"), output.get("tool_calls"), output.get("logprobs")
+            use_tool_calls = bool(tool_calls and plan.tool_calls_field)
 
-            if text and not (tool_calls and tool_call_output_field_name):
-                value = self.parse(processed_signature, text)
-            elif tool_calls and tool_call_output_field_name:
+            if text and not use_tool_calls:
+                value = self.parse(plan.render_signature, text)
+            elif use_tool_calls:
+                # Provider tool calls are authoritative; the other outputs are best effort.
                 try:
-                    value = self.parse(processed_signature, text) if text and processed_signature.output_fields else {}
+                    value = self.parse(plan.render_signature, text) if text and plan.render_signature.output_fields else {}
                 except AdapterParseError:
                     value = {}
             else:
                 raise AdapterParseError(
                     adapter_name=type(self).__name__,
-                    signature=original_signature,
+                    signature=plan.signature,
                     lm_response=str(output),
                     message="The LM returned an empty or null response.",
                 )
 
-            for name, field in processed_signature.output_fields.items():
-                if original_name := field.json_schema_extra.get("__dspy_reasoning_field"):
-                    if name in value:
-                        value[original_name] = value.pop(name)
+            for name, wire_name in plan.wire_names.items():
+                if wire_name in value:
+                    value[name] = value.pop(wire_name)
 
-            # Fields removed for native features are absent from the processed parse
-            value = apply_output_field_defaults(original_signature, value)
-            for field_name in original_signature.output_fields:
-                value.setdefault(field_name, None)
+            # Fields removed from the prompt for native features are absent from the parse.
+            value = apply_output_field_defaults(plan.signature, value)
+            for name in plan.signature.output_fields:
+                value.setdefault(name, None)
 
-            if tool_calls and tool_call_output_field_name:
+            if use_tool_calls:
                 tool_calls = [_provider_tool_call_to_tool_call_dict(tool_call) for tool_call in tool_calls]
-                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
+                value[plan.tool_calls_field] = ToolCalls.from_dict_list(tool_calls)
 
-            # TODO(adapter-types): Once `Type.parse_lm_output(context, output)` is
-            # the real normalized hook, this should not call the legacy
-            # provider-shaped `parse_lm_response()` directly.
-            # Parse custom types that does not rely on the `Adapter.parse()` method
-            for name, field in original_signature.output_fields.items():
-                if (
-                    isinstance(field.annotation, type)
-                    and field.annotation in self.native_response_types
-                    and issubclass(field.annotation, Type)
-                    and not (
-                        field.annotation is Reasoning
-                        and Reasoning._fallback_field_name(original_signature, name) in processed_signature.output_fields
-                    )
-                ):
-                    parsed_value = field.annotation.parse_lm_response(output)
-                    if parsed_value is not None:
-                        value[name] = parsed_value
+            # TODO(adapter-types): Once `Type.parse_lm_output(context, output)` is the real normalized hook, this
+            # should not call the legacy provider-shaped `parse_lm_response()` directly.
+            for name in plan.native_fields:
+                parsed_value = plan.signature.output_fields[name].annotation.parse_lm_response(output)
+                if parsed_value is not None:
+                    value[name] = parsed_value
 
-            if output_logprobs:
-                value["logprobs"] = output_logprobs
+            if logprobs:
+                value["logprobs"] = logprobs
 
             values.append(value)
 
@@ -245,18 +270,17 @@ class Adapter:
             List of dictionaries representing parsed LM responses. Each dictionary contains keys matching the
             signature's output field names. For multiple generations (n > 1), returns multiple dictionaries.
         """
-        processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-        messages = self.format(processed_signature, demos, inputs)
-        if lm_kwargs.get("parallel_tool_calls") is not None:
-            lm_kwargs.setdefault("tool_choice", "auto")
+        plan = self._plan(lm, lm_kwargs, signature, demos, inputs)
+        messages = self.format(plan.render_signature, plan.demos, plan.inputs)
         if settings.send_stream and settings.stream_listeners:
             from dspy.streaming.messages import _StreamSignature, sync_send_to_stream
 
-            sync_send_to_stream(settings.send_stream, _StreamSignature(id(settings.caller_predict), processed_signature))
+            stream_signature = _StreamSignature(id(settings.caller_predict), plan.render_signature, plan.wire_names)
+            sync_send_to_stream(settings.send_stream, stream_signature)
         # TODO(3.5): build Request and parse Response directly; remove this marker.
         with adapter_message_call(lm, messages):
-            outputs = lm(messages=messages, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
+            outputs = lm(messages=messages, **plan.lm_kwargs)
+        return self._parse_outputs(plan, outputs)
 
     @with_capability_planning
     async def acall(
@@ -267,18 +291,17 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-        messages = self.format(processed_signature, demos, inputs)
-        if lm_kwargs.get("parallel_tool_calls") is not None:
-            lm_kwargs.setdefault("tool_choice", "auto")
+        plan = self._plan(lm, lm_kwargs, signature, demos, inputs)
+        messages = self.format(plan.render_signature, plan.demos, plan.inputs)
         if settings.send_stream and settings.stream_listeners:
             from dspy.streaming.messages import _StreamSignature
 
-            await settings.send_stream.send(_StreamSignature(id(settings.caller_predict), processed_signature))
+            stream_signature = _StreamSignature(id(settings.caller_predict), plan.render_signature, plan.wire_names)
+            await settings.send_stream.send(stream_signature)
         # TODO(3.5): share the canonical request/response boundary with __call__.
         with adapter_message_call(lm, messages):
-            outputs = await lm.acall(messages=messages, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
+            outputs = await lm.acall(messages=messages, **plan.lm_kwargs)
+        return self._parse_outputs(plan, outputs)
 
     def format(
         self,
@@ -326,20 +349,6 @@ class Adapter:
             A list of multiturn messages as expected by the LM.
         """
         inputs_copy = dict(inputs)
-        fallback_names = {
-            field.json_schema_extra["__dspy_reasoning_field"]: name
-            for name, field in signature.output_fields.items()
-            if "__dspy_reasoning_field" in field.json_schema_extra
-        }
-        if fallback_names:
-            def remap(values):
-                return {fallback_names.get(key, key): value for key, value in values.items()}
-
-            demos = [remap(demo) for demo in demos]
-            for name, field in signature.input_fields.items():
-                if field.annotation is History and name in inputs_copy:
-                    history = inputs_copy[name]
-                    inputs_copy[name] = history.model_copy(update={"messages": [remap(m) for m in history.messages]})
 
         # If the signature and inputs have conversation history, we need to format the conversation history and
         # remove the history field from the signature.
@@ -396,7 +405,10 @@ class Adapter:
         Returns:
             A string that contains the field description for the input fields and the output fields.
         """
-        raise NotImplementedError
+        return (
+            f"Your input fields are:\n{get_field_description_string(signature.input_fields)}\n"
+            f"Your output fields are:\n{get_field_description_string(signature.output_fields)}"
+        )
 
     def format_field_structure(self, signature: type[Signature]) -> str:
         """Format the field structure for the system message.
@@ -422,7 +434,9 @@ class Adapter:
         Returns:
             A string that describes the task.
         """
-        raise NotImplementedError
+        instructions = textwrap.dedent(signature.instructions)
+        objective = ("\n" + " " * 8).join([""] + instructions.splitlines())
+        return f"In adhering to this structure, your objective is: {objective}"
 
     def format_user_message_content(
         self,

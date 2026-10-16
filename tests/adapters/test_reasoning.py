@@ -1,6 +1,7 @@
 import pytest
 
 import dspy
+from tests.adapters.conftest import native_lm
 
 
 def test_reasoning_basic_operations():
@@ -120,10 +121,11 @@ def test_native_reasoning_default_survives_provider_omission():
     adapter = dspy.ChatAdapter()
     # Native reasoning strips the field from the signature the LM formats against; the provider
     # then omits native reasoning entirely.
-    processed = Sig.delete("reasoning")
+    plan = adapter._plan(native_lm(), {}, Sig, [], {"question": "q"})
+    assert "reasoning" not in plan.render_signature.output_fields
     outputs = [{"text": "[[ ## answer ## ]]\n42\n\n[[ ## completed ## ]]"}]
 
-    value = adapter._call_postprocess(processed, Sig, outputs, None, {})[0]
+    value = adapter._parse_outputs(plan, outputs)[0]
 
     assert value["answer"] == "42"
     assert value["reasoning"] == dspy.Reasoning(content="(omitted)")
