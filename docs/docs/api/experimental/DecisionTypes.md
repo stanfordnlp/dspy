@@ -62,6 +62,17 @@ TypeSafe supports DSPy caching, usage tracking, LM callbacks, history, copying,
 and save/load. Generation controls such as temperature and fine-tuning are
 unsupported.
 
+Other decision clients are published as separate packages. For example,
+[`dspy-wity`](https://pypi.org/project/dspy-wity/) answers the same requests
+with the [Wity](https://wity.alphanimble.com) API:
+
+```python
+# pip install dspy-wity; set WITY_API_KEY
+from dspy_wity import Wity
+
+assess.set_lm(Wity())
+```
+
 ## Annotations and evidence
 
 | Output annotation | Generative LM produces | Jev produces | Python result |
