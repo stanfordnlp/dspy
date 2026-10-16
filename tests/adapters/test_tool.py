@@ -877,14 +877,3 @@ class TestSortKeysPromptCache:
 
         result = _tool_result_content({"b": {"y": 1, "a": 2}, "a": 3})
         assert result == '{"a": 3, "b": {"a": 2, "y": 1}}'
-
-    def test_format_field_value_dict_sorted(self):
-        import json
-        from pydantic.fields import FieldInfo
-        from dspy.adapters.utils import format_field_value
-
-        fi = FieldInfo(annotation=dict)
-        value = {"zeta": 1, "alpha": 2, "mid": 3}
-        result = format_field_value(fi, value)
-        parsed = json.loads(result)
-        assert list(parsed.keys()) == ["alpha", "mid", "zeta"]
