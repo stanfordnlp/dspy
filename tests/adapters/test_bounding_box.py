@@ -72,6 +72,34 @@ async def test_boxes_are_structured_outputs_inputs_and_saved_demos(adapter_class
     assert "CUSTOM-TYPE" not in json.dumps(lm.history[-1]["messages"])
 
 
+@pytest.mark.parametrize("left", ["0.27", "true"])
+def test_predict_boxes_from_literal_nested_xml(left, monkeypatch):
+    from tests.clients.test_lm_engine_execution import native_transport, wire
+
+    class Regions(BaseModel):
+        boxes: list[dspy.BoundingBox]
+        label: str
+
+    signature = dspy.Signature({"region": (Regions, dspy.OutputField())})
+    completion = (
+        f"<region><boxes><item><top>0.13</top><bottom>0.81</bottom><left>{left}</left>"
+        "<right>0.64</right></item></boxes><label>0.27</label></region>"
+    )
+    native_transport(monkeypatch, [wire(completion), wire(completion)])
+    lm = dspy.LM("openai/gpt-4o-mini", engine="lm15", cache=False)
+    try:
+        with dspy.context(adapter=dspy.XMLAdapter()):
+            if left == "true":
+                with pytest.raises(dspy.AdapterParseError):
+                    dspy.Predict(signature)(lm=lm)
+            else:
+                result = dspy.Predict(signature)(lm=lm)
+                assert result.region.boxes == [dspy.BoundingBox(**EDGES)]
+                assert result.region.label == "0.27"
+    finally:
+        lm.close()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("mixed", [False, True])

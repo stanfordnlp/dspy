@@ -275,6 +275,7 @@ async def controls(samples, output):
     finally:
         (output / "controls.json").write_text(json.dumps(results, indent=2))
         await lm.aclose()
+    return results
 
 
 async def main(args):
@@ -305,7 +306,8 @@ async def main(args):
     finally:
         await lm.aclose()
     (output / "results.json").write_text(json.dumps(records, indent=2))
-    await controls(samples, output)
+    control_results = await controls(samples, output)
+    control_records = [control_results[name] for name in ("reference_match", "crop_refinement")]
     if args.azure_model:
         lm = dspy.LM(args.azure_model, engine="lm15", api_base=os.environ["AZURE_API_BASE"],
                      api_key=os.environ["AZURE_API_KEY"], cache=False, num_retries=0, max_tokens=16000, temperature=1)
@@ -318,14 +320,15 @@ async def main(args):
     (output / "results.json").write_text(json.dumps(records, indent=2))
     metrics = [m["iou"] for r in records if r["id"].startswith("coco-") for m in r.get("metrics", {}).values()]
     summary = {"calls": len(records), "contract_pass": sum(r["contract_pass"] for r in records),
+               "control_calls": len(control_records), "control_contract_pass": sum(r["contract_pass"] for r in control_records),
                "coco_boxes": len(metrics), "coco_mean_iou": statistics.mean(metrics) if metrics else None,
                "coco_iou_ge_0.5": sum(v >= .5 for v in metrics), "coco_iou_ge_0.75": sum(v >= .75 for v in metrics)}
     (output / "summary.json").write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary), flush=True)
     if os.getenv("CMPND_API_KEY"):
         cmpnd.flush_exporter()
-    if not all(record["contract_pass"] for record in records):
-        raise SystemExit("Integration failures recorded in results.json; inspect them before trusting quality metrics.")
+    if not all(record["contract_pass"] for record in [*records, *control_records]):
+        raise SystemExit("Integration failures recorded in results.json or controls.json; inspect them before trusting quality metrics.")
 
 
 if __name__ == "__main__":
