@@ -276,6 +276,75 @@ async def test_typesafe_image_judgments_preserve_media_and_cached_answers(asynch
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
+async def test_token_scored_judgments_preserve_generated_boxes_and_cache(asynchronous, monkeypatch):
+    import json
+    import math
+
+    import dspy.clients.execution as execution
+    from dspy._vendor.lm15.testing import FakeTransport
+    from tests.clients.test_lm_engine_execution import DualResponse
+
+    class ScoringTransport(FakeTransport):
+        def stream(self, request):
+            self.requests.append(request)
+            payload = json.loads(request.body)
+            if request.url.endswith("/tokenize"):
+                # Boxes must never enter the candidate-scoring protocol.
+                assert "Locate the mug." not in json.dumps(payload["messages"])
+                answer = payload["messages"][-1]["content"]
+                tokens = {"Answer:": [1], "Answer: true": [1, 10], "Answer: false": [1, 11]}[answer]
+                if not payload["continue_final_message"]:
+                    tokens = [*tokens, 99]
+                body = {"tokens": tokens}
+            elif request.url.endswith("/chat/completions"):
+                # Generation deliberately disagrees with the measured yes/no answer.
+                body = {"model": "m", "choices": [{"index": 0, "message": {
+                    "role": "assistant", "content": json.dumps({
+                        "mug": {"top": 0.2, "bottom": 0.6, "left": 0.55, "right": 0.85},
+                        "mug_visible": False,
+                    }),
+                }, "finish_reason": "stop"}]}
+            else:
+                assert request.url.endswith("/completions")
+                scores = {f"token_id:{token}": (-0.1 if token == 10 else -3.0)
+                          for token in payload["logprob_token_ids"]}
+                body = {"model": "m", "choices": [
+                    {"index": i, "logprobs": {"top_logprobs": [scores]}}
+                    for i in range(len(payload["prompt"]))
+                ]}
+            return DualResponse(200, json.dumps(body).encode())
+
+    transport = ScoringTransport()
+    monkeypatch.setattr(execution, "RouterConfig", lambda **kwargs: lm15.RouterConfig(
+        **{**kwargs, "transport": transport},
+    ))
+    lm = dspy.LM("vllm:m", engine="lm15", api_base="http://scoring/v1", api_key="fake", num_retries=0)
+    request = lm15.Request(model=lm.model, messages=(lm15.Message.user("a kitchen"),), config=lm15.Config(
+        response_format=lm15.judgments(mug=lm15.bounding_box("Locate the mug."),
+                                       mug_visible=lm15.yes_no("Is the mug visible?")),
+        probabilities="required",
+    ))
+    try:
+        response = await invoke(lm, asynchronous, request)
+        sent = len(transport.requests)
+        cached = await invoke(lm, asynchronous, request)
+        assert len(transport.requests) == sent
+        for result in (response, cached):
+            assert result.data == {
+                "mug": {"top": 0.2, "bottom": 0.6, "left": 0.55, "right": 0.85}, "mug_visible": True,
+            }
+            assert set(result.probabilities) == {"mug_visible"}
+            # Both paths have the same terminator score; normalize -0.1 versus -3.0.
+            p_true = 1 / (1 + math.exp(-2.9))
+            assert result.probabilities["mug_visible"] == pytest.approx({"true": p_true, "false": 1 - p_true})
+            assert result.method == "candidate_sequence_likelihood"
+        assert lm.history[-1]["usage"] == {}
+    finally:
+        await lm.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("streaming", [False, True])
 async def test_rate_limit_evidence_survives_public_boundary(asynchronous, streaming):
     from dspy.clients.execution import _delay
