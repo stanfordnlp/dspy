@@ -259,3 +259,188 @@ def test_stop_word_spanning_two_text_parts_is_honoured(monkeypatch):
     ))
     lm = dspy.LM("openai/gpt-5", model_type="responses", cache=False)
     assert lm("hello", stop=["STOP"])[0]["text"] == "alpha "
+
+
+def test_gemini_level_class_and_regional_prefixes():
+    from dspy._vendor.lm15.providers.gemini import gemini_level_class
+
+    assert gemini_level_class("gemini-3-flash") is True
+    assert gemini_level_class("gemini-3.5-pro") is True
+    assert gemini_level_class("au.gemini-3.5-flash") is True
+    assert gemini_level_class("eu.gemini-3.5-pro") is True
+    assert gemini_level_class("publishers/google/models/gemini-3.5-flash") is True
+    assert gemini_level_class("publishers/google/models/au.gemini-3.5-pro") is True
+    assert gemini_level_class("gemini-4-pro") is True
+    assert gemini_level_class("gemini-2.5-pro") is False
+    assert gemini_level_class("au.gemini-2.5-flash") is False
+    assert gemini_level_class("au.gemma-3-27b") is False
+
+
+def test_gemini_reasoning_off_and_clamping_for_pro_and_flash():
+    from dspy._vendor.lm15.adaptation import collecting
+    from dspy._vendor.lm15.providers.gemini import GeminiLM
+    from dspy._vendor.lm15.types import Config, Message, Reasoning, Request
+
+    lm = GeminiLM(api_key="fake")
+
+    def _build(model: str, reasoning: Reasoning):
+        req = Request(
+            model=model,
+            messages=(Message.user("hi"),),
+            config=Config(reasoning=reasoning),
+        )
+        with collecting("note") as scope:
+            payload = lm._payload(req)
+        return payload["generationConfig"]["thinkingConfig"], scope.records
+
+    # 1. reasoning="off" on Gemini 3.5 Pro -> thinkingLevel="low", no includeThoughts
+    cfg, adapts = _build("au.gemini-3.5-pro", Reasoning(effort="off"))
+    assert cfg == {"thinkingLevel": "low"}
+    assert len(adapts) == 1 and adapts[0].applied == "low"
+
+    # 2. reasoning="off" on Gemini 3.5 Flash -> thinkingLevel="minimal", no includeThoughts
+    cfg, adapts = _build("au.gemini-3.5-flash", Reasoning(effort="off"))
+    assert cfg == {"thinkingLevel": "minimal"}
+    assert len(adapts) == 1 and adapts[0].applied == "minimal"
+
+    # 3. reasoning="off" on Gemini 2.5 Pro -> thinkingBudget=128 with recorded substitution
+    cfg, adapts_25p = _build("au.gemini-2.5-pro", Reasoning(effort="off"))
+    assert cfg == {"thinkingBudget": 128}
+    assert len(adapts_25p) == 1 and adapts_25p[0].action == "substituted" and adapts_25p[0].applied == 128
+
+    # 4. reasoning="off" on Gemini 2.5 Flash -> thinkingBudget=0
+    cfg, _ = _build("gemini-2.5-flash", Reasoning(effort="off"))
+    assert cfg == {"thinkingBudget": 0}
+
+    # 5. effort="minimal" on Gemini 3.5 Pro clamped to "low" (includeThoughts omitted unless summary requested)
+    cfg, adapts = _build("eu.gemini-3.5-pro", Reasoning(effort="minimal"))
+    assert cfg == {"thinkingLevel": "low"}
+    assert any(a.action == "clamped" and a.applied == "low" for a in adapts)
+
+    cfg_with_summary, _ = _build("eu.gemini-3.5-pro", Reasoning(effort="minimal", summary="auto"))
+    assert cfg_with_summary == {"includeThoughts": True, "thinkingLevel": "low"}
+
+    # 6. effort="medium" clamped to "high" on gemini-3-pro, preserved on gemini-3.1-pro and gemini-3.5-pro
+    cfg_30, adapts_30 = _build("gemini-3-pro", Reasoning(effort="medium"))
+    assert cfg_30 == {"thinkingLevel": "high"}
+    assert any(a.action == "clamped" and a.applied == "high" for a in adapts_30)
+
+    cfg_31, adapts_31 = _build("gemini-3.1-pro", Reasoning(effort="medium"))
+    assert cfg_31 == {"thinkingLevel": "medium"}
+    assert not adapts_31
+
+    cfg_35, adapts_35 = _build("au.gemini-3.5-pro", Reasoning(effort="medium"))
+    assert cfg_35 == {"thinkingLevel": "medium"}
+    assert not adapts_35
+
+
+def test_gemini_streaming_trailing_usage_chunk_preserves_finish_reason():
+    from dspy._vendor.lm15.providers.gemini import GeminiLM
+    from dspy._vendor.lm15.result import coalesce_stream
+    from dspy._vendor.lm15.sse import SSEEvent
+    from dspy._vendor.lm15.types import Message, Request
+
+    lm = GeminiLM(api_key="fake")
+    req = Request(model="gemini-3.5-flash", messages=(Message.user("hi"),))
+
+    chunk1 = SSEEvent(
+        event="message",
+        data=json.dumps({
+            "candidates": [
+                {
+                    "content": {
+                        "role": "model",
+                        "parts": [{"functionCall": {"name": "lookup", "args": {"q": "x"}}}],
+                    },
+                    "finishReason": "STOP",
+                }
+            ]
+        })
+    )
+    chunk2_usage_only = SSEEvent(
+        event="message",
+        data=json.dumps({
+            "candidates": [],
+            "usageMetadata": {
+                "promptTokenCount": 25,
+                "candidatesTokenCount": 12,
+                "thoughtsTokenCount": 40,
+                "cachedContentTokenCount": 10,
+                "totalTokenCount": 77,
+            },
+        })
+    )
+
+    raw_events = [
+        ev
+        for sse in (chunk1, chunk2_usage_only)
+        for ev in lm.parse_stream_events(req, sse)
+    ]
+    coalesced = list(coalesce_stream(iter(raw_events), model="gemini-3.5-flash"))
+    end_events = [e for e in coalesced if e.type == "end"]
+    assert len(end_events) == 1
+    end = end_events[0]
+    assert end.finish_reason == "tool_call"
+    assert end.usage.input_tokens == 25
+    assert end.usage.output_tokens == 12
+    assert end.usage.reasoning_tokens == 40
+    assert end.usage.cache_read_tokens == 10
+    assert end.usage.total_tokens == 77
+
+
+def test_gemini_live_completion_accumulates_reasoning_and_cache_tokens(monkeypatch):
+    from dspy._vendor.lm15.providers.gemini import GeminiLM
+    from dspy._vendor.lm15.types import Message, Request
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+            self.frames = iter([
+                json.dumps({"setupComplete": {}}),
+                json.dumps({
+                    "serverContent": {
+                        "modelTurn": {"parts": [{"text": "Hello"}]},
+                        "turnComplete": False,
+                    },
+                    "usageMetadata": {
+                        "promptTokenCount": 20,
+                        "responseTokenCount": 5,
+                        "thoughtsTokenCount": 14,
+                        "cachedContentTokenCount": 8,
+                        "totalTokenCount": 39,
+                    },
+                }),
+                json.dumps({
+                    "serverContent": {
+                        "modelTurn": {"parts": [{"text": " world"}]},
+                        "turnComplete": True,
+                    },
+                    "usageMetadata": {
+                        "promptTokenCount": 20,
+                        "responseTokenCount": 10,
+                        "thoughtsTokenCount": 18,
+                        "cachedContentTokenCount": 8,
+                        "totalTokenCount": 48,
+                    },
+                }),
+            ])
+
+        def send(self, msg):
+            self.sent.append(msg)
+
+        def recv(self):
+            return next(self.frames)
+
+        def close(self):
+            pass
+
+    lm = GeminiLM(api_key="fake")
+    monkeypatch.setattr(lm, "_live_connect", lambda url: FakeWS())
+    req = Request(model="gemini-2.5-flash-live", messages=(Message.user("hi"),))
+    events = list(lm._stream_via_live_completion(req))
+    end = [e for e in events if e.type == "end"][-1]
+    assert end.usage.input_tokens == 20
+    assert end.usage.output_tokens == 10
+    assert end.usage.reasoning_tokens == 18
+    assert end.usage.cache_read_tokens == 8
+    assert end.usage.total_tokens == 48
