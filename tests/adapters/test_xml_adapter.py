@@ -43,6 +43,16 @@ def test_xml_adapter_parse_multiple_fields():
     assert parsed == {"answer": "Paris", "explanation": "The capital of France is Paris."}
 
 
+def test_xml_adapter_parse_strips_str_value_with_inline_tags():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    completion = "<answer>\nUse <b>bold</b> text.\n\nNext para.\n</answer>"
+    parsed = XMLAdapter().parse(TestSignature, completion)
+    assert parsed == {"answer": "Use <b>bold</b> text.\n\nNext para."}
+
+
 def test_xml_adapter_parse_raises_on_missing_field():
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()
