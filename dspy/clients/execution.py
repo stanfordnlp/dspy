@@ -565,6 +565,17 @@ def _account_failed_call(lm, results, primary):
                         primary.add_note(f"Usage accounting also failed ({type(secondary).__name__}); see usage_errors.")
                 except Exception:
                     pass
+    if settings.cost_tracker:
+        for result in results:
+            try:
+                settings.cost_tracker.add_cost(lm.model, result.cost, result.usage)
+            except Exception as secondary:
+                try:
+                    primary.cost_errors = (*getattr(primary, "cost_errors", ()), secondary)
+                    if hasattr(primary, "add_note"):
+                        primary.add_note(f"Cost accounting also failed ({type(secondary).__name__}); see cost_errors.")
+                except Exception:
+                    pass
 
 
 def _retryable(state, exc, attempt, retries):
@@ -729,6 +740,8 @@ async def aexecute(lm, call):
 def finalize(lm, call, result):
     if not result.cache_hit and settings.usage_tracker:
         settings.usage_tracker.add_usage(lm.model, result.usage)
+    if not result.cache_hit and settings.cost_tracker:
+        settings.cost_tracker.add_cost(lm.model, result.cost, result.usage)
     if not settings.disable_history:
         import datetime
         import uuid
