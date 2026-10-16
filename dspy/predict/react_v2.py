@@ -130,8 +130,6 @@ class ReActV2(Module):
                 "Call tools when more information is needed.",
                 f"When the final answer is ready, call `submit` with {outputs}.",
                 f"The available tools are: {tool_names}.",
-                f"You have a limited number of turns; `{_TURN_BUDGET_FIELD}` shows your current turn and how many "
-                f"remain. After the last turn, you must call `submit` with {outputs}.",
             ]
         ).strip()
 

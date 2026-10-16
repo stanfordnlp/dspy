@@ -400,7 +400,7 @@ async def test_react_v2_shows_current_turn_budget_each_call(use_async):
             pred = react(question="pets", max_iters=2)
 
     assert pred.termination_reason == "forced_submit"
-    assert "`turn_budget` shows your current turn" in lm.history[0]["messages"][0]["content"]
+    assert "how many turns remain before you must submit" in lm.history[0]["messages"][0]["content"]
     expected = [
         "Turn 1 of 2 (1 more after this one).",
         "Turn 2 of 2 (this is your last turn).",
