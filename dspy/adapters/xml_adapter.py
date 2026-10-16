@@ -116,7 +116,9 @@ class XMLAdapter(ChatAdapter):
                     try:
                         fields[name] = parse_value(value, field.annotation)
                     except pydantic.ValidationError:
-                        fields[name] = adapter.validate_python(value, by_name=True)
+                        # XML leaves are text, even for strict numeric model fields.
+                        # Coerce at this format boundary without weakening the model itself.
+                        fields[name] = adapter.validate_python(value, by_name=True, strict=False)
                     break
                 except ValueError as e:
                     error = e
