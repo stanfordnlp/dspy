@@ -362,7 +362,7 @@ def test_react_v2_rejects_reserved_output_field_names(reserved):
         dspy.ReActV2(f"question -> answer, {reserved}: str", tools=[])
 
 
-@pytest.mark.parametrize("reserved", ["history", "tools"])
+@pytest.mark.parametrize("reserved", ["history", "tools", "turn_budget"])
 def test_react_v2_rejects_reserved_input_field_names(reserved):
     with pytest.raises(ValueError, match=reserved):
         dspy.ReActV2(f"{reserved}: str -> answer: str", tools=[])
@@ -426,7 +426,7 @@ def test_react_v2_native_requests_are_prefixes_for_prompt_caching():
     assert "[[ ## turn_budget ## ]]\nTurn 2 of 20" in second[-1]["content"]
 
 
-def test_react_v2_turn_budget_can_be_disabled():
+def test_react_v2_agent_pickled_before_turn_budget_keeps_old_behavior():
     lm = dspy.utils.DummyLM(
         [
             {
@@ -435,29 +435,16 @@ def test_react_v2_turn_budget_can_be_disabled():
             }
         ]
     )
-    react = dspy.ReActV2("question -> answer", tools=[], show_turn_budget=False)
+    react = dspy.ReActV2("question -> answer", tools=[])
+    # An agent pickled before this field existed restores its old inner signature without `__init__`.
+    react.react.signature = react.react.signature.delete("turn_budget")
 
     with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
         pred = react(question="cats")
 
     assert pred.answer == "done"
-    assert "turn_budget" not in react.react.signature.input_fields
-    assert all("turn_budget" not in message["content"] for message in lm.history[0]["messages"])
-
-
-def test_react_v2_unpickled_agent_without_turn_budget_flag_keeps_old_behavior():
-    react = dspy.ReActV2("question -> answer", tools=[], show_turn_budget=False)
-    del react.__dict__["show_turn_budget"]  # as if pickled before the flag existed
-
-    assert react._turn_budget_inputs(0, 20) == {}
-
-
-def test_react_v2_reserves_turn_budget_field_name():
-    with pytest.raises(ValueError, match="turn_budget"):
-        dspy.ReActV2("question, turn_budget -> answer", tools=[])
-
-    react = dspy.ReActV2("question, turn_budget -> answer", tools=[], show_turn_budget=False)
-    assert "turn_budget" in react.react.signature.input_fields
+    assert all("turn_budget" not in message["content"] for message in lm.history[0]["messages"][1:])
+    assert all("turn_budget" not in event for event in pred.history.messages)
 
 
 @pytest.mark.asyncio

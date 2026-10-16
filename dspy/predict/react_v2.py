@@ -22,8 +22,8 @@ _RESERVED_PREDICTION_KEYS = frozenset({"history", "termination_reason"})
 
 # Internal input field names ReActV2 injects into its inner Predict signature. A user
 # input with one of these names would be silently overwritten by `_make_react_signature`
-# and popped out of the caller's kwargs by `forward`/`aforward`, so it must be rejected.
-_RESERVED_INPUT_KEYS = frozenset({"history", "tools"})
+# and replaced or popped out of the caller's kwargs by `forward`/`aforward`, so it must be rejected.
+_RESERVED_INPUT_KEYS = frozenset({"history", "tools", "turn_budget"})
 
 # Per-turn input that tells the model where it is in its turn budget. Each turn's value is
 # stored in that turn's history event, so replay rebuilds the exact request that was sent and
@@ -47,26 +47,14 @@ class ReActV2(Module):
     Args:
         signature: The signature defining the agent's inputs and outputs.
         tools: Functions, callable objects, or ``dspy.Tool`` instances available to the agent.
-        max_iters: Maximum number of tool-calling turns before a final submit attempt.
-        show_turn_budget: Whether to show the model its current turn and how many turns
-            remain on every call, so it can plan around the ``max_iters`` limit.
+        max_iters: Maximum number of tool-calling turns before a final submit attempt. Every call
+            shows the model its current turn and how many remain.
     """
 
-    # Fallback for agents pickled before `show_turn_budget` existed: unpickling skips `__init__`,
-    # and their signature has no `turn_budget` field, so they keep the old behavior.
-    show_turn_budget = False
-
-    def __init__(
-        self,
-        signature: type[Signature],
-        tools: list[Callable | Tool],
-        max_iters: int = 20,
-        show_turn_budget: bool = True,
-    ):
+    def __init__(self, signature: type[Signature], tools: list[Callable | Tool], max_iters: int = 20):
         super().__init__()
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
-        self.show_turn_budget = show_turn_budget
 
         reserved_outputs = _RESERVED_PREDICTION_KEYS.intersection(self.signature.output_fields)
         if reserved_outputs:
@@ -75,18 +63,13 @@ class ReActV2(Module):
                 f"Output field name(s) {names} are reserved by ReActV2 and attached to every "
                 "returned Prediction. Rename these output fields on your signature."
             )
-        if show_turn_budget and _TURN_BUDGET_FIELD in self.signature.fields:
-            raise ValueError(
-                f"Field name `{_TURN_BUDGET_FIELD}` is reserved by ReActV2 when `show_turn_budget=True`. "
-                "Rename this field on your signature or pass `show_turn_budget=False`."
-            )
 
         reserved_inputs = _RESERVED_INPUT_KEYS.intersection(self.signature.input_fields)
         if reserved_inputs:
             names = ", ".join(f"`{name}`" for name in sorted(reserved_inputs))
             raise ValueError(
                 f"Input field name(s) {names} are reserved by ReActV2 for its internal "
-                "conversation history and tool list. Rename these input fields on your signature."
+                "conversation history, tool list, and turn budget. Rename these input fields on your signature."
             )
 
         user_tools = [tool if isinstance(tool, Tool) else Tool(tool) for tool in tools]
@@ -130,30 +113,27 @@ class ReActV2(Module):
 
         fields["history"] = (dspy.History, dspy.InputField())
         fields["tools"] = (list[dspy.Tool], dspy.InputField())
-        if self.show_turn_budget:
-            fields[_TURN_BUDGET_FIELD] = (
-                str,
-                dspy.InputField(desc="Your current turn and how many turns remain before you must submit."),
-            )
+        fields[_TURN_BUDGET_FIELD] = (
+            str,
+            dspy.InputField(desc="Your current turn and how many turns remain before you must submit."),
+        )
         fields["next_thought"] = (dspy.Reasoning, dspy.OutputField())
         fields["tool_calls"] = (dspy.ToolCalls, dspy.OutputField())
 
         inputs = ", ".join(f"`{name}`" for name in self.signature.input_fields)
         outputs = ", ".join(f"`{name}`" for name in self.signature.output_fields)
         tool_names = ", ".join(f"`{name}`" for name in self.tools)
-        instruction_lines = [
-            self.signature.instructions,
-            f"You are an Agent. Use the supplied tools to produce {outputs} from {inputs}.",
-            "Call tools when more information is needed.",
-            f"When the final answer is ready, call `submit` with {outputs}.",
-            f"The available tools are: {tool_names}.",
-        ]
-        if self.show_turn_budget:
-            instruction_lines.append(
+        instructions = "\n".join(
+            [
+                self.signature.instructions,
+                f"You are an Agent. Use the supplied tools to produce {outputs} from {inputs}.",
+                "Call tools when more information is needed.",
+                f"When the final answer is ready, call `submit` with {outputs}.",
+                f"The available tools are: {tool_names}.",
                 f"You have a limited number of turns; `{_TURN_BUDGET_FIELD}` shows your current turn and how many "
-                f"remain. After the last turn, you must call `submit` with {outputs}."
-            )
-        instructions = "\n".join(instruction_lines).strip()
+                f"remain. After the last turn, you must call `submit` with {outputs}.",
+            ]
+        ).strip()
 
         return dspy.Signature(fields, instructions)
 
@@ -241,7 +221,8 @@ class ReActV2(Module):
 
     def _turn_budget_inputs(self, turn_index: int | None, max_iters: int | None) -> dict[str, str]:
         """Build the per-call turn budget input; ``turn_index=None`` marks the forced final submit."""
-        if not self.show_turn_budget:
+        # Agents pickled before this field existed skip `__init__` and keep their old signature.
+        if _TURN_BUDGET_FIELD not in self.react.signature.input_fields:
             return {}
         if turn_index is None:
             return {_TURN_BUDGET_FIELD: _FINAL_TURN_BUDGET}
