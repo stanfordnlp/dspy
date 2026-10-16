@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable, ClassVar, Mapping, Protocol, TypeVar
 
 from ..adaptation import AdaptationPolicy, adapt, check_policy, collecting
-from ..judgments import request_judgments
+from ..judgments import request_measurable_judgments
 from ..errors import (
     ProviderError,
     TransportError as LM15TransportError,
@@ -777,7 +777,7 @@ class AsyncOpenAIChatLM(AsyncBaseProviderLM):
         if not inner._judgments_via_token_scoring(wire_request):
             return await AsyncBaseProviderLM.complete(self, request)
         adaptations = inner._judgment_adaptations(wire_request, policy=self.adaptations)
-        found = request_judgments(request)
+        found = request_measurable_judgments(request)
         plan = await self._build(inner._judgment_plan, wire_request)
 
         async def tokens(req):
