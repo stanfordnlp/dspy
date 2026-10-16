@@ -158,6 +158,12 @@ If the loop reaches `max_iters`, returns no calls, fails to parse, or exceeds th
 
 Unlike ReAct, ReActV2 does not currently truncate old history events on context overflow.
 
+### Turn budget
+
+ReActV2 always tells the model how many turns it has. Every LM call contains a `turn_budget` input that details the current turn and how many turns remain before the model must submit. Its value reads, for example, `Turn 3 of 10 (7 more after this one).`. The count follows the effective `max_iters`, including a per-call override. The forced final call shows ``No turns remain. Call `submit` now with your final outputs.``
+
+Showing an agent its remaining budget follows [Budget-Aware Tool-Use Enables Effective Agent Scaling](https://arxiv.org/abs/2511.17006), where a per-step budget status let ReAct agents keep improving with larger tool budgets at lower cost.
+
 ### Prompt-caching behavior
 
 Structured history makes each completed turn an append-only message group. On the next request, the system instructions and all earlier user/assistant/tool messages remain a stable prefix; only the newest result and request are appended. Providers with prompt caching can therefore reuse more of the prior request instead of reprocessing one ever-growing, newly formatted trajectory value.

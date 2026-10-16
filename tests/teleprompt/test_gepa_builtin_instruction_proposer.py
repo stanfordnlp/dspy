@@ -550,8 +550,9 @@ def test_gepa_truncate_history_outputs_on_a_react_program_and_custom_proposers_s
     assert context.endswith("```")
     assert LONG_TOOL_OUTPUT in context
     assert "characters cut" not in context
-    assert list(example["Inputs"]) == ["Context", "tools"]
+    assert list(example["Inputs"]) == ["Context", "tools", "turn_budget"]
     assert isinstance(example["Inputs"]["tools"], str)
+    assert example["Inputs"]["turn_budget"].startswith("Turn ")
 
 
 def test_explicit_builtin_proposer_with_a_flex_submodule_logs_no_custom_proposer_warning(caplog):
