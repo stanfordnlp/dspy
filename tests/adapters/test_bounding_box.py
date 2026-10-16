@@ -115,6 +115,13 @@ async def test_predict_native_boxes_evidence_images_and_cache(asynchronous, mixe
                     assert response.probabilities["visible"]["true"] == 0.91
                 else:
                     assert response.probabilities is None
+            if mixed:
+                predict.fields["visible"] = {"threshold": 0.95}
+                with pytest.raises(ValueError, match="does not support decision field overrides"):
+                    if asynchronous:
+                        await predict.acall(photo=image, lm=lm)
+                    else:
+                        predict(photo=image, lm=lm)
         assert len(transport.requests) == 1
         request = transport.requests[0]
         payload = json.loads(request.body)
