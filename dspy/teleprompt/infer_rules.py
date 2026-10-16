@@ -28,8 +28,6 @@ class InferRules(BootstrapFewShot):
         super().compile(student, teacher=teacher, trainset=trainset)
 
         original_program = self.student.deepcopy()
-        all_predictors = [p for p in original_program.predictors() if hasattr(p, "signature")]
-        instructions_list = [p.signature.instructions for p in all_predictors]
 
         best_score = -math.inf
         best_program = None
@@ -38,12 +36,8 @@ class InferRules(BootstrapFewShot):
             candidate_program = original_program.deepcopy()
             candidate_predictors = [p for p in candidate_program.predictors() if hasattr(p, "signature")]
 
-            for i, predictor in enumerate(candidate_predictors):
-                predictor.signature.instructions = instructions_list[i]
-
-            for i, predictor in enumerate(candidate_predictors):
+            for predictor in candidate_predictors:
                 rules = self.induce_natural_language_rules(predictor, trainset)
-                predictor.signature.instructions = instructions_list[i]
                 self.update_program_instructions(predictor, rules)
 
             score = self.evaluate_program(candidate_program, valset)
@@ -80,7 +74,7 @@ class InferRules(BootstrapFewShot):
                     ) from e
 
     def update_program_instructions(self, predictor, natural_language_rules):
-        predictor.signature.instructions = (
+        predictor.signature = predictor.signature.with_instructions(
             f"{predictor.signature.instructions}\n\n"
             f"Please adhere to the following rules when making your prediction:\n{natural_language_rules}"
         )
