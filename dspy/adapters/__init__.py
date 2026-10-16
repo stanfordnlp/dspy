@@ -2,7 +2,20 @@ from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.two_step_adapter import TwoStepAdapter
-from dspy.adapters.types import Audio, Code, File, History, Image, Reasoning, Tool, ToolCallResults, ToolCalls, Type
+from dspy.adapters.types import (
+    Audio,
+    BoundingBox,
+    Code,
+    File,
+    History,
+    Image,
+    Reasoning,
+    Tool,
+    ToolCallResults,
+    ToolCalls,
+    Type,
+)
+from dspy.adapters.typesafe_adapter import TypeSafeAdapter
 from dspy.adapters.xml_adapter import XMLAdapter
 
 __all__ = [
@@ -21,4 +34,6 @@ __all__ = [
     "ToolCalls",
     "ToolCallResults",
     "Reasoning",
+    "BoundingBox",
+    "TypeSafeAdapter",
 ]
