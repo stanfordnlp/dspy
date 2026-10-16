@@ -1423,6 +1423,32 @@ class TestRLMWithMCPTools:
         assert result.trajectory[0]["output"].strip() == "(a: int, b: int)"
         assert result.answer == "5"
 
+    @pytest.mark.asyncio
+    async def test_aforward_calls_mcp_tool_without_inputs_from_the_sandbox(self):
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
+        server_params = StdioServerParameters(
+            command=sys.executable,
+            args=[str(Path(__file__).parents[1] / "utils" / "resources" / "mcp_server.py")],
+        )
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await asyncio.wait_for(session.initialize(), timeout=5)
+                tools = [Tool.from_mcp_tool(session, tool) for tool in (await session.list_tools()).tools]
+                current_datetime = next(tool for tool in tools if tool.name == "current_datetime")
+                assert current_datetime.args == {}
+
+                rlm = RLM("query -> answer", max_iters=3, tools=[current_datetime])
+                rlm.generate_action = make_mock_predictor([
+                    {"reasoning": "Inspect", "code": "import inspect\nprint(inspect.signature(current_datetime))"},
+                    {"reasoning": "Call", "code": "SUBMIT(current_datetime())"},
+                ])
+                result = await asyncio.wait_for(rlm.acall(query="now"), timeout=120)
+
+        assert result.trajectory[0]["output"].strip() == "()"
+        assert result.answer == "2025-07-23T09:10:10.0+00:00"
+
 
 class TestRLMTypeCoercionMock:
     """Unit tests for RLM type coercion using MockInterpreter (no Deno required)."""

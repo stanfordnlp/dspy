@@ -613,7 +613,8 @@ class RLM(Module):
         """
         signature = inspect.signature(tool.func)
         variadic = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
-        if not tool.args or not any(param.kind in variadic for param in signature.parameters.values()):
+        # An empty schema (e.g. an MCP tool with no inputs) means the tool takes no arguments.
+        if tool.args is None or not any(param.kind in variadic for param in signature.parameters.values()):
             return signature
 
         required, optional = [], []
