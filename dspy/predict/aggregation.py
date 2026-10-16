@@ -6,6 +6,27 @@ def default_normalize(s):
     return normalize_text(s) or None
 
 
+def _is_empty_completions(completions) -> bool:
+    """True when there are no completion rows to vote on.
+
+    Empty Completions({}) should be rejected, but Completions.__len__ currently
+    calls next() on an empty values iterator and raises StopIteration. Completions
+    with declared fields but zero rows, such as Completions({"answer": []}), must
+    also be treated as empty. Inspect the stored dict instead of truth-testing
+    the object.
+    """
+    stored = getattr(completions, "_completions", None)
+    if isinstance(stored, dict):
+        if not stored:
+            return True
+        first = next(iter(stored.values()), [])
+        return len(first) == 0
+    try:
+        return len(completions) == 0
+    except Exception:
+        return not completions
+
+
 def majority(prediction_or_completions, normalize=default_normalize, field=None):
     """
     Returns the most common completion for the target field (or the last field) in the signature.
@@ -19,8 +40,13 @@ def majority(prediction_or_completions, normalize=default_normalize, field=None)
     # Get the completions
     if isinstance(prediction_or_completions, Prediction):
         completions = prediction_or_completions.completions
+        if completions is None:
+            completions = [prediction_or_completions]
     else:
         completions = prediction_or_completions
+
+    if _is_empty_completions(completions):
+        raise ValueError("majority() requires at least one completion")
 
     try:
         signature = completions.signature
