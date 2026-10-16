@@ -362,9 +362,17 @@ async def test_streaming_handles_space_correctly():
         ["[[ ## answer", " ## ]]", "\nHow ", "are ", "you ", "doing?", "\n\n[[ ## completed ## ]]"],
         ["[[ ## answer ## ]]\n", "How\n", "are you\n", "doing?", "\n\n[[ ## completed ## ]]"],
         ["[[ ## answer ## ]]\n", "How ", "are ", "you ", "doing?\n\n"],
+        # "[[" inside the value is not a field header.
+        ["[[ ## answer ## ]]\n", "```python\nm = ", "[[", "1, 2], ", "[3, 4]]", "\n```", "\n\n[[ ## completed ## ]]"],
+        ["[[ ## answer ## ]]\n", "See ", "also ", "[[", "Matrices", "]].", "\n\n", "[[ ## completed ## ]]"],
+        ["[[ ## answer ## ]]\n", "See also ", "[[Matrices]]\n\n[[ ## comp", "leted ## ]]"],
+        # The end marker is split across chunks.
+        ["[[ ## answer ## ]]\n", "m = [[1, 2]]", "\n\n[", "[ #", "# comp", "leted #", "# ]", "]"],
+        # A trailing "[" with no header after it is part of the value.
+        ["[[ ## answer ## ]]\n", "Use ["],
     ],
 )
-async def test_streaming_strips_boundary_whitespace_regardless_of_chunking(parts):
+async def test_streaming_chunks_join_to_parsed_value_regardless_of_chunking(parts):
     program = dspy.streamify(
         dspy.Predict("question->answer"),
         stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
@@ -385,6 +393,29 @@ async def test_streaming_strips_boundary_whitespace_regardless_of_chunking(parts
                     final = value
 
     assert "".join([chunk.chunk for chunk in all_chunks]) == final.answer
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("last_part", ["\n\n[[ ## comp", "\n\n[[ ## comp\n", "\n\n[[\n"])
+async def test_streaming_drops_unfinished_field_header_at_end_of_stream(last_part):
+    program = dspy.streamify(
+        dspy.Predict("question->answer"),
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+    )
+
+    async def stream(*args, **kwargs):
+        for part in ["[[ ## answer ## ]]\n", "abc", last_part]:
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=part))])
+
+    with mock.patch("litellm.acompletion", side_effect=stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.ChatAdapter()):
+            chunks = [
+                value.chunk
+                async for value in program(question="What is the capital of France?")
+                if isinstance(value, dspy.streaming.StreamResponse)
+            ]
+
+    assert "".join(chunks) == "abc"
 
 
 @pytest.mark.llm_call
