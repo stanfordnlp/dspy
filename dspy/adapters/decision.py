@@ -50,6 +50,14 @@ def evidence_type(kind):
 
 def resolve_adapter(lm, adapter, signature, fields, declared_signature=None):
     """Resolve backend translation before a chat adapter starts capability planning."""
+    from dspy.adapters.typesafe_adapter import TypeSafeAdapter
+
+    # Explicit native schema translation includes boxes, which are not decision
+    # values and must not be routed through DecisionState.
+    if isinstance(adapter, TypeSafeAdapter):
+        if fields:
+            raise ValueError("TypeSafeAdapter does not support decision field overrides.")
+        return adapter
     system_one = getattr(lm, "supports_decision_requests", False) is True
     state = DecisionState(signature, fields, system_one=system_one, declared_signature=declared_signature)
     for name, field in signature.output_fields.items():

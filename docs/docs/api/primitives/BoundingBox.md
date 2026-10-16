@@ -77,8 +77,8 @@ Valid geometry and high confidence are not guarantees of localization accuracy.
 
 ## Generative providers and reusable geometry
 
-Use the same type with `JSONAdapter`, `ChatAdapter`, or `XMLAdapter` on a
-generative LM. Nested models, `list[BoundingBox]`, and optional boxes work with
+Use the same type with `JSONAdapter`, `ChatAdapter`, `XMLAdapter`, or
+`TwoStepAdapter` on a generative LM. Nested models, `list[BoundingBox]`, and optional boxes work with
 those adapters, subject to the provider's structured-output support. They do
 not become native TypeSafe detection lists. Generated coordinates pass the
 same runtime validation; they have no measured TypeSafe confidence.
