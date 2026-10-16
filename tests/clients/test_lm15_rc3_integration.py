@@ -219,7 +219,8 @@ async def test_judgment_response_preserves_json_prediction_and_typed_value(async
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
-async def test_typesafe_image_judgments_preserve_media_and_cached_answers(asynchronous, monkeypatch, tmp_path):
+@pytest.mark.parametrize("with_box", [False, True])
+async def test_typesafe_image_judgments_preserve_media_and_cached_answers(asynchronous, with_box, monkeypatch, tmp_path):
     import json
 
     import dspy.clients.execution as execution
@@ -228,18 +229,25 @@ async def test_typesafe_image_judgments_preserve_media_and_cached_answers(asynch
 
     path = tmp_path / "first.png"
     path.write_bytes(b"\x89PNG\r\n\x1a\n")
+    answers = {"same": {"type": "noul", "noul": 0.2}}
+    fields = {"same": lm15.yes_no("Are they the same?")}
+    box = {"top": 0.15, "bottom": 0.8, "left": 0.32, "right": 1}
+    if with_box:
+        fields["mug"] = lm15.bounding_box("Locate the mug.")
+        answers["mug"] = {"type": "box", "box": box, "confidence": 0.91}
     transport = FakeTransport([DualResponse(200, json.dumps({
-        "model": "jev-1.13.0", "answers": {"same": {"type": "noul", "noul": 0.2}},
+        "model": "jev-1.14.0" if with_box else "jev-1.13.0", "answers": answers,
         "usage": {"input_tokens": 42, "output_tokens": 3},
     }).encode())])
     monkeypatch.setattr(execution, "RouterConfig", lambda **kwargs: lm15.RouterConfig(
         **{**kwargs, "transport": transport},
     ))
-    lm = dspy.LM("typesafe:jev-latest", engine="lm15", api_key="fake", num_retries=0)
+    model = "typesafe:jev-preview" if with_box else "typesafe:jev-latest"
+    lm = dspy.LM(model, engine="lm15", api_key="fake", num_retries=0)
     request = lm15.Request(model=lm.model, messages=(lm15.Message.user([
         "Compare these pictures.", lm15.ImagePart(path=path), lm15.data({"label": "second"}),
         lm15.ImagePart(data="/9j/4AAQ", media_type="image/jpeg"),
-    ]),), config=lm15.Config(response_format=lm15.judgments(same=lm15.yes_no("Are they the same?"))))
+    ]),), config=lm15.Config(response_format=lm15.judgments(**fields), probabilities="required"))
     try:
         response = await invoke(lm, asynchronous, request)
         cached = await invoke(lm, asynchronous, request)
@@ -252,11 +260,15 @@ async def test_typesafe_image_judgments_preserve_media_and_cached_answers(asynch
             "<lm15-image-2>": {"type": "image", "format": "jpg", "data_base64": "/9j/4AAQ"},
         }
         assert dict(sent.headers)["TypeSafe-Danger-Zone-Images"] == "true"
+        if with_box:
+            assert wire["questions"]["mug"] == {"type": "box", "instructions": "Locate the mug."}
         for result in (response, cached):
             assert isinstance(result.message.parts[0], lm15.DataPart)
-            assert result.data == {"same": False}
+            assert result.data == ({"same": False, "mug": box} if with_box else {"same": False})
             assert result.probabilities == {"same": {"true": 0.2, "false": 0.8}}
             assert result.method == "provider_classification"
+            if with_box:
+                assert result.provider_data["typesafe"]["answers"]["mug"]["confidence"] == 0.91
         assert lm.history[-1]["usage"] == {}
     finally:
         await lm.aclose()
