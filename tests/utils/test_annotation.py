@@ -15,12 +15,13 @@ def test_experimental_retains_class_and_property_identity():
 
 
 def test_experimental_annotation_retains_the_input_type():
-    from typing import TypeVar, get_overloads, get_type_hints
+    from typing import get_args, get_type_hints
 
-    direct = get_type_hints(get_overloads(experimental)[0])
+    direct = get_type_hints(experimental)
+    parameter = next(item for item in get_args(direct["f"]) if item is not type(None))
     # A Callable annotation preserves calls but erases classes as usable types.
-    assert isinstance(direct["f"], TypeVar)
-    assert direct["return"] is direct["f"]
+    assert getattr(parameter, "__bound__", None) is not None
+    assert parameter in get_args(direct["return"])
 
 
 def test_experimental_decorator_on_function():
