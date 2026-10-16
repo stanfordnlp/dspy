@@ -31,7 +31,7 @@ from ..errors import ProviderError, ServerError, UnsupportedFeatureError
 from ..access import OPENAI_CHAT_API
 from ..features import ProviderManifest
 from ._managed import operation
-from ..judgments import Judgment, judgments_in_schema, non_judgment_properties, normalize_logprobs, note_unmeasurable_probabilities, replace_text_with_data, request_judgments
+from ..judgments import Judgment, judgments_in_schema, non_judgment_properties, normalize_logprobs, note_unmeasurable_probabilities, replace_text_with_data, request_measurable_judgments
 from ..sse import SSEEvent
 from ..transports import TransportRequest
 from ..types import (
@@ -1769,7 +1769,7 @@ class OpenAIChatLM(BaseProviderLM):
     def _judgment_plan(self, request: Request) -> "list[dict[str, Any]]":
         """One entry per judgment: the tokenize requests it needs.  Pure."""
         plan = []
-        for name, j in request_judgments(request).items():
+        for name, j in request_measurable_judgments(request).items():
             plan.append({
                 "judgment": j,
                 "prefill": self._judgment_tokenize_request(request.model, self._judgment_messages(request, j, self._JUDGMENT_PREFILL), continue_final=True),
@@ -1837,7 +1837,7 @@ class OpenAIChatLM(BaseProviderLM):
 
     def _judgments_via_token_scoring(self, request: Request) -> bool:
         return (self._scores_named_tokens(request.model) and request.config.probabilities in ("if_available", "required")
-                and bool(request_judgments(request)))
+                and bool(request_measurable_judgments(request)))
 
     def _validate_judgment_scoring(self, request: Request) -> None:
         """Harmful omissions are refusals, not silent scoring adaptations."""
@@ -1875,7 +1875,7 @@ class OpenAIChatLM(BaseProviderLM):
 
     @staticmethod
     def _judgment_mixed(request: Request) -> bool:
-        return bool(non_judgment_properties(request.config.response_format["schema"], request_judgments(request)))
+        return bool(non_judgment_properties(request.config.response_format["schema"], request_measurable_judgments(request)))
 
     @staticmethod
     def _judgment_generated_request(request: Request) -> Request:
@@ -1929,7 +1929,7 @@ class OpenAIChatLM(BaseProviderLM):
         if not self._judgments_via_token_scoring(wire_request):
             return BaseProviderLM.complete(self, request)
         adaptations = self._judgment_adaptations(wire_request)
-        found = request_judgments(request)
+        found = request_measurable_judgments(request)
         plan = self._judgment_plan(wire_request)
         tokenized: list[tuple["Judgment", dict[str, tuple[int, ...]], list[int]]] = []
         calls = 0
@@ -2031,7 +2031,7 @@ class OpenAIChatLM(BaseProviderLM):
             if not isinstance(value, dict):
                 raise ValueError("generated judgment answer needs a JSON object")
             schema = request.config.response_format["schema"]
-            measured_fields = request_judgments(request)
+            measured_fields = request_measurable_judgments(request)
             for name in schema.get("required", ()):
                 if (unmeasured or name not in measured_fields) and name not in value:
                     raise ValueError(f"generated answer is missing required property {name!r}")
