@@ -1,0 +1,22 @@
+name: Verify DSPy ordered MCP content prototype
+
+on:
+  push:
+    branches:
+      - verification/dspy-mcp-content-10639
+
+permissions:
+  contents: read
+
+jobs:
+  focused-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+      - run: uv sync --no-dev --extra mcp
+      - run: uv pip install pytest
+      - run: uv run --no-sync python -m pytest -q tests/utils/test_mcp_ordered_content.py tests/utils/test_mcp.py
