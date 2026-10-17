@@ -566,3 +566,20 @@ def test_from_path_missing_file():
 def test_unidentifiable_bytes_raise_value_error():
     with pytest.raises(ValueError, match="could not be identified as an image"):
         dspy.Image(b"not an image")
+
+
+def test_mpo_image_is_encoded_as_jpeg():
+    # JPEGs with extra MPF pictures open in Pillow as MPO, which has no standard MIME type.
+    buffer = BytesIO()
+    PILImage.new("RGB", (8, 8), color="red").save(
+        buffer, format="MPO", save_all=True, append_images=[PILImage.new("RGB", (4, 4), color="blue")]
+    )
+    mpo_bytes = buffer.getvalue()
+    assert PILImage.open(BytesIO(mpo_bytes)).format == "MPO"
+
+    for source in (mpo_bytes, PILImage.open(BytesIO(mpo_bytes))):
+        image = dspy.Image(source)
+        assert image.url.startswith("data:image/jpeg;base64,")
+        decoded = PILImage.open(BytesIO(base64.b64decode(image.url.split(",", 1)[1])))
+        assert decoded.format == "JPEG"
+        assert decoded.size == (8, 8)

@@ -266,6 +266,10 @@ def _encode_pil_image(image: "PILImage") -> str:
     """Encode a PIL Image object to a base64 data URI."""
     buffered = io.BytesIO()
     file_format = image.format or "PNG"
+    if file_format == "MPO":
+        # Pillow opens JPEGs that carry extra MPF pictures (e.g. iPhone portrait photos) as MPO,
+        # which has no standard MIME type. Their primary picture is a plain JPEG.
+        file_format = "JPEG"
     image.save(buffered, format=file_format)
 
     # Get the correct MIME type using the image format
