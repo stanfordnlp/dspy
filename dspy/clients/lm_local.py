@@ -27,6 +27,18 @@ class LocalProvider(Provider):
 
     @staticmethod
     def launch(lm: "LM", launch_kwargs: dict[str, Any] | None = None):
+        """Launch a local SGLang server for `lm` and point `lm` at it.
+
+        Args:
+            lm: The LM to serve. Its `kwargs` are updated with the server's `api_base` and `api_key`.
+            launch_kwargs: Optional launch settings. Defaults to `lm.launch_kwargs`. Supported keys:
+                - "timeout": Seconds to wait for the server to become ready. Defaults to 1800.
+                - "host": Interface the server binds to. Defaults to "127.0.0.1", so only this machine
+                  can reach the server. Setting it to "0.0.0.0" exposes the server to the whole network;
+                  only do that on a trusted network, ideally together with "api_key".
+                - "api_key": API key the server requires on every request. It is passed to SGLang as
+                  `--api-key` and used by `lm` and the readiness check. Defaults to None (no key).
+        """
         try:
             import sglang  # noqa: F401
         except ImportError:
@@ -55,6 +67,8 @@ class LocalProvider(Provider):
         logger.info(f"We see that CUDA_VISIBLE_DEVICES is {os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')}")
         port = get_free_port()
         timeout = launch_kwargs.get("timeout", 1800)
+        host = launch_kwargs.get("host", "127.0.0.1")
+        api_key = launch_kwargs.get("api_key")
         command = [
             "python",
             "-m",
@@ -64,8 +78,10 @@ class LocalProvider(Provider):
             "--port",
             str(port),
             "--host",
-            "0.0.0.0",
+            host,
         ]
+        if api_key:
+            command += ["--api-key", api_key]
 
         # We will manually stream & capture logs.
         process = subprocess.Popen(
@@ -102,9 +118,9 @@ class LocalProvider(Provider):
         thread.start()
 
         # Wait until the server is ready (or times out)
-        base_url = f"http://localhost:{port}"
+        base_url = f"http://{_client_host(host)}:{port}"
         try:
-            wait_for_server(base_url, timeout=timeout)
+            wait_for_server(base_url, timeout=timeout, api_key=api_key)
         except TimeoutError:
             # If the server doesn't come up, we might want to kill it:
             process.kill()
@@ -121,8 +137,8 @@ class LocalProvider(Provider):
         # Let the user know server is up
         logger.info(f"Server ready on random port {port}! Logs are available via lm.get_logs() method on returned lm.")
 
-        lm.kwargs["api_base"] = f"http://localhost:{port}/v1"
-        lm.kwargs["api_key"] = "local"
+        lm.kwargs["api_base"] = f"{base_url}/v1"
+        lm.kwargs["api_key"] = api_key or "local"
         lm.get_logs = get_logs
         lm.process = process
         lm.thread = thread
@@ -332,20 +348,32 @@ def get_free_port() -> int:
         return s.getsockname()[1]
 
 
-def wait_for_server(base_url: str, timeout: int | None = None) -> None:
+def _client_host(host: str) -> str:
+    """Return the address a client on this machine should use to reach a server bound to `host`."""
+    if host in ("", "0.0.0.0"):
+        return "127.0.0.1"
+    if host == "::":
+        return "[::1]"
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
+
+
+def wait_for_server(base_url: str, timeout: int | None = None, api_key: str | None = None) -> None:
     """
     Wait for the server to be ready by polling the /v1/models endpoint.
 
     Args:
         base_url: The base URL of the server (e.g. http://localhost:1234)
         timeout: Maximum time to wait in seconds. None means wait forever.
+        api_key: API key the server was launched with, if any.
     """
     start_time = time.time()
     while True:
         try:
             response = requests.get(
                 f"{base_url}/v1/models",
-                headers={"Authorization": "Bearer None"},
+                headers={"Authorization": f"Bearer {api_key}"},
             )
             if response.status_code == 200:
                 # A small extra sleep to ensure server is fully up.
