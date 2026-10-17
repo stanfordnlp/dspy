@@ -107,7 +107,7 @@ class ParallelExecutor:
 
     def _execute_parallel(self, function, data):
         results = [_UNSET] * len(data)
-        job_cancelled = "cancelled"
+        job_cancelled = object()
 
         # We resubmit at most once per item.
         start_time_map = {}
@@ -196,7 +196,7 @@ class ParallelExecutor:
                         except Exception:
                             pass
                         else:
-                            if outcome != job_cancelled and results[index] is _UNSET:
+                            if outcome is not job_cancelled and results[index] is _UNSET:
                                 self._process_outcome(results, index, outcome)
 
                             self._report_progress(pbar, results, len(data))
