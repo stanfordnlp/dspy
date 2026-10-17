@@ -195,6 +195,22 @@ class Cache:
         with self._lock:
             self.memory_cache.clear()
 
+    def clear(self, memory: bool = True, disk: bool = True) -> dict:
+        """Clear the cache."""
+        summary = {"memory": 0, "disk": 0}
+        
+        if memory and self.enable_memory_cache:
+            with self._lock:
+                summary["memory"] = len(self.memory_cache)
+                self.memory_cache.clear()
+                
+        if disk and self.enable_disk_cache:
+            with self._lock:
+                summary["disk"] = len(self.disk_cache)
+                self.disk_cache.clear()
+                
+        return summary
+
     def save_memory_cache(self, filepath: str) -> None:
         if not self.enable_memory_cache:
             return
