@@ -113,6 +113,42 @@ def test_bootstrap_effectiveness():
     assert prediction.output == trainset[0].output
 
 
+@pytest.mark.parametrize("score,expected_demos", [(False, 0), (True, 1), (0.0, 0), (0.5, 1)])
+def test_bootstrap_uses_prediction_score_for_acceptance(score, expected_demos):
+    """Judge metrics returning Prediction(score=...) are trusted for acceptance.
+
+    Prediction has no `__bool__`, so a bare truthiness check treated any field-bearing
+    Prediction as success — including `Prediction(score=False)` that SemanticF1 /
+    CompleteAndGrounded return for judged-below-threshold traces (issue #10473).
+    """
+    student = SimpleModule("input -> output")
+    teacher = SimpleModule("input -> output")
+    lm = DummyLM([{"output": "blue"}] * 3)
+    dspy.configure(lm=lm, trace=[], adapter=dspy.ChatAdapter())
+
+    metric = lambda example, prediction, trace=None: dspy.Prediction(score=score)  # noqa: E731
+    bootstrap = BootstrapFewShot(metric=metric, max_bootstrapped_demos=1, max_labeled_demos=0)
+    compiled = bootstrap.compile(student, teacher=teacher, trainset=trainset)
+
+    augmented = [demo for demo in compiled.predictor.demos if demo.get("augmented")]
+    assert len(augmented) == expected_demos
+
+
+def test_bootstrap_prediction_metric_without_score_keeps_truthiness():
+    """A Prediction without a score field falls back to field truthiness (unchanged)."""
+    student = SimpleModule("input -> output")
+    teacher = SimpleModule("input -> output")
+    lm = DummyLM([{"output": "blue"}] * 3)
+    dspy.configure(lm=lm, trace=[], adapter=dspy.ChatAdapter())
+
+    metric = lambda example, prediction, trace=None: dspy.Prediction(output="ok")  # noqa: E731
+    bootstrap = BootstrapFewShot(metric=metric, max_bootstrapped_demos=1, max_labeled_demos=0)
+    compiled = bootstrap.compile(student, teacher=teacher, trainset=trainset)
+
+    augmented = [demo for demo in compiled.predictor.demos if demo.get("augmented")]
+    assert len(augmented) == 1
+
+
 def test_error_handling_during_bootstrap():
     """
     Test to verify error handling during the bootstrapping process
