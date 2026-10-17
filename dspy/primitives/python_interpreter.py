@@ -214,6 +214,15 @@ def _make_jsonable(value: Any) -> Any:
         return value
 
 
+def _reject_comma_paths(option: str, paths: list[PathLike | str]) -> None:
+    for path in paths:
+        if "," in str(path):
+            raise ValueError(
+                f"{option} contains a path with a comma, which Deno cannot represent "
+                f"in comma-separated permission flags: {path!r}"
+            )
+
+
 class PythonInterpreter:
     """Local interpreter for secure Python execution using Deno and Pyodide.
 
@@ -273,6 +282,9 @@ class PythonInterpreter:
 
         self.enable_read_paths = enable_read_paths or []
         self.enable_write_paths = enable_write_paths or []
+        _reject_comma_paths("enable_read_paths", self.enable_read_paths)
+        _reject_comma_paths("enable_write_paths", self.enable_write_paths)
+
         mounts = {}
         for path in [*self.enable_read_paths, *self.enable_write_paths]:
             if path:
