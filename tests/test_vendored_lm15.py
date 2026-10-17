@@ -59,9 +59,16 @@ def test_openai_converters_are_available_without_provider_calls():
 @pytest.mark.parametrize(
     ("model", "expected"),
     [
+        ("gpt-6", True),
         ("gpt-5.5-luna", False),
         ("gpt-5.6-luna", True),
         ("gpt-6-luna", True),
+        ("gpt-5", False),
+        ("gpt-5-mini", False),
+        ("gpt-4o", False),
+        ("gpt-3.5-turbo", False),
+        ("gpt-35-turbo", False),
+        ("gpt-35-turbo-16k", False),
     ],
 )
 def test_openai_cache_options_support_dotted_and_major_only_models(model, expected):
