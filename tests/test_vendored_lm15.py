@@ -1,5 +1,6 @@
 """These checks also run against the installed wheel outside the source tree."""
 
+import json
 import importlib
 import pickle
 import subprocess
@@ -53,6 +54,37 @@ def test_openai_converters_are_available_without_provider_calls():
     assert isinstance(request, Request)
     assert isinstance(response, Response)
     assert response.message.text == "Hi"
+
+
+@pytest.mark.parametrize(
+    ("model", "expected"),
+    [
+        ("gpt-6", True),
+        ("gpt-5.5-luna", False),
+        ("gpt-5.6-luna", True),
+        ("gpt-6-luna", True),
+        ("gpt-5", False),
+        ("gpt-5-mini", False),
+        ("gpt-4o", False),
+        ("gpt-3.5-turbo", False),
+        ("gpt-35-turbo", False),
+        ("gpt-35-turbo-16k", False),
+    ],
+)
+def test_openai_cache_options_support_dotted_and_major_only_models(model, expected):
+    from dspy._vendor.lm15.providers.openai import OpenAILM, openai_model_has_cache_options
+    from dspy._vendor.lm15.types import CacheConfig, Config, Message, Request
+
+    assert openai_model_has_cache_options(model) is expected
+
+    request = Request(
+        model=model,
+        system="rules",
+        messages=(Message.user("question"),),
+        config=Config(cache=CacheConfig(prefix="stable")),
+    )
+    body = json.loads(OpenAILM(api_key="x").build_request(request, stream=False).body)
+    assert body.get("prompt_cache_options") == ({"mode": "explicit"} if expected else None)
 
 
 def test_vendored_lm15_carries_provenance_and_license():
