@@ -53,6 +53,7 @@ def test_convert_mcp_tool_accepts_opt_in_content_mode() -> None:
     converted = convert_mcp_tool(SimpleNamespace(), tool, result_mode="content")
     assert converted.name == "example"
 
+
 @pytest.mark.asyncio
 @pytest.mark.extra
 async def test_content_mode_survives_dspy_tool_acall() -> None:
