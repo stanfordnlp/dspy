@@ -26,7 +26,7 @@ def _field_is_set(obj: Any, snake_name: str, camel_name: str) -> bool:
 
 def _convert_mcp_tool_result(
     call_tool_result: "mcp.types.CallToolResult",
-    result_mode: Literal["text", "structured"] = "text",
+    result_mode: Literal["text", "structured", "content"] = "text",
 ) -> Any:
     from mcp.types import TextContent
 
@@ -45,6 +45,11 @@ def _convert_mcp_tool_result(
     if _get_field(call_tool_result, "is_error", "isError", default=False):
         raise RuntimeError(f"Failed to call a MCP tool: {tool_content}")
 
+    # Explicitly opt in to the original ordered MCP content blocks.
+    # This mode is not a DSPy-native multimodal representation.
+    if result_mode == "content":
+        return list(call_tool_result.content)
+
     if result_mode == "structured" and _field_is_set(call_tool_result, "structured_content", "structuredContent"):
         return _get_field(call_tool_result, "structured_content", "structuredContent")
 
@@ -55,7 +60,7 @@ def convert_mcp_tool(
     session: _MCPToolClient,
     tool: "mcp.types.Tool",
     *,
-    result_mode: Literal["text", "structured"] = "text",
+    result_mode: Literal["text", "structured", "content"] = "text",
 ) -> Tool:
     """Build a DSPy tool from an MCP tool.
 
@@ -68,11 +73,13 @@ def convert_mcp_tool(
         result_mode: ``"text"`` preserves DSPy's existing text/non-text
             conversion. ``"structured"`` returns MCP structured content
             exactly when present, with the existing conversion as fallback.
+            ``"content"`` returns original ordered MCP content blocks; callers must
+            adapt non-text blocks before presenting them to a model.
 
     Returns:
         A dspy Tool object.
     """
-    if result_mode not in ("text", "structured"):
+    if result_mode not in ("text", "structured", "content"):
         raise ValueError(f"Unsupported MCP result mode: {result_mode!r}")
 
     input_schema = _get_field(tool, "input_schema", "inputSchema", default={})
