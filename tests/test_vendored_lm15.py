@@ -1,7 +1,7 @@
 """These checks also run against the installed wheel outside the source tree."""
 
-import json
 import importlib
+import json
 import pickle
 import subprocess
 import sys
