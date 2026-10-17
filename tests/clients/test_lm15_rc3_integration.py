@@ -219,6 +219,51 @@ async def test_judgment_response_preserves_json_prediction_and_typed_value(async
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
+async def test_typesafe_image_judgments_preserve_media_and_cached_answers(asynchronous, monkeypatch, tmp_path):
+    import json
+
+    import dspy.clients.execution as execution
+    from dspy._vendor.lm15.testing import FakeTransport
+    from tests.clients.test_lm_engine_execution import DualResponse
+
+    path = tmp_path / "first.png"
+    path.write_bytes(b"\x89PNG\r\n\x1a\n")
+    transport = FakeTransport([DualResponse(200, json.dumps({
+        "model": "jev-1.13.0", "answers": {"same": {"type": "noul", "noul": 0.2}},
+        "usage": {"input_tokens": 42, "output_tokens": 3},
+    }).encode())])
+    monkeypatch.setattr(execution, "RouterConfig", lambda **kwargs: lm15.RouterConfig(
+        **{**kwargs, "transport": transport},
+    ))
+    lm = dspy.LM("typesafe:jev-latest", engine="lm15", api_key="fake", num_retries=0)
+    request = lm15.Request(model=lm.model, messages=(lm15.Message.user([
+        "Compare these pictures.", lm15.ImagePart(path=path), lm15.data({"label": "second"}),
+        lm15.ImagePart(data="/9j/4AAQ", media_type="image/jpeg"),
+    ]),), config=lm15.Config(response_format=lm15.judgments(same=lm15.yes_no("Are they the same?"))))
+    try:
+        response = await invoke(lm, asynchronous, request)
+        cached = await invoke(lm, asynchronous, request)
+        assert len(transport.requests) == 1
+        sent, = transport.requests
+        wire = json.loads(sent.body)
+        assert wire["state"] == ["Compare these pictures.", "<lm15-image-1>", {"label": "second"}, "<lm15-image-2>"]
+        assert wire["assets"] == {
+            "<lm15-image-1>": {"type": "image", "format": "png", "data_base64": "iVBORw0KGgo="},
+            "<lm15-image-2>": {"type": "image", "format": "jpg", "data_base64": "/9j/4AAQ"},
+        }
+        assert dict(sent.headers)["TypeSafe-Danger-Zone-Images"] == "true"
+        for result in (response, cached):
+            assert isinstance(result.message.parts[0], lm15.DataPart)
+            assert result.data == {"same": False}
+            assert result.probabilities == {"same": {"true": 0.2, "false": 0.8}}
+            assert result.method == "provider_classification"
+        assert lm.history[-1]["usage"] == {}
+    finally:
+        await lm.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("streaming", [False, True])
 async def test_rate_limit_evidence_survives_public_boundary(asynchronous, streaming):
     from dspy.clients.execution import _delay

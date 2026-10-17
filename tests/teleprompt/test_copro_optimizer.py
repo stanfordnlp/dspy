@@ -118,13 +118,13 @@ def test_optimization_and_output_verification():
     lm = DummyLM(
         [
             {"proposed_instruction": "Optimized Prompt", "proposed_prefix_for_output_field": "Optimized Prefix"},
-            {"reasoning": "france", "output": "Paris"},
-            {"reasoning": "france", "output": "Paris"},
-            {"reasoning": "france", "output": "Paris"},
-            {"reasoning": "france", "output": "Paris"},
-            {"reasoning": "france", "output": "Paris"},
-            {"reasoning": "france", "output": "Paris"},
-            {"reasoning": "france", "output": "Paris"},
+            {"plan": "france", "output": "Paris"},
+            {"plan": "france", "output": "Paris"},
+            {"plan": "france", "output": "Paris"},
+            {"plan": "france", "output": "Paris"},
+            {"plan": "france", "output": "Paris"},
+            {"plan": "france", "output": "Paris"},
+            {"plan": "france", "output": "Paris"},
         ]
     )
     dspy.configure(lm=lm)

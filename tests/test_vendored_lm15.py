@@ -22,6 +22,10 @@ def test_public_exports_are_the_vendored_objects():
     assert lm15.__all__[: len(vendored.__all__)] == vendored.__all__
     for name in vendored.__all__:
         assert getattr(lm15, name) is getattr(vendored, name)
+    # Login descriptors must not collide with the provider implementation package.
+    assert lm15.login_providers.meta.id == "meta"
+    assert lm15.login_providers.xai.id == "xai"
+    assert lm15.providers.XaiLM is lm15.XaiLM
     assert set(lm15.__all__) - set(vendored.__all__) == {
         "AnthropicCompat", "ModelSupport", "OpenAIChatCompat", "OpenAIResponsesCompat", "ProviderDefinition",
         "RegisteredProvider", "register_provider", "registered_providers", "unregister_provider",
