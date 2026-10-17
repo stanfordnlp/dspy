@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 from pydantic import ValidationError
 
@@ -549,8 +550,9 @@ def test_gepa_truncate_history_outputs_on_a_react_program_and_custom_proposers_s
     assert context.endswith("```")
     assert LONG_TOOL_OUTPUT in context
     assert "characters cut" not in context
-    assert list(example["Inputs"]) == ["Context", "tools"]
+    assert list(example["Inputs"]) == ["Context", "tools", "turn_budget"]
     assert isinstance(example["Inputs"]["tools"], str)
+    assert example["Inputs"]["turn_budget"].startswith("Turn ")
 
 
 def test_explicit_builtin_proposer_with_a_flex_submodule_logs_no_custom_proposer_warning(caplog):
@@ -643,12 +645,23 @@ def test_examples_reach_adapter_as_structured_values():
             seen.append(inputs["examples_with_feedback"])
             return super().format(signature, demos, inputs)
 
+    class Claim:
+        def __str__(self):
+            return "claim #7"
+
     history = tool_history("short result")
     image = dspy.Image(url="https://example.com/image.png")
     repl = REPLHistory().append(code="print(1)", output="1")
     examples = [
         {
-            "Inputs": {"Context": history, "nested": [{"image": image}], "repl": repl},
+            "Inputs": {
+                "Context": history,
+                "nested": [{"image": image}],
+                "repl": repl,
+                # Values pydantic can't serialize, e.g. a numpy scalar read from a pandas row.
+                "amount": np.int64(1200),
+                "claim": Claim(),
+            },
             "Generated Outputs": {"answer": "cat"},
             "Feedback": "ok",
         }
@@ -660,6 +673,9 @@ def test_examples_reach_adapter_as_structured_values():
     assert seen[0][0]["Inputs"]["repl"] is repl
     content = lm.history[-1]["messages"][-1]["content"]
     assert any(part.get("type") == "image_url" for part in content)
+    text = "".join(part.get("text", "") for part in content)
+    assert '"amount": "1200", "claim": "claim #7"' in text
+    assert '"Feedback": "ok"' in text
 
 
 @pytest.mark.parametrize("builtin", [True, False])

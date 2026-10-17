@@ -160,6 +160,19 @@ def test_example_copy_preserves_input_keys():
     assert Example(base=example)._input_keys == {"question"}
 
 
+def test_example_copy_preserves_fields_when_example_has_no_visible_fields():
+    # An Example whose only contents are `dspy_*` metadata or an input/label split has len() == 0.
+    # Copying it must still carry over its store and input keys.
+    template = Example().with_inputs("question")
+    filled = template.copy(question="q", answer="a")
+    assert filled._input_keys == {"question"}
+    assert filled.inputs().toDict() == {"question": "q"}
+
+    metadata_only = Example(dspy_uuid="u1", dspy_split="train")
+    assert metadata_only.copy().toDict() == {"dspy_uuid": "u1", "dspy_split": "train"}
+    assert Example(base=metadata_only).toDict() == {"dspy_uuid": "u1", "dspy_split": "train"}
+
+
 def test_prediction_copy_does_not_require_input_keys():
     # Example subclasses (e.g. Prediction) don't keep _input_keys; copy() must not crash.
     import dspy

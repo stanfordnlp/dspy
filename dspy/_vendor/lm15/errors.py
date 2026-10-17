@@ -113,6 +113,83 @@ class LockTimeoutError(LM15Error):
         super().__init__(message, **kwargs)
 
 
+# spec/auth.md AUTH-24 (ratified core 2026-09-22): the closed reasons a
+# managed-auth lifecycle operation can fail with.  None is a provider HTTP
+# 401; none is automatically retryable.
+AUTH_OPERATION_REASONS: frozenset[str] = frozenset({
+    "interaction_required", "method_unavailable", "connection_exists",
+    "login_in_progress", "login_required", "connection_changed", "login_denied",
+    "login_expired", "invalid_login_state", "attempt_unavailable", "indeterminate",
+    "storage_unavailable", "unsupported_store_version", "selection_mismatch",
+    "credential_rejected",
+})
+AUTH_OPERATION_STAGES: frozenset[str] = frozenset({
+    "discovery", "reservation", "interaction", "authorization", "polling", "exchange",
+    "persistence", "resolution", "renewal", "verification", "catalog", "dispatch",
+})
+AUTH_OPERATION_RECOVERIES: frozenset[str] = frozenset({
+    "provide_input", "choose_method", "resume_attempt", "inspect_attempt", "restart_login",
+    "select_connection", "repair_storage", "operator_action", "none",
+})
+AUTH_COMMIT_STATES: frozenset[str] = frozenset({"not_committed", "committed", "unknown"})
+
+
+class AuthOperationError(LM15Error):
+    """A managed-auth lifecycle operation failed locally (AUTH-24).
+
+    Root-level, beside :class:`TransportError`: nothing here is a provider
+    HTTP reply, and nothing here is safe to retry blindly.  ``reason`` is
+    one of :data:`AUTH_OPERATION_REASONS`; ``stage`` names where the
+    operation stopped; ``commit_state`` says whether the store changed
+    (``committed``, ``not_committed``, or ``unknown`` after an interrupted
+    write); ``recovery`` is guidance for the caller, never an instruction
+    to retry.  ``provider`` is the route; ``connection_id`` and
+    ``attempt_id`` are safe references, never secrets.
+
+    The message is for people.  Programs match on ``reason``.
+    """
+
+    default_code = "auth_operation"
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        reason: str,
+        stage: str = "resolution",
+        commit_state: str = "not_committed",
+        recovery: str = "none",
+        operation: str | None = None,
+        connection_id: str | None = None,
+        attempt_id: str | None = None,
+        method_id: str | None = None,
+        **kwargs,
+    ) -> None:
+        if reason not in AUTH_OPERATION_REASONS:
+            raise ValueError(f"AuthOperationError: unknown reason {reason!r}")
+        if stage not in AUTH_OPERATION_STAGES:
+            raise ValueError(f"AuthOperationError: unknown stage {stage!r}")
+        if commit_state not in AUTH_COMMIT_STATES:
+            raise ValueError(f"AuthOperationError: unknown commit_state {commit_state!r}")
+        if recovery not in AUTH_OPERATION_RECOVERIES:
+            raise ValueError(f"AuthOperationError: unknown recovery {recovery!r}")
+        self.reason = reason
+        self.stage = stage
+        self.commit_state = commit_state
+        self.recovery = recovery
+        self.operation = operation
+        self.connection_id = connection_id
+        self.attempt_id = attempt_id
+        self.method_id = method_id
+        super().__init__(message, **kwargs)
+
+    def __repr__(self) -> str:
+        return (
+            f"AuthOperationError(reason={self.reason!r}, stage={self.stage!r}, "
+            f"commit_state={self.commit_state!r}, provider={self.provider!r})"
+        )
+
+
 class CollectionLimitError(LM15Error):
     """A local turn collector reached its budget, not a provider failure.
 
@@ -247,7 +324,7 @@ class ProviderError(LM15Error):
             )
             if item
         )
-        base = self.message or self.code
+        base = self.message or self.code or ""
         head, sep, tail = base.partition("\n\n")
         suffix = f" ({context})" if context else ""
         details = diagnostics_text(self.rate_limit_headers, self.retry_after)
@@ -411,6 +488,35 @@ class NotConfiguredError(ConfigurationError):
         super().__init__(message, **kwargs)
 
 
+def named_credential_refusal(provider: str, value: str, *, cloud_door: bool) -> NotConfiguredError:
+    """The refusal of a ``credential=`` value this door cannot use (AUTH-1
+    named credentials, amended 2026-10-10).
+
+    ``credential=`` takes one of the four cloud identity names.  Any other
+    value is almost always an API key put in the wrong argument, so it is
+    never repeated (AUTH-5) and the message says where a key goes.  One of
+    the four names on a door without a cloud chain is safe to repeat.
+    """
+    from .features import NAMED_CREDENTIALS
+
+    names = ", ".join(repr(n) for n in NAMED_CREDENTIALS)
+    if value in NAMED_CREDENTIALS:
+        return NotConfiguredError(
+            f"{provider}: credential={value!r} names a cloud identity, and {provider} is not a cloud door",
+            provider=provider,
+            credential_hint="pass the key as api_key=... (or RouterConfig(api_keys={...})), or use the cloud door of this provider",
+        )
+    if cloud_door:
+        what = f"{provider}: unknown named credential (one of {names})"
+    else:
+        what = f"{provider}: credential= takes the name of a cloud identity ({names}), and {provider} is not a cloud door"
+    return NotConfiguredError(
+        f"{what}; the value given is not shown, because it may be a key",
+        provider=provider,
+        credential_hint="if that value is your API key, pass it as api_key=... (or RouterConfig(api_keys={...}))",
+    )
+
+
 class UnknownModelError(ConfigurationError):
     """The router found no provider for a model string.
 
@@ -520,6 +626,88 @@ def with_credential_hint(error: ProviderError, hint: str) -> ProviderError:
 
 # ─── HTTP status → error class mapping ───────────────────────────────
 
+# MAP-15: the pinned forms of a provider's "no such model" answer that carry no
+# model-specific code and no not-found class (lm15-contract
+# spec/model-not-found.json, carried verbatim; each form has a live receipt).
+MODEL_NOT_FOUND_FORMS: tuple[dict[str, str], ...] = (
+    {"code": "not_found_error", "prefix": "model: "},  # Anthropic, Claude Code
+    {"code": "invalid_request_error", "contains": "The supported API model names are "},  # DeepSeek
+    {"code": "1211"},  # Z.AI: Unknown Model
+    {"code": "1214", "prefix": "modelCode: "},  # Z.AI: the model field is invalid
+    {"code": "400", "suffix": " is not a valid model ID"},  # OpenRouter
+    {"code": "invalid-argument", "prefix": "Model not found: "},  # xAI (2026-09-01)
+    {"code": "validation_error", "contains": "The provided model identifier is invalid"},  # Bedrock Chat
+    {"code": "invalid_request_error", "prefix": "Deployment ", "suffix": " doesn't exist or isn't accessible."},  # Parasail
+)
+
+
+def is_pinned_model_not_found(provider_code: str | None, message: str | None) -> bool:
+    """True when the error is one of the pinned MAP-15 forms: the provider
+    code matches exactly and the message passes every text test the form
+    gives.  Never widened beyond the captured answers."""
+    if not provider_code:
+        return False
+    text = message or ""
+    for form in MODEL_NOT_FOUND_FORMS:
+        if form["code"] != provider_code:
+            continue
+        if "prefix" in form and not text.startswith(form["prefix"]):
+            continue
+        if "contains" in form and form["contains"] not in text:
+            continue
+        if "suffix" in form and not text.endswith(form["suffix"]):
+            continue
+        return True
+    return False
+
+
+# MAP-18: the pinned forms of a provider's "this key is not valid" answer that
+# arrive without HTTP 401 (lm15-contract spec/auth-failed.json, carried
+# verbatim; each form has a live receipt).  A form with "reason" also needs
+# that reason in a Google google.rpc.ErrorInfo detail of the body.
+AUTH_FAILED_FORMS: tuple[dict[str, str], ...] = (
+    {"code": "INVALID_ARGUMENT", "reason": "API_KEY_INVALID"},  # Gemini (2026-10-10)
+    {"code": "invalid-argument", "prefix": "Incorrect API key provided"},  # xAI (2026-10-10)
+)
+
+
+def google_error_reasons(error: object) -> tuple[str, ...]:
+    """The ``reason`` of every ``google.rpc.ErrorInfo`` in a Google error
+    envelope's ``details`` (the inner ``error`` object), in order."""
+    if not isinstance(error, dict) or not isinstance(error.get("details"), list):
+        return ()
+    return tuple(
+        detail["reason"]
+        for detail in error["details"]
+        if isinstance(detail, dict)
+        and str(detail.get("@type", "")).endswith("google.rpc.ErrorInfo")
+        and isinstance(detail.get("reason"), str)
+    )
+
+
+def is_pinned_auth_failure(provider_code: str | None, message: str | None, reasons: tuple[str, ...] = ()) -> bool:
+    """True when the error is one of the pinned MAP-18 forms: the provider
+    code matches exactly, the message passes every text test the form
+    gives, and the form's ``reason``, when it names one, is among
+    ``reasons``.  Never widened beyond the captured answers."""
+    if not provider_code:
+        return False
+    text = message or ""
+    for form in AUTH_FAILED_FORMS:
+        if form["code"] != provider_code:
+            continue
+        if "reason" in form and form["reason"] not in reasons:
+            continue
+        if "prefix" in form and not text.startswith(form["prefix"]):
+            continue
+        if "contains" in form and form["contains"] not in text:
+            continue
+        if "suffix" in form and not text.endswith(form["suffix"]):
+            continue
+        return True
+    return False
+
+
 def map_http_error(
     status: int,
     message: str,
@@ -579,6 +767,7 @@ _CLASS_TO_CODE: dict[type[LM15Error], str] = {
     AmbiguousModelError: "ambiguous_model",
     TransportError: "transport",
     LockTimeoutError: "lock_timeout",
+    AuthOperationError: "auth_operation",
     StreamAssemblyError: "stream_assembly",
     CollectionLimitError: "collection_limit",
     ProviderError: "provider",

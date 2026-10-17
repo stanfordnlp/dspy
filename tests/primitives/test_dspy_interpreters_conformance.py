@@ -2,8 +2,8 @@
 dependency, declared in the ``dev`` dependency group).
 
 RLM installs the sandbox dspy facade into every interpreter it creates. On real backends: an isolated
-one runs bridged sub-agents, one that executes in the host's memory runs RLM without them, and the
-library's own consumer checks pass.
+one runs bridged sub-agents, one that executes in the host's memory hosts the facade without replacing
+the host's ``dspy`` module, and the library's own consumer checks pass.
 """
 
 import pytest
@@ -42,21 +42,21 @@ def test_backends_satisfy_protocol(backend_name):
         interpreter.shutdown()
 
 
-def test_in_process_backend_runs_rlm_without_sub_agents(caplog):
+def test_in_process_backend_runs_rlm_with_sub_agents(caplog):
     seen = []
 
     class Recording:
         def __call__(self, signature=None, **kwargs):
             seen.append(signature.instructions)
-            return Prediction(reasoning="Submit", code='SUBMIT("ok")')
+            return Prediction(reasoning="Submit", code='import dspy\nSUBMIT(dspy.Predict("q -> a")(q="x").a)')
 
     rlm = RLM("query -> answer", max_iters=1, interpreter_factory=InProcessInterpreter)
     rlm.generate_action = Recording()
-    with caplog.at_level("WARNING", logger="dspy.predict.rlm"):
+    with caplog.at_level("WARNING", logger="dspy.predict.rlm"), dspy.context(lm=DummyLM([{"a": "ok"}])):
         assert rlm(query="q").answer == "ok"
 
-    assert "Sub-agents (dspy)" not in seen[0]
-    assert "sub-agents are unavailable on InProcessInterpreter" in caplog.text
+    assert "Sub-agents (dspy)" in seen[0]
+    assert "unavailable" not in caplog.text
 
 
 @pytest.mark.parametrize("backend_name", BACKENDS)
@@ -66,10 +66,9 @@ def test_library_consumer_checks_pass(backend_name):
     dspy_interpreters.check_rlm(backend).raise_for_failures()
 
 
-def test_flex_facade_needs_an_isolated_backend():
-    dspy_interpreters.check_flex_facade(SubprocessInterpreter).raise_for_failures()
-    report = dspy_interpreters.check_flex_facade(InProcessInterpreter)
-    assert not report.passed and "host's memory" in report.results[0].detail
+@pytest.mark.parametrize("backend_name", BACKENDS)
+def test_flex_facade_checks_pass(backend_name):
+    dspy_interpreters.check_flex_facade(getattr(dspy_interpreters, backend_name)).raise_for_failures()
 
 
 def test_isolated_backend_runs_bridged_sub_agents_with_host_tools():

@@ -106,7 +106,7 @@ def test_save_and_load_with_pkl(tmp_path):
     trainset = [dspy.Example(**example).with_inputs("current_date", "target_date") for example in trainset]
 
     dspy.configure(
-        lm=DummyLM([{"date_diff": "1", "reasoning": "n/a"}, {"date_diff": "2", "reasoning": "n/a"}] * 10)
+        lm=DummyLM([{"date_diff": "1", "plan": "n/a"}, {"date_diff": "2", "plan": "n/a"}] * 10)
     )
 
     cot = dspy.ChainOfThought(MySignature)
@@ -400,7 +400,7 @@ def test_module_history():
     with patch("litellm.completion") as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[
-                Choices(message=Message(content="{'reasoning': 'Paris is the capital of France', 'answer': 'Paris'}"))
+                Choices(message=Message(content="{'plan': 'Paris is the capital of France', 'answer': 'Paris'}"))
             ],
             model="openai/gpt-4o-mini",
         )
@@ -419,7 +419,7 @@ def test_module_history():
         # The same history entity is shared across all the ancestor callers to reduce memory usage.
         assert id(program.history[0]) == id(program.cot.history[0])
 
-        assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the capital of France', 'answer': 'Paris'}"]
+        assert program.history[0]["outputs"] == ["{'plan': 'Paris is the capital of France', 'answer': 'Paris'}"]
 
         dspy.configure(disable_history=True)
 
@@ -449,7 +449,7 @@ def test_module_history_with_concurrency():
 
     with patch("litellm.completion") as mock_completion:
         mock_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content="{'reasoning': 'N/A', 'answer': 'Holy crab!'}"))],
+            choices=[Choices(message=Message(content="{'plan': 'N/A', 'answer': 'Holy crab!'}"))],
             model="openai/gpt-4o-mini",
         )
         dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter())
@@ -481,7 +481,7 @@ async def test_module_history_async():
     with patch("litellm.acompletion") as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[
-                Choices(message=Message(content="{'reasoning': 'Paris is the capital of France', 'answer': 'Paris'}"))
+                Choices(message=Message(content="{'plan': 'Paris is the capital of France', 'answer': 'Paris'}"))
             ],
             model="openai/gpt-4o-mini",
         )
@@ -500,7 +500,7 @@ async def test_module_history_async():
         # The same history entity is shared across all the ancestor callers to reduce memory usage.
         assert id(program.history[0]) == id(program.cot.history[0])
 
-        assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the capital of France', 'answer': 'Paris'}"]
+        assert program.history[0]["outputs"] == ["{'plan': 'Paris is the capital of France', 'answer': 'Paris'}"]
 
         with dspy.context(
             disable_history=True, lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()
