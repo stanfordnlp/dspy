@@ -125,7 +125,11 @@ class BaseModule:
         new_instance = self.__class__.__new__(self.__class__)
         # Set attribuetes of the copied instance.
         for attr, value in self.__dict__.items():
-            if isinstance(value, BaseModule):
+            if attr == "callbacks":
+                setattr(new_instance, attr, list(value) if value is not None else [])
+            elif attr == "history":
+                setattr(new_instance, attr, [])
+            elif isinstance(value, BaseModule):
                 setattr(new_instance, attr, value.deepcopy())
             else:
                 try:
