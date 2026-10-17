@@ -156,11 +156,10 @@ class DataLoader(Dataset):
         test_size: int | float | None = None,
         random_state: int | None = None,
     ) -> Mapping[str, list[dspy.Example]]:
-        if random_state is not None:
-            random.seed(random_state)
+        rng = random if random_state is None else random.Random(random_state)
 
         dataset_shuffled = dataset.copy()
-        random.shuffle(dataset_shuffled)
+        rng.shuffle(dataset_shuffled)
 
         if train_size is not None and isinstance(train_size, float) and (0 < train_size < 1):
             train_end = int(len(dataset_shuffled) * train_size)
