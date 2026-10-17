@@ -565,3 +565,66 @@ def test_import_dspy_does_not_build_the_default_cache():
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "False", "`import dspy` built the default cache"
+
+
+# -- New tests for Cache.clear() --
+
+
+def test_clear_memory_only(cache):
+    """Test clearing only the memory cache."""
+    request = {"prompt": "Hello", "model": "openai/gpt-4o-mini"}
+    cache.put(request, "Response")
+    
+    assert len(cache.memory_cache) == 1
+    assert len(cache.disk_cache) == 1
+    
+    summary = cache.clear(memory=True, disk=False)
+    
+    assert summary == {"memory": 1, "disk": 0}
+    assert len(cache.memory_cache) == 0
+    assert len(cache.disk_cache) == 1 
+    
+    # Re-populate memory from disk to verify disk wasn't cleared
+    result = cache.get(request)
+    assert result == "Response"
+    assert len(cache.memory_cache) == 1
+
+
+def test_clear_disk_only(cache):
+    """Test clearing only the disk cache."""
+    request = {"prompt": "Hello", "model": "openai/gpt-4o-mini"}
+    cache.put(request, "Response")
+    
+    assert len(cache.memory_cache) == 1
+    assert len(cache.disk_cache) == 1
+    
+    summary = cache.clear(memory=False, disk=True)
+    
+    assert summary == {"memory": 0, "disk": 1}
+    assert len(cache.memory_cache) == 1
+    assert len(cache.disk_cache) == 0
+
+
+def test_clear_both(cache):
+    """Test clearing both memory and disk caches."""
+    request = {"prompt": "Hello", "model": "openai/gpt-4o-mini"}
+    cache.put(request, "Response")
+    
+    summary = cache.clear(memory=True, disk=True)
+    
+    assert summary == {"memory": 1, "disk": 1}
+    assert len(cache.memory_cache) == 0
+    assert len(cache.disk_cache) == 0
+
+
+def test_clear_disabled_cache(tmp_path):
+    """Test clearing a cache where both memory and disk are disabled."""
+    disabled_cache = Cache(
+        enable_disk_cache=False,
+        enable_memory_cache=False,
+        disk_cache_dir="",
+        disk_size_limit_bytes=0,
+        memory_max_entries=0,
+    )
+    summary = disabled_cache.clear(memory=True, disk=True)
+    assert summary == {"memory": 0, "disk": 0}
