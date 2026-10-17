@@ -136,6 +136,7 @@ def test_example_copy_without():
     without_a = copied.without("a")
     with pytest.raises(AttributeError):
         _ = without_a.a
+    assert copied.without("missing").c == 3
 
 
 def test_example_copy_preserves_input_keys():
