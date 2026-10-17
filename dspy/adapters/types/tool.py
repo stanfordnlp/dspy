@@ -217,7 +217,7 @@ class Tool(Type):
         session: _MCPToolClient,
         tool: "mcp.types.Tool",
         *,
-        result_mode: Literal["text", "structured"] = "text",
+        result_mode: Literal["text", "structured", "content"] = "text",
     ) -> "Tool":
         """
         Build a DSPy tool from an MCP tool and a compatible MCP client.
@@ -228,6 +228,8 @@ class Tool(Type):
             result_mode: ``"text"`` preserves DSPy's existing text/non-text
                 conversion. ``"structured"`` returns MCP structured content
                 exactly when present, with the existing conversion as fallback.
+                ``"content"`` returns ordered MCP content blocks directly;
+                callers must adapt them before passing them to a model.
 
         Returns:
             A Tool object.
