@@ -160,6 +160,17 @@ def test_tool_from_partial_function_uses_remaining_typed_parameters():
     assert tool(record_id=7) == "demo:7:10"
 
 
+def test_tool_from_partial_infers_name_and_description_from_wrapped_function():
+    def lookup(tenant: str, record_id: int) -> str:
+        "Look up one record for a tenant."
+        return f"{tenant}:{record_id}"
+
+    tool = Tool(partial(lookup, "demo"))
+
+    assert tool.name == "lookup"
+    assert tool.desc == "Look up one record for a tenant."
+
+
 def test_tool_from_keyword_partial_preserves_overridable_defaults():
     tool = Tool(partial(dummy_function, y="bound"))
 

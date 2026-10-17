@@ -92,8 +92,9 @@ class Tool(Type):
             if inspect.isfunction(unwrapped_func) or inspect.ismethod(unwrapped_func)
             else unwrapped_func.__call__
         )
-        name = getattr(func, "__name__", type(func).__name__)
-        desc = getattr(func, "__doc__", None) or getattr(annotations_func, "__doc__", "")
+        metadata_func = unwrapped_func if isinstance(func, partial) else func
+        name = getattr(metadata_func, "__name__", type(metadata_func).__name__)
+        desc = getattr(metadata_func, "__doc__", None) or getattr(annotations_func, "__doc__", "")
         args = {}
         arg_types = {}
 
