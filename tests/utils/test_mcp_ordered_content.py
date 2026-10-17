@@ -52,3 +52,25 @@ def test_convert_mcp_tool_accepts_opt_in_content_mode() -> None:
     tool = SimpleNamespace(name="example", description="example", input_schema={})
     converted = convert_mcp_tool(SimpleNamespace(), tool, result_mode="content")
     assert converted.name == "example"
+
+@pytest.mark.asyncio
+@pytest.mark.extra
+async def test_content_mode_survives_dspy_tool_acall() -> None:
+    from types import SimpleNamespace
+
+    from mcp.types import CallToolResult, ImageContent, TextContent
+
+    before = TextContent(type="text", text="before")
+    image = ImageContent(type="image", data="aW1n", mimeType="image/png")
+    after = TextContent(type="text", text="after")
+
+    class MockMCPClient:
+        async def call_tool(self, name, arguments):
+            assert name == "ordered"
+            assert arguments == {}
+            return CallToolResult(content=[before, image, after])
+
+    mcp_tool = SimpleNamespace(name="ordered", description="Test tool", input_schema={})
+    tool = convert_mcp_tool(MockMCPClient(), mcp_tool, result_mode="content")
+
+    assert await tool.acall() == [before, image, after]
