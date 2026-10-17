@@ -17,18 +17,64 @@ old_stdout, old_stderr = sys.stdout, sys.stderr
 buf_stdout, buf_stderr = io.StringIO(), io.StringIO()
 sys.stdout, sys.stderr = buf_stdout, buf_stderr
 
+def _safe_diagnostic_repr(value):
+    try:
+        return repr(value)
+    except BaseException:
+        return "<unrepresentable>"
+
+
 def last_exception_args():
-    return json.dumps(sys.last_exc.args) if sys.last_exc else None
+    # Error diagnostics are best-effort; their formatting must not lose the response.
+    exc = getattr(sys, "last_exc", None)
+    if exc is None:
+        return None
+    try:
+        return json.dumps(exc.args, default=_safe_diagnostic_repr, allow_nan=False)
+    except (TypeError, ValueError, OverflowError, RecursionError):
+        # Covers invalid dict keys and cycles while retaining independent arguments.
+        return json.dumps([_safe_diagnostic_repr(arg) for arg in exc.args])
 
 class _DSPyFinalOutput(BaseException):
     # Control-flow exception to signal completion (like StopIteration)
     pass
+
+def last_final_output():
+    # Final application data must not pass through lossy diagnostic serialization.
+    exc = getattr(sys, "last_exc", None)
+    if not isinstance(exc, _DSPyFinalOutput):
+        raise RuntimeError("No pending final output")
+    if len(exc.args) != 1 or not isinstance(exc.args[0], dict):
+        raise RuntimeError("Invalid final output payload")
+    return json.dumps(exc.args[0], allow_nan=False)
 
 # Default SUBMIT for single-output signatures (e.g., Program of Thought).
 # Only define if not already registered with typed signatures.
 if 'SUBMIT' not in dir():
     def SUBMIT(output):
         raise _DSPyFinalOutput({"output": output})
+
+from pyodide.code import eval_code_async as _dspy_eval_code_async
+
+class _DSPyStepError:
+    # A step's exception, handed back as a value. An exception that propagates out of
+    # runPythonAsync after a JSPI stack switch (a tool call made in the same step) escapes as
+    # an unhandled promise rejection and takes the sandbox down; catching it here keeps the
+    # step's promise settling normally, and the host still reads sys.last_exc for the args.
+    __dspy_step_error__ = True
+    def __init__(self, exc):
+        self.step_type = type(exc).__name__  # not .type: PyProxy already exposes that
+        try:
+            self.step_message = str(exc)
+        except BaseException:
+            self.step_message = f"{self.step_type} (message unavailable)"
+
+async def _dspy_guarded(code):
+    try:
+        return await _dspy_eval_code_async(code, globals())
+    except BaseException as exc:
+        sys.last_exc = exc
+        return _DSPyStepError(exc)
 `;
 
 // Generate a tool wrapper function with typed signature.
@@ -332,47 +378,85 @@ while (true) {
   if (method === "execute") {
     const code = params.code || "";
     let setupCompleted = false;  // Track if PYTHON_SETUP_CODE ran successfully
+    let guardedPythonError = false;
+    const getPythonExceptionArgs = () => {
+      let getArgs;
+      try {
+        getArgs = pyodide.globals.get("last_exception_args");
+        const args = JSON.parse(getArgs());
+        return Array.isArray(args) ? args : [];
+      } catch {
+        return [];
+      } finally {
+        try {
+          getArgs?.destroy?.();
+        } catch {
+          // Diagnostic cleanup must not suppress the original error.
+        }
+      }
+    };
 
     try {
       await pyodide.loadPackagesFromImports(code);
       pyodide.runPython(PYTHON_SETUP_CODE);
       setupCompleted = true;  // Mark setup as complete - old_stdout/old_stderr now exist
 
-      // Run the user's code
-      const result = await pyodide.runPythonAsync(code);
+      // Run the user's code inside the guard (see _dspy_guarded in PYTHON_SETUP_CODE): a
+      // step that raises after a tool call must not reject the promise, so the guard returns
+      // the exception and it is re-thrown here, into the catch below, with the same shape.
+      pyodide.globals.set("_dspy_code", code);
+      const result = await pyodide.runPythonAsync("await _dspy_guarded(_dspy_code)");
+      if (result && result.__dspy_step_error__) {
+        const stepError = { type: result.step_type, message: result.step_message };
+        result.destroy?.();
+        guardedPythonError = true;
+        throw stepError;
+      }
       const capturedStdout = pyodide.runPython("buf_stdout.getvalue()");
 
       // If result is None, output prints; otherwise output the result
       let output = (result === null || result === undefined) ? capturedStdout : (result.toJs?.() ?? result);
       console.log(jsonrpcResult({ output }, requestId));
     } catch (error) {
-      // We have an error => check if it's a SyntaxError or something else
-      // The Python error class name is stored in error.type: https://pyodide.org/en/stable/usage/api/js-api.html#pyodide.ffi.PythonError
-      const errorType = error.type || "Error";
-      // error.message is mostly blank.
-      const errorMessage = (error.message || "").trim();
+      const errorType = error?.type || error?.name || "Error";
+      const errorMessage = (error?.message || "").trim();
+      // The guarded Python path throws a plain JS object; other Pyodide errors
+      // use PythonError. Never read stale sys.last_exc for native JS failures.
+      const isPythonError = setupCompleted &&
+        (guardedPythonError || error instanceof pyodide.ffi.PythonError);
 
-      // Handle SUBMIT's control-flow exception as a success result, not an error
-      if (errorType === "_DSPyFinalOutput") {
-        const last_exception_args = pyodide.globals.get("last_exception_args");
-        const errorArgs = JSON.parse(last_exception_args()) || [];
-        const answer = errorArgs[0] || null;
-        console.log(jsonrpcResult({ final: answer }, requestId));
+      if (isPythonError && errorType === "_DSPyFinalOutput") {
+        let getFinalOutput;
+        try {
+          getFinalOutput = pyodide.globals.get("last_final_output");
+          const answer = JSON.parse(getFinalOutput());
+          if (answer === null || typeof answer !== "object" || Array.isArray(answer)) {
+            throw new TypeError("Invalid final output payload");
+          }
+          console.log(jsonrpcResult({ final: answer }, requestId));
+        } catch {
+          // Never turn a failed SUBMIT into a successful final: null.
+          console.log(jsonrpcError(
+            JSONRPC_APP_ERRORS.TypeError,
+            "SUBMIT output could not be serialized",
+            requestId,
+            { type: "TypeError", args: [] }
+          ));
+        } finally {
+          try {
+            getFinalOutput?.destroy?.();
+          } catch {
+            // Cleanup must not mask the response.
+          }
+        }
         continue;
       }
 
-      // Get error args for other exception types
-      let errorArgs = [];
-      if (errorType !== "SyntaxError") {
-        // Only python exceptions have args.
-        const last_exception_args = pyodide.globals.get("last_exception_args");
-        // Regarding https://pyodide.org/en/stable/usage/type-conversions.html#type-translations-errors,
-        // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
-        errorArgs = JSON.parse(last_exception_args()) || [];
-      }
-
-      // Map error type to JSON-RPC error code
-      const errorCode = JSONRPC_APP_ERRORS[errorType] || JSONRPC_APP_ERRORS.Unknown;
+      const errorArgs = isPythonError ? getPythonExceptionArgs() : [];
+      // Native JavaScript SyntaxError is not a Python parser failure.
+      const errorCode = isPythonError
+        ? (JSONRPC_APP_ERRORS[errorType] ?? JSONRPC_APP_ERRORS.Unknown)
+        : JSONRPC_APP_ERRORS.Unknown;
       console.log(jsonrpcError(errorCode, errorMessage, requestId, { type: errorType, args: errorArgs }));
     } finally {
       // Always restore stdout/stderr if setup completed, even after errors.
