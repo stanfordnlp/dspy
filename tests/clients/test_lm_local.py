@@ -177,3 +177,41 @@ def test_wait_for_server_sends_api_key(mock_get, mock_sleep):
 
     assert mock_get.call_args.args[0] == "http://127.0.0.1:8000/v1/models"
     assert mock_get.call_args.kwargs["headers"] == {"Authorization": "Bearer secret-key"}
+
+
+@patch("dspy.clients.lm_local.threading.Thread")
+@patch("dspy.clients.lm_local.subprocess.Popen")
+@patch("dspy.clients.lm_local.get_free_port")
+@patch("dspy.clients.lm_local.wait_for_server")
+def test_launch_ipv6_wildcard_uses_ipv6_loopback(mock_wait, mock_port, mock_popen, mock_thread):
+    lm, command = _launch_with_mocks(mock_port, mock_popen, launch_kwargs={"host": "::"})
+
+    assert command[command.index("--host") + 1] == "::"
+    assert lm.kwargs["api_base"] == "http://[::1]:8000/v1"
+    assert mock_wait.call_args.args[0] == "http://[::1]:8000"
+
+
+@patch("dspy.clients.lm_local.threading.Thread")
+@patch("dspy.clients.lm_local.subprocess.Popen")
+@patch("dspy.clients.lm_local.get_free_port")
+@patch("dspy.clients.lm_local.wait_for_server")
+def test_launch_brackets_specific_ipv6_host(mock_wait, mock_port, mock_popen, mock_thread):
+    for host, client_host in (("::1", "[::1]"), ("fd00::5", "[fd00::5]")):
+        lm, command = _launch_with_mocks(mock_port, mock_popen, launch_kwargs={"host": host})
+
+        assert command[command.index("--host") + 1] == host
+        assert lm.kwargs["api_base"] == f"http://{client_host}:8000/v1"
+        assert mock_wait.call_args.args[0] == f"http://{client_host}:8000"
+
+
+def test_dump_state_excludes_launch_api_key():
+    import dspy
+
+    lm = dspy.LM("openai/local-model", launch_kwargs={"api_key": "secret-key", "host": "127.0.0.1"})
+
+    state = lm.dump_state()
+
+    assert state["launch_kwargs"] == {"host": "127.0.0.1"}
+    assert "secret-key" not in str(state)
+    # Saving must not change the live launch configuration.
+    assert lm.launch_kwargs == {"api_key": "secret-key", "host": "127.0.0.1"}
