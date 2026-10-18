@@ -134,6 +134,24 @@ def test_unknown_price_and_malformed_metadata_do_not_fail_generation(monkeypatch
     assert estimate_cost(response, provider="openai-chat", requested_model="unknown")[0] is None
 
 
+@pytest.mark.parametrize("served_model", ["model-router", "unlisted-selected-model"])
+def test_azure_router_fee_is_not_an_inference_estimate(monkeypatch, served_model):
+    monkeypatch.setattr(metadata, "_data", {
+        "azure/model-router": {"litellm_provider": "azure", "input_cost_per_token": 1.4e-7,
+                               "output_cost_per_token": 0},
+        "openai/model-router": {"litellm_provider": "openai", "input_cost_per_token": 2e-6,
+                                "output_cost_per_token": 7e-6},
+    })
+    response = answer(served_model, input_tokens=1000, output_tokens=500)
+    for provider, namespaces in (("azure-chat", None), ("declared-azure", ("azure",))):
+        cost, details = estimate_cost(response, provider=provider, requested_model="model-router", namespaces=namespaces)
+        assert cost is None
+        assert details["kind"] == "unknown"
+    # The refusal belongs to the Azure catalog entry, not an arbitrary model name.
+    cost, _ = estimate_cost(response, provider="openai-chat", requested_model="model-router")
+    assert cost == pytest.approx(0.0055)
+
+
 def test_cost_provenance_survives_cache_record():
     from dspy.clients.call_result import CallResult, combine
 
