@@ -8,6 +8,7 @@ import regex
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
+from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
     apply_output_field_defaults,
@@ -18,7 +19,6 @@ from dspy.adapters.utils import (
     translate_field_type,
 )
 from dspy.clients.base_lm import BaseLM
-from dspy.clients.capabilities import with_capability_planning
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError
@@ -68,29 +68,16 @@ class JSONAdapter(ChatAdapter):
             format_ = {"type": "json_object"}
         lm_kwargs["response_format"] = format_
 
-    @with_capability_planning
-    def __call__(
+    def _call_preprocess(
         self,
         lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
-        demos: list[dict[str, Any]],
         inputs: dict[str, Any],
-    ) -> list[dict[str, Any]]:
+    ) -> type[Signature]:
+        signature = super()._call_preprocess(lm, lm_kwargs, signature, inputs)
         self._prepare_response_format(lm, lm_kwargs, signature)
-        return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-
-    @with_capability_planning
-    async def acall(
-        self,
-        lm: BaseLM,
-        lm_kwargs: dict[str, Any],
-        signature: type[Signature],
-        demos: list[dict[str, Any]],
-        inputs: dict[str, Any],
-    ) -> list[dict[str, Any]]:
-        self._prepare_response_format(lm, lm_kwargs, signature)
-        return await super().acall(lm, lm_kwargs, signature, demos, inputs)
+        return signature
 
     def format_field_structure(self, signature: type[Signature]) -> str:
         parts = []
@@ -232,7 +219,8 @@ def _get_structured_outputs_response_format(
 
     fields = {}
     for name, field in signature.output_fields.items():
-        annotation = field.annotation
+        # Reasoning is rendered and parsed as text, not a {content: ...} object.
+        annotation = str if field.annotation is Reasoning else field.annotation
         if use_native_function_calling and annotation == ToolCalls:
             # Skip ToolCalls field if native function calling is enabled.
             continue

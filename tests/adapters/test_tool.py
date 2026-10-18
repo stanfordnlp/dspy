@@ -272,6 +272,42 @@ def test_partial_tool_schema_reaches_native_adapter():
     }
 
 
+def test_tool_defaults_are_json_serializable():
+    import datetime
+    import enum
+    import json
+    from decimal import Decimal
+
+    class Unit(enum.Enum):
+        CELSIUS = "celsius"
+        FAHRENHEIT = "fahrenheit"
+
+    def forecast(
+        city: str,
+        unit: Unit = Unit.CELSIUS,
+        start: datetime.date = datetime.date(2026, 1, 2),
+        price: Decimal = Decimal("1.5"),
+        factor: float = Decimal("0.1"),
+    ) -> str:
+        return city
+
+    tool = Tool(forecast)
+    assert tool.args["unit"]["default"] == "celsius"
+    assert tool.args["start"]["default"] == "2026-01-02"
+    assert tool.args["price"]["default"] == 1.5
+    assert tool.args["factor"]["default"] == 0.1
+    assert tool(city="x", price=tool.args["price"]["default"], factor=tool.args["factor"]["default"]) == "x"
+    json.dumps(tool.format_as_litellm_function_call())
+
+
+def test_tool_defaults_without_json_form_are_kept():
+    def scale(data: bytes = b"\xff") -> str:
+        return "ok"
+
+    tool = Tool(scale)
+    assert tool.args["data"]["default"] == b"\xff"
+
+
 def test_format_as_litellm_function_call_excludes_defaulted_args_from_required():
     # `x` has no default and must be required; `y` has a default and must be optional.
     tool = Tool(dummy_function)
@@ -901,3 +937,29 @@ def test_tool_call_execute_with_local_functions():
             globals().pop("local_add", None)
 
     main()
+
+
+def test_tool_calls_none_and_empty_dict_mean_no_calls():
+    """`"tool_calls": null` / `{}` are how JSON-mode models say "no tool calls
+    this turn" -- they must parse like `[]`, not raise AdapterParseError (#10612)."""
+    for empty in (None, {}):
+        calls = dspy.ToolCalls.model_validate(empty)
+        assert calls.tool_calls == []
+    # And through the wrapping form: {"tool_calls": None}
+    calls = dspy.ToolCalls.model_validate({"tool_calls": None})
+    assert calls.tool_calls == []
+
+
+def test_tool_calls_none_reaches_empty_tool_calls_semantics():
+    """End-to-end: ReActV2 with a JSON-mode model writing `"tool_calls": null`
+    must take the usual empty_tool_calls path (like `[]`), not a parse error."""
+    adapter = dspy.JSONAdapter()
+    lm = dspy.utils.DummyLM([{"next_thought": "Nothing to call.", "tool_calls": None}] * 2, adapter=adapter)
+    with dspy.context(lm=lm, adapter=adapter):
+        try:
+            dspy.ReActV2("question -> answer", tools=[])(question="hi")
+            raised = None
+        except Exception as e:
+            raised = e
+    assert raised is not None
+    assert "empty_tool_calls" in str(raised), f"expected empty_tool_calls semantics, got: {raised}"

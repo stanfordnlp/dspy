@@ -419,7 +419,8 @@ class RLM(Module):
             .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
             .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)
             .append("iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iters"), type_=str)
-            .append("reasoning", dspy.OutputField(desc="Think step-by-step: what do you know? What remains? Plan your next action."), type_=str)
+            .append("reasoning", dspy.OutputField(desc="A short plan for the next action."), type_=dspy.Reasoning)
+            .with_updated_fields("reasoning", __dspy_reasoning_fallback="plan")
             .append("code", dspy.OutputField(desc="Python code to execute. Use markdown code block format: ```python\\n<code>\\n```"), type_=str)
         )
 
@@ -588,8 +589,9 @@ class RLM(Module):
         )
         try:
             invocation.install(repl)
-        except CodeExecutionError as e:
-            # The runtime cannot host the shim (e.g. it runs code in the host's memory): no sub-agents this call.
+        except (CodeExecutionError, SyntaxError) as e:
+            # The runtime cannot host the shim (e.g. a restricted compiler rejects the shim's `_dspy_*` names):
+            # no sub-agents this call.
             for name in (CONSTRUCT_TOOL, CALL_TOOL):
                 repl.tools.pop(name, None)
             logger.warning("RLM sub-agents are unavailable on %s: %s", type(repl).__name__, e)
@@ -733,25 +735,27 @@ class RLM(Module):
         Returns:
             Prediction if FINAL was called successfully, else updated REPLHistory
         """
+        # Providers may omit a native reasoning summary; trajectories stay string-valued.
+        reasoning = str(pred.reasoning) if pred.reasoning is not None else ""
         # Handle error strings from caught exceptions
         if isinstance(result, str) and result.startswith("[Error]"):
             output = self._format_output(result)
-            return history.append(reasoning=pred.reasoning, code=code, output=output)
+            return history.append(reasoning=reasoning, code=code, output=output)
 
         # Handle FINAL output
         if isinstance(result, FinalOutput):
             parsed_outputs, error = self._process_final_output(result, output_field_names)
 
             if error:
-                return history.append(reasoning=pred.reasoning, code=code, output=error)
+                return history.append(reasoning=reasoning, code=code, output=error)
 
             final_history = history.append(
-                reasoning=pred.reasoning, code=code, output=f"FINAL: {parsed_outputs}"
+                reasoning=reasoning, code=code, output=f"FINAL: {parsed_outputs}"
             )
             return Prediction(
                 **parsed_outputs,
                 trajectory=[e.model_dump() for e in final_history],
-                final_reasoning=pred.reasoning,
+                final_reasoning=reasoning,
             )
 
         # Format non-final result as output
@@ -763,7 +767,7 @@ class RLM(Module):
         output = self._format_output(output)
         if self.verbose:
             logger.info(REPLEntry.format_output(output, self.max_output_chars))
-        return history.append(reasoning=pred.reasoning, code=code, output=output)
+        return history.append(reasoning=reasoning, code=code, output=output)
 
     def _execute_code(
         self,
