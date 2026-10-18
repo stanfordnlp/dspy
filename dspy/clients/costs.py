@@ -47,7 +47,7 @@ def _estimate_cost(response, *, provider, requested_model, request=None, namespa
         info = model_info(provider, requested_model, namespaces=namespaces)
         priced_model = requested_model
     # This catalog entry prices only routing, not the selected model's inference.
-    if info.get("litellm_provider") == "azure" and priced_model == "model-router":
+    if info.get("litellm_provider") == "azure" and priced_model.removeprefix("azure/") == "model-router":
         return unknown("Azure model-router fees exclude the selected model's inference cost")
     u = response.usage
     if u.input_tokens is None or u.output_tokens is None:
