@@ -171,6 +171,44 @@ def test_tool_from_partial_infers_name_and_description_from_wrapped_function():
     assert tool.desc == "Look up one record for a tenant."
 
 
+@pytest.mark.parametrize("custom_name", [False, True])
+@pytest.mark.parametrize("custom_desc", [False, True])
+def test_partial_tool_preserves_custom_metadata(custom_name, custom_desc):
+    def lookup(tenant: str, record_id: int) -> str:
+        "Look up a record."
+        return f"{tenant}:{record_id}"
+
+    bound = partial(lookup, "demo")
+    if custom_name:
+        bound.__name__ = "lookup_demo"
+    if custom_desc:
+        bound.__doc__ = "Look up a demo record."
+
+    function = Tool(bound).format_as_litellm_function_call()["function"]
+    assert function["name"] == ("lookup_demo" if custom_name else "lookup")
+    assert function["description"] == ("Look up a demo record." if custom_desc else "Look up a record.")
+
+    tool = Tool(bound, name="explicit_lookup", desc="Explicit description.")
+    assert tool.name == "explicit_lookup"
+    assert tool.desc == "Explicit description."
+
+
+def test_react_keeps_distinctly_named_partial_tools():
+    def lookup(tenant: str, record_id: int) -> str:
+        return f"{tenant}:{record_id}"
+
+    east = partial(lookup, "east")
+    east.__name__ = "lookup_east"
+    west = partial(lookup, "west")
+    west.__name__ = "lookup_west"
+
+    agent = dspy.ReAct("question -> answer", tools=[east, west])
+
+    assert set(agent.tools) == {"lookup_east", "lookup_west", "finish"}
+    assert agent.tools["lookup_east"](record_id=7) == "east:7"
+    assert agent.tools["lookup_west"](record_id=7) == "west:7"
+
+
 def test_tool_from_keyword_partial_preserves_overridable_defaults():
     tool = Tool(partial(dummy_function, y="bound"))
 

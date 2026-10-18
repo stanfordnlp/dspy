@@ -93,8 +93,10 @@ class Tool(Type):
             else unwrapped_func.__call__
         )
         metadata_func = unwrapped_func if isinstance(func, partial) else func
-        name = getattr(metadata_func, "__name__", type(metadata_func).__name__)
+        name = getattr(func, "__name__", getattr(metadata_func, "__name__", type(metadata_func).__name__))
         desc = getattr(metadata_func, "__doc__", None) or getattr(annotations_func, "__doc__", "")
+        if isinstance(func, partial):
+            desc = func.__dict__.get("__doc__", desc) or getattr(annotations_func, "__doc__", "")
         args = {}
         arg_types = {}
 
