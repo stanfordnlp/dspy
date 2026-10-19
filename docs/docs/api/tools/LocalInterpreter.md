@@ -23,8 +23,9 @@ containment and rejects fallbacks requiring host ACL mutation; ordinary pip inst
 facilities. A diagnostic-only wheel allows DSPy itself to install on unsupported hosts, but executing code fails.
 
 !!! warning "Platform qualification is a release gate"
-    This default-switch draft depends on an unpublished companion package. Linux x86-64 is locally tested;
-    Windows is not qualified. Do not describe the draft as a universal `pip install dspy` release.
+    This default-switch draft depends on an unpublished companion package. Linux x86-64 and macOS ARM64 native
+    CI pass. Windows Server 2025 installs the runtime but cannot start this unchanged non-DACL policy; serviced
+    Windows 11 clients listed by MXC still need qualification. This is not a universal `pip install dspy` release.
 
 The worker can read the Python environment and upstream OS baseline paths, and write its private work and temp
 directories. Do not keep secrets in the Python installation. Host environment credentials are scrubbed and direct

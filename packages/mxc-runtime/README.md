@@ -33,9 +33,9 @@ is performed, including on signed Mac/Windows executables.
 | --- | --- | --- |
 | Linux x64 | `manylinux_2_34_x86_64` | Locally built and CLI-smoke-tested on glibc 2.36 |
 | Linux arm64 | `manylinux_2_34_aarch64` | Executor inspected; build blocked until a static bwrap bundle/hash is qualified |
-| Windows x64 | `win_amd64` | PE imports inspected; not executed here |
+| Windows x64 | `win_amd64` | Installation/relocation pass; exact sandbox startup fails closed on Windows Server 2025 CI |
 | Windows arm64 | `win_arm64` | Bytes/hash inspected; imports and native execution still require Windows qualification |
-| macOS arm64 | `macosx_11_0_arm64` | Native macOS 27 ARM64 installed-wheel checks passed; older OS baselines unqualified |
+| macOS arm64 | `macosx_11_0_arm64` | macOS 14 CI and macOS 27 installed-wheel checks passed; older OS baselines unqualified |
 | Diagnostic | `any` | No executors; explicit failure on runtime use |
 
 Linux executors both require **glibc >= 2.34** (highest versioned GLIBC symbol),
@@ -109,8 +109,8 @@ not locally compiled; its matching upstream 2.78 source and notice accompany it.
 The **entire** installed package inventory, notices, source archives and resulting
 bwrap must match the existing qualification hashes in `manifest.json`, including
 `df25afa3338d316da86ec134544ca0b61882a719dab67b152d56590d9208b961`.
-This exact binary was reproduced using the namespace engine. The Docker engine
-still requires native CI execution. The bundle includes notices, corresponding
+This exact binary was reproduced using the namespace engine locally and the
+Docker engine in native Linux CI. The bundle includes notices, corresponding
 bubblewrap/libcap source and the inventory; asset preparation embeds these plus
 the tracked build recipes, dependency pins and manifest. It only reads named,
 hash-checked members, never arbitrary archive extraction or unverified assets.
@@ -126,12 +126,19 @@ installs it explicitly via local `--find-links`, and runs the installed DSPy
 `LocalInterpreter` primitive/native suites outside the checkout. A mandatory
 backend smoke test fails on unavailable backends. Windows never provisions,
 elevates or modifies ACLs: a red job is useful qualification evidence, **not** a
-Windows support claim. Initial native Linux CI passed. Initial Mac/Windows
-relocation checks exposed canonical-path aliases in the test harness; both
-sides now resolve before comparison. Later backend results must be checked
-separately. A native macOS 27 ARM64 runner passed 37 DSPy interpreter tests,
-including inherited-pipe deadline/teardown regression checks; Windows backend
-execution remains unqualified.
+Windows support claim. Native Linux CI passed 54 interpreter/integration tests;
+macOS 14 ARM64 passed 52 (four Linux-specific cases skipped). A separate macOS
+27 ARM64 runner passed 37 interpreter tests, including inherited-pipe
+deadline/teardown regressions. Windows Server 2025 passed package installation,
+relocation and 12 package tests, but rejected sandbox startup because no permitted
+non-DACL backend could service the request.
+
+MXC's pinned [OS support table](https://github.com/microsoft/mxc/blob/v1.0.1/docs/backends/process-container/os-version-support.md)
+lists serviced Windows 11 client builds (including 24H2 build 26100.9278 and
+25H2 build 26200.9278). This is an upstream claim, not a successful DSPy test on
+those clients. The shipping build excludes the BFS fallback. Do not enable
+registry feature overrides or run host-preparation tools to hide this gate;
+qualify the exact unchanged policy on a supported, unelevated Windows 11 host.
 
 ### Redistribution obligations and remaining gates
 
