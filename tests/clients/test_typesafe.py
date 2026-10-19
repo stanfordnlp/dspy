@@ -1,4 +1,3 @@
-import copy
 import json
 from typing import Literal
 
@@ -7,6 +6,7 @@ import pytest
 import dspy
 from dspy._vendor.lm15.transports import StdlibAsyncTransport, StdlibTransport
 from dspy.experimental import Choice, Noul, Score
+from dspy.utils.dummies import DummyLM
 from tests.clients.test_lm_engine_execution import DualResponse
 from tests.predict.test_decision_parameters import predict, signature
 
@@ -88,63 +88,25 @@ async def test_predict_uses_lm15_and_reinterprets_cached_evidence(transport, eng
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
-@pytest.mark.parametrize("rich,with_demos,structured", [
-    (True, False, False), (False, False, False), (False, True, False), (False, True, True),
-])
-async def test_empty_choice_labels_survive_jev_and_cached_recalibration(
-    monkeypatch, asynchronous, rich, with_demos, structured,
-):
-    criteria = {"": "No match", "match": "Match", "_": "Other match"}
-    description = "Return an empty string for no match, otherwise match."
-    instructions = {"rules": [description]} if structured else description
-    calls = []
-
-    def respond(self, request):
-        body = json.loads(request.body)
-        calls.append(body)
-        question = body["questions"]["label"]
-        options = question["criteria"]
-        assert len(options) == 3
-        assert all(options)
-        alias, = options.keys() - {"match", "_"}
-        original, explanation = question["instructions"]
-        assert original == instructions
-        assert json.dumps(alias) in explanation and '""' in explanation and "empty string" in explanation
-        assert "demonstration" in explanation
-        assert options == ({alias: "No match", "match": "Match", "_": "Other match"} if rich else dict.fromkeys(options))
-        assert body["state"].get("demos", []) == ([{"text": "no match", "label": ""}] if with_demos else [])
-        answer = {
-            "type": "choice", "choice": alias,
-            "confidence": 0.73, "probabilities": {alias: 0.7, "match": 0.2, "_": 0.1},
-        }
-        return DualResponse(200, json.dumps({"model": "jev-test", "answers": {"label": answer}}).encode())
-
-    monkeypatch.setattr(StdlibTransport, "stream", respond)
-    monkeypatch.setattr(StdlibAsyncTransport, "stream", respond)
-    annotation = Choice[tuple(criteria.items())] if rich else Literal["", "match", "_"]
+@pytest.mark.parametrize("rich", [False, True])
+async def test_empty_choice_labels_are_rejected_only_by_jev(transport, asynchronous, rich):
+    annotation = Choice[("", "No match"), ("match", "Match")] if rich else Literal["", "match"]
     module = dspy.Predict(dspy.Signature({
-        "text": (str, dspy.InputField()), "label": (annotation, dspy.OutputField(desc=description)),
+        "text": (str, dspy.InputField()), "label": (annotation, dspy.OutputField(desc="Select a match.")),
     }))
-    lm = dspy.LM("typesafe:jev-test", engine="lm15", api_key="test-empty-label")
+    lm = dspy.LM("typesafe:jev-test")
     module.set_lm(lm)
-    if structured:
-        module.fields = {"label": {"instructions": instructions}}
-    if with_demos:
-        module.demos = [dspy.Example(text="no match", label="")]
-    original_fields, original_demos = copy.deepcopy((module.fields, module.demos))
     try:
-        first = await module.acall(text="x") if asynchronous else module(text="x")
-        assert module.fields == original_fields and module.demos == original_demos
-        module.fields.setdefault("label", {})["weights"] = {"": 0.1}
-        second = await module.acall(text="x") if asynchronous else module(text="x")
-        assert (first.label.value if rich else first.label) == ""
-        assert (second.label.value if rich else second.label) == "match"
-        if rich:
-            assert first.label.probabilities == second.label.probabilities == {"": 0.7, "match": 0.2, "_": 0.1}
-            assert first.label.confidence == second.label.confidence == 0.73
-        assert len(calls) == 1
+        with pytest.raises(ValueError, match="Jev output 'label'.*empty choice label.*no_match"):
+            await module.acall(text="x") if asynchronous else module(text="x")
+        assert transport == []
     finally:
         await lm.aclose()
+
+    evidence = {"probabilities": {"": 0.8, "match": 0.2}, "confidence": 0.6}
+    module.set_lm(DummyLM([{"label": evidence if rich else ""}]))
+    result = await module.acall(text="x") if asynchronous else module(text="x")
+    assert (result.label.value if rich else result.label) == ""
 
 
 @pytest.mark.asyncio

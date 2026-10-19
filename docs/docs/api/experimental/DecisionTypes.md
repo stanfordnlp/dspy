@@ -283,6 +283,10 @@ be supported; there is no automatic fallback to a generative LM. The same
 signature can still be used with an ordinary LM when its adapter supports those
 annotations. This restriction applies to outputs, not structured input data.
 
+Jev also rejects empty-string labels in `Choice` or `Literal` outputs before any
+provider request. Use a nonempty label such as `"no_match"` instead. Empty-string
+labels remain supported with generative LMs.
+
 Use Jev through `Predict`, rather than calling chat adapters directly.
 Generation-specific wrappers such as `BestOfN` and `Refine`, generative optimizers,
 and fine-tuning are unsupported with Jev.
