@@ -2,6 +2,7 @@ import re
 import types
 import xml.etree.ElementTree as ET
 from collections import defaultdict
+from functools import lru_cache
 from typing import Any, Union, get_args, get_origin
 from xml.sax.saxutils import quoteattr
 
@@ -20,6 +21,11 @@ from dspy.adapters.utils import (
 )
 from dspy.signatures.signature import Signature
 from dspy.utils.exceptions import AdapterParseError
+
+# Avoid regex's compile/flag dispatch for every leaf and streaming chunk.
+_compile_xml_pattern = lru_cache(maxsize=128)(regex.compile)
+_xml_whitespace = re.compile(r"\s*")
+_xml_newline = re.compile(r"[ \t]*\r?\n")
 
 
 class XMLAdapter(ChatAdapter):
@@ -136,7 +142,7 @@ class XMLAdapter(ChatAdapter):
             text = re.sub(r"\A[^<]+(?=<)", "", text)
             remaining = self._parse_children(text, root, {"properties": schemas}, {})
             elements = self._group_children(root)
-            if remaining or {child.tag for child in root} - signature.output_fields.keys():
+            if remaining != len(text) or {child.tag for child in root} - signature.output_fields.keys():
                 raise ET.ParseError("Unexpected output field or closing tag")
             for name, field in signature.output_fields.items():
                 if name not in elements:
@@ -192,53 +198,61 @@ class XMLAdapter(ChatAdapter):
 
     @classmethod
     def _parse_children(
-        cls, text: str, parent: ET.Element, schema: dict, definitions: dict, boundary: str = r"(?P<end>\Z)"
-    ) -> str:
+        cls,
+        text: str,
+        parent: ET.Element,
+        schema: dict,
+        definitions: dict,
+        boundary: str = r"(?P<end>\Z)",
+        pos: int = 0,
+    ) -> int:
         boundary = cls._scalar_boundary(schema, definitions, boundary)
-        while text and not text.startswith("</"):
-            opening = re.match(r"""<([\w.-]+)(?:\s+key=(?:"[^"]*"|'[^']*'))?\s*(/?)>""", text)
+        while pos < len(text) and not text.startswith("</", pos):
+            opening = re.compile(r"""<([\w.-]+)(?:\s+key=(?:"[^"]*"|'[^']*'))?\s*(/?)>""").match(text, pos)
             if not opening:
                 raise ET.ParseError("Expected a field opening tag")
             name = opening[1]
             # Only tag headers use XML parsing; scalar bodies remain literal.
             element = ET.fromstring(opening[0] if opening[2] else opening[0] + f"</{name}>")
             parent.append(element)
-            text = text[opening.end() :]
+            pos = opening.end()
             if not opening[2]:
-                scalar_text = text
-                newline = re.match(r"[ \t]*\r?\n", text)
-                text = text[newline.end() :] if newline else text
+                scalar_start = pos
+                newline = _xml_newline.match(text, pos)
+                if newline:
+                    pos = newline.end()
                 key = element.get("key", name) if name == "entry" else name
                 children = cls._schemas(schema, definitions, key)
                 child_schema = children[0] if len(children) == 1 else {"anyOf": children}
                 child_definitions = {**definitions, **child_schema.get("$defs", {})}
                 choices = cls._schemas(child_schema, child_definitions)
                 structured = any(s.get("type") in ("object", "array") or not s for s in choices)
-                tag_line = re.match(r"<[^>\n]+>[ \t]*(?:\r?\n|$)", text.lstrip())
+                nested_start = _xml_whitespace.match(text, pos).end()
+                tag_line = re.compile(r"<[^>\n]+>[ \t]*(?:\r?\n|$)").match(text, nested_start)
                 element.text = ""
                 # Only string/structure unions need tag lines to disambiguate literal markup.
                 ambiguous = newline and any(s.get("type") == "string" for s in choices)
-                nested = structured and (tag_line if ambiguous else text.lstrip().startswith("<"))
+                nested = structured and (tag_line if ambiguous else text.startswith("<", nested_start))
                 if nested:
-                    text = cls._parse_children(
-                        text.lstrip(),
+                    pos = cls._parse_children(
+                        text,
                         element,
                         child_schema,
                         child_definitions,
                         rf"</{re.escape(name)}\s*>\s*{boundary}",
+                        nested_start,
                     )
-                    closing = re.match(rf"</{re.escape(name)}\s*>", text)
+                    closing = re.compile(rf"</{re.escape(name)}\s*>").match(text, pos)
                     if closing is None:
                         raise ET.ParseError(f"Missing closing tag for {name}")
-                    text = text[closing.end() :]
+                    pos = closing.end()
                 else:
                     parser = _XMLScalarParser(name, boundary)
-                    element.text = parser.feed(scalar_text, final=True)
+                    element.text, pos = parser.read(text, scalar_start, final=True)
                     if not parser.done:
                         raise ET.ParseError(f"Missing closing tag for {name}")
-                    text = parser.buffer
-            text = text.lstrip()
-        return text
+            pos = _xml_whitespace.match(text, pos).end()
+        return pos
 
     @classmethod
     def _scalar_boundary(cls, schema: dict, definitions: dict, enclosing: str) -> str:
@@ -402,41 +416,53 @@ class _XMLScalarParser:
 
     def feed(self, text: str, final: bool = False) -> str:
         self.buffer += text
+        value, pos = self.read(self.buffer, 0, final=final)
+        self.buffer = self.buffer[pos:]
+        return value
+
+    def read(self, text: str, pos: int, final: bool) -> tuple[str, int]:
+        """Scan a shared response without copying its unconsumed suffix."""
         if self.multiline is None:
-            newline = re.match(r"[ \t]*\r?\n", self.buffer)
-            if not newline and not final and re.fullmatch(r"[ \t]*\r?", self.buffer):
-                return ""
+            newline = _xml_newline.match(text, pos)
+            if not newline and not final and re.compile(r"[ \t]*\r?").fullmatch(text, pos):
+                return "", pos
             self.multiline = newline is not None
             if newline:
-                self.buffer = self.buffer[newline.end() :]
+                pos = newline.end()
 
-        prefix = ""
         if self.multiline:
             # A tag at a chunk boundary may still be followed by literal text on the same line.
             ending = r"(?:\n|$)" if final else r"\n"
             # Accept an end-of-line closing tag attached to text (e.g. a Markdown code fence).
-            pattern = rf"(?m)(?:^[ \t]*)?</{self.name}[ \t]*>[ \t]*\r?{ending}"
-            prefix = "" if self.at_line_start else "x"
+            pattern = rf"</{self.name}[ \t]*>[ \t]*\r?{ending}"
         else:
             pattern = rf"</{self.name}\s*>"
-        closing = None
-        for candidate in regex.finditer(pattern, prefix + self.buffer, partial=not final):
+        closing_pattern = _compile_xml_pattern(pattern)
+        continuation_pattern = _compile_xml_pattern(rf"\s*{self.boundary}")
+        end = len(text)
+        for candidate in closing_pattern.finditer(text, pos, partial=not final):
             if candidate.partial:
-                closing = candidate
+                end = candidate.start()
                 break
-            suffix = self.buffer[candidate.end() - len(prefix) :]
-            continuation = regex.match(rf"\s*{self.boundary}", suffix, partial=not final)
+            # Match in place rather than copying the response suffix for each candidate.
+            continuation = continuation_pattern.match(text, candidate.end(), partial=not final)
             if continuation is None:
                 # An inner closing tag followed by literal text is part of the value.
                 continue
-            closing = candidate
+            end = candidate.start()
             # Chunk boundaries are not EOF; hold the candidate until its continuation is known.
             self.done = not continuation.partial and (final or continuation.group("end") is None)
             break
-        end = closing.start() - len(prefix) if closing else len(self.buffer)
-        value = self.buffer[:end]
+
+        if self.multiline:
+            line_start = text.rfind("\n", pos, end) + 1
+            if line_start > pos or self.at_line_start:
+                line_start = max(pos, line_start)
+                if not text[line_start:end].strip(" \t"):
+                    end = line_start
+        value = text[pos:end]
         if self.done:
-            self.buffer = self.buffer[closing.end() - len(prefix) :]
+            consumed = candidate.end()
             value = value.removesuffix("\n").removesuffix("\r") if self.multiline else value.rstrip()
         else:
             # Retain the possible framing newline (or compact trailing whitespace) until the delimiter is known.
@@ -444,10 +470,10 @@ class _XMLScalarParser:
                 value = value.removesuffix("\n").removesuffix("\r")
             else:
                 value = value.rstrip()
-            self.buffer = self.buffer[len(value) :]
+            consumed = pos + len(value)
         if value:
             self.at_line_start = value.endswith("\n")
         if not self.multiline and not self.value_started:
             value = value.lstrip()
         self.value_started |= bool(value)
-        return value
+        return value, consumed
