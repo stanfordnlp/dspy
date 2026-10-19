@@ -2,6 +2,7 @@ import contextvars
 import os
 import signal
 import socket
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -298,6 +299,39 @@ def test_execution_timeout_includes_a_blocked_command_write():
             interpreter.shutdown()
     with pytest.raises(CodeInterpreterError, match="shut down"):
         interpreter.execute("1")
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Seatbelt permits detached descendants to survive")
+@pytest.mark.parametrize("pipe", ["stdout", "stdin"])
+def test_detached_pipe_holder_does_not_delay_shutdown_or_deadline(pipe):
+    interpreter = dspy.LocalInterpreter(execution_timeout=0.2)
+    child = None
+    try:
+        child = interpreter.execute(
+            "import __main__, subprocess, sys\n"
+            "fd = __main__._protocol_output.fileno()\n"
+            "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(4)'], "
+            "start_new_session=True, pass_fds=(fd,))\nchild.pid"
+        )
+        started = time.monotonic()
+        if pipe == "stdin":
+            os.killpg(interpreter._process.pid, signal.SIGSTOP)
+            with pytest.raises(CodeInterpreterError, match="exceeded execution timeout"):
+                interpreter.execute("#" + "x" * (1024 * 1024))
+        else:
+            interpreter.shutdown()
+        assert time.monotonic() - started < 1.5
+        with pytest.raises(CodeInterpreterError, match="shut down"):
+            interpreter.execute("1")
+    finally:
+        if child is not None:
+            # This finite probe owns the detached process; the interpreter cannot
+            # promise to reap arbitrary Mac descendants. Release inherited pipes.
+            try:
+                os.kill(child, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        interpreter.shutdown()
 
 
 def test_malformed_guest_tool_request_cannot_invoke_host_tool():

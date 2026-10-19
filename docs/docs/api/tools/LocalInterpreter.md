@@ -36,7 +36,8 @@ at shutdown. This changes `LocalInterpreter`'s former unrestricted host-access b
     MXC shares the host kernel. macOS retains broad reads of system paths including `/Library`, `/System` and
     `/private/etc`. Detached macOS children can survive shutdown or timeout and keep consuming resources or holding
     deleted files open. Finish and reap child processes; use a separately qualified boundary if whole-job
-    termination is required. No aggregate memory, process-count or disk quota is promised.
+    termination is required. A child retaining a protocol pipe can also retain a daemon IO thread until that pipe
+    closes; shutdown does not wait for it. No aggregate memory, process-count or disk quota is promised.
 
 To select the existing Deno/Pyodide backend explicitly, install `dspy[deno]` and pass
 `interpreter_factory=dspy.PythonInterpreter`, or use `dspy.configure(interpreter_factory=dspy.PythonInterpreter)`.

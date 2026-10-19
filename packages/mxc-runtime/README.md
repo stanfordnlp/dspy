@@ -35,7 +35,7 @@ is performed, including on signed Mac/Windows executables.
 | Linux arm64 | `manylinux_2_34_aarch64` | Executor inspected; build blocked until a static bwrap bundle/hash is qualified |
 | Windows x64 | `win_amd64` | PE imports inspected; not executed here |
 | Windows arm64 | `win_arm64` | Bytes/hash inspected; imports and native execution still require Windows qualification |
-| macOS arm64 | `macosx_11_0_arm64` | Mach-O load commands inspected; not executed here |
+| macOS arm64 | `macosx_11_0_arm64` | Native macOS 27 ARM64 installed-wheel checks passed; older OS baselines unqualified |
 | Diagnostic | `any` | No executors; explicit failure on runtime use |
 
 Linux executors both require **glibc >= 2.34** (highest versioned GLIBC symbol),
@@ -45,8 +45,10 @@ These tags express observed loader/ABI requirements, not a completed manylinux
 certification or validation on the oldest supported distribution.
 
 Mac load commands specify macOS 11.0 minimum, SDK 15.5, and only system
-libSystem, libsandbox, CoreFoundation and libiconv dependencies. A code-signature
-load command exists; its trust/notarization/entitlements have **not** been verified.
+libSystem, libsandbox, CoreFoundation and libiconv dependencies. Native Mac
+verification passed strict codesign, an Apple-anchored Microsoft Team UBF8T346G9
+requirement, and notarization verification on the exact bundled executor. This
+does not establish the minimum usable OS or qualification on every supported OS.
 No Intel Mac executor exists. Windows x64 imports system/API-set DLLs including
 kernel32, bcryptprimitives, advapi32, ntdll, ws2_32, ole32, shell32, combase,
 userenv, crypt32, wintrust, tdh, bcrypt, oleaut32 and WinRT API sets. Its PE
@@ -124,7 +126,12 @@ installs it explicitly via local `--find-links`, and runs the installed DSPy
 `LocalInterpreter` primitive/native suites outside the checkout. A mandatory
 backend smoke test fails on unavailable backends. Windows never provisions,
 elevates or modifies ACLs: a red job is useful qualification evidence, **not** a
-Windows support claim. Native Mac/Windows jobs have not been run locally.
+Windows support claim. Initial native Linux CI passed. Initial Mac/Windows
+relocation checks exposed canonical-path aliases in the test harness; both
+sides now resolve before comparison. Later backend results must be checked
+separately. A native macOS 27 ARM64 runner passed 37 DSPy interpreter tests,
+including inherited-pipe deadline/teardown regression checks; Windows backend
+execution remains unqualified.
 
 ### Redistribution obligations and remaining gates
 

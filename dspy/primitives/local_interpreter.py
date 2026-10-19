@@ -248,23 +248,26 @@ class LocalInterpreter:
 
     def _read_responses(self, process: subprocess.Popen[str]) -> None:
         assert process.stdout is not None
-        while self._process is process:
-            message: str | BaseException | None
-            try:
-                message = process.stdout.readline(_MAX_MESSAGE_CHARS + 1) or None
-                if message is not None and len(message) > _MAX_MESSAGE_CHARS:
-                    message = CodeInterpreterError("Python worker message exceeds the 16 Mi-character limit.")
-            except (OSError, ValueError) as exc:
-                message = CodeInterpreterError(f"Unable to read Python worker response: {exc}")
-            # Apply backpressure without stranding this reader after shutdown.
+        # Only the reader closes stdout: closing a buffered pipe from another
+        # thread waits for readline, potentially held open by a Mac descendant.
+        with process.stdout:
             while self._process is process:
+                message: str | BaseException | None
                 try:
-                    self._responses.put(message, timeout=0.1)
-                    break
-                except queue.Full:
-                    continue
-            if not isinstance(message, str):
-                return
+                    message = process.stdout.readline(_MAX_MESSAGE_CHARS + 1) or None
+                    if message is not None and len(message) > _MAX_MESSAGE_CHARS:
+                        message = CodeInterpreterError("Python worker message exceeds the 16 Mi-character limit.")
+                except (OSError, ValueError) as exc:
+                    message = CodeInterpreterError(f"Unable to read Python worker response: {exc}")
+                # Apply backpressure without stranding this reader after shutdown.
+                while self._process is process:
+                    try:
+                        self._responses.put(message, timeout=0.1)
+                        break
+                    except queue.Full:
+                        continue
+                if not isinstance(message, str):
+                    return
 
     def _send(self, message: dict[str, Any], process: subprocess.Popen[str] | None = None) -> None:
         with self._send_lock:
@@ -276,6 +279,10 @@ class LocalInterpreter:
                 print(json.dumps(message, separators=(",", ":"), allow_nan=False), file=current.stdin, flush=True)
             except (OSError, TypeError, ValueError) as exc:
                 self._raise_terminal_error(f"Unable to send request to Python worker: {exc}", exc)
+            finally:
+                if self._process is not current:
+                    with contextlib.suppress(OSError):
+                        current.stdin.close()
 
     def _receive(self, deadline: float | None, timeout_message: str) -> dict[str, Any]:
         timeout = None if deadline is None else max(0, deadline - time.monotonic())
@@ -316,9 +323,15 @@ class LocalInterpreter:
                     process.kill()
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     process.wait(timeout=1)
-                for stream in (process.stdin, process.stdout):
-                    if stream is not None:
-                        stream.close()
+                # A blocked writer owns stdin until it unwinds. Closing it here
+                # would wait for its buffered write and defeat the deadline.
+                if self._send_lock.acquire(blocking=False):
+                    try:
+                        if process.stdin is not None:
+                            with contextlib.suppress(OSError):
+                                process.stdin.close()
+                    finally:
+                        self._send_lock.release()
             if self._session is not None:
                 shutil.rmtree(self._session)
                 self._session = None

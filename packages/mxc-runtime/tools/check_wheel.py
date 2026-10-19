@@ -43,10 +43,10 @@ if sys.argv[2] == "diagnostic":
         raise AssertionError("diagnostic runtime succeeded")
 else:
     executor, bwrap = executables()
-    assert executor.is_relative_to(Path(sys.argv[1]))
+    assert executor.is_relative_to(Path(sys.argv[1]).resolve())
     subprocess.run([str(executor), "--help"], check=True, stdout=subprocess.DEVNULL)
     if bwrap is not None:
-        assert bwrap.is_relative_to(Path(sys.argv[1]))
+        assert bwrap.is_relative_to(Path(sys.argv[1]).resolve())
         subprocess.run([str(bwrap), "--version"], check=True)
 print("clean install + relocation OK")
 """
