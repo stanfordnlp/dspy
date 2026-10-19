@@ -1,3 +1,4 @@
+import re
 import types
 import xml.etree.ElementTree as ET
 from collections import defaultdict
@@ -5,6 +6,7 @@ from typing import Any, Union, get_args, get_origin
 from xml.sax.saxutils import quoteattr
 
 import pydantic
+import regex
 from pydantic import TypeAdapter
 from typing_extensions import is_typeddict
 
@@ -21,39 +23,46 @@ from dspy.utils.exceptions import AdapterParseError
 
 
 class XMLAdapter(ChatAdapter):
+    """Schema-directed tags with literal leaves and standalone structural tag lines.
+
+    Compact tags remain readable for compatibility. Neither form decodes entities.
+    """
+
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         output = []
         for field, value in fields_with_values.items():
             serialized = serialize_for_json(value)
             is_output = (field.info.json_schema_extra or {}).get("__dspy_field_type") == "output"
-            if is_output and self._uses_nested_xml(field.info.annotation) and isinstance(serialized, (dict, list)):
+            nested = isinstance(serialized, (dict, list)) and self._uses_nested_xml(field.info.annotation)
+            if is_output and (serialized is None or nested):
                 output.append(self._value_to_xml(serialized, field.name))
                 continue
             formatted = format_field_value(field_info=field.info, value=value)
-            if is_output and field.info.annotation is str:
-                formatted = formatted.replace("&", "&amp;").replace("<", "&lt;")
             output.append(f"<{field.name}>\n{formatted}\n</{field.name}>")
         return "\n\n".join(output).strip()
 
     def format_field_structure(self, signature: type[Signature]) -> str:
-        def format_field(name, field):
-            if (field.json_schema_extra or {}).get("__dspy_field_type") == "output" and self._uses_nested_xml(
-                field.annotation
-            ):
-                return self._xml_schema(name, field.annotation)
-            return self.format_field_with_value(
-                {FieldInfoWithName(name=name, info=field): translate_field_type(name, field)}
-            )
+        if not signature.output_fields:
+            return ""
 
-        fields = (
-            "\n\n".join(format_field(name, field) for name, field in group.items())
-            for group in (signature.input_fields, signature.output_fields)
-        )
-        return "\n\n".join(
-            (
-                "All interactions will be structured in the following way, with the appropriate values filled in.",
-                *fields,
+        def format_field(name, field):
+            if self._uses_nested_xml(field.annotation):
+                return self._xml_schema(name, field.annotation)
+            annotations = (
+                get_args(field.annotation)
+                if get_origin(field.annotation) in (Union, types.UnionType)
+                else (field.annotation,)
             )
+            # Primitive types are already described above; JSON hints conflict with XML nulls.
+            placeholder = (
+                "{" + name + "}"
+                if all(annotation in (str, int, float, bool, type(None)) for annotation in annotations)
+                else translate_field_type(name, field)
+            )
+            return self.format_field_with_value({FieldInfoWithName(name=name, info=field): placeholder})
+
+        return "Output format (replace placeholders):\n" + "\n\n".join(
+            format_field(name, field) for name, field in signature.output_fields.items()
         )
 
     def format_user_message_content(
@@ -82,51 +91,77 @@ class XMLAdapter(ChatAdapter):
         return self.format_field_with_value(fields)
 
     def user_message_output_requirements(self, signature: type[Signature]) -> str:
-        fields = ", then ".join(f"`<{name}>`" for name in signature.output_fields)
-        schemas = [
-            self._xml_schema(name, field.annotation)
-            for name, field in signature.output_fields.items()
-            if self._uses_nested_xml(field.annotation)
-        ]
-        return f"Respond with the corresponding output fields wrapped in XML tags {fields}." + (
-            f" Use this nested XML structure: {' '.join(schemas)}" if schemas else ""
+        if not signature.output_fields:
+            return ""
+        text = (
+            "Use this format for text outputs. Put field tags on separate lines."
+            " Write string values literally, without XML or JSON escaping."
         )
+        nodes = []
+        for field in signature.output_fields.values():
+            schema = TypeAdapter(field.annotation).json_schema()
+            if self._uses_nested_xml(field.annotation):
+                nodes.append(schema)
+            else:
+                # DSPy types retain their own JSON conventions inside literal leaves.
+                nodes.extend(s for s in [schema, *schema.get("anyOf", [])] if s.get("type") == "null")
+        nullable = mapping = False
+        while nodes:
+            node = nodes.pop()
+            if isinstance(node, dict):
+                nullable |= node.get("type") == "null"
+                mapping |= isinstance(node.get("additionalProperties"), dict) or node.get("additionalProperties") is True
+                nodes.extend(node.values())
+            elif isinstance(node, list):
+                nodes.extend(node)
+        if nullable:
+            text += " Use <field/> for null and <field></field> for an empty string."
+        if mapping:
+            text += ' Dictionary keys: <entry key="...">; escape key attributes only.'
+        return self.format_field_structure(signature) + "\n\n" + text
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
+        fields = {}
+        context = "Failed to parse XML"
+        schemas = {
+            name: TypeAdapter(field.annotation).json_schema(by_alias=False)
+            for name, field in signature.output_fields.items()
+        }
         try:
-            root = ET.fromstring(f"<dspy_root>{completion}</dspy_root>")
-        except ET.ParseError as e:
+            root = ET.Element("dspy_root")
+            text = self._strip_reasoning_prefix(completion.strip(), signature.output_fields)
+            if fence := re.fullmatch(r"```(?:xml)?[ \t]*\r?\n(.*)\r?\n```", text, re.DOTALL):
+                text = self._strip_reasoning_prefix(fence[1].strip(), signature.output_fields)
+            # Like ChatAdapter, ignore introductory prose before the first field.
+            text = re.sub(r"\A[^<]+(?=<)", "", text)
+            remaining = self._parse_children(text, root, {"properties": schemas}, {})
+            elements = self._group_children(root)
+            if remaining or {child.tag for child in root} - signature.output_fields.keys():
+                raise ET.ParseError("Unexpected output field or closing tag")
+            for name, field in signature.output_fields.items():
+                if name not in elements:
+                    continue
+                context = f"Failed to parse field {name}"
+                field_schema = schemas[name]
+                for candidate in [field_schema, *field_schema.get("anyOf", [])]:
+                    try:
+                        value = self._elements_to_value(elements[name], candidate, field_schema.get("$defs", {}))
+                        try:
+                            fields[name] = parse_value(value, field.annotation)
+                        except pydantic.ValidationError:
+                            fields[name] = TypeAdapter(field.annotation).validate_python(value, by_name=True)
+                        break
+                    except ValueError as e:
+                        error = e
+                else:
+                    raise error
+        except (ET.ParseError, ValueError) as e:
             raise AdapterParseError(
                 adapter_name="XMLAdapter",
                 signature=signature,
                 lm_response=completion,
-                message=f"Failed to parse XML: {e}",
+                message=f"{context}: {e}",
             ) from e
-        elements = self._group_children(root)
-        fields = {}
-        for name, field in signature.output_fields.items():
-            if name not in elements:
-                continue
-            adapter = TypeAdapter(field.annotation)
-            schema = adapter.json_schema(by_alias=False)
-            value = None
-            for candidate in [schema, *schema.get("anyOf", [])]:
-                try:
-                    value = self._elements_to_value(elements[name], candidate, schema.get("$defs", {}))
-                    try:
-                        fields[name] = parse_value(value, field.annotation)
-                    except pydantic.ValidationError:
-                        fields[name] = adapter.validate_python(value, by_name=True)
-                    break
-                except ValueError as e:
-                    error = e
-            else:
-                raise AdapterParseError(
-                    adapter_name="XMLAdapter",
-                    signature=signature,
-                    lm_response=completion,
-                    message=f"Failed to parse field {field} with value {value}: {error}",
-                ) from error
         fields = apply_output_field_defaults(signature, fields)
         if fields.keys() != signature.output_fields.keys():
             raise AdapterParseError(
@@ -134,13 +169,123 @@ class XMLAdapter(ChatAdapter):
             )
         return fields
 
+    @staticmethod
+    def _strip_reasoning_prefix(text: str, output_fields: dict, final: bool = True) -> str | None:
+        """Ignore leading thought blocks, waiting for complete blocks when streaming.
+
+        Declared output fields and thought tags inside field values remain literal.
+        """
+        text = text.lstrip()
+        fence = regex.match(r"```(?:xml)?[ \t]*\r?\n", text, partial=True) if not final else None
+        if fence:
+            if fence.partial:
+                return None
+            text = text[fence.end() :].lstrip()
+        while text:
+            thought = regex.match(r"<(think|thinking)>.*?</\1>\s*", text, regex.DOTALL, partial=not final)
+            if not thought or thought[1] in output_fields:
+                return text
+            if thought.partial:
+                return None
+            text = text[thought.end() :]
+        return text if final else None
+
+    @classmethod
+    def _parse_children(
+        cls, text: str, parent: ET.Element, schema: dict, definitions: dict, boundary: str = r"(?P<end>\Z)"
+    ) -> str:
+        boundary = cls._scalar_boundary(schema, definitions, boundary)
+        while text and not text.startswith("</"):
+            opening = re.match(r"""<([\w.-]+)(?:\s+key=(?:"[^"]*"|'[^']*'))?\s*(/?)>""", text)
+            if not opening:
+                raise ET.ParseError("Expected a field opening tag")
+            name = opening[1]
+            # Only tag headers use XML parsing; scalar bodies remain literal.
+            element = ET.fromstring(opening[0] if opening[2] else opening[0] + f"</{name}>")
+            parent.append(element)
+            text = text[opening.end() :]
+            if not opening[2]:
+                scalar_text = text
+                newline = re.match(r"[ \t]*\r?\n", text)
+                text = text[newline.end() :] if newline else text
+                key = element.get("key", name) if name == "entry" else name
+                children = cls._schemas(schema, definitions, key)
+                child_schema = children[0] if len(children) == 1 else {"anyOf": children}
+                child_definitions = {**definitions, **child_schema.get("$defs", {})}
+                choices = cls._schemas(child_schema, child_definitions)
+                structured = any(s.get("type") in ("object", "array") or not s for s in choices)
+                tag_line = re.match(r"<[^>\n]+>[ \t]*(?:\r?\n|$)", text.lstrip())
+                element.text = ""
+                # Only string/structure unions need tag lines to disambiguate literal markup.
+                ambiguous = newline and any(s.get("type") == "string" for s in choices)
+                nested = structured and (tag_line if ambiguous else text.lstrip().startswith("<"))
+                if nested:
+                    text = cls._parse_children(
+                        text.lstrip(),
+                        element,
+                        child_schema,
+                        child_definitions,
+                        rf"</{re.escape(name)}\s*>\s*{boundary}",
+                    )
+                    closing = re.match(rf"</{re.escape(name)}\s*>", text)
+                    if closing is None:
+                        raise ET.ParseError(f"Missing closing tag for {name}")
+                    text = text[closing.end() :]
+                else:
+                    parser = _XMLScalarParser(name, boundary)
+                    element.text = parser.feed(scalar_text, final=True)
+                    if not parser.done:
+                        raise ET.ParseError(f"Missing closing tag for {name}")
+                    text = parser.buffer
+            text = text.lstrip()
+        return text
+
+    @classmethod
+    def _scalar_boundary(cls, schema: dict, definitions: dict, enclosing: str) -> str:
+        """Recognize sibling headers or the enclosing close chain, without consuming them."""
+        names = set()
+        choices = cls._schemas(schema, definitions)
+        siblings = []
+        for choice in choices:
+            if choice.get("type") == "array":
+                names.add("item")
+                siblings.extend(cls._schemas(choice.get("items", {}), definitions))
+            else:
+                siblings.append(choice)
+        for sibling in siblings:
+            names.update(sibling.get("properties", {}))
+        if any(not (name[:1] + name[1:].replace("-", "_").replace(".", "_")).isidentifier() for name in names):
+            names.add("entry")
+        arbitrary = any(
+            not s or (s.get("type") == "object" and s.get("additionalProperties") is not False) for s in siblings
+        )
+        tags = r"[\w.-]+" if arbitrary else "|".join(re.escape(name) for name in sorted(names))
+        if not tags:
+            return enclosing
+        opening = rf"""<(?:{tags})(?:\s+key=(?:"[^"]*"|'[^']*'))?\s*/?>"""
+        return rf"(?:{opening}|{enclosing})"
+
+    @classmethod
+    def _schemas(cls, schema: dict, definitions: dict, child: str | None = None) -> list[dict]:
+        schema = definitions.get(schema.get("$ref", "").rsplit("/", 1)[-1], schema)
+        if "anyOf" in schema:
+            return [s for branch in schema["anyOf"] for s in cls._schemas(branch, definitions, child)]
+        if child is None:
+            return [schema]
+        if schema.get("type") == "array":
+            item = schema.get("items", {})
+            return [item] if child == "item" else cls._schemas(item, definitions, child)
+        if schema.get("type") not in ("object", None):
+            return []
+        value = schema.get("properties", {}).get(child, schema.get("additionalProperties", {}))
+        return [value if isinstance(value, dict) else {}]
+
     @classmethod
     def _value_to_xml(cls, value: Any, tag: str, key: str | None = None) -> str:
         attrs = f" key={quoteattr(key)}" if key is not None else ""
         if isinstance(value, list):
-            children = "".join(cls._value_to_xml(item, "item") for item in value)
-            return f"<{tag}{attrs}>{children}</{tag}>" if children else f"<{tag}{attrs} />"
-        if isinstance(value, dict):
+            body = "\n".join(cls._value_to_xml(item, "item") for item in value)
+        elif isinstance(value, dict):
             children = []
             for name, child in value.items():
                 name = str(name)
@@ -148,49 +293,48 @@ class XMLAdapter(ChatAdapter):
                 children.append(
                     cls._value_to_xml(child, name) if valid_name else cls._value_to_xml(child, "entry", name)
                 )
-            return f"<{tag}{attrs}>{''.join(children)}</{tag}>"
-        return (
-            f"<{tag}{attrs}>{str(value).replace('&', '&amp;').replace('<', '&lt;')}</{tag}>"
-            if value is not None
-            else f"<{tag}{attrs} />"
-        )
+            body = "\n".join(children)
+        elif value is None:
+            return f"<{tag}{attrs} />"
+        else:
+            body = str(value)
+        return f"<{tag}{attrs}>\n{body}\n</{tag}>"
 
     @classmethod
     def _xml_schema(cls, tag: str, annotation: Any) -> str:
         schema = TypeAdapter(annotation).json_schema(by_alias=False)
-        return cls._schema_to_xml(tag, schema, schema.get("$defs", {}), frozenset())
 
-    @classmethod
-    def _schema_to_xml(cls, tag: str, schema: dict, definitions: dict, seen: frozenset[str]) -> str:
-        if ref := schema.get("$ref"):
-            name = ref.rsplit("/", 1)[-1]
-            return (
-                f"<{tag}>...</{tag}>"
-                if name in seen
-                else cls._schema_to_xml(tag, definitions[name], definitions, seen | {name})
-            )
-        if choices := schema.get("anyOf"):
-            return cls._schema_to_xml(
-                tag, next((s for s in choices if s.get("type") != "null"), choices[0]), definitions, seen
-            )
-        if schema.get("type") == "array":
-            item = cls._schema_to_xml("item", schema.get("items", {}), definitions, seen)
-            return f"<{tag}>{item}</{tag}>"
-        children = "".join(
-            cls._schema_to_xml(name, child, definitions, seen) for name, child in schema.get("properties", {}).items()
-        )
-        return f"<{tag}>{children}</{tag}>" if children else f"<{tag}>...</{tag}>"
+        def example(node, seen=frozenset()):
+            if ref := node.get("$ref"):
+                name = ref.rsplit("/", 1)[-1]
+                return "..." if name in seen else example(schema["$defs"][name], seen | {name})
+            if choices := node.get("anyOf"):
+                return example(next(s for s in choices if s.get("type") != "null"), seen)
+            if node.get("type") == "array":
+                return [example(node.get("items", {}), seen)]
+            if not node.get("properties") and isinstance(node.get("additionalProperties"), dict):
+                return {"example key": example(node["additionalProperties"], seen)}
+            return {name: example(child, seen) for name, child in node.get("properties", {}).items()} or "..."
+
+        return cls._value_to_xml(example(schema), tag)
 
     @classmethod
     def _elements_to_value(cls, elements: list[ET.Element], schema: dict, definitions: dict) -> Any:
         schema = definitions.get(schema.get("$ref", "").rsplit("/", 1)[-1], schema)
         if choices := schema.get("anyOf"):
-            if {"type": "null"} in choices and not list(elements[0]) and not (elements[0].text or "").strip():
+            if (
+                len(elements) == 1
+                and {"type": "null"} in choices
+                and not list(elements[0])
+                and elements[0].text is None
+            ):
                 return None
             choices = [choice for choice in choices if choice.get("type") != "null"]
             schema = choices[0]
             if list(elements[0]):
                 schema = next((choice for choice in choices if choice.get("type") != "string"), schema)
+        if len(elements) > 1 and schema.get("type") not in ("array", None):
+            raise ValueError("Repeated elements require a list field")
         if schema.get("type") == "array":
             if len(elements) == 1 and not list(elements[0]):
                 text = (elements[0].text or "").strip()
@@ -200,13 +344,13 @@ class XMLAdapter(ChatAdapter):
                 elements = items
             return [cls._elements_to_value([element], schema.get("items", {}), definitions) for element in elements]
         element = elements[0]
-        if schema.get("type") == "string" and list(element):
-            return (element.text or "") + "".join(ET.tostring(child, encoding="unicode") for child in element)
+        if schema.get("type") not in ("object", None) and list(element):
+            raise ValueError("Scalar values cannot contain child fields")
         children = cls._group_children(element)
         if not children:
             if schema.get("type") == "object" and not (element.text or "").strip():
                 return {}
-            values = [(element.text or "").strip() for element in elements]
+            values = [element.text or "" for element in elements]
             return values[0] if len(values) == 1 else values
         properties = schema.get("properties", {})
         child_schema = schema.get("additionalProperties", {})
@@ -238,3 +382,68 @@ class XMLAdapter(ChatAdapter):
             or is_typeddict(annotation)
             or (isinstance(annotation, type) and issubclass(annotation, pydantic.BaseModel))
         )
+
+
+class _XMLScalarParser:
+    """Read a literal leaf after its opening tag, in full or incrementally."""
+
+    def __init__(self, name: str, boundary: str):
+        self.name = re.escape(name)
+        self.boundary = boundary
+        self.buffer = ""
+        self.multiline = None
+        self.at_line_start = True
+        self.value_started = False
+        self.done = False
+
+    def feed(self, text: str, final: bool = False) -> str:
+        self.buffer += text
+        if self.multiline is None:
+            newline = re.match(r"[ \t]*\r?\n", self.buffer)
+            if not newline and not final and re.fullmatch(r"[ \t]*\r?", self.buffer):
+                return ""
+            self.multiline = newline is not None
+            if newline:
+                self.buffer = self.buffer[newline.end() :]
+
+        prefix = ""
+        if self.multiline:
+            # A tag at a chunk boundary may still be followed by literal text on the same line.
+            ending = r"(?:\n|$)" if final else r"\n"
+            # Accept an end-of-line closing tag attached to text (e.g. a Markdown code fence).
+            pattern = rf"(?m)(?:^[ \t]*)?</{self.name}[ \t]*>[ \t]*\r?{ending}"
+            prefix = "" if self.at_line_start else "x"
+        else:
+            pattern = rf"</{self.name}\s*>"
+        closing = None
+        for candidate in regex.finditer(pattern, prefix + self.buffer, partial=not final):
+            if candidate.partial:
+                closing = candidate
+                break
+            suffix = self.buffer[candidate.end() - len(prefix) :]
+            continuation = regex.match(rf"\s*{self.boundary}", suffix, partial=not final)
+            if continuation is None:
+                # An inner closing tag followed by literal text is part of the value.
+                continue
+            closing = candidate
+            # Chunk boundaries are not EOF; hold the candidate until its continuation is known.
+            self.done = not continuation.partial and (final or continuation.group("end") is None)
+            break
+        end = closing.start() - len(prefix) if closing else len(self.buffer)
+        value = self.buffer[:end]
+        if self.done:
+            self.buffer = self.buffer[closing.end() - len(prefix) :]
+            value = value.removesuffix("\n").removesuffix("\r") if self.multiline else value.rstrip()
+        else:
+            # Retain the possible framing newline (or compact trailing whitespace) until the delimiter is known.
+            if self.multiline:
+                value = value.removesuffix("\n").removesuffix("\r")
+            else:
+                value = value.rstrip()
+            self.buffer = self.buffer[len(value) :]
+        if value:
+            self.at_line_start = value.endswith("\n")
+        if not self.multiline and not self.value_started:
+            value = value.lstrip()
+        self.value_started |= bool(value)
+        return value

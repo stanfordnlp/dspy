@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.types import Type
-from dspy.adapters.xml_adapter import XMLAdapter
+from dspy.adapters.xml_adapter import XMLAdapter, _XMLScalarParser
 from dspy.dsp.utils.settings import settings
 from dspy.streaming.messages import StreamResponse
 from dspy.utils.lazy_import import require
@@ -58,6 +58,9 @@ class StreamListener:
         self.json_adapter_state = {"field_accumulated_messages": ""}
         self.value_started = False
         self.held_whitespace = ""
+        self.xml_parser = None
+        self.xml_prefix_complete = False
+        self.xml_response_complete = False
 
         self.adapter_identifiers = {
             "ChatAdapter": {
@@ -131,6 +134,10 @@ class StreamListener:
 
         if self.stream_end:
             if self.allow_reuse:
+                if isinstance(settings.adapter, XMLAdapter) and not self.xml_response_complete:
+                    # A field can end before its response's trailing XML/Markdown framing.
+                    self.xml_response_complete = chunk.choices[0].finish_reason is not None
+                    return
                 # Clear up the state for the next stream.
                 self.stream_end = False
                 self.cache_hit = False
@@ -140,6 +147,9 @@ class StreamListener:
                 self.stream_start = False
                 self.value_started = False
                 self.held_whitespace = ""
+                self.xml_parser = None
+                self.xml_prefix_complete = False
+                self.xml_response_complete = False
             else:
                 return
 
@@ -161,9 +171,15 @@ class StreamListener:
         # For non-custom streamable types, the streaming chunks come from the content field of the ModelResponseStream.
         try:
             chunk_message = chunk.choices[0].delta.content
-            if chunk_message is None:
-                return
         except Exception:
+            return
+
+        if isinstance(settings.adapter, XMLAdapter) and not settings.adapter._uses_nested_xml(self._output_type):
+            self.xml_response_complete = chunk.choices[0].finish_reason is not None
+            return self._xml_adapter_handle_stream_chunk(
+                chunk_message or "", final=self.xml_response_complete
+            )
+        if chunk_message is None:
             return
 
         if chunk_message and start_identifier in chunk_message and not isinstance(settings.adapter, JSONAdapter):
@@ -242,6 +258,36 @@ class StreamListener:
             else:
                 # Other adapters rely on the end_identifier to detect the end of the field we are listening to.
                 return self._default_handle_stream_chunk(token, end_identifier)
+
+    def _xml_adapter_handle_stream_chunk(self, text: str, final: bool = False) -> StreamResponse | None:
+        if not self.stream_start:
+            self.field_start_queue.append(text)
+            buffered = "".join(self.field_start_queue)
+            if not self.xml_prefix_complete:
+                fields = self.predict.signature.output_fields if self.predict else {self.signature_field_name: None}
+                buffered = XMLAdapter._strip_reasoning_prefix(buffered, fields, final=final)
+                if buffered is None:
+                    return None
+                self.xml_prefix_complete = True
+            opening = re.search(rf"<{re.escape(self.signature_field_name)}\s*(/?)>", buffered)
+            if not opening:
+                # Only the suffix beginning at '<' can still become the opening tag.
+                self.field_start_queue = [buffered[buffered.rfind("<") :]] if "<" in buffered else []
+                return None
+            self.field_start_queue = []
+            self.stream_start = True
+            if opening[1]:
+                self.stream_end = True
+                return StreamResponse(self.predict_name, self.signature_field_name, "", is_last_chunk=True)
+            fields = self.predict.signature.output_fields if self.predict else {self.signature_field_name: None}
+            boundary = XMLAdapter._scalar_boundary({"properties": fields}, {}, r"(?:```\s*)?(?P<end>\Z)")
+            self.xml_parser = _XMLScalarParser(self.signature_field_name, boundary)
+            text = buffered[opening.end() :]
+        token = self.xml_parser.feed(text, final=final)
+        self.stream_end = self.xml_parser.done
+        if token or self.stream_end:
+            return StreamResponse(self.predict_name, self.signature_field_name, token, is_last_chunk=self.stream_end)
+        return None
 
     def _json_adapter_handle_stream_chunk(self, token: str, chunk_message: str) -> StreamResponse | None:
         self.json_adapter_state["field_accumulated_messages"] += chunk_message
@@ -365,9 +411,13 @@ class StreamListener:
             A StreamResponse with the remaining buffered tokens and is_last_chunk=True,
             or None if there are no buffered tokens or the stream hasn't started.
         """
+        self.xml_response_complete = True
         if self.stream_end or not self.stream_start:
             # Stream already ended or never started, nothing to finalize
             return None
+
+        if self.xml_parser is not None:
+            return self._xml_adapter_handle_stream_chunk("", final=True)
 
         self.stream_end = True
         if self.field_end_queue.qsize() > 0:
