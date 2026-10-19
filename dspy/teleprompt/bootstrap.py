@@ -163,10 +163,17 @@ class BootstrapFewShot(Teleprompter):
                     bootstrapped[example_idx] = True
                     break
 
-        print(
-            f"Bootstrapped {len(bootstrapped)} full traces after {example_idx} examples "
-            f"for up to {self.max_rounds} rounds, amounting to {bootstrap_attempts} attempts."
-        )
+        if self.trainset:
+            print(
+                f"Bootstrapped {len(bootstrapped)} full traces after {example_idx} examples "
+                f"for up to {self.max_rounds} rounds, amounting to {bootstrap_attempts} attempts."
+            )
+        else:
+            # `example_idx` is never assigned when `self.trainset` is empty (the `for` loop body
+            # never runs), so referencing it here would raise UnboundLocalError. An empty trainset
+            # is a valid input (e.g. a KNN-based few-shot retriever returning zero neighbors), so we
+            # just report that no bootstrapping happened instead of crashing.
+            print("Bootstrapped 0 full traces: trainset is empty.")
 
         # Unbootstrapped training examples
 

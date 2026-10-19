@@ -168,3 +168,30 @@ def test_validation_set_usage():
 
     # Check that validation examples are part of student's demos after compilation
     assert len(compiled_student.predictor.demos) >= len(valset), "Validation set not used in compiled student demos"
+
+
+def test_bootstrap_with_empty_trainset_does_not_crash():
+    """Regression test: an empty trainset must not crash `_bootstrap`.
+
+    `_bootstrap` iterates `for example_idx, example in enumerate(self.trainset): ...` and later
+    reports progress with `f"... after {example_idx} examples ..."`. When `self.trainset` is empty,
+    the loop body never runs, so `example_idx` is never assigned and that reference raises
+    `UnboundLocalError`.
+
+    This is reachable from `KNNFewShot`: when its underlying `KNN` retriever is constructed with
+    `k=0`, it now correctly returns zero neighbors (see the k<=0 fix in `dspy.predict.knn.KNN`),
+    which `KNNFewShot.compile`'s `forward_pass` passes straight through to
+    `BootstrapFewShot.compile(..., trainset=[])`. Before this fix, that crashed every zero-shot
+    `KNNFewShot` invocation.
+    """
+    student = SimpleModule("input -> output")
+    teacher = SimpleModule("input -> output")
+
+    lm = DummyLM([{"output": "blue"}])
+    dspy.configure(lm=lm)
+
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
+    compiled_student = bootstrap.compile(student, teacher=teacher, trainset=[])
+
+    assert compiled_student._compiled
+    assert compiled_student.predictor.demos == []
