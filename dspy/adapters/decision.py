@@ -78,7 +78,7 @@ class DecisionAdapter:
         self.system_one = system_one
 
     def _prepare(self, lm, signature, demos, inputs, lm_kwargs):
-        from dspy.adapters.utils import get_field_description_string
+        from dspy.adapters.utils import get_field_description_string, serialize_for_json
         from dspy.predict.predict import serialize_object
 
         if settings.send_stream is not None:
@@ -93,12 +93,11 @@ class DecisionAdapter:
             state = {
                 "instructions": signature.instructions,
                 "input_fields": get_field_description_string(signature.input_fields),
-                "inputs": serialize_object({k: v for k, v in inputs.items() if k in signature.input_fields}),
+                "inputs": {k: v for k, v in inputs.items() if k in signature.input_fields},
             }
             if demos:
-                state["demos"] = [
-                    serialize_object({k: v for k, v in demo.items() if k in signature.fields}) for demo in demos
-                ]
+                state["demos"] = [{k: v for k, v in demo.items() if k in signature.fields} for demo in demos]
+            state = serialize_for_json(state)
             properties = {}
             for name, kind in types.items():
                 if issubclass(kind, Noul):

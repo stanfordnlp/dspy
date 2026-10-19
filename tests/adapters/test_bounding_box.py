@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from typing import Literal
 
 import pytest
@@ -170,6 +171,36 @@ async def test_predict_native_boxes_evidence_images_and_cache(asynchronous, mixe
         assert lm.history[-1]["usage"] == {}
     finally:
         await lm.aclose()
+
+
+@pytest.mark.parametrize("with_image", [False, True])
+def test_native_state_serializes_inputs_and_demos(with_image, monkeypatch):
+    from dspy import lm15
+    from dspy._vendor.lm15.testing import FakeTransport
+    from tests.clients.test_lm_engine_execution import DualResponse
+
+    signature = dspy.Signature({"metadata": (dict, dspy.InputField()), "box": (dspy.BoundingBox, dspy.OutputField())})
+    inputs = {"metadata": {"point": (9, 2), "date": date(2026, 10, 19), "tags": {"input"}}}
+    demo = {"metadata": {"point": (4, 7), "date": date(2025, 3, 8), "tags": {"demo"}}, "box": dspy.BoundingBox(**EDGES)}
+    if with_image:
+        signature = signature.prepend("photo", dspy.InputField(), type_=dspy.Image)
+        inputs["photo"] = demo["photo"] = dspy.Image(Image.new("RGB", (320, 280), "red"))
+    response = {"model": "jev-1.14.0", "answers": {"box": {"type": "box", "box": EDGES, "confidence": 0.8}}}
+    transport = FakeTransport([DualResponse(200, json.dumps(response).encode())])
+    monkeypatch.setattr("dspy.clients.execution.RouterConfig", lambda **kwargs: lm15.RouterConfig(**{**kwargs, "transport": transport}))
+    lm = dspy.LM("typesafe:jev-1.14.0", engine="lm15", api_key="test", cache=False, num_retries=0)
+    predict = dspy.Predict(signature)
+    predict.demos = [dspy.Example(**demo)]
+    try:
+        assert predict(lm=lm, **inputs).box.model_dump() == EDGES
+        payload = json.loads(transport.requests[0].body)
+        if with_image:
+            assert len(payload["assets"]) == 2
+        else:
+            assert payload["state"]["inputs"]["metadata"] == {"point": [9, 2], "date": "2026-10-19", "tags": ["input"]}
+            assert payload["state"]["demos"][0]["metadata"] == {"point": [4, 7], "date": "2025-03-08", "tags": ["demo"]}
+    finally:
+        lm.close()
 
 
 @pytest.mark.parametrize("annotation", [list[dspy.BoundingBox], dspy.BoundingBox | None, str])
