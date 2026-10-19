@@ -72,6 +72,19 @@ You can also run the hooks manually:
 Please ensure all pre-commit checks pass before creating your pull request. If you're unsure about any
 formatting issues, feel free to commit your changes and let the pre-commit hooks fix them automatically.
 
+### Internal Type Checking
+
+We are incrementally type-checking DSPy's internals with [Astral's ty](https://docs.astral.sh/ty/).
+The goal is to make inputs and outputs clear to contributors, editors, and coding agents without requiring
+them to trace an implementation. Run the same check as CI:
+
+```shell
+uv run --locked --extra dev ty check
+```
+
+The pre-commit hook runs this same command and requires `uv` on your PATH. It checks the entire configured
+typing scope on every commit, rather than only staged files, because changes to imported code can affect types.
+
 ### Step 4. Create a Pull Request
 
 Once your changes are ready, open a pull request from your branch in your fork to the main branch in the
@@ -176,5 +189,3 @@ AI-assisted contributions are welcome under these conditions:
   code is compatible with DSPy's MIT license.
 
 PRs that violate this policy will be closed without review.
-
-
