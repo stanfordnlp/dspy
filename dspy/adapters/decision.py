@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 from dspy.adapters.decision_state import DecisionState
 from dspy.adapters.types.decision import Choice, Noul, Probability, Score
 from dspy.dsp.utils.settings import settings
+from dspy.lm15 import Config, DataPart, Message, Request, choice, score, yes_no
 
 
 @contextmanager
@@ -73,7 +74,7 @@ class DecisionAdapter:
         self.state = state
         self.system_one = system_one
 
-    def _prepare(self, signature, demos, inputs, lm_kwargs):
+    def _prepare(self, lm, signature, demos, inputs, lm_kwargs):
         from dspy.adapters.utils import get_field_description_string
         from dspy.predict.predict import serialize_object
 
@@ -95,7 +96,26 @@ class DecisionAdapter:
                 state["demos"] = [
                     serialize_object({k: v for k, v in demo.items() if k in signature.fields}) for demo in demos
                 ]
-            return {"state": state, "questions": questions}
+            properties = {}
+            for name, kind in types.items():
+                if issubclass(kind, Noul):
+                    properties[name] = yes_no(name)
+                elif issubclass(kind, Score):
+                    properties[name] = score(name, [str(i) for i in range(len(kind.criteria()))])
+                else:
+                    criteria = questions[name]["criteria"]
+                    if "" in criteria:
+                        raise ValueError(
+                            f"Jev output {name!r} cannot contain an empty choice label; "
+                            "use a nonempty label such as 'no_match'."
+                        )
+                    properties[name] = choice(name, list(criteria))
+            # The schema declares answer spaces; native questions retain structured instructions and criteria.
+            response_format = {"type": "json_schema", "schema": {"type": "object", "properties": properties}}
+            return Request(
+                model=lm.model, messages=(Message.user(DataPart(value=state)),),
+                config=Config(response_format=response_format, extensions={"questions": questions}),
+            )
         for name, kind in types.items():
             signature = signature.with_updated_fields(
                 name, type_=evidence_type(kind), desc="\n" + json.dumps(questions[name], ensure_ascii=False, indent=2)
@@ -136,11 +156,13 @@ class DecisionAdapter:
         return results
 
     def __call__(self, lm, lm_kwargs, signature, demos, inputs):
-        request = self._prepare(signature, demos, inputs, lm_kwargs)
-        completions = [lm(**request)] if self.system_one else self.adapter(lm, **request)
+        request = self._prepare(lm, signature, demos, inputs, lm_kwargs)
+        completions = ([lm(request).provider_data["typesafe"]["answers"]] if self.system_one
+                       else self.adapter(lm, **request))
         return self._decode(completions)
 
     async def acall(self, lm, lm_kwargs, signature, demos, inputs):
-        request = self._prepare(signature, demos, inputs, lm_kwargs)
-        completions = [await lm.acall(**request)] if self.system_one else await self.adapter.acall(lm, **request)
+        request = self._prepare(lm, signature, demos, inputs, lm_kwargs)
+        completions = ([(await lm.acall(request)).provider_data["typesafe"]["answers"]] if self.system_one
+                       else await self.adapter.acall(lm, **request))
         return self._decode(completions)

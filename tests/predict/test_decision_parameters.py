@@ -7,23 +7,43 @@ from typing import Annotated, Literal, get_args
 import pytest
 
 import dspy
-from dspy.experimental import Choice, Noul, Score, TypeSafe
+from dspy.clients.engines.dummy_engine import AsyncDummyEngine
+from dspy.experimental import Choice, Noul, Score
+from dspy.lm15 import Message, Request, Response, Usage
 
 Rating = Score["bad", "fair", "great"]
 Label = Choice[(2, ""), ("other", "")]
 
 
-class FakeClient:
+class DecisionEngine:
     supports_decision_requests = True
 
+    def __init__(self, owner):
+        self.owner = owner
+
+    def complete(self, request):
+        assert isinstance(request, Request)
+        state = request.messages[0].parts[0].value
+        questions = request.config.extensions["questions"]
+        self.owner.calls.append(copy.deepcopy((state, questions)))
+        response = Response(id=None, model=request.model, message=Message.assistant(""), finish_reason="stop", usage=Usage(),
+                            provider_data={"typesafe": {}})
+        # Inject raw evidence after construction so malformed-evidence tests reach DSPy's decoder,
+        # including non-JSON keys and nonfinite values rejected by Response's generic JSON validation.
+        response.provider_data["typesafe"]["answers"] = self.owner.evidence(state, questions)
+        return response
+
+
+class FakeClient(dspy.LM):
     def __init__(self, probability=0.8, choice="2", answers=None):
+        engine = DecisionEngine(self)
+        super().__init__("typesafe:jev-test", engine=engine, async_engine=AsyncDummyEngine(engine), cache=False)
         self.probability = probability
         self.choice = choice
         self.answers = answers
         self.calls = []
 
-    def __call__(self, state, questions):
-        self.calls.append(copy.deepcopy((state, questions)))
+    def evidence(self, state, questions):
         if self.answers is not None:
             return copy.deepcopy(self.answers)
         answers = {}
@@ -39,9 +59,6 @@ class FakeClient:
                     "probabilities": {key: 0.8 if key == self.choice else 0.2 for key in question["criteria"]},
                 }
         return answers
-
-    async def acall(self, **kwargs):
-        return self(**kwargs)
 
 
 def signature(rich=False):
@@ -161,7 +178,7 @@ def test_score_cuts_normalization_and_snapshot(cuts, level):
     assert before.level == 2 and after.level == level
     assert before.confidence == after.confidence == 0.61
     assert client.calls[0] == client.calls[1]
-    answers = client(*client.calls[0])
+    answers = client.evidence(*client.calls[0])
     answers["rating"]["probabilities"] = {0: 0.099, 1: 0.297, 2: 0.594}
     result = module(text="x", lm=FakeClient(answers=answers)).rating
     assert result.value == pytest.approx(1.5)
@@ -286,7 +303,7 @@ def test_malformed_evidence_is_rejected(field, update):
     client = FakeClient()
     module = predict(True, client)
     module(text="x")
-    answers = client(*client.calls[0])
+    answers = client.evidence(*client.calls[0])
     answers[field].update(update)
     with pytest.raises(ValueError):
         module(text="x", lm=FakeClient(answers=answers))
@@ -349,11 +366,11 @@ def test_nested_mutations_are_revalidated(setting):
 
 def test_inflight_decoding_uses_configuration_snapshot():
     class UpdatingClient(FakeClient):
-        def __call__(self, state, questions):
+        def evidence(self, state, questions):
             module.fields["flag"]["threshold"] = 0.9
             module.fields["rating"]["cuts"][1] = 1.6
             module.fields["label"]["weights"]["2"] = 0.1
-            return super().__call__(state, questions)
+            return super().evidence(state, questions)
 
     module = predict(True, UpdatingClient())
     module.fields["rating"] = {"cuts": [0.5, 1.5]}
@@ -469,7 +486,7 @@ def test_null_instructions_and_criteria_survive_reload(tmp_path):
 
 
 def test_reset_copy_and_endpoint_state(tmp_path):
-    module = predict(True, TypeSafe("jev-test", api_key="test-credential", base_url="https://example.test"))
+    module = predict(True, dspy.LM("typesafe:jev-test", engine="lm15", api_key="test-credential", api_base="https://example.test"))
     module.fields["flag"]["threshold"] = 0.9
     module.demos = [{"text": "example", "flag": False}]
     duplicate = module.reset_copy()
@@ -481,9 +498,10 @@ def test_reset_copy_and_endpoint_state(tmp_path):
     assert "test-credential" not in path.read_text()
     restored = predict(True)
     restored.load(path)
-    assert restored.lm.base_url != "https://example.test"
+    assert restored.lm.kwargs.get("api_base") != "https://example.test"
     restored.load(path, allow_unsafe_lm_state=True)
-    assert restored.lm.base_url == "https://example.test" and restored.lm.api_key is None
+    assert restored.lm.kwargs["api_base"] == "https://example.test"
+    assert restored.lm.kwargs.get("api_key") is None
 
 
 @pytest.mark.asyncio
