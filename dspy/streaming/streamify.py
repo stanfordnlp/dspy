@@ -221,6 +221,11 @@ def streamify(
             async for value in receive_stream:
                 if isinstance(value, _StreamSignature):
                     for listener in predict_id_to_listener.get(value.predict_id, []):
+                        # A new predictor call also ends the previous one when the provider omitted its stop chunk.
+                        if listener.allow_reuse:
+                            if final_chunk := listener.finalize():
+                                yield final_chunk
+                            listener._reset()
                         listener._set_signature(value.signature)
                 elif _is_litellm_model_response_stream(value):
                     if len(predict_id_to_listener) == 0:

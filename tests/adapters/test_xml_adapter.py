@@ -159,6 +159,35 @@ def test_xml_adapter_literal_leaves_round_trip_at_every_depth(value):
     assert adapter.parse(Result, formatted) == expected
 
 
+@pytest.mark.parametrize("case", ["nested_html", "unicode_key", "html_with_extra"])
+def test_xml_predict_round_trips_nested_html_and_unicode_keys(case):
+    class Page(pydantic.BaseModel):
+        model_config = pydantic.ConfigDict(strict=True)
+        html: str
+        name: str
+        count: int = pydantic.Field(alias="count-alias")
+
+    annotation, expected = (
+        (Page, Page(html="<html>Body</html>\n<footer>Copyright</footer>", name="literal <name> opening", **{"count-alias": 2}))
+        if case != "unicode_key"
+        else (dict[str, str], {"cafe\u0301": "decomposed", "café": "precomposed"})
+    )
+    signature = dspy.Signature({"result": (annotation, dspy.OutputField())})
+    adapter = XMLAdapter(use_json_adapter_fallback=False)
+    response = adapter.format_assistant_message_content(signature, {"result": expected})
+    if case == "html_with_extra":
+        response = response.replace("</name>", "</name>\n<extra>ignored</extra>")
+    with mock.patch("litellm.completion", return_value=ModelResponse(
+        choices=[Choices(message=Message(content=response))], model="openai/gpt-4o-mini"
+    )):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=adapter):
+            if case == "html_with_extra":
+                with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+                    dspy.Predict(signature)()
+                return
+            assert dspy.Predict(signature)().result == expected
+
+
 @pytest.mark.parametrize("kind", ["cat", "dog"])
 def test_xml_adapter_nested_discriminated_union_round_trip(kind):
     class Cat(pydantic.BaseModel):
@@ -604,9 +633,11 @@ def test_xml_adapter_format_and_parse_list_of_models():
         "<item>\n<name>\nb\n</name>\n<score>\n2.2\n</score>\n</item>\n</items>"
     )
     assert adapter.parse(TestSignature, xml) == {"items": items}
-    # Pydantic's default extra-field handling still applies inside each model.
-    with_extra = xml.replace("</name>", "</name>\n<extra>ignored</extra>")
-    assert adapter.parse(TestSignature, with_extra) == {"items": items}
+    # XML structure follows the declared fields, not Pydantic's extra-ignore policy.
+    for count in (1, 2):
+        with_extra = xml.replace("</name>", "</name>\n<extra>ignored</extra>", count)
+        with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+            adapter.parse(TestSignature, with_extra)
 
     # Legacy JSON lists inside the outer XML field remain supported.
     import json

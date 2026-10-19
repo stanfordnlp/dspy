@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import inspect
 import re
+import xml.etree.ElementTree as ET
 from collections import defaultdict
 from queue import Queue
 from typing import TYPE_CHECKING, Any
+
+from pydantic import TypeAdapter
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.types import Type
 from dspy.adapters.types.reasoning import Reasoning
-from dspy.adapters.xml_adapter import XMLAdapter, _XMLScalarParser
+from dspy.adapters.xml_adapter import XMLAdapter, _XMLParser, _XMLPrefixParser, _XMLScalarParser
 from dspy.dsp.utils.settings import settings
 from dspy.streaming.messages import StreamResponse
 from dspy.utils.lazy_import import require
@@ -51,20 +54,8 @@ class StreamListener:
         self._use_native_reasoning = True
         self.predict = predict
         self.predict_name = predict_name
-
-        self.field_start_queue = []
-        self.field_end_queue = Queue()
-        self.stream_start = False
-        self.stream_end = False
-        self.cache_hit = False
         self.allow_reuse = allow_reuse
-
-        self.json_adapter_state = {"field_accumulated_messages": ""}
-        self.value_started = False
-        self.held_whitespace = ""
-        self.xml_parser = None
-        self.xml_prefix_complete = False
-        self.xml_response_complete = False
+        self._reset()
 
         self.adapter_identifiers = {
             "ChatAdapter": {
@@ -89,6 +80,20 @@ class StreamListener:
                 "end_pattern_contains": "</",  # Any closing tag start
             },
         }
+
+    def _reset(self):
+        """Clear response state independently of whether the target field was present."""
+        self.field_start_queue = []
+        self.field_end_queue = Queue()
+        self.stream_start = False
+        self.stream_end = False
+        self.cache_hit = False
+        self.json_adapter_state = {"field_accumulated_messages": ""}
+        self.value_started = False
+        self.held_whitespace = ""
+        self.xml_parser = None
+        self.xml_prefix = None
+        self.xml_response_complete = False
 
     def _buffered_message_end_with_start_identifier(self, concat_message: str, start_identifier: str) -> str:
         for i in range(len(concat_message)):
@@ -128,6 +133,7 @@ class StreamListener:
     def _set_signature(self, signature):
         # Use the adapter's decision, after per-call overrides and native adaptation.
         self._wire_signature = signature
+        self._wire_field_name = self.signature_field_name
         self._use_native_reasoning = True
         for name, field in signature.output_fields.items():
             if field.json_schema_extra.get("__dspy_reasoning_field", name) == self.signature_field_name:
@@ -157,17 +163,7 @@ class StreamListener:
                     self.xml_response_complete = chunk.choices[0].finish_reason is not None
                     return
                 # Clear up the state for the next stream.
-                self.stream_end = False
-                self.cache_hit = False
-                self.field_start_queue = []
-                self.field_end_queue = Queue()
-                self.json_adapter_state["field_accumulated_messages"] = ""
-                self.stream_start = False
-                self.value_started = False
-                self.held_whitespace = ""
-                self.xml_parser = None
-                self.xml_prefix_complete = False
-                self.xml_response_complete = False
+                self._reset()
             else:
                 return
 
@@ -279,34 +275,56 @@ class StreamListener:
                 return self._default_handle_stream_chunk(token, end_identifier)
 
     def _xml_adapter_handle_stream_chunk(self, text: str, final: bool = False) -> StreamResponse | None:
-        if not self.stream_start:
-            self.field_start_queue.append(text)
-            buffered = "".join(self.field_start_queue)
-            signature = self._wire_signature or (self.predict.signature if self.predict else None)
-            fields = signature.output_fields if signature else {self._wire_field_name: None}
-            if not self.xml_prefix_complete:
-                buffered = XMLAdapter._strip_reasoning_prefix(buffered, fields, final=final)
-                if buffered is None:
+        signature = self._wire_signature or (self.predict.signature if self.predict else None)
+        fields = signature.output_fields if signature else {self._wire_field_name: None}
+        if self.xml_prefix is None:
+            self.xml_prefix = _XMLPrefixParser(fields)
+        text = self.xml_prefix.feed(text, final=final)
+        if text is None:
+            return None
+        while True:
+            if self.xml_parser is None:
+                self.field_start_queue.append(text)
+                buffered = "".join(self.field_start_queue)
+                names = "|".join(re.escape(name) for name in fields)
+                opening = re.search(rf"<({names})\s*(/?)>", buffered)
+                if not opening:
+                    # Retain only a potentially split field header.
+                    self.field_start_queue = [buffered[buffered.rfind("<") :]] if "<" in buffered else []
                     return None
-                self.xml_prefix_complete = True
-            opening = re.search(rf"<{re.escape(self._wire_field_name)}\s*(/?)>", buffered)
-            if not opening:
-                # Only the suffix beginning at '<' can still become the opening tag.
-                self.field_start_queue = [buffered[buffered.rfind("<") :]] if "<" in buffered else []
-                return None
-            self.field_start_queue = []
-            self.stream_start = True
-            if opening[1]:
+                self.field_start_queue = []
+                self.stream_start = opening[1] == self._wire_field_name
+                text = buffered[opening.end() :]
+                if opening[2]:
+                    if self.stream_start:
+                        self.stream_end = True
+                        return StreamResponse(self.predict_name, self.signature_field_name, "", is_last_chunk=True)
+                    continue
+                boundary = XMLAdapter._scalar_boundary({"properties": fields}, {}, r"(?:```\s*)?(?P<end>\Z)")
+                if self.stream_start:
+                    self.xml_parser = _XMLScalarParser(opening[1], boundary)
+                else:
+                    schema = TypeAdapter(fields[opening[1]].annotation).json_schema(by_alias=False)
+                    self.xml_parser = _XMLParser(
+                        ET.Element("root"), {"properties": {opening[1]: schema}}, {}, boundary, single=True
+                    )
+                    text = buffered[opening.start():]
+            try:
+                token = self.xml_parser.feed(text, final=final)
+            except ET.ParseError:
+                # Final adapter postprocessing owns errors, including tolerated text alongside native tool calls.
                 self.stream_end = True
-                return StreamResponse(self.predict_name, self.signature_field_name, "", is_last_chunk=True)
-            boundary = XMLAdapter._scalar_boundary({"properties": fields}, {}, r"(?:```\s*)?(?P<end>\Z)")
-            self.xml_parser = _XMLScalarParser(self._wire_field_name, boundary)
-            text = buffered[opening.end() :]
-        token = self.xml_parser.feed(text, final=final)
-        self.stream_end = self.xml_parser.done
-        if token or self.stream_end:
-            return StreamResponse(self.predict_name, self.signature_field_name, token, is_last_chunk=self.stream_end)
-        return None
+                return None
+            if self.stream_start:
+                self.stream_end = self.xml_parser.done
+                if token or self.stream_end:
+                    return StreamResponse(self.predict_name, self.signature_field_name, token, is_last_chunk=self.stream_end)
+                return None
+            # Skip preceding fields as complete values, not as arbitrary text containing our field's tag.
+            if not self.xml_parser.done:
+                return None
+            text = self.xml_parser.buffer
+            self.xml_parser = None
 
     def _json_adapter_handle_stream_chunk(self, token: str, chunk_message: str) -> StreamResponse | None:
         self.json_adapter_state["field_accumulated_messages"] += chunk_message
@@ -431,12 +449,13 @@ class StreamListener:
             or None if there are no buffered tokens or the stream hasn't started.
         """
         self.xml_response_complete = True
-        if self.stream_end or not self.stream_start:
-            # Stream already ended or never started, nothing to finalize
+        if self.stream_end:
             return None
 
         if self.xml_parser is not None:
             return self._xml_adapter_handle_stream_chunk("", final=True)
+        if not self.stream_start:
+            return None
 
         self.stream_end = True
         if self.field_end_queue.qsize() > 0:

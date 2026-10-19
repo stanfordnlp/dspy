@@ -947,7 +947,8 @@ async def test_status_message_non_blocking_async_program():
 
 
 @pytest.mark.anyio
-async def test_stream_listener_allow_reuse():
+@pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.XMLAdapter(use_json_adapter_fallback=False)])
+async def test_stream_listener_allow_reuse(adapter):
     class MyProgram(dspy.Module):
         def __init__(self):
             super().__init__()
@@ -965,6 +966,13 @@ async def test_stream_listener_allow_reuse():
     )
 
     async def gpt_4o_mini_stream(*args, **kwargs):
+        if isinstance(adapter, dspy.XMLAdapter):
+            response = "```xml\n<answer>\nTo get to the other side!\n</answer>\n```"
+            for start in range(0, len(response), 7):
+                yield ModelResponseStream(
+                    model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=response[start:start + 7]))]
+                )
+            return
         # Recorded streaming from openai/gpt-4o-mini
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[["))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
@@ -988,7 +996,7 @@ async def test_stream_listener_allow_reuse():
         return stream_generators.pop(0)()  # return new async generator instance
 
     with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
-        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=adapter):
             output = program(question="why did a chicken cross the kitchen?")
             all_chunks = []
             async for value in output:
@@ -1076,6 +1084,7 @@ async def test_stream_listener_returns_correct_chunk_xml_adapter():
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("chunk_size", [1, 7, 1000])
+@pytest.mark.parametrize("terminal_content", [False, True])
 @pytest.mark.parametrize(
     "response, expected",
     [
@@ -1109,6 +1118,11 @@ async def test_stream_listener_returns_correct_chunk_xml_adapter():
             "<think>Ignore <answer>wrong</answer>.</think>\n```xml\n<answer>\nright\n</answer>\n```",
             "right",
         ),
+        (
+            "<think>outer</think>\n```xml\n<think><answer>wrong</answer></think>\n"
+            "<answer>\nright\n</answer>\n```",
+            "right",
+        ),
         ("Here is the result:\n\n<answer>\nR&B &amp; 雪\n</answer>", "R&B &amp; 雪"),
         (
             '<answer>\n<html><style>.a { color: red; }</style>\n'
@@ -1120,7 +1134,7 @@ async def test_stream_listener_returns_correct_chunk_xml_adapter():
         ),
     ],
 )
-async def test_xml_stream_preserves_literal_text(response, expected, chunk_size):
+async def test_xml_stream_preserves_literal_text(response, expected, chunk_size, terminal_content):
     program = dspy.streamify(
         dspy.Predict("question->answer"),
         stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer", allow_reuse=True)],
@@ -1130,7 +1144,10 @@ async def test_xml_stream_preserves_literal_text(response, expected, chunk_size)
         for start in range(0, len(response), chunk_size):
             yield ModelResponseStream(
                 model="gpt-4o-mini",
-                choices=[StreamingChoices(delta=Delta(content=response[start : start + chunk_size]))],
+                choices=[StreamingChoices(
+                    delta=Delta(content=response[start : start + chunk_size]),
+                    finish_reason="stop" if terminal_content and start + chunk_size >= len(response) else None,
+                )],
             )
 
     with mock.patch("litellm.acompletion", side_effect=stream):
@@ -1157,7 +1174,7 @@ async def test_xml_stream_recovers_html_without_consuming_following_field(chunk_
         count: int = dspy.OutputField()
         note: str = dspy.OutputField()
 
-    html = "<!DOCTYPE html>\n<html><body>R&B &amp; 雪</body>\n</html>"
+    html = "<!DOCTYPE html>\n<html><body>R&B &amp; 雪 <count/> <count>wrong</count></body>\n</html>"
     note = "A later field can also mention\n</html>"
     response = f"<html>\n{html}\n</html>\n<count>2</count>\n<note>\n{note}\n</note>"
 
@@ -1192,6 +1209,152 @@ async def test_xml_stream_recovers_html_without_consuming_following_field(chunk_
         chunks = [v for v in values if isinstance(v, dspy.streaming.StreamResponse) and v.signature_field_name == name]
         assert "".join(c.chunk for c in chunks) == expected
         assert sum(c.is_last_chunk for c in chunks) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("chunk_size", [1, 7, 1000])
+@pytest.mark.parametrize("variant", ["model", "union", "joined_close", "unknown_field"])
+async def test_xml_stream_skips_nested_fields_with_top_level_names(chunk_size, variant):
+    class Meta(pydantic.BaseModel):
+        meta: str
+        answer: str
+
+    class Result(dspy.Signature):
+        meta: Meta = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    expected = {"meta": Meta(meta="inner", answer="wrong"), "answer": "right"}
+    adapter = dspy.XMLAdapter(use_json_adapter_fallback=False)
+    response = adapter.format_assistant_message_content(Result, expected)
+    signature = Result
+    if variant == "union":
+        signature = Result.with_updated_fields("meta", type_=Meta | str)
+    elif variant == "joined_close":
+        response = response.replace("</meta>\n\n<answer>", "</meta><answer>")
+    elif variant == "unknown_field":
+        response = response.replace("inner\n</meta>", "inner\n</meta>\n<extra>ignored</extra>")
+
+    async def stream(*args, **kwargs):
+        for start in range(0, len(response), chunk_size):
+            yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(content=response[start:start + chunk_size]))])
+
+    program = dspy.streamify(dspy.Predict(signature), stream_listeners=[dspy.streaming.StreamListener("answer")])
+    with mock.patch("litellm.acompletion", side_effect=stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=adapter):
+            if variant == "unknown_field":
+                with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+                    _ = [value async for value in program()]
+                return
+            values = [value async for value in program()]
+    assert values[-1].meta == expected["meta"]
+    assert values[-1].answer == "right"
+    assert "".join(v.chunk for v in values if isinstance(v, StreamResponse)) == "right"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("chunk_size", [1, 7, 1000])
+@pytest.mark.parametrize("compact", [False, True])
+@pytest.mark.parametrize("variant", ["valid", "missing_close", "extra_first"])
+async def test_xml_stream_preserves_list_item_boundaries(chunk_size, compact, variant):
+    class Item(pydantic.BaseModel):
+        name: str
+        score: float
+
+    class Result(dspy.Signature):
+        rows: list[Item] = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    rows = [Item(name="a", score=1.1), Item(name="b", score=2.2)]
+    adapter = dspy.XMLAdapter(use_json_adapter_fallback=False)
+    response = adapter.format_assistant_message_content(Result, {"rows": rows, "answer": "right"})
+    if variant == "missing_close":
+        response = response.replace("</name>", "", 1)
+    elif variant == "extra_first":
+        response = response.replace("</name>", "</name>\n<extra>ignored</extra>", 1)
+    if compact:
+        response = response.replace("\n", "")
+
+    async def stream(*args, **kwargs):
+        for start in range(0, len(response), chunk_size):
+            yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(content=response[start:start + chunk_size]))])
+
+    program = dspy.streamify(dspy.Predict(Result), stream_listeners=[dspy.streaming.StreamListener("answer")])
+    with mock.patch("litellm.acompletion", side_effect=stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=adapter):
+            if variant != "valid":
+                with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+                    _ = [value async for value in program()]
+                return
+            values = [value async for value in program()]
+    assert values[-1].rows == rows
+    assert values[-1].answer == "right"
+    assert "".join(v.chunk for v in values if isinstance(v, StreamResponse)) == "right"
+
+
+@pytest.mark.anyio
+async def test_xml_stream_reuse_after_native_reasoning():
+    class Twice(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = dspy.ChainOfThought("->answer")
+
+        def forward(self):
+            self.predict()
+            return self.predict(config={"reasoning_effort": None})
+
+    turns = iter([
+        [Delta(reasoning_content="native thought"), Delta(content="<answer>one</answer>")],
+        [Delta(content="<plan>fallback thought</plan><answer>two</answer>")],
+    ])
+
+    async def stream(*args, **kwargs):
+        for delta in next(turns):
+            yield ModelResponseStream(choices=[StreamingChoices(delta=delta)])
+
+    program = dspy.streamify(Twice(), stream_listeners=[dspy.streaming.StreamListener("reasoning", allow_reuse=True)])
+    with (
+        mock.patch("litellm.acompletion", side_effect=stream),
+        mock.patch("litellm.supports_reasoning", return_value=True),
+        dspy.context(
+            lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False),
+            adapter=dspy.XMLAdapter(use_json_adapter_fallback=False),
+        ),
+    ):
+        values = [value async for value in program()]
+    assert values[-1].reasoning == "fallback thought"
+    assert values[-1].answer == "two"
+    assert "".join(v.chunk for v in values if isinstance(v, StreamResponse)) == "native thoughtfallback thought"
+
+
+@pytest.mark.anyio
+async def test_xml_stream_native_tools_ignore_incomplete_accompanying_thought():
+    class Result(dspy.Signature):
+        tools: list[dspy.Tool] = dspy.InputField()
+        answer: str = dspy.OutputField()
+        calls: dspy.ToolCalls = dspy.OutputField()
+
+    def search(query: str) -> str:
+        return query
+
+    call = {"index": 0, "id": "c1", "type": "function", "function": {"name": "search", "arguments": '{"query":"test"}'}}
+
+    async def stream(*args, **kwargs):
+        yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(content="<think>Need to search"))])
+        yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(tool_calls=[call]), finish_reason="tool_calls")])
+
+    program = dspy.streamify(dspy.Predict(Result), stream_listeners=[dspy.streaming.StreamListener("answer")])
+    with (
+        mock.patch("litellm.acompletion", side_effect=stream),
+        mock.patch("litellm.supports_function_calling", return_value=True),
+        dspy.context(
+            lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False),
+            adapter=dspy.XMLAdapter(use_json_adapter_fallback=False, use_native_function_calling=True),
+        ),
+    ):
+        values = [value async for value in program(tools=[dspy.Tool(search)])]
+    assert not any(isinstance(value, StreamResponse) for value in values)
+    assert values[-1].calls.tool_calls[0].name == "search"
+    assert values[-1].calls.tool_calls[0].args == {"query": "test"}
 
 
 @pytest.mark.anyio

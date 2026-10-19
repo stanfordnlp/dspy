@@ -32,6 +32,8 @@ class XMLAdapter(ChatAdapter):
     """Schema-directed tags with literal leaves and standalone structural tag lines.
 
     Compact tags remain readable for compatibility. Neither form decodes entities.
+    Declared objects reject extra XML fields; dictionaries permit arbitrary keys.
+    Container closing boundaries are reserved, including inside literal strings.
     """
 
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
@@ -135,14 +137,21 @@ class XMLAdapter(ChatAdapter):
         }
         try:
             root = ET.Element("dspy_root")
-            text = self._strip_reasoning_prefix(completion.strip(), signature.output_fields)
-            if fence := re.fullmatch(r"```(?:xml)?[ \t]*\r?\n(.*)\r?\n```", text, re.DOTALL):
-                text = self._strip_reasoning_prefix(fence[1].strip(), signature.output_fields)
+            prefix = _XMLPrefixParser(signature.output_fields)
+            text = prefix.feed(completion.strip(), final=True)
+            if text is None:
+                raise ET.ParseError("Incomplete leading thought block")
+            if prefix.fenced:
+                fence = re.fullmatch(r"(.*)\r?\n```", text, re.DOTALL)
+                if not fence:
+                    raise ET.ParseError("Missing closing XML fence")
+                text = fence[1].strip()
             # Like ChatAdapter, ignore introductory prose before the first field.
             text = re.sub(r"\A[^<]+(?=<)", "", text)
-            remaining = self._parse_children(text, root, {"properties": schemas}, {})
+            parser = _XMLParser(root, {"properties": schemas}, {})
+            parser.feed(text, final=True)
             elements = self._group_children(root)
-            if remaining != len(text) or {child.tag for child in root} - signature.output_fields.keys():
+            if parser.buffer or {child.tag for child in root} - signature.output_fields.keys():
                 raise ET.ParseError("Unexpected output field or closing tag")
             for name, field in signature.output_fields.items():
                 if name not in elements:
@@ -152,10 +161,10 @@ class XMLAdapter(ChatAdapter):
                 for candidate in [field_schema, *field_schema.get("anyOf", [])]:
                     try:
                         value = self._elements_to_value(elements[name], candidate, field_schema.get("$defs", {}))
-                        try:
+                        if isinstance(value, (dict, list)):
+                            fields[name] = TypeAdapter(field.annotation).validate_python(value, by_name=True, strict=False)
+                        else:
                             fields[name] = parse_value(value, field.annotation)
-                        except pydantic.ValidationError:
-                            fields[name] = TypeAdapter(field.annotation).validate_python(value, by_name=True)
                         break
                     except ValueError as e:
                         error = e
@@ -175,85 +184,6 @@ class XMLAdapter(ChatAdapter):
             )
         return fields
 
-    @staticmethod
-    def _strip_reasoning_prefix(text: str, output_fields: dict, final: bool = True) -> str | None:
-        """Ignore leading thought blocks, waiting for complete blocks when streaming.
-
-        Declared output fields and thought tags inside field values remain literal.
-        """
-        text = text.lstrip()
-        fence = regex.match(r"```(?:xml)?[ \t]*\r?\n", text, partial=True) if not final else None
-        if fence:
-            if fence.partial:
-                return None
-            text = text[fence.end() :].lstrip()
-        while text:
-            thought = regex.match(r"<(think|thinking)>.*?</\1>\s*", text, regex.DOTALL, partial=not final)
-            if not thought or thought[1] in output_fields:
-                return text
-            if thought.partial:
-                return None
-            text = text[thought.end() :]
-        return text if final else None
-
-    @classmethod
-    def _parse_children(
-        cls,
-        text: str,
-        parent: ET.Element,
-        schema: dict,
-        definitions: dict,
-        boundary: str = r"(?P<end>\Z)",
-        pos: int = 0,
-    ) -> int:
-        boundary = cls._scalar_boundary(schema, definitions, boundary)
-        while pos < len(text) and not text.startswith("</", pos):
-            opening = re.compile(r"""<([\w.-]+)(?:\s+key=(?:"[^"]*"|'[^']*'))?\s*(/?)>""").match(text, pos)
-            if not opening:
-                raise ET.ParseError("Expected a field opening tag")
-            name = opening[1]
-            # Only tag headers use XML parsing; scalar bodies remain literal.
-            element = ET.fromstring(opening[0] if opening[2] else opening[0] + f"</{name}>")
-            parent.append(element)
-            pos = opening.end()
-            if not opening[2]:
-                scalar_start = pos
-                newline = _xml_newline.match(text, pos)
-                if newline:
-                    pos = newline.end()
-                key = element.get("key", name) if name == "entry" else name
-                children = cls._schemas(schema, definitions, key)
-                child_schema = children[0] if len(children) == 1 else {"anyOf": children}
-                child_definitions = {**definitions, **child_schema.get("$defs", {})}
-                choices = cls._schemas(child_schema, child_definitions)
-                structured = any(s.get("type") in ("object", "array") or not s for s in choices)
-                nested_start = _xml_whitespace.match(text, pos).end()
-                tag_line = re.compile(r"<[^>\n]+>[ \t]*(?:\r?\n|$)").match(text, nested_start)
-                element.text = ""
-                # Only string/structure unions need tag lines to disambiguate literal markup.
-                ambiguous = newline and any(s.get("type") == "string" for s in choices)
-                nested = structured and (tag_line if ambiguous else text.startswith("<", nested_start))
-                if nested:
-                    pos = cls._parse_children(
-                        text,
-                        element,
-                        child_schema,
-                        child_definitions,
-                        rf"</{re.escape(name)}\s*>\s*{boundary}",
-                        nested_start,
-                    )
-                    closing = re.compile(rf"</{re.escape(name)}\s*>").match(text, pos)
-                    if closing is None:
-                        raise ET.ParseError(f"Missing closing tag for {name}")
-                    pos = closing.end()
-                else:
-                    parser = _XMLScalarParser(name, boundary)
-                    element.text, pos = parser.read(text, scalar_start, final=True)
-                    if not parser.done:
-                        raise ET.ParseError(f"Missing closing tag for {name}")
-            pos = _xml_whitespace.match(text, pos).end()
-        return pos
-
     @classmethod
     def _scalar_boundary(cls, schema: dict, definitions: dict, enclosing: str) -> str:
         """Recognize sibling headers or the enclosing close chain, without consuming them."""
@@ -271,7 +201,8 @@ class XMLAdapter(ChatAdapter):
         if any(not (name[:1] + name[1:].replace("-", "_").replace(".", "_")).isidentifier() for name in names):
             names.add("entry")
         arbitrary = any(
-            not s or (s.get("type") == "object" and s.get("additionalProperties") is not False) for s in siblings
+            not s or (s.get("type") == "object" and s.get("additionalProperties", "properties" not in s) is not False)
+            for s in siblings
         )
         tags = r"[\w.-]+" if arbitrary else "|".join(re.escape(name) for name in sorted(names))
         if not tags:
@@ -291,7 +222,11 @@ class XMLAdapter(ChatAdapter):
             return [item] if child == "item" else cls._schemas(item, definitions, child)
         if schema.get("type") not in ("object", None):
             return []
-        value = schema.get("properties", {}).get(child, schema.get("additionalProperties", {}))
+        properties = schema.get("properties", {})
+        additional = schema.get("additionalProperties", "properties" not in schema)
+        if child not in properties and additional is False:
+            return []
+        value = properties.get(child, additional)
         return [value if isinstance(value, dict) else {}]
 
     @classmethod
@@ -402,12 +337,163 @@ class XMLAdapter(ChatAdapter):
         )
 
 
+class _XMLParser:
+    """Schema-directed traversal that can pause for a chunk without reparsing completed children."""
+
+    def __init__(self, parent, schema, definitions, boundary=r"(?P<end>\Z)", single=False):
+        self.parent = parent
+        self.schema = schema
+        self.definitions = definitions
+        self.boundary = boundary
+        self.single = single
+        self.text = ""
+        self.pos = 0
+        self.final = False
+        self.done = False
+        self.reader = None
+
+    @property
+    def buffer(self):
+        return self.text[self.pos:]
+
+    def feed(self, text, final=False):
+        self.text = self.buffer + text
+        self.pos = 0
+        self.final = final
+        if self.reader is None:
+            self.reader = self._children(self.parent, self.schema, self.definitions, self.boundary, self.single)
+        try:
+            next(self.reader)
+        except StopIteration:
+            self.done = True
+        return ""
+
+    def _match(self, pattern):
+        while True:
+            match = _compile_xml_pattern(pattern).match(self.text, self.pos, partial=not self.final)
+            if not match:
+                raise ET.ParseError("Expected a field tag")
+            if not match.partial:
+                return match
+            yield
+
+    def _children(self, parent, schema, definitions, boundary, single=False):
+        enclosing = boundary if boundary.startswith("</") else None
+        boundary = XMLAdapter._scalar_boundary(schema, definitions, boundary)
+        while True:
+            self.pos = _xml_whitespace.match(self.text, self.pos).end()
+            if not self.final and (
+                self.pos == len(self.text) or (self.pos == len(self.text) - 1 and self.text[self.pos] == "<")
+            ):
+                yield
+                continue
+            if self.pos == len(self.text) or self.text.startswith("</", self.pos):
+                return
+            opening = yield from self._match(r"""<([\w.-]+)(?:\s+key=(?:"[^"]*"|'[^']*'))?\s*(/?)>""")
+            name = opening[1]
+            element = ET.fromstring(opening[0] if opening[2] else opening[0] + f"</{name}>")
+            key = element.get("key", name) if name == "entry" else name
+            children = XMLAdapter._schemas(schema, definitions, key)
+            if not children:
+                raise ET.ParseError(f"Unexpected field {key}")
+            parent.append(element)
+            self.pos = opening.end()
+            if not opening[2]:
+                child_schema = children[0] if len(children) == 1 else {"anyOf": children}
+                child_definitions = {**definitions, **child_schema.get("$defs", {})}
+                choices = XMLAdapter._schemas(child_schema, child_definitions)
+                structured = any(s.get("type") in ("object", "array") or not s for s in choices)
+                nested = False
+                while structured:
+                    newline = _xml_newline.match(self.text, self.pos)
+                    nested_start = _xml_whitespace.match(self.text, self.pos).end()
+                    ambiguous = newline and any(s.get("type") == "string" for s in choices)
+                    tag_line = _compile_xml_pattern(r"<[^>\n]+>[ \t]*(?:\r?\n|$)").match(
+                        self.text, nested_start, partial=not self.final
+                    ) if ambiguous else None
+                    if not self.final and (
+                        nested_start == len(self.text)
+                        or (tag_line and (tag_line.partial or tag_line.end() == len(self.text)))
+                    ):
+                        yield
+                        continue
+                    nested = bool(tag_line) if ambiguous else self.text.startswith("<", nested_start)
+                    break
+                element.text = ""
+                if nested:
+                    self.pos = nested_start
+                    yield from self._children(
+                        element, child_schema, child_definitions, rf"</{re.escape(name)}\s*>\s*{boundary}"
+                    )
+                    closing = yield from self._match(rf"</{re.escape(name)}\s*>")
+                    self.pos = closing.end()
+                else:
+                    parser = _XMLScalarParser(name, boundary, enclosing)
+                    values = []
+                    while True:
+                        value, self.pos = parser.read(self.text, self.pos, final=self.final)
+                        values.append(value)
+                        if parser.done:
+                            element.text = "".join(values)
+                            break
+                        if self.final:
+                            raise ET.ParseError(f"Missing closing tag for {name}")
+                        yield
+            if single:
+                return
+
+
+class _XMLPrefixParser:
+    """Discard leading thought blocks and one XML fence, without retaining thought bodies."""
+
+    def __init__(self, output_fields):
+        self.output_fields = output_fields
+        self.buffer = ""
+        self.thought = None
+        self.fenced = False
+        self.done = False
+
+    def feed(self, text: str, final: bool = False) -> str | None:
+        if self.done:
+            return text
+        self.buffer += text
+        while True:
+            if self.thought:
+                closing = f"</{self.thought}>"
+                end = self.buffer.find(closing)
+                if end < 0:
+                    # Only a split closing tag can matter in the next chunk.
+                    self.buffer = self.buffer[-(len(closing) - 1):]
+                    return None
+                self.buffer = self.buffer[end + len(closing):]
+                self.thought = None
+            self.buffer = self.buffer.lstrip()
+            opening = _compile_xml_pattern(r"<(think|thinking)>|```(?:xml)?[ \t]*\r?\n").match(
+                self.buffer, partial=not final
+            )
+            if opening:
+                if opening.partial:
+                    return None
+                if opening[1] and opening[1] not in self.output_fields:
+                    self.thought = opening[1]
+                    self.buffer = self.buffer[opening.end():]
+                    continue
+                if not opening[1] and not self.fenced:
+                    self.fenced = True
+                    self.buffer = self.buffer[opening.end():]
+                    continue
+            self.done = True
+            text, self.buffer = self.buffer, ""
+            return text
+
+
 class _XMLScalarParser:
     """Read a literal leaf after its opening tag, in full or incrementally."""
 
-    def __init__(self, name: str, boundary: str):
+    def __init__(self, name: str, boundary: str, enclosing: str | None = None):
         self.name = re.escape(name)
         self.boundary = boundary
+        self.enclosing = enclosing
         self.buffer = ""
         self.multiline = None
         self.at_line_start = True
@@ -437,6 +523,9 @@ class _XMLScalarParser:
             pattern = rf"</{self.name}[ \t]*>[ \t]*\r?{ending}"
         else:
             pattern = rf"</{self.name}\s*>"
+        if self.enclosing:
+            # A missing leaf close must not consume the next object or list item.
+            pattern = rf"{pattern}|(?P<scope>{self.enclosing})"
         closing_pattern = _compile_xml_pattern(pattern)
         continuation_pattern = _compile_xml_pattern(rf"\s*{self.boundary}")
         end = len(text)
@@ -444,9 +533,16 @@ class _XMLScalarParser:
             if candidate.partial:
                 end = candidate.start()
                 break
+            if self.enclosing and candidate.group("scope") is not None:
+                if not final and candidate.group("end") is not None:
+                    end = candidate.start()
+                    break
+                raise ET.ParseError(f"Missing closing tag for {self.name} before container end")
             # Match in place rather than copying the response suffix for each candidate.
             continuation = continuation_pattern.match(text, candidate.end(), partial=not final)
             if continuation is None:
+                if self.enclosing and _compile_xml_pattern(self.enclosing).match(text, candidate.start()):
+                    raise ET.ParseError(f"Missing closing tag for {self.name} before container end")
                 # An inner closing tag followed by literal text is part of the value.
                 continue
             end = candidate.start()
