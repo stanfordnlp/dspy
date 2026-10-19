@@ -2270,6 +2270,86 @@ async def test_async_streamify_raises_the_public_error_itself():
             pass
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
+@pytest.mark.parametrize("mode", ["native", "unsupported", None, "none"])
+async def test_default_cot_fallback_streams_reasoning(adapter_type, mode):
+    texts = {
+        dspy.ChatAdapter: "[[ ## plan ## ]]\nCount the signed items.\n\n[[ ## answer ## ]]\n17\n\n[[ ## completed ## ]]",
+        dspy.JSONAdapter: '{"plan": "Count the signed items.", "answer": "17"}',
+        dspy.XMLAdapter: "<plan>Count the signed items.</plan><answer>17</answer>",
+    }
+    if mode == "native":
+        texts = {
+            dspy.ChatAdapter: "[[ ## answer ## ]]\n17\n\n[[ ## completed ## ]]",
+            dspy.JSONAdapter: '{"answer": "17"}',
+            dspy.XMLAdapter: "<answer>17</answer>",
+        }
+
+    async def stream(*args, **kwargs):
+        text = texts[adapter_type]
+        for offset in range(0, len(text), 4):
+            # Providers can return thinking even when disabled, including alongside content.
+            yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(
+                content=text[offset:offset + 4], reasoning_content="Native thinking." if offset == 0 else None,
+            ))])
+
+    model = "openai/gpt-4o-mini" if mode == "unsupported" else "openai/gpt-5"
+    lm = dspy.LM(model, engine="litellm", cache=False, max_tokens=16000)
+    lm.kwargs["reasoning_effort"] = "high"
+    config = {"reasoning_effort": mode} if mode in (None, "none") else {}
+    program = dspy.streamify(
+        dspy.ChainOfThought("question -> answer"),
+        stream_listeners=[dspy.streaming.StreamListener("reasoning")],
+    )
+    # Keep supported-but-disabled cases distinct from models without native reasoning.
+    with (
+        mock.patch("litellm.supports_reasoning", return_value=mode != "unsupported"),
+        mock.patch("litellm.acompletion", side_effect=stream),
+        dspy.context(lm=lm, adapter=adapter_type()),
+    ):
+        values = [value async for value in program(question="Count items", config=config)]
+    chunks = [value for value in values if isinstance(value, StreamResponse)]
+    assert chunks and all(c.signature_field_name == "reasoning" for c in chunks)
+    expected = "Native thinking." if mode == "native" else "Count the signed items."
+    streamed = "".join(c.chunk for c in chunks).strip()
+    if adapter_type is dspy.JSONAdapter and mode != "native":
+        # JSON listeners emit raw JSON fragments, not decoded strings.
+        assert f'"{expected}"' in streamed
+        assert "Native thinking." not in streamed
+    else:
+        assert streamed == expected
+    assert values[-1].reasoning == expected
+    assert values[-1].answer == "17"
+
+
+@pytest.mark.anyio
+async def test_xml_streaming_recognizes_a_renamed_reasoning_sibling():
+    # Output order may differ from the prompt; `plan` is the adapter's wire name.
+    text = "<answer>17</answer><plan>Count the signed items.</plan>"
+
+    async def stream(*args, **kwargs):
+        for offset in range(0, len(text), 4):
+            yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(content=text[offset : offset + 4]))])
+
+    program = dspy.streamify(
+        dspy.ChainOfThought("question -> answer"),
+        stream_listeners=[dspy.streaming.StreamListener(name) for name in ("answer", "reasoning")],
+    )
+    with (
+        mock.patch("litellm.supports_reasoning", return_value=False),
+        mock.patch("litellm.acompletion", side_effect=stream),
+        dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.XMLAdapter()),
+    ):
+        values = [value async for value in program(question="Count items")]
+    for name, expected in {"answer": "17", "reasoning": "Count the signed items."}.items():
+        chunks = [
+            value.chunk for value in values if isinstance(value, StreamResponse) and value.signature_field_name == name
+        ]
+        assert "".join(chunks) == expected
+        assert getattr(values[-1], name) == expected
+
+
 def test_streamify_keeps_a_group_of_several_failures():
     import builtins
 

@@ -134,6 +134,25 @@ def test_unknown_price_and_malformed_metadata_do_not_fail_generation(monkeypatch
     assert estimate_cost(response, provider="openai-chat", requested_model="unknown")[0] is None
 
 
+@pytest.mark.parametrize("router_name", ["model-router", "azure/model-router"])
+@pytest.mark.parametrize("fallback", [False, True])
+def test_azure_router_fee_is_not_an_inference_estimate(monkeypatch, router_name, fallback):
+    data = metadata._snapshot()
+    assert data["azure/model-router"]["input_cost_per_token"] > 0
+    data["openai/model-router"] = {"litellm_provider": "openai", "input_cost_per_token": 2e-6,
+                                   "output_cost_per_token": 7e-6}
+    monkeypatch.setattr(metadata, "_data", data)
+    response = answer("unlisted-selected-model" if fallback else router_name, input_tokens=1000, output_tokens=500)
+    for provider, namespaces in (("azure-chat", None), ("declared-azure", ("azure",))):
+        cost, details = estimate_cost(response, provider=provider, requested_model=router_name, namespaces=namespaces)
+        assert cost is None
+        assert details["kind"] == "unknown"
+    # The refusal belongs to the Azure catalog entry, not an arbitrary model name.
+    cost, _ = estimate_cost(answer("model-router", input_tokens=1000, output_tokens=500),
+                            provider="openai-chat", requested_model="model-router")
+    assert cost == pytest.approx(0.0055)
+
+
 def test_cost_provenance_survives_cache_record():
     from dspy.clients.call_result import CallResult, combine
 
@@ -164,3 +183,20 @@ def test_family_rule_provider_limits_only_known_entries(monkeypatch):
     unknown = metadata.model_info("proxy", "gpt-unlisted")
     assert unknown["supports_reasoning"] is True
     assert "input_cost_per_token" not in unknown
+
+
+@pytest.mark.parametrize("provider,namespace", [("fireworks", "fireworks_ai"), ("together", "together_ai")])
+def test_native_inference_hosts_use_their_metadata_namespace(monkeypatch, provider, namespace):
+    monkeypatch.setattr(metadata, "_data", {
+        f"{namespace}/vendor/model": {
+            "litellm_provider": namespace, "supports_function_calling": True,
+            "input_cost_per_token": 2e-6, "output_cost_per_token": 7e-6,
+        },
+        "vendor/model": {"litellm_provider": "openai", "input_cost_per_token": 99},
+    })
+    lm = dspy.LM(f"{namespace}/vendor/model", engine="lm15", api_key="test")
+    assert lm.supports_function_calling
+    cost, details = estimate_cost(answer("vendor/model", input_tokens=3, output_tokens=5),
+                                  provider=provider, requested_model="vendor/model")
+    assert cost == pytest.approx(41e-6)
+    assert details["provider"] == provider

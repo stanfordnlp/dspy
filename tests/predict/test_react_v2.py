@@ -362,10 +362,89 @@ def test_react_v2_rejects_reserved_output_field_names(reserved):
         dspy.ReActV2(f"question -> answer, {reserved}: str", tools=[])
 
 
-@pytest.mark.parametrize("reserved", ["history", "tools"])
+@pytest.mark.parametrize("reserved", ["history", "tools", "turn_budget"])
 def test_react_v2_rejects_reserved_input_field_names(reserved):
     with pytest.raises(ValueError, match=reserved):
         dspy.ReActV2(f"{reserved}: str -> answer: str", tools=[])
+
+
+def _lookup_turn(query):
+    return {
+        "next_thought": f"Look up {query}.",
+        "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": query}}]),
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_async", [False, True])
+async def test_react_v2_shows_current_turn_budget_each_call(use_async):
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = dspy.utils.DummyLM(
+        [
+            _lookup_turn("cats"),
+            _lookup_turn("dogs"),
+            {
+                "next_thought": "Out of turns.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "pets"}}]),
+            },
+        ]
+    )
+    react = dspy.ReActV2("question -> answer", tools=[lookup], max_iters=20)
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        if use_async:
+            pred = await react.acall(question="pets", max_iters=2)
+        else:
+            pred = react(question="pets", max_iters=2)
+
+    assert pred.termination_reason == "forced_submit"
+    assert "how many turns remain before you must submit" in lm.history[0]["messages"][0]["content"]
+    expected = [
+        "Turn 1 of 2 (1 more after this one).",
+        "Turn 2 of 2 (this is your last turn).",
+        "No turns remain. Call `submit` now with your final outputs.",
+    ]
+    for call, budget in zip(lm.history, expected, strict=True):
+        assert f"[[ ## turn_budget ## ]]\n{budget}" in call["messages"][-1]["content"]
+    # Each turn's budget is stored with that turn so replay rebuilds the exact request.
+    assert [event["turn_budget"] for event in pred.history.messages] == expected
+
+
+def test_react_v2_native_requests_are_prefixes_for_prompt_caching():
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = NativeToolLM()
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=True)):
+        pred = dspy.ReActV2("question -> answer", tools=[lookup])(question="cats")
+
+    assert pred.answer == "found cats"
+    first, second = (call["messages"] for call in lm.calls)
+    assert second[: len(first)] == first
+    assert "[[ ## turn_budget ## ]]\nTurn 2 of 20" in second[-1]["content"]
+
+
+def test_react_v2_agent_pickled_before_turn_budget_keeps_old_behavior():
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "Done.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "done"}}]),
+            }
+        ]
+    )
+    react = dspy.ReActV2("question -> answer", tools=[])
+    # An agent pickled before this field existed restores its old inner signature without `__init__`.
+    react.react.signature = react.react.signature.delete("turn_budget")
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = react(question="cats")
+
+    assert pred.answer == "done"
+    assert all("turn_budget" not in message["content"] for message in lm.history[0]["messages"][1:])
+    assert all("turn_budget" not in event for event in pred.history.messages)
 
 
 @pytest.mark.asyncio

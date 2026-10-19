@@ -7,8 +7,7 @@ boolean, a string ``enum``/``anyOf``-of-``const``, or an ordered integer
 convention off a schema (§1), rewrites judgment properties for the two
 wires that need it (§2), folds a model's JSON text into a ``DataPart``
 (§3), and offers the sugar that EMITS the convention (``choice``,
-``yes_no``, ``score``, ``judgments``) the way ``tool(fn)`` emits a tool
-schema.  Nothing here touches the network.
+``yes_no``, ``score``, ``judgments``) so it need not be written by hand.  Nothing here touches the network.
 """
 from __future__ import annotations
 
