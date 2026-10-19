@@ -268,8 +268,8 @@ class XMLAdapter(ChatAdapter):
     @classmethod
     def _schemas(cls, schema: dict, definitions: dict, child: str | None = None) -> list[dict]:
         schema = definitions.get(schema.get("$ref", "").rsplit("/", 1)[-1], schema)
-        if "anyOf" in schema:
-            return [s for branch in schema["anyOf"] for s in cls._schemas(branch, definitions, child)]
+        if choices := schema.get("anyOf", schema.get("oneOf")):
+            return [s for branch in choices for s in cls._schemas(branch, definitions, child)]
         if child is None:
             return [schema]
         if schema.get("type") == "array":
@@ -308,7 +308,7 @@ class XMLAdapter(ChatAdapter):
             if ref := node.get("$ref"):
                 name = ref.rsplit("/", 1)[-1]
                 return "..." if name in seen else example(schema["$defs"][name], seen | {name})
-            if choices := node.get("anyOf"):
+            if choices := node.get("anyOf", node.get("oneOf")):
                 return example(next(s for s in choices if s.get("type") != "null"), seen)
             if node.get("type") == "array":
                 return [example(node.get("items", {}), seen)]
@@ -328,7 +328,11 @@ class XMLAdapter(ChatAdapter):
             and elements[0].text is None
         ):
             return None
-        if choices := schema.get("anyOf"):
+        if choices := schema.get("anyOf", schema.get("oneOf")):
+            discriminator = schema.get("discriminator", {})
+            tags = cls._group_children(elements[0]).get(discriminator.get("propertyName"), [])
+            if len(tags) == 1 and (ref := discriminator.get("mapping", {}).get((tags[0].text or "").strip())):
+                return cls._elements_to_value(elements, {"$ref": ref}, definitions)
             choices = [choice for choice in choices if choice.get("type") != "null"]
             schema = choices[0]
             if list(elements[0]):

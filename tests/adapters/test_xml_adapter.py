@@ -1,3 +1,4 @@
+from typing import Literal
 from unittest import mock
 
 import pydantic
@@ -156,6 +157,33 @@ def test_xml_adapter_literal_leaves_round_trip_at_every_depth(value):
     adapter = XMLAdapter()
     formatted = adapter.format_assistant_message_content(Result, expected)
     assert adapter.parse(Result, formatted) == expected
+
+
+@pytest.mark.parametrize("kind", ["cat", "dog"])
+def test_xml_adapter_nested_discriminated_union_round_trip(kind):
+    class Cat(pydantic.BaseModel):
+        kind: Literal["cat"]
+        name: str
+
+    class Dog(pydantic.BaseModel):
+        kind: Literal["dog"]
+        tricks: list[str]
+        nickname: str | None
+
+    class Owner(pydantic.BaseModel):
+        pet: Cat | Dog = pydantic.Field(discriminator="kind")
+
+    class Result(dspy.Signature):
+        owner: Owner = dspy.OutputField()
+
+    pet = Cat(kind="cat", name="Milo") if kind == "cat" else Dog(kind="dog", tricks=["sit", "fetch"], nickname=None)
+    expected = {"owner": Owner(pet=pet)}
+    adapter = XMLAdapter()
+    formatted = adapter.format_assistant_message_content(Result, expected)
+    assert adapter.parse(Result, formatted) == expected
+    assert adapter.parse(Result, formatted.replace("\n", "")) == expected
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+        adapter.parse(Result, formatted.replace(f"\n{kind}\n", "\nunknown\n"))
 
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])
