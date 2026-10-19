@@ -4,111 +4,65 @@
 fields are `top`, `bottom`, `left`, and `right`: finite numbers in [0, 1], measured
 from the image's top-left corner. `top < bottom` and `left < right` are required.
 Invalid geometry raises a validation error; DSPy does not clamp or reorder it.
+Boxes are immutable, serialize as JSON objects, and can be input or output fields.
+
+## Locate an object with Jev
+
+Set `TYPESAFE_API_KEY`, then pass an image to a signature with a `BoundingBox` output:
 
 ```python
 import dspy
-from PIL import Image
 
 class Locate(dspy.Signature):
     photo: dspy.Image = dspy.InputField()
     visible: bool = dspy.OutputField(desc="Is there a coffee mug in inputs.photo?")
     mug: dspy.BoundingBox = dspy.OutputField(desc="The coffee mug in inputs.photo.")
 
-lm = dspy.LM("typesafe:jev-1.14.0", engine="lm15")  # TYPESAFE_API_KEY
+lm = dspy.LM("typesafe:jev-1.14.0", engine="lm15")
 predict = dspy.Predict(Locate)
-try:
-    with dspy.context(lm=lm):
-        result = predict(photo=dspy.Image.from_path("kitchen.jpg"))
-        # Or: result = await predict.acall(photo=...)
+with dspy.context(lm=lm):
+    result = predict(photo=dspy.Image.from_path("kitchen.jpg"))
 
-    if result.visible:
-        box = result.mug
-        # width/height must describe the upright image actually sent.
-        with Image.open("kitchen.jpg") as photo:
-            width, height = photo.size
-        # Pixel order for PIL.crop: left, top, right, bottom.
-        pixels = (round(box.left * width), round(box.top * height),
-                  round(box.right * width), round(box.bottom * height))
-
-    response = lm.history[-1]["response"]
-    confidence = response.provider_data["typesafe"]["answers"]["mug"]["confidence"]
-    presence_probability = response.probabilities["visible"]["true"]
-finally:
-    lm.close()  # await lm.aclose() for async use
+if result.visible:
+    print(result.mug.model_dump())  # top, bottom, left, right
 ```
 
-`Predict` selects native Jev translation automatically from the LM. No separate
-adapter is needed, including for image-only judgment tasks without box outputs.
+`Predict` selects the native Jev route automatically; no separate adapter is
+needed. For async calls, use `await predict.acall(...)` in the same context.
+There is **no not-found box**: ask a presence question and ignore the box when
+the target is absent. Invalid native geometry raises `dspy.AdapterParseError`.
 
-Confidence is provider evidence, not a coordinate or a probability distribution
-over boxes. Boxes do not appear in `response.probabilities`. History access is
-appropriate for sequential debugging; for concurrent applications that need
-per-call evidence, use the typed `dspy.lm15.Request`/`Response` API or LM callbacks
-rather than reading a shared history's last entry. History must be enabled.
+To convert to pixels, multiply `left` and `right` by the image width, and `top`
+and `bottom` by its height. Use the dimensions of the image sent to the model;
+map cropped-image coordinates back to the original yourself.
 
-## TypeSafe's experimental contract
+### Jev requirements and limits
 
-- Images and Box questions are experimental. lm15 sends the required
-  `TypeSafe-Danger-Zone-Images: true` header automatically. Use Jev 1.14
-  (`jev-1.14.0` or `jev-preview`), not an older model.
-- Use a separate top-level output field for each target. Boxes can accompany
-  `bool`, `Literal` choices, and experimental `Noul`, `Choice`, and `Score` fields.
-  Use `Score["small", "medium", "large"]` for an ordinal score; an integer
-  `Literal` remains a choice, matching ordinary Jev decision signatures.
-  Decision fields retain their threshold, weight, cut, instruction, and criteria
-  overrides. For example, `predict.fields["visible"] = {"threshold": 0.9}` changes
-  the presence decision without changing the box or refetching cached evidence.
-  Boxes themselves do not accept decision calibration overrides.
-- Native Jev does not support `list[BoundingBox]`, nested or nullable boxes,
-  arbitrary generated text, tools, or streaming. Unsupported schemas fail
-  before the provider call. Use `dspy.Predict`, not a text-reasoning
-  `ChainOfThought`, for this route.
-- There is **no not-found box**. Ask a presence question alongside it and ignore
-  the box when absent. A provider can still emit invalid geometry, which raises
-  `dspy.AdapterParseError`; handle that as a failed prediction.
-- Load PNG/JPEG bytes explicitly with `Image.from_path` or `Image.from_url`.
-  A bare URL is not fetched by the native provider. DSPy does not resize, rotate,
-  or apply EXIF orientation here. Follow the provider's current
+- Images and boxes are experimental and require Jev 1.14 or `jev-preview`.
+  DSPy sends the required experimental-image header automatically.
+- Use `Predict` with one top-level box field per target. Native Jev does not
+  support nested, list, or nullable boxes, generated text, tools, or streaming.
+- Boxes can accompany `bool`, `Literal`, and experimental `Noul`, `Choice`, or
+  `Score` outputs. Decision calibration applies to those fields, not boxes;
+  use `Score` for ordinal scoring, not an integer `Literal`.
+- Load PNG/JPEG bytes with `Image.from_path` or `Image.from_url`; bare URLs are
+  not fetched. DSPy does not resize or apply EXIF orientation here. See the
   [image limits](https://docs.typesafe.ai/images).
-- Multiple images retain their named input context. Describe both the target
-  and the input image in each `OutputField(desc=...)`. A reference image can
-  identify the target; cropped images require caller-owned coordinate mapping
-  back to the original image.
-- Cached responses retain coordinates and evidence. DSPy's existing sync and
-  async cache namespaces are separate. Reload an edited image from its path
-  to create an input with the new bytes.
+- For multiple images, name the target and its input image in the output field
+  description. Images in inputs and demonstrations retain their named context.
 
-See TypeSafe's [Box guide](https://docs.typesafe.ai/primitives/box) for reference
-images, presence guards, confidence thresholds, tiling, and crop-edge questions.
-Valid geometry and high confidence are not guarantees of localization accuracy.
+Provider confidence stays in the LM response, separate from geometry; boxes
+have no entry in `response.probabilities`. Neither valid geometry nor high
+confidence guarantees accurate localization. See TypeSafe's
+[Box guide](https://docs.typesafe.ai/primitives/box) for reference images,
+confidence thresholds, and tiling.
 
-## Generative providers and reusable geometry
+## Use with generative LMs
 
-Use the same type with `JSONAdapter`, `ChatAdapter`, `XMLAdapter`, or
-`TwoStepAdapter` on a generative LM. Nested models, `list[BoundingBox]`, and optional boxes work with
-those adapters, subject to the provider's structured-output support. They do
-not become native TypeSafe detection lists. Generated coordinates pass the
-same runtime validation; they have no measured TypeSafe confidence.
-
-`BoundingBox` serializes as a JSON object, including inside demonstrations and
-nested models. It is immutable and can also be an input field. No imaging
-dependency is needed to construct or validate a box.
-
-## Reproduce the live checks
-
-From the repository, with `TYPESAFE_API_KEY` set:
-
-```bash
-python scripts/validate_bounding_boxes.py --output /tmp/bounding-box-proof
-```
-
-The script requires Pillow and optionally enables cmpnd tracing when
-`CMPND_API_KEY` is set. It downloads a fixed COCO validation sample, records
-annotation provenance and input hashes, alternates sync/async calls, preserves
-raw answers, and produces ground-truth/prediction overlays and IoU measurements.
-It also exercises multiple boxes, mixed judgments, image disambiguation,
-reference-image matching, absence, edge questions, and caching. This small
-sample is integration evidence, **not COCO mAP or a production-quality claim**.
+The same type works with `ChatAdapter`, `JSONAdapter`, `XMLAdapter`, and
+`TwoStepAdapter`, including nested models, `list[BoundingBox]`, and optional
+boxes, subject to provider support. Generated coordinates receive the same
+validation but have no native TypeSafe confidence.
 
 <!-- START_API_REF -->
 ::: dspy.BoundingBox
