@@ -106,7 +106,14 @@ class DecisionAdapter:
                     criteria = questions[name]["criteria"]
                     if "" in criteria:
                         # lm15 requires nonempty keys; longer than every declared label cannot collide.
-                        criteria[max(kind.criteria(), key=len) + "_"] = criteria.pop("")
+                        key = max(kind.criteria(), key=len) + "_"
+                        criteria[key] = criteria.pop("")
+                        questions[name]["instructions"] = [
+                            questions[name]["instructions"],
+                            f'Criterion key {json.dumps(key)} represents the original output label "" (the empty string). '
+                            "Select this key when task instructions or demonstration labels call for the empty string; "
+                            "all other labels are unchanged.",
+                        ]
                     properties[name] = choice(name, list(criteria))
             # The schema declares answer spaces; native questions retain structured instructions and criteria.
             response_format = {"type": "json_schema", "schema": {"type": "object", "properties": properties}}

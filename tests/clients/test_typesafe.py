@@ -1,3 +1,4 @@
+import copy
 import json
 from typing import Literal
 
@@ -87,21 +88,34 @@ async def test_predict_uses_lm15_and_reinterprets_cached_evidence(transport, eng
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
-@pytest.mark.parametrize("rich", [False, True])
-async def test_empty_choice_labels_survive_jev_and_cached_recalibration(monkeypatch, asynchronous, rich):
+@pytest.mark.parametrize("rich,with_demos,structured", [
+    (True, False, False), (False, False, False), (False, True, False), (False, True, True),
+])
+async def test_empty_choice_labels_survive_jev_and_cached_recalibration(
+    monkeypatch, asynchronous, rich, with_demos, structured,
+):
     criteria = {"": "No match", "match": "Match", "_": "Other match"}
-    probabilities = {"No match": 0.7, "Match": 0.2, "Other match": 0.1}
+    description = "Return an empty string for no match, otherwise match."
+    instructions = {"rules": [description]} if structured else description
     calls = []
 
     def respond(self, request):
         body = json.loads(request.body)
         calls.append(body)
-        options = body["questions"]["label"]["criteria"]
+        question = body["questions"]["label"]
+        options = question["criteria"]
         assert len(options) == 3
         assert all(options)
+        alias, = options.keys() - {"match", "_"}
+        original, explanation = question["instructions"]
+        assert original == instructions
+        assert json.dumps(alias) in explanation and '""' in explanation and "empty string" in explanation
+        assert "demonstration" in explanation
+        assert options == ({alias: "No match", "match": "Match", "_": "Other match"} if rich else dict.fromkeys(options))
+        assert body["state"].get("demos", []) == ([{"text": "no match", "label": ""}] if with_demos else [])
         answer = {
-            "type": "choice", "choice": next(k for k, v in options.items() if v == "No match"),
-            "confidence": 0.73, "probabilities": {k: probabilities[v] for k, v in options.items()},
+            "type": "choice", "choice": alias,
+            "confidence": 0.73, "probabilities": {alias: 0.7, "match": 0.2, "_": 0.1},
         }
         return DualResponse(200, json.dumps({"model": "jev-test", "answers": {"label": answer}}).encode())
 
@@ -109,21 +123,25 @@ async def test_empty_choice_labels_survive_jev_and_cached_recalibration(monkeypa
     monkeypatch.setattr(StdlibAsyncTransport, "stream", respond)
     annotation = Choice[tuple(criteria.items())] if rich else Literal["", "match", "_"]
     module = dspy.Predict(dspy.Signature({
-        "text": (str, dspy.InputField()), "label": (annotation, dspy.OutputField(desc="Select a match.")),
+        "text": (str, dspy.InputField()), "label": (annotation, dspy.OutputField(desc=description)),
     }))
     lm = dspy.LM("typesafe:jev-test", engine="lm15", api_key="test-empty-label")
     module.set_lm(lm)
-    module.fields = {"label": {"criteria": criteria}}
+    if structured:
+        module.fields = {"label": {"instructions": instructions}}
+    if with_demos:
+        module.demos = [dspy.Example(text="no match", label="")]
+    original_fields, original_demos = copy.deepcopy((module.fields, module.demos))
     try:
         first = await module.acall(text="x") if asynchronous else module(text="x")
-        module.fields["label"]["weights"] = {"": 0.1}
+        assert module.fields == original_fields and module.demos == original_demos
+        module.fields.setdefault("label", {})["weights"] = {"": 0.1}
         second = await module.acall(text="x") if asynchronous else module(text="x")
         assert (first.label.value if rich else first.label) == ""
         assert (second.label.value if rich else second.label) == "match"
         if rich:
             assert first.label.probabilities == second.label.probabilities == {"": 0.7, "match": 0.2, "_": 0.1}
             assert first.label.confidence == second.label.confidence == 0.73
-        assert module.fields["label"]["criteria"] == criteria
         assert len(calls) == 1
     finally:
         await lm.aclose()
