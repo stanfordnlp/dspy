@@ -65,7 +65,7 @@ The default. Builds a chat-style prompt with field markers, parses the response 
 Outputs structured JSON. Internally extends ChatAdapter — formatting is similar, but the output instruction asks for JSON and parsing uses `json_repair`. The constructor’s `use_native_function_calling=True` default flips when tool calling is wired in.
 
 **`dspy.XMLAdapter(callbacks=None)`**  
-Uses `<field_name>...</field_name>` tags, with nested fields for objects and `<item>` for lists. Output types come from the signature. Text and code are literal: no XML escaping or entity decoding. Supports streaming and leading reasoning blocks. Use `<field/>` for null, `<field></field>` for an empty string. Untyped (`Any`) values still require user validation.
+Uses `<field_name>...</field_name>` tags, with nested fields for objects and `<item>` for lists. Supports streaming and leading reasoning blocks. Use `<field/>` for null, `<field></field>` for an empty string. Untyped (`Any`) values still require user validation.
 
 **`dspy.TwoStepAdapter(extraction_model: BaseLM, **kwargs)`**  
 Two LM calls per inference. Use it when the main LM is a reasoning model that’s bad at formatting — the extractor is usually a cheap general-purpose LM with ChatAdapter. Doesn’t support finetuning yet.
