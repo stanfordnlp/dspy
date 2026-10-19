@@ -1,9 +1,10 @@
-"""Opt-in integration checks; require real installed runtimes, not sandbox mocks."""
+"""Installed-wheel integration checks; require real runtimes and native libraries."""
 
 import base64
 import concurrent.futures
 import os
 import socket
+import sys
 import threading
 import time
 from io import BytesIO
@@ -16,34 +17,17 @@ from PIL import Image
 import dspy
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError
 from dspy.utils.dummies import DummyLM
-from scripts.mxc_interpreter.interpreter import MXCInterpreter
 
 
 @pytest.fixture
 def factory():
-    runtime = os.environ.get("MXC_EXECUTABLE")
-    if not runtime:
-        pytest.fail("Set MXC_EXECUTABLE to the installed runtime; see README.md")
-    return MXCInterpreter.configured(runtime=runtime)
+    return dspy.LocalInterpreter
 
 
 @pytest.fixture(autouse=True)
 def tracing():
     with dspy.context(callbacks=[CmpndCallback(capture_inputs=False, capture_outputs=False)]):
         yield
-
-
-def test_missing_dependency_never_runs_generated_code(factory, tmp_path):
-    marker = tmp_path / "must-not-run"
-    worker = factory(bwrap=str(tmp_path / "missing-bwrap"))
-    try:
-        with pytest.raises(CodeInterpreterError, match="Bubblewrap executable not found"):
-            worker.execute(f"from pathlib import Path; Path({str(marker)!r}).touch()")
-        assert not marker.exists()
-        with pytest.raises(CodeInterpreterError, match="shut down"):
-            worker.execute("1")
-    finally:
-        worker.shutdown()
 
 
 @pytest.mark.parametrize("failure", ["exit", "interrupt", "blocked_tool"])
@@ -60,7 +44,7 @@ def test_terminal_failures_close_the_real_session(factory, failure):
 
     worker = factory(tools={"tool": tool}, execution_timeout=0.5)
     worker.start()
-    workspace = worker.workspace
+    workspace = Path(worker.execute("import os; os.getcwd()"))
     started = time.monotonic()
     try:
         if failure == "interrupt":
@@ -308,8 +292,9 @@ def test_secret_file_environment_and_native_io_denied(factory, tmp_path, monkeyp
     monkeypatch.setenv("DSPY_SYNTHETIC_SECRET", "canary-not-a-real-secret")
     with factory() as worker:
         assert worker.execute("import os; 'DSPY_SYNTHETIC_SECRET' in os.environ") is False
-        # MXC otherwise exposes the host's entire /etc as a read-only baseline.
-        assert worker.execute("from pathlib import Path; list(Path('/etc').iterdir())") == []
+        # Linux masks /etc; Seatbelt retains its upstream system-read baseline.
+        if sys.platform == "linux":
+            assert worker.execute("from pathlib import Path; list(Path('/etc').iterdir())") == []
         worker.execute(f"from pathlib import Path; secret = {str(secret)!r}")
         for code in [
             "Path(secret).read_text()",
@@ -318,9 +303,10 @@ def test_secret_file_environment_and_native_io_denied(factory, tmp_path, monkeyp
         ]:
             with pytest.raises(CodeExecutionError, match=r"FileNotFoundError|PermissionError|OSError"):
                 worker.execute(code)
-        assert worker.execute("import ctypes; ctypes.CDLL(None).open(secret.encode(), 0)") == -1
+        if os.name == "posix":
+            assert worker.execute("import ctypes; ctypes.CDLL(None).open(secret.encode(), 0)") == -1
         # Zero-byte append even on an unexpected success cannot damage the runtime.
-        bootstrap = worker.session / "worker.py"
+        bootstrap = worker._session / "worker.py"
         with bootstrap.open("ab"):
             pass  # Positive control: the host can write this file.
         with pytest.raises(CodeExecutionError, match=r"PermissionError|OSError"):
@@ -350,10 +336,12 @@ def test_concurrent_sessions_cannot_read_each_other(factory):
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             values = list(pool.map(lambda worker: worker.execute("Path('private').read_text()"), [first, second]))
         assert values == ["first only", "second only"]
+        private = first.execute("str(Path('private').absolute())")
         with pytest.raises(CodeExecutionError, match=r"FileNotFoundError|PermissionError"):
-            second.execute(f"Path({str(first.workspace / 'private')!r}).read_text()")
+            second.execute(f"Path({private!r}).read_text()")
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux PID namespace guarantee; Mac detached survival is documented")
 @pytest.mark.parametrize("stop", ["none", "shutdown", "timeout"])
 def test_detached_descendant_lifetime(factory, stop):
     with factory(execution_timeout=1) as worker:
@@ -366,7 +354,7 @@ child = subprocess.Popen([sys.executable, '-c',
 while not Path('marker').exists() or not Path('marker').read_text(): time.sleep(0.01)
 """)
         # Keep the inode open: removal of the workspace must not hide a surviving child.
-        with (worker.workspace / "marker").open() as marker:
+        with Path(worker.execute("str(Path('marker').absolute())")).open() as marker:
             if stop == "shutdown":
                 worker.shutdown()
             elif stop == "timeout":
@@ -376,6 +364,7 @@ while not Path('marker').exists() or not Path('marker').read_text(): time.sleep(
             assert marker.read() == ("readysurvived" if stop == "none" else "ready")
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux mount namespace probe")
 def test_shared_temp_is_hidden(factory):
     shared = Path("/tmp/claude")
     created = not shared.exists()

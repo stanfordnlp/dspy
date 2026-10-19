@@ -40,7 +40,6 @@ from dspy.primitives.code_interpreter import (
 from dspy.primitives.facade import CALL_TOOL, CONSTRUCT_TOOL, FacadeInvocation, is_reserved_sandbox_name
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
-from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from dspy.primitives.sandbox_serializable import SandboxSerializable, build_repl_variable
 from dspy.signatures.signature import ensure_signature
@@ -156,7 +155,7 @@ class RLM(Module):
     through code execution. The LLM writes Python code to examine data, call
     sub-LLMs for semantic analysis, and build up answers iteratively.
 
-    ``interpreter_factory`` defaults to ``PythonInterpreter`` (Deno/Pyodide/WASM), and
+    ``interpreter_factory`` defaults to the MXC-confined ``LocalInterpreter``, and
     ``dspy.configure(interpreter_factory=...)`` replaces that default. Either route
     accepts an adapter for a remote sandbox.
     RLM updates the interpreter's mutable ``tools`` dictionary with
@@ -182,7 +181,7 @@ class RLM(Module):
         verbose: bool = False,
         tools: list[Callable] | None = None,
         sub_lm: dspy.LM | None = None,
-        interpreter_factory: Callable[[], CodeInterpreter] = PythonInterpreter,
+        interpreter_factory: Callable[[], CodeInterpreter] | None = None,
     ):
         """
         Args:
@@ -203,11 +202,13 @@ class RLM(Module):
                 sandbox dspy facade into every interpreter it creates, so the runtime must be able to host it
                 (see ``CodeInterpreter``). RLM applies the
                 active factory's instructions to each action call, so ``dspy.context`` can switch runtimes
-                without changing the shared predictor signature. Defaults to ``dspy.PythonInterpreter``;
-                ``dspy.configure(interpreter_factory=...)`` replaces the default.
+                without changing the shared predictor signature. When omitted, uses the active
+                ``dspy.settings.interpreter_factory`` or MXC-confined ``dspy.LocalInterpreter``.
+                Pass ``dspy.PythonInterpreter`` explicitly to use Deno/Pyodide.
         """
         super().__init__()
-        _validate_interpreter_factory(interpreter_factory)
+        if interpreter_factory is not None:
+            _validate_interpreter_factory(interpreter_factory)
         self.signature = ensure_signature(signature)
         if any(
             kind.extract_custom_type_from_annotation(field.rebuild_annotation())

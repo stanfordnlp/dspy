@@ -1,14 +1,12 @@
 """Cached-runtime timings, not model-quality or cold-install benchmarks."""
 
 import json
-import os
 import statistics
 import time
 
 from cmpnd import CmpndCallback
 
 import dspy
-from scripts.mxc_interpreter.interpreter import MXCInterpreter
 
 
 def measure(factory, runs=5):
@@ -48,8 +46,7 @@ class SumSquares(dspy.Module):
 
 if __name__ == "__main__":
     factories = {
-        "local_unsandboxed_control": dspy.LocalInterpreter,
-        "mxc": MXCInterpreter.configured(runtime=os.environ["MXC_EXECUTABLE"]),
+        "mxc": dspy.LocalInterpreter,
         "deno_pyodide": dspy.PythonInterpreter,
     }
     with dspy.context(callbacks=[CmpndCallback(capture_inputs=False, capture_outputs=False)]):

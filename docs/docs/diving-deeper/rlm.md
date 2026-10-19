@@ -34,7 +34,9 @@ The model steering the loop and the model answering snippets need not be the sam
 
 ### 7. Generated code runs in a pluggable interpreter
 
-The default `PythonInterpreter` executes Python in a Deno and Pyodide WASM sandbox with no filesystem or network access. Each `forward()` creates one interpreter, uses it for the whole REPL loop, and shuts it down afterward. Supply `interpreter_factory=` to use another `CodeInterpreter`, or `dspy.configure(interpreter_factory=...)` to choose one for every code-executing module at once. A deployment that cannot run Deno replaces the default that way. `LocalInterpreter` offers ordinary CPython in a separate local process, but it is for trusted code because it retains the host user's filesystem, environment, credentials, network, and process authority.
+The default `LocalInterpreter` executes native CPython under MXC's OS-specific process confinement. Each `forward()` creates one interpreter, uses it for the whole REPL loop, and shuts it down afterward. Installed Python libraries are readable, session files are private, ambient credentials are scrubbed, and direct IP networking is denied. Host tools still run outside confinement. This is not VM isolation or an aggregate resource quota; macOS has broader system reads and detached-child survival. See the [installation and limitations](../api/tools/LocalInterpreter.md), including the draft's unpublished-runtime and platform qualification gates.
+
+Supply `interpreter_factory=` to use another `CodeInterpreter`, or `dspy.configure(interpreter_factory=...)` to choose one for every code-executing module at once. Explicit `interpreter_factory=dspy.PythonInterpreter` preserves the Deno/Pyodide backend, even when another global factory is configured. Missing native sandbox support fails closed rather than running unrestricted Python.
 
 ### 8. `SandboxSerializable` loads large inputs into the sandbox once
 

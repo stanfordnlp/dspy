@@ -1,7 +1,7 @@
 import contextvars
 import os
 import signal
-import tempfile
+import socket
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -60,34 +60,71 @@ def test_background_thread_is_terminal_before_it_can_cross_executions():
         interpreter.execute("1")
 
 
-def test_shutdown_terminates_descendant_processes():
-    fd, path_string = tempfile.mkstemp(prefix="local-interpreter-child-", suffix=".txt")
-    os.close(fd)
-    path = Path(path_string)
-    path.unlink()
-    interpreter = dspy.LocalInterpreter()
-
-    try:
-        assert interpreter.execute(
-            "import subprocess, sys\n"
-            f"path = {str(path)!r}\n"
+@pytest.mark.skipif(os.name != "posix", reason="open-inode survival control requires POSIX unlink semantics")
+@pytest.mark.parametrize("shutdown", [False, True])
+def test_shutdown_terminates_descendant_processes(shutdown):
+    with dspy.LocalInterpreter() as interpreter:
+        path = Path(interpreter.execute("import os; os.path.abspath('heartbeat')"))
+        interpreter.execute(
+            "import subprocess, sys, time\n"
             "child = subprocess.Popen([sys.executable, '-c', "
-            "f\"import time; from pathlib import Path; time.sleep(0.4); Path({path!r}).write_text('survived')\"])\n"
-            "'child started'"
-        ) == "child started"
-        interpreter.shutdown()
-        time.sleep(0.8)
-        assert not path.exists()
-    finally:
-        interpreter.shutdown()
-        path.unlink(missing_ok=True)
+            "\"import time; f = open('heartbeat', 'w'); f.write('ready'); f.flush(); "
+            "time.sleep(0.7); f.write('survived'); f.flush()\"])\n"
+            "while not __import__('pathlib').Path('heartbeat').exists() "
+            "or not __import__('pathlib').Path('heartbeat').read_text(): time.sleep(0.01)"
+        )
+        # An open inode detects survival even after the session directory is removed.
+        with path.open() as heartbeat:
+            if shutdown:
+                interpreter.shutdown()
+            time.sleep(1)
+            assert heartbeat.read() == ("ready" if shutdown else "readysurvived")
+
+
+def test_filesystem_environment_and_network_are_confined(tmp_path, monkeypatch):
+    secret = tmp_path / "synthetic-secret"
+    secret.write_text("host only")
+    monkeypatch.setenv("DSPY_TEST_SECRET", "synthetic value")
+    with socket.socket() as listener, dspy.LocalInterpreter() as interpreter:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        port = listener.getsockname()[1]
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            pass
+        assert interpreter.execute("import os; 'DSPY_TEST_SECRET' in os.environ") is False
+        interpreter.execute("from pathlib import Path; Path('private').write_text('session data')")
+        assert interpreter.execute("Path('private').read_text()") == "session data"
+        for operation in ["read_text()", "write_text('modified')"]:
+            with pytest.raises(CodeExecutionError, match=r"FileNotFoundError|PermissionError|OSError"):
+                interpreter.execute(f"Path({str(secret)!r}).{operation}")
+        assert (
+            interpreter.execute(
+                f"import socket; s = socket.socket(); s.settimeout(1); s.connect_ex(('127.0.0.1', {port}))"
+            )
+            != 0
+        )
+    assert secret.read_text() == "host only"
+
+
+def test_unavailable_runtime_is_terminal_and_never_falls_back(monkeypatch, tmp_path):
+    import dspy_mxc_runtime
+
+    def unavailable():
+        raise RuntimeError("native sandbox unavailable")
+
+    monkeypatch.setattr(dspy_mxc_runtime, "executables", unavailable)
+    marker = tmp_path / "must-not-execute"
+    interpreter = dspy.LocalInterpreter()
+    with pytest.raises(CodeInterpreterError, match="native sandbox unavailable"):
+        interpreter.execute(f"open({str(marker)!r}, 'w').close()")
+    assert not marker.exists()
+    with pytest.raises(CodeInterpreterError, match="shut down"):
+        interpreter.execute("1")
 
 
 def test_tools_and_typed_submit():
     fields = [{"name": "answer", "type": "str"}, {"name": "score", "type": "int"}]
-    with dspy.LocalInterpreter(
-        tools={"add": lambda *, left, right: left + right}, output_fields=fields
-    ) as interpreter:
+    with dspy.LocalInterpreter(tools={"add": lambda *, left, right: left + right}, output_fields=fields) as interpreter:
         assert interpreter.execute("add(left=19, right=23)") == 42
         result = interpreter.execute("SUBMIT(answer='yes', score=42)")
         assert isinstance(result, FinalOutput)
@@ -250,8 +287,8 @@ def test_execution_timeout_does_not_wait_for_blocked_host_tool():
 def test_execution_timeout_includes_a_blocked_command_write():
     interpreter = dspy.LocalInterpreter(execution_timeout=0.2)
     interpreter.start()
-    # Stop a ready peer before sending more than the pipe buffer can hold.
-    os.kill(interpreter._process.pid, signal.SIGSTOP)
+    # Stop the entire launcher group, including its confined worker.
+    os.killpg(interpreter._process.pid, signal.SIGSTOP)
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(interpreter.execute, "#" + "x" * (1024 * 1024))
         try:

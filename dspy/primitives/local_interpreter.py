@@ -8,9 +8,12 @@ import json
 import keyword
 import os
 import queue
+import shlex
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -48,11 +51,18 @@ def _await_in_sync(awaitable: Any) -> Any:
 
 
 class LocalInterpreter:
-    """Execute Python in a persistent local subprocess.
+    """Execute Python in a persistent, MXC-confined local CPython process.
 
-    This separates generated code from DSPy's memory, stdout, and lifecycle,
-    but it is not a security sandbox. The worker retains the host user's files,
-    environment, credentials, subprocess, and network authority.
+    Installed Python libraries are readable; only a private working directory
+    and temporary directory are writable. Host environment credentials are not
+    inherited and direct IP networking is denied. Host tools retain their host
+    authority. MXC also grants OS-specific baseline system access: in particular,
+    macOS permits broad system reads and detached children can survive shutdown.
+    This is not a VM or an aggregate memory, process, or disk resource limit.
+
+    The separately installed ``dspy-mxc-runtime`` wheel supplies the native
+    executor (and bubblewrap on Linux). Unavailable or prohibited OS sandbox
+    facilities fail closed; no runtime downloads or host-policy changes occur.
 
     Guest protocol messages are limited to 16 Mi characters, with at most 32
     outstanding host tool calls per execution. These transport bounds are not
@@ -70,9 +80,11 @@ class LocalInterpreter:
     """
 
     execution_instructions = (
-        "Code runs as Python in a persistent local subprocess. State, imports, functions, and JSON-compatible "
-        "variables persist for this session. Host tools and SUBMIT are available as global functions. All threads "
-        "must finish before each code execution returns; use context-managed executors for parallel work."
+        "Code runs in a persistent MXC-confined CPython worker. Installed Python libraries are available. "
+        "State, imports, functions, and JSON-compatible variables persist for this session. "
+        "Read and write files in the working directory; other host files are restricted. Direct network access "
+        "is disabled. Host tools and SUBMIT are available as global functions. Finish all threads and child "
+        "processes before returning; use context-managed executors for parallel work."
     )
 
     def __init__(
@@ -96,7 +108,10 @@ class LocalInterpreter:
         self._responses: queue.Queue[str | BaseException | None] = queue.Queue(maxsize=4)
         self._lock = threading.Lock()
         self._send_lock = threading.Lock()
+        self._cleanup_lock = threading.Lock()
         self._ended = False
+        self._session: Path | None = None
+        self._diagnostics = ""
 
     @staticmethod
     def _validate_tool_names(tools: dict[str, Callable[..., Any]]) -> None:
@@ -134,25 +149,102 @@ class LocalInterpreter:
             return
         try:
             process = self._spawn_worker()
-        except OSError as exc:
-            raise CodeInterpreterError(f"Unable to start Python worker: {exc}") from exc
-        self._process = process
-        threading.Thread(target=self._read_responses, args=(process,), daemon=True).start()
-        message = self._receive(time.monotonic() + 10, "Python worker did not start within 10 seconds.")
-        if message.get("type") != "ready":
-            self._raise_terminal_error(f"Python worker returned an invalid startup message: {message!r}")
+            self._process = process
+            threading.Thread(target=self._read_responses, args=(process,), daemon=True).start()
+            message = self._receive(time.monotonic() + 10, "Python worker did not start within 10 seconds.")
+            if message.get("type") != "ready":
+                self._raise_terminal_error(f"Python worker returned an invalid startup message: {message!r}")
+        except BaseException as exc:
+            self._ended = True
+            self._kill()
+            if not isinstance(exc, Exception):
+                raise
+            raise CodeInterpreterError(f"Unable to start Python sandbox: {exc}\n{self._diagnostics}") from exc
 
     def _spawn_worker(self) -> subprocess.Popen[str]:
-        """Launch the worker with text pipes and its own process group for cleanup."""
-        return subprocess.Popen(
-            [sys.executable, "-I", str(Path(__file__).with_name("local_interpreter_worker.py"))],
+        """Keep policy/launch ownership here; MXC owns OS enforcement."""
+        try:
+            from dspy_mxc_runtime import executables
+        except ImportError as exc:
+            raise CodeInterpreterError("Install the dspy-mxc-runtime wheel to use LocalInterpreter.") from exc
+        runtime, bwrap = executables()
+        # Resolve macOS /var -> /private/var before generating Seatbelt paths.
+        self._session = Path(tempfile.mkdtemp(prefix="dspy-mxc-")).resolve()
+        workspace = self._session / "work"
+        temporary = self._session / "tmp"
+        workspace.mkdir()
+        temporary.mkdir()
+        worker = self._session / "worker.py"
+        shutil.copyfile(Path(__file__).with_name("local_interpreter_worker.py"), worker)
+        env = {
+            "HOME": str(temporary),
+            "TMPDIR": str(temporary),
+            "LANG": "C.UTF-8",
+            "OPENBLAS_NUM_THREADS": "1",
+            "OMP_NUM_THREADS": "1",
+        }
+        if os.name == "nt":
+            env.update(
+                SYSTEMROOT=os.environ["SYSTEMROOT"],
+                LOCALAPPDATA=str(temporary),
+                TEMP=str(temporary),
+                TMP=str(temporary),
+            )
+        else:
+            env["PATH"] = os.pathsep.join(([str(bwrap.parent)] if bwrap else []) + ["/usr/local/bin", os.defpath])
+        python = [sys.executable, "-I", "-B", "-u", "-X", "utf8", str(worker)]
+        readonly = {sys.prefix, sys.base_prefix, str(Path(sys.executable).resolve().parent), str(worker)}
+        # uv venvs may point through an alias of their base installation.
+        base_alias = Path(sys._base_executable).parent.parent
+        if base_alias.resolve() == Path(sys.base_prefix).resolve():
+            readonly.add(str(base_alias))
+        readonly.update(str(Path(path).resolve()) for path in tuple(readonly))
+        policy = {
+            "version": "1.0.0",
+            "containment": {"linux": "bubblewrap", "darwin": "seatbelt", "win32": "processcontainer"}[sys.platform],
+            "containerId": self._session.name,
+            "process": {
+                "commandLine": subprocess.list2cmdline(python) if os.name == "nt" else "exec " + shlex.join(python),
+                "cwd": str(workspace),
+                "env": [f"{key}={value}" for key, value in env.items()],
+                "inheritDefaultEnv": False,
+                # DSPy owns execution deadlines, not a competing session timer.
+                "timeout": 0,
+            },
+            "filesystem": {
+                "readonlyPaths": sorted(readonly),
+                "readwritePaths": [str(workspace), str(temporary)],
+                **({"deniedPaths": ["/etc"]} if sys.platform == "linux" else {}),
+            },
+            "network": {"egress": {"default": "deny"}, "ingress": {"default": "deny", "hostLoopback": "deny"}},
+            "fallback": {"allowDaclMutation": False},
+            "telemetry": {"enabled": False},
+        }
+        policy_path = self._session / "policy.json"
+        policy_path.write_text(json.dumps(policy), encoding="utf-8")
+        process = subprocess.Popen(
+            [str(runtime), "--config", str(policy_path)],
+            cwd=workspace,
+            env=env,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
             start_new_session=os.name == "posix",
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
+        self._process = process
+        threading.Thread(target=self._read_diagnostics, args=(process,), daemon=True).start()
+        return process
+
+    def _read_diagnostics(self, process: subprocess.Popen[str]) -> None:
+        # Drain continuously without an unbounded on-disk log or growing buffer.
+        assert process.stderr is not None
+        with process.stderr:
+            while chunk := process.stderr.read(4096):
+                self._diagnostics = (self._diagnostics + chunk)[-8192:]
 
     def _read_responses(self, process: subprocess.Popen[str]) -> None:
         assert process.stdout is not None
@@ -210,28 +302,26 @@ class LocalInterpreter:
         raise CodeInterpreterError(message) from cause
 
     def _kill(self) -> None:
-        process = self._process
-        self._process = None
-        if process is None:
-            return
-        if os.name == "posix":
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(process.pid, signal.SIGKILL)
-        elif os.name == "nt":
-            with contextlib.suppress(OSError):
-                subprocess.run(
-                    ["taskkill", "/F", "/T", "/PID", str(process.pid)],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                )
-        with contextlib.suppress(OSError):
-            process.kill()
-        with contextlib.suppress(subprocess.TimeoutExpired):
-            process.wait(timeout=1)
-        for stream in (process.stdin, process.stdout):
-            if stream is not None:
-                stream.close()
+        # A deadline and a broken command writer can terminate concurrently.
+        with self._cleanup_lock:
+            process = self._process
+            self._process = None
+            if process is not None:
+                if os.name == "posix":
+                    with contextlib.suppress(ProcessLookupError, PermissionError):
+                        os.killpg(process.pid, signal.SIGKILL)
+                with contextlib.suppress(OSError):
+                    # Windows MXC owns a kill-on-close Job Object. Do not depend
+                    # on a taskkill subprocess or mutate host ACLs for cleanup.
+                    process.kill()
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    process.wait(timeout=1)
+                for stream in (process.stdin, process.stdout):
+                    if stream is not None:
+                        stream.close()
+            if self._session is not None:
+                shutil.rmtree(self._session)
+                self._session = None
 
     @with_callbacks
     def invoke_tool(self, tool_name: str, args: list[Any], kwargs: dict[str, Any]) -> Any:

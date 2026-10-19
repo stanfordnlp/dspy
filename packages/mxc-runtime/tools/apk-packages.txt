@@ -1,0 +1,15 @@
+build-base=0.5-r4
+linux-headers=7.0.0-r1
+libcap-dev=2.78-r0
+libcap-static=2.78-r0
+meson=1.11.1-r0
+samurai=1.2-r8
+pkgconf=2.5.1-r0
+python3=3.14.8-r0
+curl=8.22.0-r0
+xz=5.8.4-r0
+binutils=2.45.1-r1
+file=5.47-r2
+gcc=15.2.0-r5
+g++=15.2.0-r5
+musl-dev=1.2.6-r2

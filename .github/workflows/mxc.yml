@@ -1,9 +1,10 @@
-name: MXC installed-wheel integration
+name: MXC installed-wheel qualification
 
 on:
   pull_request:
     paths:
       - '.github/workflows/mxc.yml'
+      - 'packages/mxc-runtime/**'
       - 'dspy/**'
       - 'scripts/mxc_interpreter/**'
       - 'tests/primitives/test_local_interpreter.py'
@@ -12,6 +13,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/mxc.yml'
+      - 'packages/mxc-runtime/**'
       - 'dspy/**'
       - 'scripts/mxc_interpreter/**'
       - 'tests/primitives/test_local_interpreter.py'
@@ -24,13 +26,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  linux:
-    # 22.04 permits unprivileged namespaces without weakening AppArmor policy.
-    # This is the tested opt-in platform, not a cross-platform support claim.
-    runs-on: ubuntu-22.04
-    timeout-minutes: 15
+  native:
+    # Qualification, not a support claim. Windows backend failure is evidence:
+    # never provision a backend, elevate, alter ACLs, or skip missing backends.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: linux-x86_64
+            python: bin/python
+          - os: macos-14
+            target: macos-aarch64
+            python: bin/python
+          - os: windows-2025
+            target: windows-x86_64
+            python: Scripts/python.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     permissions:
       contents: read
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -39,36 +57,38 @@ jobs:
         with:
           python-version: '3.11'
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-      - name: Install OS prerequisite and pinned official executor
+      - name: Build static bwrap in isolated pinned Alpine (Linux only)
+        if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y bubblewrap
-          mkdir -p "$RUNNER_TEMP/mxc"
-          curl --fail --location --retry 3 \
-            https://github.com/microsoft/mxc/releases/download/v1.0.0/mxc-release-binaries.zip \
-            -o "$RUNNER_TEMP/mxc/release.zip"
-          echo "0bb483b3592d0f663f2c5a7a2ae17db89cc04b82238684b0a1a9384b0fe828ed  $RUNNER_TEMP/mxc/release.zip" | sha256sum -c -
-          unzip -p "$RUNNER_TEMP/mxc/release.zip" x64/lxc-exec > "$RUNNER_TEMP/mxc/lxc-exec"
-          echo "31b747a6a31b20fabd9e19ec30dfff3acf844c25ae4507a41ccac76e11916b2a  $RUNNER_TEMP/mxc/lxc-exec" | sha256sum -c -
-          chmod 755 "$RUNNER_TEMP/mxc/lxc-exec"
-          echo "MXC_EXECUTABLE=$RUNNER_TEMP/mxc/lxc-exec" >> "$GITHUB_ENV"
-          bwrap --version
-          ldd "$RUNNER_TEMP/mxc/lxc-exec"
-      - name: Build and install wheel outside checkout
+          python packages/mxc-runtime/tools/build_bundle.py --engine docker \
+            --output "$RUNNER_TEMP/runtime-build-source.tar.gz"
+      - name: Prepare verified native payload and build companion wheel
+        run: |
+          extra=()
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            extra=(--bwrap-bundle "$RUNNER_TEMP/runtime-build-source.tar.gz")
+          fi
+          python packages/mxc-runtime/prepare_assets.py --target '${{ matrix.target }}' "${extra[@]}"
+          uv build --wheel packages/mxc-runtime --out-dir "$RUNNER_TEMP/wheels"
+          python packages/mxc-runtime/tools/check_wheel.py "$RUNNER_TEMP"/wheels/*.whl
+      - name: Build DSPy and explicitly install unpublished companion outside checkout
         run: |
           uv build --wheel --out-dir "$RUNNER_TEMP/wheels"
           uv venv "$RUNNER_TEMP/venv"
-          uv pip install --python "$RUNNER_TEMP/venv/bin/python" \
-            "$RUNNER_TEMP"/wheels/*.whl \
-            pytest==9.1.1 pytest-asyncio==1.4.0 cmpnd==0.30.0 \
-            numpy==2.4.6 pillow==12.3.0 opencv-python-headless==5.0.0.93
-          uv pip check --python "$RUNNER_TEMP/venv/bin/python"
-          uv pip freeze --python "$RUNNER_TEMP/venv/bin/python"
-          mkdir -p "$RUNNER_TEMP/checks/scripts/mxc_interpreter" "$RUNNER_TEMP/checks/tests"
-          cp scripts/mxc_interpreter/{interpreter.py,test_interpreter.py} "$RUNNER_TEMP/checks/scripts/mxc_interpreter/"
-          cp tests/primitives/test_local_interpreter.py "$RUNNER_TEMP/checks/tests/"
-      - name: Exercise real confinement, images, tools and lifecycle
+          uv pip install --python "$RUNNER_TEMP/venv/${{ matrix.python }}" \
+            --find-links "$RUNNER_TEMP/wheels" \
+            dspy-mxc-runtime==0.1.0a1 "$RUNNER_TEMP"/wheels/dspy-*.whl \
+            pytest==9.1.1 pytest-asyncio==1.4.0 cmpnd==0.40.0 \
+            numpy==2.4.6 pillow==13.0.0 opencv-python-headless==5.0.0.93
+          uv pip check --python "$RUNNER_TEMP/venv/${{ matrix.python }}"
+          uv pip freeze --python "$RUNNER_TEMP/venv/${{ matrix.python }}"
+          mkdir -p "$RUNNER_TEMP/checks"
+          cp scripts/mxc_interpreter/test_interpreter.py "$RUNNER_TEMP/checks/"
+          cp tests/primitives/test_local_interpreter.py "$RUNNER_TEMP/checks/"
+      - name: Package contract tests
+        run: '"$RUNNER_TEMP/venv/${{ matrix.python }}" -I -m pytest -q packages/mxc-runtime/tests'
+      - name: Require actual installed LocalInterpreter backend, then run native suites
         working-directory: ${{ runner.temp }}/checks
         run: |
-          "$RUNNER_TEMP/venv/bin/python" -c 'import dspy, sys; from pathlib import Path; assert Path(dspy.__file__).is_relative_to(sys.prefix), dspy.__file__'
-          "$RUNNER_TEMP/venv/bin/python" -m pytest -q scripts/mxc_interpreter/test_interpreter.py tests/
+          "$RUNNER_TEMP/venv/${{ matrix.python }}" -I -c 'import dspy, dspy_mxc_runtime, sys; from pathlib import Path; assert Path(dspy.__file__).is_relative_to(sys.prefix), dspy.__file__; assert Path(dspy_mxc_runtime.__file__).is_relative_to(sys.prefix); worker = dspy.LocalInterpreter(); worker.start(); assert worker.execute("6 * 7") == 42; worker.shutdown()'
+          "$RUNNER_TEMP/venv/${{ matrix.python }}" -I -m pytest -q test_local_interpreter.py test_interpreter.py

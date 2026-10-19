@@ -265,10 +265,8 @@ class TestRLMInitialization:
         rlm = RLM("context -> answer")
         assert rlm.max_llm_calls == 50
         assert rlm.sub_lm is None
-        # PythonInterpreter is the public default; the resolver lets the configured factory
-        # override it on each forward.
-        assert rlm._interpreter_factory is PythonInterpreter
-        assert resolve_interpreter_factory(rlm._interpreter_factory) is PythonInterpreter
+        # Resolve the default lazily so a later context can choose the runtime.
+        assert resolve_interpreter_factory(rlm._interpreter_factory) is dspy.LocalInterpreter
 
         # Test custom values
         mock_lm = dspy.LM("openai/gpt-4o-mini")
@@ -1159,8 +1157,7 @@ class TestRLMDynamicSignature:
         assert "`answer`" in instructions
         assert "llm_query(..., images=[...])" in instructions
         assert "Printing or displaying an image encoding does not let you see it" in instructions
-        assert "Do not assume other packages such as numpy" in instructions
-        assert "image.to_pil()" in instructions
+        assert dspy.LocalInterpreter.execution_instructions in instructions
 
     def test_extract_signature_structure(self):
         """Test extract signature has required fields for all outputs."""
