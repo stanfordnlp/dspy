@@ -7,6 +7,5 @@ API reference for DSPy adapters. Select a page below.
 - [ChatAdapter](ChatAdapter.md)
 - [JSONAdapter](JSONAdapter.md)
 - [TwoStepAdapter](TwoStepAdapter.md)
-- [TypeSafeAdapter](TypeSafeAdapter.md)
 - [XMLAdapter](XMLAdapter.md)
 <!-- END_API_INDEX -->

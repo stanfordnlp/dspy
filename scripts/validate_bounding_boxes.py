@@ -29,6 +29,7 @@ from PIL import Image, ImageDraw, ImageOps
 
 import dspy
 from dspy._vendor.lm15.serde import response_to_dict
+from dspy.experimental import Score
 
 ANNOTATIONS_URL = (
     "https://raw.githubusercontent.com/eembc/mlmark/656d136cdbc1f11c468131be957ff5aa57b09734/"
@@ -129,7 +130,7 @@ def signature_for(case, *, mixed=True):
             "visible": (bool, dspy.OutputField(desc=f"Is there a {case['target']} in inputs.photo?")),
             "unicorn": (bool, dspy.OutputField(desc="Is there a real unicorn in inputs.photo?")),
             "category": (Literal[case["target"], "unicorn", "none"], dspy.OutputField(desc="Which of these is visible in inputs.photo?")),
-            "size": (Literal[0, 1, 2], dspy.OutputField(desc="Size of the target: 0 small, 1 medium, 2 large.")),
+            "size": (Score["small", "medium", "large"], dspy.OutputField(desc="Size of the target.")),
         })
     return dspy.Signature(fields, "Locate the named targets in the image. Return tight boxes in normalized coordinates.")
 
@@ -160,7 +161,7 @@ async def run_case(lm, adapter, case, output, *, asynchronous=False, mixed=True,
         for name, (_, truth) in case["targets"].items():
             box = result[name]
             assert isinstance(box, dspy.BoundingBox)
-            if isinstance(adapter, dspy.TypeSafeAdapter):
+            if lm.supports_decision_requests:
                 assert box.model_dump() == response.provider_data["typesafe"]["answers"][name]["box"]
                 assert name not in (response.probabilities or {})
             pixels = xyxy(box, *image.size)
@@ -168,7 +169,7 @@ async def run_case(lm, adapter, case, output, *, asynchronous=False, mixed=True,
                                       "max_edge_error": max(abs(a-b)/scale for a, b, scale in zip(pixels, truth, [image.width, image.height]*2, strict=True))}
             draw.rectangle(truth, outline="#00b857", width=3)
             draw.rectangle(pixels, outline="#e40075", width=2)
-        if mixed and isinstance(adapter, dspy.TypeSafeAdapter):
+        if mixed and lm.supports_decision_requests:
             assert set(response.probabilities) == {"visible", "unicorn", "category", "size"}
             record["presence_correct"] = result.visible and not result.unicorn
             record["category_correct"] = result.category == case["target"]
@@ -195,7 +196,7 @@ async def controls(samples, output):
     signature = signature_for(primary)
     predict = dspy.Predict(signature)
     try:
-        with dspy.context(adapter=dspy.TypeSafeAdapter()):
+        with dspy.context(adapter=None):
             start = time.perf_counter()
             first = predict(photo=image, lm=lm)
             cold = time.perf_counter() - start
@@ -255,7 +256,7 @@ async def controls(samples, output):
             match = {**primary, "id": "reference-match", "targets": {
                 "box": ("The shape in inputs.photo that matches the shape in inputs.reference.", primary["targets"]["box"][1]),
             }}
-            results["reference_match"] = await run_case(lm, dspy.TypeSafeAdapter(), match, output, mixed=False,
+            results["reference_match"] = await run_case(lm, None, match, output, mixed=False,
                                                        extra_inputs={"reference": dspy.Image(template)})
             # Caller-selected left-half tile of the difficult flipped phone.
             # Resize to satisfy Jev's 280px minimum side; scale all edges back
@@ -267,7 +268,7 @@ async def controls(samples, output):
             tile_case = {**phone, "id": "phone-tile", "image": tile, "path": tile_path,
                          "targets": {"box": (phone["targets"]["box"][0], [2*v for v in phone["targets"]["box"][1]])},
                          "source": {**phone["source"], "crop_xyxy": [0, 0, 214, 640], "resize": [428, 1280]}}
-            results["crop_refinement"] = await run_case(lm, dspy.TypeSafeAdapter(), tile_case, output, mixed=False)
+            results["crop_refinement"] = await run_case(lm, None, tile_case, output, mixed=False)
             if results["crop_refinement"]["contract_pass"]:
                 mapped = [v/2 for v in results["crop_refinement"]["metrics"]["box"]["predicted_xyxy"]]
                 results["crop_refinement"]["original_image_xyxy"] = mapped
@@ -293,15 +294,15 @@ async def main(args):
     lm = dspy.LM("typesafe:jev-1.14.0", engine="lm15", cache=False, num_retries=0, timeout=60)
     try:
         for index, case in enumerate(samples):
-            records.append(await run_case(lm, dspy.TypeSafeAdapter(), case, output, asynchronous=index % 2 == 1))
+            records.append(await run_case(lm, None, case, output, asynchronous=index % 2 == 1))
             (output / "results.json").write_text(json.dumps(records, indent=2))
         case = {**samples[-1], "id": "box-only", "targets": {"box": samples[-1]["targets"]["box"]}}
-        records.append(await run_case(lm, dspy.TypeSafeAdapter(), case, output, mixed=False))
+        records.append(await run_case(lm, None, case, output, mixed=False))
         # Distinct landscape/portrait content tests image identity in one state.
         for primary, distractor in [(samples[-2], samples[-1]), (samples[-1], samples[-2])]:
             case = {**primary, "id": "two-images-" + primary["id"],
                     "targets": {"box": primary["targets"]["box"]}}
-            records.append(await run_case(lm, dspy.TypeSafeAdapter(), case, output, asynchronous=True, mixed=False,
+            records.append(await run_case(lm, None, case, output, asynchronous=True, mixed=False,
                                           extra_inputs={"reference": dspy.Image.from_path(str(distractor["path"]))}))
     finally:
         await lm.aclose()

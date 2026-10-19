@@ -17,7 +17,7 @@ class Locate(dspy.Signature):
 lm = dspy.LM("typesafe:jev-1.14.0", engine="lm15")  # TYPESAFE_API_KEY
 predict = dspy.Predict(Locate)
 try:
-    with dspy.context(lm=lm, adapter=dspy.TypeSafeAdapter()):
+    with dspy.context(lm=lm):
         result = predict(photo=dspy.Image.from_path("kitchen.jpg"))
         # Or: result = await predict.acall(photo=...)
 
@@ -37,6 +37,9 @@ finally:
     lm.close()  # await lm.aclose() for async use
 ```
 
+`Predict` selects native Jev translation automatically from the LM. No separate
+adapter is needed, including for image-only judgment tasks without box outputs.
+
 Confidence is provider evidence, not a coordinate or a probability distribution
 over boxes. Boxes do not appear in `response.probabilities`. History access is
 appropriate for sequential debugging; for concurrent applications that need
@@ -49,9 +52,13 @@ rather than reading a shared history's last entry. History must be enabled.
   `TypeSafe-Danger-Zone-Images: true` header automatically. Use Jev 1.14
   (`jev-1.14.0` or `jev-preview`), not an older model.
 - Use a separate top-level output field for each target. Boxes can accompany
-  `bool`, string `Literal` choices, and integer `Literal[0, 1, ...]` scores.
-  `TypeSafeAdapter` does not translate the separate experimental rich
-  `Noul`/`Choice`/`Score` value types or their predictor calibration overrides.
+  `bool`, `Literal` choices, and experimental `Noul`, `Choice`, and `Score` fields.
+  Use `Score["small", "medium", "large"]` for an ordinal score; an integer
+  `Literal` remains a choice, matching ordinary Jev decision signatures.
+  Decision fields retain their threshold, weight, cut, instruction, and criteria
+  overrides. For example, `predict.fields["visible"] = {"threshold": 0.9}` changes
+  the presence decision without changing the box or refetching cached evidence.
+  Boxes themselves do not accept decision calibration overrides.
 - Native Jev does not support `list[BoundingBox]`, nested or nullable boxes,
   arbitrary generated text, tools, or streaming. Unsupported schemas fail
   before the provider call. Use `dspy.Predict`, not a text-reasoning

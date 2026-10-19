@@ -6,6 +6,8 @@ from PIL import Image
 from pydantic import BaseModel, ValidationError
 
 import dspy
+from dspy.adapters.decision import record_evidence
+from dspy.experimental import Score
 from dspy.utils.dummies import DummyLM
 
 EDGES = {"top": 0.13, "bottom": 0.81, "left": 0.27, "right": 0.64}
@@ -114,7 +116,7 @@ async def test_predict_native_boxes_evidence_images_and_cache(asynchronous, mixe
         signature = signature.append("second", dspy.OutputField(desc="The other target."), type_=dspy.BoundingBox)
         signature = signature.append("visible", dspy.OutputField(desc="Is a dog visible?"), type_=bool)
         signature = signature.append("kind", dspy.OutputField(desc="What kind of animal?"), type_=Literal["dog", "cat"])
-        signature = signature.append("size", dspy.OutputField(desc="Size, small to large."), type_=Literal[0, 1, 2])
+        signature = signature.append("size", dspy.OutputField(desc="Size, small to large."), type_=Score["small", "medium", "large"])
         answers.update({
             "second": {"type": "box", "box": {"top": 0.21, "bottom": 0.67, "left": 0.04, "right": 0.19}, "confidence": 0.62},
             "visible": {"type": "noul", "noul": 0.91},
@@ -129,7 +131,7 @@ async def test_predict_native_boxes_evidence_images_and_cache(asynchronous, mixe
     predict = dspy.Predict(signature)
     predict.demos = [dspy.Example(photo=image, box=dspy.BoundingBox(**EDGES))]
     try:
-        with dspy.context(adapter=dspy.TypeSafeAdapter()):
+        with dspy.context(adapter=None), record_evidence() as evidence:
             for _ in range(2):
                 result = await predict.acall(photo=image, lm=lm) if asynchronous else predict(photo=image, lm=lm)
                 assert result.box.model_dump() == EDGES
@@ -138,18 +140,25 @@ async def test_predict_native_boxes_evidence_images_and_cache(asynchronous, mixe
                 assert response.data["box"] == EDGES
                 if mixed:
                     assert result.second.model_dump() == answers["second"]["box"]
-                    assert result.visible is True and result.kind == "dog" and result.size == 2
+                    assert result.visible is True and result.kind == "dog" and result.size.level == 2
+                    assert result.size.value == pytest.approx(1.6)
                     assert set(response.probabilities) == {"visible", "kind", "size"}
                     assert response.probabilities["visible"]["true"] == 0.91
                 else:
                     assert response.probabilities is None
             if mixed:
-                predict.fields["visible"] = {"threshold": 0.95}
-                with pytest.raises(ValueError, match="does not support decision field overrides"):
+                predict.fields = {"visible": {"threshold": 0.95}, "kind": {"weights": {"cat": 10}},
+                                  "size": {"cuts": [0.4, 1.8]}}
+                result = await predict.acall(photo=image, lm=lm) if asynchronous else predict(photo=image, lm=lm)
+                assert result.visible is False and result.kind == "cat" and result.size.level == 1
+                assert result.box.model_dump() == EDGES
+                predict.fields["box"] = {"threshold": 0.9}
+                with pytest.raises(ValueError, match="unsupported outputs"):
                     if asynchronous:
                         await predict.acall(photo=image, lm=lm)
                     else:
                         predict(photo=image, lm=lm)
+            assert next(answer for _, name, answer in evidence if name == "box") == answers["box"]
         assert len(transport.requests) == 1
         request = transport.requests[0]
         payload = json.loads(request.body)
@@ -173,7 +182,7 @@ def test_unsupported_native_outputs_are_refused(annotation, monkeypatch):
     signature = Locate.with_updated_fields("box", type_=annotation)
     lm = dspy.LM("typesafe:jev-1.14.0", engine="lm15", api_key="test", cache=False, num_retries=0)
     try:
-        with dspy.context(adapter=dspy.TypeSafeAdapter()), pytest.raises(dspy.LMUnsupportedFeatureError):
+        with dspy.context(adapter=None), pytest.raises(ValueError, match="Unsupported System One output"):
             dspy.Predict(signature)(photo=dspy.Image(Image.new("RGB", (320, 280))), lm=lm)
         assert not transport.requests
     finally:
@@ -183,3 +192,10 @@ def test_unsupported_native_outputs_are_refused(annotation, monkeypatch):
 def test_adapter_rejects_invalid_generated_geometry():
     with pytest.raises(dspy.AdapterParseError, match="top < bottom"):
         dspy.JSONAdapter().parse(Locate, json.dumps({"box": {**EDGES, "top": 0.9}}))
+
+    from tests.predict.test_decision_parameters import FakeClient
+
+    signature = dspy.Signature({"box": (dspy.BoundingBox, dspy.OutputField())})
+    lm = FakeClient(answers={"box": {"box": {**EDGES, "top": 0.9}, "confidence": 0.8}})
+    with pytest.raises(dspy.AdapterParseError, match="top < bottom"):
+        dspy.Predict(signature)(lm=lm)

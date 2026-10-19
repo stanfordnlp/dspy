@@ -101,7 +101,6 @@ nav:
             - XMLAdapter: api/adapters/XMLAdapter.md
             - JSONAdapter: api/adapters/JSONAdapter.md
             - TwoStepAdapter: api/adapters/TwoStepAdapter.md
-            - TypeSafeAdapter: api/adapters/TypeSafeAdapter.md
         - Evaluation:
             - api/evaluation/index.md
             - CompleteAndGrounded: api/evaluation/CompleteAndGrounded.md

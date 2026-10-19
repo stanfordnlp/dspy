@@ -15,7 +15,6 @@ from dspy.adapters.types import (
     ToolCalls,
     Type,
 )
-from dspy.adapters.typesafe_adapter import TypeSafeAdapter
 from dspy.adapters.xml_adapter import XMLAdapter
 
 __all__ = [
@@ -35,5 +34,4 @@ __all__ = [
     "ToolCallResults",
     "Reasoning",
     "BoundingBox",
-    "TypeSafeAdapter",
 ]
