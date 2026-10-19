@@ -72,6 +72,33 @@ You can also run the hooks manually:
 Please ensure all pre-commit checks pass before creating your pull request. If you're unsure about any
 formatting issues, feel free to commit your changes and let the pre-commit hooks fix them automatically.
 
+### Internal Type Checking
+
+We are incrementally type-checking DSPy's internals with [Astral's ty](https://docs.astral.sh/ty/).
+The goal is to make inputs and outputs clear to contributors, editors, and coding agents without requiring
+them to trace an implementation. Run the same check as CI:
+
+```shell
+uv run --locked --extra dev ty check
+```
+
+The pre-commit hook runs this same command and requires `uv` on your PATH. It checks the entire configured
+typing scope on every commit, rather than only staged files, because changes to imported code can affect types.
+
+The checked modules are listed in `[tool.ty.src].include` in `pyproject.toml`. Add a module there when migrating it;
+imported modules still contribute their types, but errors outside this list are not reported yet.
+Annotate parameters and return values explicitly: ty checks unannotated function bodies but does not require
+annotations, so a passing check alone is not a complete type contract. Prefer concrete result types, generics
+that preserve callable inputs and outputs, and `object` for values that need narrowing. Keep `Any` at genuinely
+dynamic boundaries, such as provider-specific payloads and open settings, rather than using it to silence
+errors throughout an implementation. This does not attempt to infer Python call signatures from DSPy's
+dynamic `Signature` fields or claim that the whole package is typed.
+
+Static contract tests live in `tests/typing` and run with ty, not pytest. Use `assert_type` to verify the result
+types callers see. Deliberately invalid calls use specific `ty: ignore` codes; the enabled
+`unused-ignore-comment` rule rejects those ignores if the calls stop being checked. Keep runtime tests in
+the existing test suite. For continuous feedback, use `uv run --extra dev ty check --watch` or ty's editor integration.
+
 ### Step 4. Create a Pull Request
 
 Once your changes are ready, open a pull request from your branch in your fork to the main branch in the
@@ -176,5 +203,3 @@ AI-assisted contributions are welcome under these conditions:
   code is compatible with DSPy's MIT license.
 
 PRs that violate this policy will be closed without review.
-
-
