@@ -252,8 +252,10 @@ def explain_auth(
             env = config.env
         if api_keys is None:
             api_keys = config.api_keys
-        if settings is None and config.settings is not None:
-            settings = config.settings.get(canonical) or config.settings.get(provider)
+        if settings is None:
+            from .router import _settings_entry
+
+            settings = _settings_entry(config, canonical)
         if credential is None:
             from .router import _credentials_entry
 
