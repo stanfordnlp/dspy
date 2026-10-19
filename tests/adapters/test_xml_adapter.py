@@ -274,10 +274,12 @@ def test_xml_adapter_nullable_containers_round_trip(values):
     class Result(dspy.Signature):
         values: list[str | None] | None = dspy.OutputField()
         mapping: dict[str, str | None] | None = dspy.OutputField()
+        missing: None = dspy.OutputField()
 
     expected = {
         "values": values,
         "mapping": None if values is None else {str(i): value for i, value in enumerate(values)},
+        "missing": None,
     }
     adapter = XMLAdapter()
     formatted = adapter.format_assistant_message_content(Result, expected)

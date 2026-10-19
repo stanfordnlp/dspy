@@ -321,14 +321,14 @@ class XMLAdapter(ChatAdapter):
     @classmethod
     def _elements_to_value(cls, elements: list[ET.Element], schema: dict, definitions: dict) -> Any:
         schema = definitions.get(schema.get("$ref", "").rsplit("/", 1)[-1], schema)
+        if (
+            len(elements) == 1
+            and (schema.get("type") == "null" or {"type": "null"} in schema.get("anyOf", []))
+            and not list(elements[0])
+            and elements[0].text is None
+        ):
+            return None
         if choices := schema.get("anyOf"):
-            if (
-                len(elements) == 1
-                and {"type": "null"} in choices
-                and not list(elements[0])
-                and elements[0].text is None
-            ):
-                return None
             choices = [choice for choice in choices if choice.get("type") != "null"]
             schema = choices[0]
             if list(elements[0]):
