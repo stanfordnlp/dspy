@@ -31,7 +31,7 @@ def metric(example, prediction, trace=None):
 
 
 # Set TYPESAFE_API_KEY in the environment.
-dspy.configure(lm=dspy.LM("typesafe:jev-latest", engine="lm15"))
+dspy.configure(lm=dspy.LM("typesafe:jev-latest"))
 optimizer = ReAnchor(metric)
 tuned = optimizer.compile(dspy.Predict(Match), trainset=trainset, valset=valset)
 print(optimizer.report)

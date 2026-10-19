@@ -203,7 +203,7 @@ probability-native inference:
 ```python
 os.environ["TYPESAFE_API_KEY"] = "your-api-key"
 
-jev_lm = dspy.LM("typesafe:jev-latest", engine="lm15")
+jev_lm = dspy.LM("typesafe:jev-latest")
 triage.set_lm(jev_lm)
 
 result = triage(ticket="My dashboard is blank after the update")

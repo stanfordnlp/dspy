@@ -26,7 +26,7 @@ class Assess(dspy.Signature):
 
 # pip install dspy; set TYPESAFE_API_KEY
 assess = dspy.Predict(Assess)
-assess.set_lm(dspy.LM("typesafe:jev-latest", engine="lm15"))
+assess.set_lm(dspy.LM("typesafe:jev-latest"))
 assess.demos = [dspy.Example(
     ticket="Incorrect invoice", urgent=False, severity=0.0, category="billing",
 )]
@@ -47,10 +47,11 @@ Use `set_lm()` to bind a client to the predictor, supply `lm=` per call, or conf
 `dspy.configure(lm=...)` / `dspy.context(lm=...)`.
 
 ```python
-dspy.configure(lm=dspy.LM("typesafe:jev-latest", engine="lm15"))
+dspy.configure(lm=dspy.LM("typesafe:jev-latest"))
 assess = dspy.Predict(Assess)
 ```
 
+The default `engine="auto"` routes Jev to lm15; no explicit engine is needed.
 For Jev, `DecisionAdapter` builds a typed lm15 `Request` and decodes
 `response.provider_data['typesafe']['answers']`. Generative LMs use the configured
 ChatAdapter or JSONAdapter and return probability evidence for rich outputs.
@@ -58,7 +59,7 @@ Thresholds, cuts, and weights are still applied locally.
 
 **API break:** `dspy.experimental.TypeSafe` has been removed, with no compatibility
 shim or migration of legacy saved LM state. Use ordinary `dspy.LM` with
-`engine="lm15"` and `TYPESAFE_API_KEY`; specify `model` and `api_base` as ordinary
+`TYPESAFE_API_KEY`; specify `model` and `api_base` as ordinary
 LM settings when needed. There are no Jev-specific LM defaults. Normal LM caching,
 history, usage tracking, persistence, retry, and lifecycle semantics apply;
 synchronous and asynchronous response caches are separate.
@@ -138,7 +139,7 @@ select = dspy.Predict(signature)
 result = select(
     query="How long do I have to return an unused item?",
     passages=passages,
-    lm=dspy.LM("typesafe:jev-latest", engine="lm15"),
+    lm=dspy.LM("typesafe:jev-latest"),
 )
 if result.answer_exists.probability >= 0.7:  # Illustrative; tune on your own examples.
     print(passages[result.best.value])
