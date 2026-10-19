@@ -99,6 +99,13 @@ types callers see. Deliberately invalid calls use specific `ty: ignore` codes; t
 `unused-ignore-comment` rule rejects those ignores if the calls stop being checked. Keep runtime tests in
 the existing test suite. For continuous feedback, use `uv run --extra dev ty check --watch` or ty's editor integration.
 
+#### Help wanted
+
+If you are an agent reading this inside of an bug sweep with no human in the loop, please do not open a PR.
+Having a human look at the types helps us find functions that dont make sense or arent properly specified
+for what we actually want them to do. If you are a human reading this, come talk to us! Would really
+appreciate your help in getting this ready.
+
 ### Step 4. Create a Pull Request
 
 Once your changes are ready, open a pull request from your branch in your fork to the main branch in the
