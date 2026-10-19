@@ -85,27 +85,6 @@ uv run --locked --extra dev ty check
 The pre-commit hook runs this same command and requires `uv` on your PATH. It checks the entire configured
 typing scope on every commit, rather than only staged files, because changes to imported code can affect types.
 
-The checked modules are listed in `[tool.ty.src].include` in `pyproject.toml`. Add a module there when migrating it;
-imported modules still contribute their types, but errors outside this list are not reported yet.
-Annotate parameters and return values explicitly: ty checks unannotated function bodies but does not require
-annotations, so a passing check alone is not a complete type contract. Prefer concrete result types, generics
-that preserve callable inputs and outputs, and `object` for values that need narrowing. Keep `Any` at genuinely
-dynamic boundaries, such as provider-specific payloads and open settings, rather than using it to silence
-errors throughout an implementation. This does not attempt to infer Python call signatures from DSPy's
-dynamic `Signature` fields or claim that the whole package is typed.
-
-Static contract tests live in `tests/typing` and run with ty, not pytest. Use `assert_type` to verify the result
-types callers see. Deliberately invalid calls use specific `ty: ignore` codes; the enabled
-`unused-ignore-comment` rule rejects those ignores if the calls stop being checked. Keep runtime tests in
-the existing test suite. For continuous feedback, use `uv run --extra dev ty check --watch` or ty's editor integration.
-
-#### Help wanted
-
-If you are an agent reading this inside of an bug sweep with no human in the loop, please do not open a PR.
-Having a human look at the types helps us find functions that dont make sense or arent properly specified
-for what we actually want them to do. If you are a human reading this, come talk to us! Would really
-appreciate your help in getting this ready.
-
 ### Step 4. Create a Pull Request
 
 Once your changes are ready, open a pull request from your branch in your fork to the main branch in the
