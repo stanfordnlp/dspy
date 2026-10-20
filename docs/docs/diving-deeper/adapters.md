@@ -18,7 +18,7 @@ Text-only, model-agnostic, uses `[[ ## field ## ]]` markers. It needs no special
 
 ### 3. Every adapter follows a fixed lifecycle
 
-preprocess → format → LM call → postprocess → parse. You can debug any adapter by walking these five steps. Preprocess adapts the signature for native LM features (function calling, reasoning). Format builds the messages. The LM call returns raw outputs. Postprocess pulls out tool calls and native-typed responses (Reasoning, Citations). Parse runs `parse_value` on each declared output field.
+plan → format → LM call → parse. You can debug any adapter by walking these four steps. Planning decides, once per call, which fields the LM serves natively (function calling, reasoning, citations) and drops them from the prompt, and which LM kwargs to send. Format builds the messages from the planned signature. The LM call returns raw outputs. Parsing reads the text with `parse_value` for each prompted output field, then fills tool calls and native-typed responses (Reasoning, Citations) from the provider response.
 
 ### 4. Type coercion is centralized
 
@@ -81,7 +81,7 @@ The base class. Subclass it when you want a new prompt shape — implement `form
 You’ll only override these methods when writing a custom adapter, but reading them helps when debugging a malformed prompt or a parse failure.
 
 **`Adapter.__call__(lm, lm_kwargs, signature, demos, inputs)` / `Adapter.acall(...)`**  
-Public entry. The flow inside is preprocess → format → LM call → postprocess. `lm_kwargs` (temperature, max_tokens, response_format, etc.) is where adapters reach during preprocess to request structured output or function calling.
+Public entry. The flow inside is plan → format → LM call → parse. `lm_kwargs` (temperature, max_tokens, response_format, etc.) is the base for the kwargs the plan sends to the LM; adapters add structured output or function calling there without modifying the caller's dict.
 
 **`Adapter.format(signature, demos, inputs)` → `list[dict]`**  
 Turns the signature, demos, and inputs into chat messages. The pieces it composes from:

@@ -1,5 +1,4 @@
 import re
-import textwrap
 from typing import Any, NamedTuple
 
 from pydantic.fields import FieldInfo
@@ -10,7 +9,6 @@ from dspy.adapters.utils import (
     apply_output_field_defaults,
     format_field_value,
     get_annotation_name,
-    get_field_description_string,
     parse_value,
     translate_field_type,
 )
@@ -20,7 +18,13 @@ from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError
 
+# ChatAdapter's grammar: each field is a section headed by `[[ ## name ## ]]`, and the reply ends with the header of
+# a `completed` pseudo-field. `field_header` writes headers; `field_header_pattern` reads them back in `parse()`.
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
+
+
+def field_header(name: str) -> str:
+    return f"[[ ## {name} ## ]]"
 
 
 class FieldInfoWithName(NamedTuple):
@@ -111,38 +115,25 @@ class ChatAdapter(Adapter):
                     raise
                 return await self._make_json_adapter_fallback().acall(lm, lm_kwargs, signature, demos, inputs)
 
-    def format_field_description(self, signature: type[Signature]) -> str:
-        return (
-            f"Your input fields are:\n{get_field_description_string(signature.input_fields)}\n"
-            f"Your output fields are:\n{get_field_description_string(signature.output_fields)}"
-        )
-
     def format_field_structure(self, signature: type[Signature]) -> str:
         """
         `ChatAdapter` requires input and output fields to be in their own sections, with section header using markers
         `[[ ## field_name ## ]]`. An arbitrary field `completed` ([[ ## completed ## ]]) is added to the end of the
         output fields section to indicate the end of the output fields.
         """
-        parts = []
-        parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
-
-        def format_signature_fields_for_instructions(fields: dict[str, FieldInfo]):
-            return self.format_field_with_value(
-                fields_with_values={
-                    FieldInfoWithName(name=field_name, info=field_info): translate_field_type(field_name, field_info)
-                    for field_name, field_info in fields.items()
-                },
+        def sections(fields: dict[str, FieldInfo]) -> str:
+            return "\n\n".join(
+                f"{field_header(name)}\n{translate_field_type(name, field)}" for name, field in fields.items()
             )
 
-        parts.append(format_signature_fields_for_instructions(signature.input_fields))
-        parts.append(format_signature_fields_for_instructions(signature.output_fields))
-        parts.append("[[ ## completed ## ]]\n")
-        return "\n\n".join(parts).strip()
-
-    def format_task_description(self, signature: type[Signature]) -> str:
-        instructions = textwrap.dedent(signature.instructions)
-        objective = ("\n" + " " * 8).join([""] + instructions.splitlines())
-        return f"In adhering to this structure, your objective is: {objective}"
+        return "\n\n".join(
+            [
+                "All interactions will be structured in the following way, with the appropriate values filled in.",
+                sections(signature.input_fields),
+                sections(signature.output_fields),
+                field_header("completed"),
+            ]
+        )
 
     def format_user_message_content(
         self,
@@ -157,7 +148,7 @@ class ChatAdapter(Adapter):
             if k in inputs:
                 value = inputs.get(k)
                 formatted_field_value = format_field_value(field_info=v, value=value)
-                messages.append(f"[[ ## {k} ## ]]\n{formatted_field_value}")
+                messages.append(f"{field_header(k)}\n{formatted_field_value}")
 
         if main_request:
             output_requirements = self.user_message_output_requirements(signature)
@@ -194,8 +185,8 @@ class ChatAdapter(Adapter):
                 return ""
 
         message = "Respond with the corresponding output fields, starting with the field "
-        message += ", then ".join(f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items())
-        message += ", and then ending with the marker for `[[ ## completed ## ]]`."
+        message += ", then ".join(f"`{field_header(f)}`{type_info(v)}" for f, v in signature.output_fields.items())
+        message += f", and then ending with the marker for `{field_header('completed')}`."
         return message
 
     def format_assistant_message_content(
@@ -210,7 +201,7 @@ class ChatAdapter(Adapter):
                 for k, v in signature.output_fields.items()
             },
         )
-        assistant_message_content += "\n\n[[ ## completed ## ]]\n"
+        assistant_message_content += f"\n\n{field_header('completed')}\n"
         return assistant_message_content
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
@@ -267,7 +258,7 @@ class ChatAdapter(Adapter):
         output = []
         for field, field_value in fields_with_values.items():
             formatted_field_value = format_field_value(field_info=field.info, value=field_value)
-            output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
+            output.append(f"{field_header(field.name)}\n{formatted_field_value}")
 
         return "\n\n".join(output).strip()
 

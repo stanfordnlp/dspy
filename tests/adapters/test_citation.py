@@ -151,13 +151,10 @@ def test_citations_postprocessing():
         ]
     }]
 
-    result = adapter._call_postprocess(
-        CitationSignature.delete("citations"),
-        CitationSignature,
-        outputs,
-        dspy.LM(model="anthropic/claude-3-5-sonnet-20241022"),
-        lm_kwargs={},
-    )
+    plan = adapter._plan(dspy.LM(model="anthropic/claude-3-5-sonnet-20241022"), {}, CitationSignature, [], {})
+    assert "citations" not in plan.render_signature.output_fields
+
+    result = adapter._parse_outputs(plan, outputs)
 
     assert len(result) == 1
     assert "citations" in result[0]

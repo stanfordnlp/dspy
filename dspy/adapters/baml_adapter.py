@@ -9,6 +9,7 @@ from typing import Any, Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel
 
+from dspy.adapters.chat_adapter import field_header
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.utils import format_field_value as original_format_field_value
 from dspy.signatures.signature import Signature
@@ -233,7 +234,7 @@ class BAMLAdapter(JSONAdapter):
         # Add input structure section
         if signature.input_fields:
             for name in signature.input_fields.keys():
-                sections.append(f"[[ ## {name} ## ]]")
+                sections.append(field_header(name))
                 sections.append(f"{{{name}}}")
                 sections.append("")  # Empty line after each input
 
@@ -241,11 +242,11 @@ class BAMLAdapter(JSONAdapter):
         if signature.output_fields:
             for name, field in signature.output_fields.items():
                 field_type = field.annotation
-                sections.append(f"[[ ## {name} ## ]]")
+                sections.append(field_header(name))
                 sections.append(f"Output field `{name}` should be of type: {_render_type_str(field_type, indent=0)}\n")
 
         # Add completed section
-        sections.append("[[ ## completed ## ]]")
+        sections.append(field_header("completed"))
 
         return "\n".join(sections)
 
@@ -270,7 +271,7 @@ class BAMLAdapter(JSONAdapter):
                     # Fallback to the original dspy formatter for other types
                     formatted_value = original_format_field_value(field_info=field_info, value=value)
 
-                messages.append(f"[[ ## {key} ## ]]\n{formatted_value}")
+                messages.append(f"{field_header(key)}\n{formatted_value}")
 
         if main_request:
             output_requirements = self.user_message_output_requirements(signature)

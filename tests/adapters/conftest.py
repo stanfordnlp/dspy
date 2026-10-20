@@ -7,6 +7,8 @@ prompt-format and parsing assertions. Keep dedicated LiteLLM compatibility tests
 and historical cache fixtures; those are not candidates for replacement.
 """
 
+from types import SimpleNamespace
+
 import dspy
 
 
@@ -62,3 +64,8 @@ def format_messages_and_lm_kwargs(adapter, signature, demos, inputs, lm_kwargs=N
     assert len(capturing_lm.calls) == 1
     call = capturing_lm.calls[0]
     return call["messages"], call["kwargs"]
+
+
+def native_lm(model="openai/dspy-test-model", **kwargs):
+    """A stand-in LM with native tool calling and reasoning, enough for `Adapter._plan()`."""
+    return SimpleNamespace(model=model, kwargs=kwargs, supports_function_calling=True, supports_reasoning=True)
