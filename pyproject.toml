@@ -140,6 +140,8 @@ filterwarnings = [
 # inputs/outputs are not part of this initial type-checking contract.
 include = [
     "dspy/utils/asyncify.py",
+    "dspy/utils/callback.py",
+    "dspy/utils/callback_context.py",
     "dspy/utils/usage_tracker.py",
     "tests/typing",
 ]
