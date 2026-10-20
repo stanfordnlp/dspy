@@ -88,7 +88,8 @@ def bootstrap_trace_data(
                     failed_pred = FailedPrediction(
                         completion_text=completion_str,
                         format_reward=format_failure_score
-                        + (failure_score - format_failure_score) * (present / expected),
+                        + (failure_score - format_failure_score)
+                        * (len(present) / len(expected)),
                     )
                 else:
                     failed_pred = FailedPrediction(completion_text=completion_str, format_reward=format_failure_score)
