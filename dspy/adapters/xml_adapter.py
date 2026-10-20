@@ -29,11 +29,10 @@ _xml_newline = re.compile(r"[ \t]*\r?\n")
 
 
 class XMLAdapter(ChatAdapter):
-    """Schema-directed tags with literal leaves and standalone structural tag lines.
+    """Formats and parses typed outputs using XML tags as field delimiters.
 
-    Compact tags remain readable for compatibility. Neither form decodes entities.
-    Declared objects reject extra XML fields; dictionaries permit arbitrary keys.
-    Container closing boundaries are reserved, including inside literal strings.
+    Text inside fields need not be valid XML, so models can return code, HTML,
+    and prose without escaping them.
     """
 
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
