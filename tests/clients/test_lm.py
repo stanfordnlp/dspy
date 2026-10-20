@@ -587,6 +587,28 @@ def test_base_lm_copy_is_shallow_runtime_copy_with_isolated_dspy_state():
     assert lm.kwargs == {"temperature": 0.1, "max_tokens": None}
 
 
+def test_lm_copy_reasoning_model_validation_and_token_normalization():
+    """Verify that copying an LM to a reasoning model validates parameters and normalizes tokens (fixes #10577)."""
+    # 1. Invalid temperature on copy to reasoning model must raise LMConfigurationError
+    lm_chat = dspy.LM("openai/gpt-4o", temperature=0.2)
+    with pytest.raises(
+        dspy.LMConfigurationError,
+        match=r"reasoning models require passing temperature=1\.0 or None",
+    ):
+        lm_chat.copy(model="openai/gpt-5")
+
+    # 2. Token normalization from max_tokens to max_completion_tokens on copy
+    lm_valid = dspy.LM("openai/gpt-4o", max_tokens=16000)
+    copied_reasoning = lm_valid.copy(model="openai/gpt-5")
+    assert copied_reasoning.kwargs["max_completion_tokens"] == 16000
+    assert "max_tokens" not in copied_reasoning.kwargs
+
+    # 3. Token normalization back to max_tokens when copying from reasoning to standard chat model
+    copied_back = copied_reasoning.copy(model="openai/gpt-4o")
+    assert copied_back.kwargs["max_tokens"] == 16000
+    assert "max_completion_tokens" not in copied_back.kwargs
+
+
 def test_dump_state():
     lm = dspy.LM(
         model="openai/gpt-4o-mini",
