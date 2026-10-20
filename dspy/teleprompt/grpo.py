@@ -476,7 +476,7 @@ class GRPO(FinetuneTeleprompter):
                             )
 
                             if isinstance(trace_instance[2], FailedPrediction):
-                                score = trace_instance[2].format_reward or self.format_failure_score
+                                score = trace_instance[2].format_reward if trace_instance[2].format_reward is not None else self.format_failure_score
                                 example_training_data[group_idx].append({
                                     "messages": inp_messages,
                                     "completion": {
