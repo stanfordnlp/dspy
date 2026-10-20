@@ -568,6 +568,30 @@ def test_evaluate_save_as_csv_with_later_prediction_fields(tmp_path):
     assert rows[1]["explanation"] == "later field"
 
 
+def test_evaluate_save_as_csv_names_metric_column_after_bound_method(tmp_path):
+    class Grader:
+        def exact(self, example, prediction, trace=None):
+            return example.answer == prediction.answer
+
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}}))
+    csv_path = tmp_path / "results.csv"
+
+    evaluator = Evaluate(
+        devset=[new_example("What is 1+1?", "2")],
+        metric=Grader().exact,
+        display_progress=False,
+        save_as_csv=str(csv_path),
+    )
+    evaluator(Predict("question -> answer"))
+
+    with csv_path.open(newline="", encoding="utf-8") as csvfile:
+        reader = csv.DictReader(csvfile)
+        rows = list(reader)
+
+    assert reader.fieldnames == ["question", "example_answer", "pred_answer", "exact"]
+    assert rows[0]["exact"] == "True"
+
+
 def test_evaluate_raises_on_empty_devset():
     program = Predict("question -> answer")
     ev = Evaluate(
