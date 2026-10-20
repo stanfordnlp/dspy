@@ -6,6 +6,7 @@ from litellm.utils import Choices, Message, ModelResponse
 import dspy
 from dspy import ChainOfThought
 from dspy.utils import DummyLM
+from dspy.utils.exceptions import AdapterParseError
 
 
 def test_initialization_with_string_signature():
@@ -173,3 +174,29 @@ def test_explicit_rationale_is_not_renamed(custom):
         result = program(question="Question")
     assert result.reasoning == "Working"
     assert isinstance(result.reasoning, str)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_mode", [False, True])
+@pytest.mark.parametrize("collision", [False, True])
+@pytest.mark.parametrize("adapter", [
+    dspy.ChatAdapter(use_json_adapter_fallback=False),
+    dspy.JSONAdapter(),
+    dspy.XMLAdapter(use_json_adapter_fallback=False),
+])
+async def test_parse_failure_preserves_predictor_signature(adapter, collision, async_mode):
+    program = ChainOfThought("question -> plan, answer" if collision else "question -> answer")
+    response = {"plan_2": "Working", "plan": "Task plan"} if collision else {"plan": "Working"}
+    lm = DummyLM([response], adapter=adapter)
+
+    with dspy.context(lm=lm, adapter=adapter), pytest.raises(AdapterParseError) as exc_info:
+        if async_mode:
+            await program.acall(question="Question")
+        else:
+            program(question="Question")
+
+    error = exc_info.value
+    assert error.signature is program.predict.signature
+    assert error.parsed_result == ({"reasoning": "Working", "plan": "Task plan"} if collision else {"reasoning": "Working"})
+    assert error.lm_response == lm.history[-1]["outputs"][0]
+    assert error.adapter_name == type(adapter).__name__
