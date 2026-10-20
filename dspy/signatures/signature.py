@@ -802,6 +802,14 @@ def _parse_type_node(node, names=None) -> Any:
     if isinstance(node, ast.Constant):
         return node.value
 
+    if (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, (ast.USub, ast.UAdd))
+        and isinstance(node.operand, ast.Constant)
+    ):
+        # Signed numeric constants, e.g. `Literal[-1, 1]`.
+        return ast.literal_eval(node)
+
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "Field":
         keys = [kw.arg for kw in node.keywords]
         values = []
