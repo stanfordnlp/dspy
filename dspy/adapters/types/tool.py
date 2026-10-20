@@ -225,16 +225,12 @@ class Tool(Type):
         Args:
             session: An MCP client or session with an async ``call_tool`` method.
             tool: The MCP tool to convert.
-            result_mode: ``"text"`` converts the result's content blocks in
-                their original order: text blocks become their strings and
-                non-text blocks stay as native MCP content objects, so a
-                mixed result never collapses into the same value as a
-                text-only result holding the same text. A result consisting
-                of a single text block returns that block's text (or ``[]``
-                when the text is empty), and a result with no text blocks
-                returns its non-text blocks as a list. ``"structured"``
-                returns MCP structured content exactly when present, with
-                the text conversion as fallback.
+            result_mode: ``"text"`` converts content blocks in their original
+                order: text blocks become strings and non-text blocks stay as
+                native MCP objects, keeping mixed results distinct from
+                text-only ones. A single text block returns its text (or ``[]``
+                if empty). ``"structured"`` returns MCP structured content
+                when present, with the text conversion as fallback.
 
         Returns:
             A Tool object.
