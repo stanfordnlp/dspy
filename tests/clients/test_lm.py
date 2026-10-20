@@ -608,6 +608,24 @@ def test_lm_copy_reasoning_model_validation_and_token_normalization():
     assert copied_back.kwargs["max_tokens"] == 16000
     assert "max_completion_tokens" not in copied_back.kwargs
 
+    # 4. Clearing token limit on reasoning model with max_tokens=None or max_completion_tokens=None
+    cleared_reasoning_1 = copied_reasoning.copy(max_tokens=None)
+    assert "max_tokens" not in cleared_reasoning_1.kwargs
+    assert "max_completion_tokens" not in cleared_reasoning_1.kwargs
+
+    cleared_reasoning_2 = copied_reasoning.copy(max_completion_tokens=None)
+    assert "max_tokens" not in cleared_reasoning_2.kwargs
+    assert "max_completion_tokens" not in cleared_reasoning_2.kwargs
+
+    # 5. Clearing token limit on standard chat model with max_tokens=None or max_completion_tokens=None
+    cleared_chat_1 = copied_back.copy(max_tokens=None)
+    assert "max_tokens" not in cleared_chat_1.kwargs
+    assert "max_completion_tokens" not in cleared_chat_1.kwargs
+
+    cleared_chat_2 = copied_back.copy(max_completion_tokens=None)
+    assert "max_tokens" not in cleared_chat_2.kwargs
+    assert "max_completion_tokens" not in cleared_chat_2.kwargs
+
 
 def test_dump_state():
     lm = dspy.LM(
