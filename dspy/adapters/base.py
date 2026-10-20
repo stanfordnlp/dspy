@@ -167,7 +167,19 @@ class Adapter:
                 tool_calls = output.get("tool_calls")
 
             if text and not (tool_calls and tool_call_output_field_name):
-                value = self.parse(processed_signature, text)
+                try:
+                    value = self.parse(processed_signature, text)
+                except AdapterParseError as e:
+                    # Expose the predictor's signature and field names to callers, while
+                    # preserving the parser's diagnostic message and raw LM response.
+                    e.signature = original_signature
+                    if e.parsed_result is not None:
+                        e.parsed_result = e.parsed_result.copy()
+                        for name, field in processed_signature.output_fields.items():
+                            if original_name := field.json_schema_extra.get("__dspy_reasoning_field"):
+                                if name in e.parsed_result:
+                                    e.parsed_result[original_name] = e.parsed_result.pop(name)
+                    raise
             elif tool_calls and tool_call_output_field_name:
                 try:
                     value = self.parse(processed_signature, text) if text and processed_signature.output_fields else {}
