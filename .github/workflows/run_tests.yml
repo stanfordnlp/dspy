@@ -66,6 +66,8 @@ jobs:
             echo "Then commit and push the changes."
             exit 1
           )
+      - name: Check internal types
+        run: uv run --locked --extra dev ty check
 
   test:
     name: Run Tests
