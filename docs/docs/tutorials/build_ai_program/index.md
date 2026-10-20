@@ -13,6 +13,9 @@ Learn to create intelligent agents that can handle complex customer service scen
 ### [Building AI Applications by Customizing DSPy Modules](../custom_module/index.ipynb)
 Discover how to create custom DSPy modules tailored to your specific needs. Learn the patterns for building reusable, composable components that can be shared across different applications.
 
+### [Running Harbor Tasks (Experimental)](../harbor/index.ipynb)
+Run a DSPy file writer inside a real Harbor task, bootstrap a verified demonstration, and save and reload the compiled child. Requires the experimental bridge checkout and Docker.
+
 ## Retrieval-Augmented Generation (RAG)
 
 ### [Retrieval-Augmented Generation (RAG)](../rag/index.ipynb)
