@@ -100,13 +100,17 @@ def test_bootstrap_trace_data():
             assert len(trace_entry) == 3, "Trace entry should have 3 elements"
 
 
-@pytest.mark.parametrize("response, expected_score", [({}, -2), ({"answer": "4"}, -0.5)])
+@pytest.mark.parametrize("response, format_failure_score, expected_score", [
+    ({}, -2, -2),
+    ({"answer": "4"}, -2, -0.5),
+    ({"answer": "4"}, -1, 0),
+])
 @pytest.mark.parametrize("adapter", [
     dspy.ChatAdapter(use_json_adapter_fallback=False),
     dspy.JSONAdapter(),
     dspy.XMLAdapter(use_json_adapter_fallback=False),
 ])
-def test_chain_of_thought_parse_failure_is_captured(adapter, response, expected_score):
+def test_chain_of_thought_parse_failure_is_captured(adapter, response, format_failure_score, expected_score):
     program = dspy.ChainOfThought("question -> answer")
     example = Example(question="2+2?", answer="4").with_inputs("question")
     lm = DummyLM([response], adapter=adapter)
@@ -120,7 +124,7 @@ def test_chain_of_thought_parse_failure_is_captured(adapter, response, expected_
             raise_on_error=False,
             capture_failed_parses=True,
             failure_score=1,
-            format_failure_score=-2,
+            format_failure_score=format_failure_score,
         )
 
     assert len(data) == 1
