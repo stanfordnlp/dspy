@@ -168,3 +168,26 @@ def test_validation_set_usage():
 
     # Check that validation examples are part of student's demos after compilation
     assert len(compiled_student.predictor.demos) >= len(valset), "Validation set not used in compiled student demos"
+
+
+def test_bootstrap_metric_threshold_zero_boundary():
+    """Verify metric_threshold=0.0 is not treated as unset (Issue #10603).
+    A score of 0.0 should be accepted (0.0 >= 0.0), while negative scores should be rejected.
+    """
+    student = SimpleModule("input -> output")
+    teacher = SimpleModule("input -> output")
+    lm = DummyLM([{"output": "blue"}], follow_examples=True)
+    dspy.configure(lm=lm, trace=[])
+
+    # Metric returning exact zero (0.0)
+    zero_metric = lambda example, pred, trace=None: 0.0
+    bootstrap_zero = BootstrapFewShot(metric=zero_metric, metric_threshold=0.0, max_bootstrapped_demos=1)
+    compiled_zero = bootstrap_zero.compile(student, teacher=teacher, trainset=trainset)
+    # The demonstration with score 0.0 must be accepted
+    assert len(compiled_zero.predictor.demos) == 1, "Score of 0.0 should satisfy metric_threshold=0.0"
+
+    # Metric returning negative score (-0.1)
+    negative_metric = lambda example, pred, trace=None: -0.1
+    bootstrap_neg = BootstrapFewShot(metric=negative_metric, metric_threshold=0.0, max_bootstrapped_demos=1)
+    compiled_neg = bootstrap_neg.compile(student, teacher=teacher, trainset=trainset)
+    assert len(compiled_neg.predictor.demos) == 0, "Score of -0.1 should be rejected for metric_threshold=0.0"
