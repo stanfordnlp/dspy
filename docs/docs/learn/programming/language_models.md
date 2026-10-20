@@ -88,6 +88,19 @@ dspy.configure(lm=lm)
         dspy.configure(lm=lm)
         ```
 
+    === "Fikra API"
+        Fikra API is an OpenAI-compatible endpoint for open-weight models (led by DeepSeek: `deepseek-v4.1-flash` at $0.045 per 1M input and $0.09 per 1M output on a 1M context, prices verified 2026-10-19 at [fikraapi.co.ke/pricing](https://fikraapi.co.ke/pricing)). Create a key at [fikraapi.co.ke](https://fikraapi.co.ke), then:
+
+        ```python linenums="1"
+        import dspy
+        lm = dspy.LM('openai/deepseek-v4.1-flash',
+                     api_key='YOUR_FIKRA_API_KEY',
+                     api_base='https://api.fikraapi.co.ke/v1')
+        dspy.configure(lm=lm)
+        ```
+
+        The same `openai/<model-id>` pattern works for the rest of the catalog: `deepseek-v4.1-flash-1017`, `deepseek-v4-flash-0731`, `glm-5.3`, `glm-5.3-flash`, `glm-5.2`, `kimi-k3`, `step-5-preview`, `qwen3.8-27b`, `mimo-v2.6-pro`, `nvidia-nemotron-3.5-super-vl`, `gemini-4-argon` and the `fikra-*` house lanes. Model ids mirror `GET https://api.fikraapi.co.ke/v1/models`.
+
     === "Local LMs on a GPU server"
           First, install [SGLang](https://docs.sglang.ai/docs/get-started/install) and launch its server with your LM.
 
