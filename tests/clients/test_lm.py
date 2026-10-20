@@ -626,6 +626,18 @@ def test_lm_copy_reasoning_model_validation_and_token_normalization():
     assert "max_tokens" not in cleared_chat_2.kwargs
     assert "max_completion_tokens" not in cleared_chat_2.kwargs
 
+    # 6. Copying default model with explicit max_completion_tokens preserves the explicit limit
+    lm_default = dspy.LM("openai/gpt-4o")
+    copied_explicit = lm_default.copy(model="openai/gpt-5", max_completion_tokens=16000)
+    assert copied_explicit.kwargs["max_completion_tokens"] == 16000
+    assert "max_tokens" not in copied_explicit.kwargs
+
+    # 7. Copying default reasoning model to standard model with explicit max_tokens preserves the explicit limit
+    lm_default_reasoning = dspy.LM("openai/gpt-5")
+    copied_explicit_chat = lm_default_reasoning.copy(model="openai/gpt-4o", max_tokens=2000)
+    assert copied_explicit_chat.kwargs["max_tokens"] == 2000
+    assert "max_completion_tokens" not in copied_explicit_chat.kwargs
+
 
 def test_dump_state():
     lm = dspy.LM(

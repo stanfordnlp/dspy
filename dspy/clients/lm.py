@@ -485,17 +485,16 @@ class LM(BaseLM):
         copied._async_engine_spec = async_spec
 
         if _is_openai_reasoning_model(copied.model):
-            if ("max_tokens" in kwargs and kwargs["max_tokens"] is None) or (
-                "max_completion_tokens" in kwargs and kwargs["max_completion_tokens"] is None
-            ):
-                copied.kwargs.pop("max_tokens", None)
+            if "max_tokens" in kwargs and kwargs["max_tokens"] is None and "max_completion_tokens" not in kwargs:
                 copied.kwargs.pop("max_completion_tokens", None)
-            elif "max_tokens" in copied.kwargs:
+            if "max_tokens" in copied.kwargs:
                 max_tokens = copied.kwargs.pop("max_tokens")
-                if max_tokens is not None:
+                if "max_completion_tokens" in kwargs and kwargs["max_completion_tokens"] is None:
+                    pass
+                elif max_tokens is not None:
                     copied.kwargs["max_completion_tokens"] = max_tokens
                 else:
-                    copied.kwargs.pop("max_completion_tokens", None)
+                    copied.kwargs.setdefault("max_completion_tokens", None)
             temperature = copied.kwargs.get("temperature")
             max_tokens = copied.kwargs.get("max_completion_tokens")
             if (temperature and temperature != 1.0) or (max_tokens and max_tokens < 16000):
@@ -506,13 +505,16 @@ class LM(BaseLM):
                     provider=copied._provider_name,
                 )
         else:
-            if ("max_tokens" in kwargs and kwargs["max_tokens"] is None) or (
-                "max_completion_tokens" in kwargs and kwargs["max_completion_tokens"] is None
-            ):
+            if "max_completion_tokens" in kwargs and kwargs["max_completion_tokens"] is None and "max_tokens" not in kwargs:
                 copied.kwargs.pop("max_tokens", None)
-                copied.kwargs.pop("max_completion_tokens", None)
-            elif "max_completion_tokens" in copied.kwargs and "max_tokens" not in kwargs:
-                copied.kwargs["max_tokens"] = copied.kwargs.pop("max_completion_tokens")
+            if "max_completion_tokens" in copied.kwargs:
+                max_completion_tokens = copied.kwargs.pop("max_completion_tokens")
+                if "max_tokens" in kwargs and kwargs["max_tokens"] is None:
+                    pass
+                elif max_completion_tokens is not None and "max_tokens" not in kwargs:
+                    copied.kwargs["max_tokens"] = max_completion_tokens
+                else:
+                    copied.kwargs.setdefault("max_tokens", None)
 
         copied._warn_zero_temp_rollout(copied.kwargs.get("temperature"), copied.kwargs.get("rollout_id"))
         return copied
