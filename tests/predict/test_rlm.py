@@ -715,6 +715,46 @@ class TestRLMFormatting:
         formatted = rlm._format_output(long_output)
         assert formatted == long_output
 
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (0, "0"),
+            (False, "False"),
+            (0.0, "0.0"),
+            ({}, "{}"),
+            ((), "()"),
+            ([], "[]"),
+            ([1, 2, 3], "[1, 2, 3]"),
+            ({"n": 0}, "{'n': 0}"),
+            ("0", "0"),
+            ("line1\nline2", "line1\nline2"),
+            ("", "(no output - did you forget to print?)"),
+            (None, "(no output - did you forget to print?)"),
+        ],
+    )
+    def test_execution_values_reach_the_trajectory(self, value, expected):
+        """Interpreter values are shown as-is, including falsy values and lists.
+
+        PythonInterpreter returns the last expression (an int, bool, list, dict, ...)
+        and returns stdout text only when that value is None. RLM must not treat 0,
+        False, or an empty container as missing output, and must not flatten a list
+        into stdout lines.
+        """
+        lm = DummyLM(
+            [
+                {"plan": "inspect the value", "code": "value"},
+                {"plan": "submit", "code": 'SUBMIT(answer="ok")'},
+            ]
+        )
+        factory = MockInterpreterFactory(responses=[value, FinalOutput({"answer": "ok"})])
+        program = RLM("query -> answer", max_iters=3, interpreter_factory=factory)
+        with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+            result = program(query="what is the value?")
+
+        assert result.answer == "ok"
+        assert result.trajectory[0]["output"] == expected
+        assert result.trajectory[0]["code"] == "value"
+
     def test_format_variable_info_string(self):
         """Test variable info formatting for string value using REPLVariable."""
         var = REPLVariable.from_value("context", "Hello world", preview_chars=5)
