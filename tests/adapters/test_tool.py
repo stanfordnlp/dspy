@@ -320,6 +320,109 @@ def test_tool_call_kwarg():
     assert tool(x=1, y=2, z=3) == {"y": 2, "z": 3}
 
 
+def test_inferred_var_keyword_is_additional_properties_not_a_parameter():
+    def grab(x: int, **options):
+        return options
+
+    tool = Tool(grab)
+    parameters = tool.format_as_litellm_function_call()["function"]["parameters"]
+
+    assert parameters["properties"].keys() == {"x"}
+    assert parameters["required"] == ["x"]
+    assert parameters["additionalProperties"] is True
+    assert "options" not in tool.args
+    assert "options" not in tool.arg_types
+    assert tool.has_kwargs is True
+    # Extra keywords are passed through, not nested under a required "options" argument.
+    assert tool(x=1, y=2) == {"y": 2}
+
+
+def test_inferred_var_keyword_only():
+    def grab(**kwargs):
+        return kwargs
+
+    tool = Tool(grab)
+    parameters = tool.format_as_litellm_function_call()["function"]["parameters"]
+
+    assert parameters["properties"] == {}
+    assert parameters["required"] == []
+    assert parameters["additionalProperties"] is True
+    assert tool(a=1) == {"a": 1}
+
+
+def test_var_positional_rejected_when_schema_is_inferred():
+    def star(*args: int):
+        return sum(args)
+
+    with pytest.raises(ValueError, match=r"Tool function 'star' accepts \*args"):
+        Tool(star)
+
+    def mixed(x: int, *args: int):
+        return x
+
+    with pytest.raises(ValueError, match=r"Tool function 'mixed' accepts \*args"):
+        Tool(mixed)
+
+    class Bucket:
+        def __call__(self, *items: int):
+            return items
+
+    with pytest.raises(ValueError, match=r"Tool function 'Bucket' accepts \*items"):
+        Tool(Bucket())
+
+
+def test_explicit_schema_keeps_varargs_wrapper_and_stays_closed():
+    # MCP conversion and ReAct's submit tool pass an explicit schema and wrap the
+    # call in *args/**kwargs. That wrapper is not part of the published contract.
+    async def func(*args, **kwargs):
+        return kwargs
+
+    tool = Tool(
+        func,
+        name="search",
+        args={"query": {"type": "string"}, "limit": {"type": "integer", "default": 10}},
+        arg_types={"query": str, "limit": int},
+    )
+    parameters = tool.format_as_litellm_function_call()["function"]["parameters"]
+
+    assert parameters["properties"].keys() == {"query", "limit"}
+    assert parameters["required"] == ["query"]
+    assert "args" not in parameters["properties"]
+    assert "kwargs" not in parameters["properties"]
+    assert "additionalProperties" not in parameters
+    assert tool.has_kwargs is True
+
+    def submit(**kwargs):
+        return kwargs
+
+    submit_tool = Tool(
+        submit,
+        name="submit",
+        args={"answer": {"type": "string"}},
+        arg_types={"answer": str},
+    )
+    submit_parameters = submit_tool.format_as_litellm_function_call()["function"]["parameters"]
+
+    assert submit_parameters["properties"] == {"answer": {"type": "string"}}
+    assert submit_parameters["required"] == ["answer"]
+    assert "kwargs" not in submit_parameters["properties"]
+    assert "additionalProperties" not in submit_parameters
+
+
+def test_keyword_only_separator_is_not_var_positional():
+    def add(x: int, *, y: int = 1) -> int:
+        return x + y
+
+    tool = Tool(add)
+    parameters = tool.format_as_litellm_function_call()["function"]["parameters"]
+
+    assert parameters["properties"].keys() == {"x", "y"}
+    assert parameters["required"] == ["x"]
+    assert parameters["properties"]["y"]["default"] == 1
+    assert "additionalProperties" not in parameters
+    assert tool(x=1) == 2
+
+
 def test_tool_str():
     def add(x: int, y: int = 0) -> int:
         """Add two integers."""

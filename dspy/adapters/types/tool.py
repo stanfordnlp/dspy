@@ -38,6 +38,8 @@ class Tool(Type):
     arg_types: dict[str, Any] | None = None
     arg_desc: dict[str, str] | None = None
     has_kwargs: bool = False
+    # Set when the published schema was inferred from a function that accepts **kwargs.
+    _opens_additional_properties: bool = pydantic.PrivateAttr(default=False)
 
     def __init__(
         self,
@@ -93,6 +95,18 @@ class Tool(Type):
 
         # Use inspect.signature to get all arg names
         sig = inspect.signature(annotations_func)
+        # An explicit `args` schema is the published contract (MCP tools and the
+        # ReAct submit tool wrap the call in *args/**kwargs). Only an inferred
+        # schema describes the function's own parameters.
+        schema_inferred = self.args is None
+        if schema_inferred:
+            for param in sig.parameters.values():
+                if param.kind == inspect.Parameter.VAR_POSITIONAL:
+                    raise ValueError(
+                        f"Tool function {name!r} accepts *{param.name}, which cannot be represented as named "
+                        "keyword arguments. Rewrite it to take explicit parameters or **kwargs, or pass an args "
+                        "schema that describes the keyword arguments the function accepts."
+                    )
         # Get available type hints
         available_hints = get_type_hints(annotations_func)
         # Build a dictionary of arg name -> type (defaulting to Any when missing)
@@ -100,10 +114,14 @@ class Tool(Type):
         default_values = {param_name: sig.parameters[param_name].default for param_name in sig.parameters.keys()}
 
         # Process each argument's type to generate its JSON schema.
+        # *args and **kwargs are not named keyword parameters, so they are not properties.
         for k, v in hints.items():
-            arg_types[k] = v
             if k == "return":
                 continue
+            kind = sig.parameters[k].kind
+            if kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                continue
+            arg_types[k] = v
             # Check if the type (or its origin) is a subclass of Pydantic's BaseModel
             origin = get_origin(v) or v
             if isinstance(origin, type) and issubclass(origin, BaseModel):
@@ -121,7 +139,10 @@ class Tool(Type):
         self.desc = self.desc or desc
         self.args = self.args if self.args is not None else args
         self.arg_types = self.arg_types if self.arg_types is not None else arg_types
-        self.has_kwargs = any(param.kind == param.VAR_KEYWORD for param in sig.parameters.values())
+        self.has_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in sig.parameters.values())
+        # Open the schema only when **kwargs was inferred. Forcing this on an
+        # explicit schema would invite fields the caller deliberately left out.
+        self._opens_additional_properties = schema_inferred and self.has_kwargs
 
     def _validate_and_parse_args(self, **kwargs):
         # Validate the args value comply to the json schema.
@@ -156,16 +177,19 @@ class Tool(Type):
         return str(self)
 
     def format_as_litellm_function_call(self):
+        parameters = {
+            "type": "object",
+            "properties": self.args,
+            "required": [k for k in self.args if "default" not in self.args[k]],
+        }
+        if self._opens_additional_properties:
+            parameters["additionalProperties"] = True
         return {
             "type": "function",
             "function": {
                 "name": self.name,
                 "description": self.desc,
-                "parameters": {
-                    "type": "object",
-                    "properties": self.args,
-                    "required": [k for k in self.args if "default" not in self.args[k]],
-                },
+                "parameters": parameters,
             },
         }
 
