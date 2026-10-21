@@ -141,7 +141,7 @@ class XMLAdapter(ChatAdapter):
             if text is None:
                 raise ET.ParseError("Incomplete leading thought block")
             if prefix.fenced:
-                fence = re.fullmatch(r"(.*)\r?\n```", text, re.DOTALL)
+                fence = re.fullmatch(r"(.*)\r?\n```[^<]*", text, re.DOTALL)
                 if not fence:
                     raise ET.ParseError("Missing closing XML fence")
                 text = fence[1].strip()
@@ -150,7 +150,7 @@ class XMLAdapter(ChatAdapter):
             parser = _XMLParser(root, {"properties": schemas}, {})
             parser.feed(text, final=True)
             elements = self._group_children(root)
-            if parser.buffer or {child.tag for child in root} - signature.output_fields.keys():
+            if "<" in parser.buffer or {child.tag for child in root} - signature.output_fields.keys():
                 raise ET.ParseError("Unexpected output field or closing tag")
             for name, field in signature.output_fields.items():
                 if name not in elements:
@@ -339,7 +339,7 @@ class XMLAdapter(ChatAdapter):
 class _XMLParser:
     """Schema-directed traversal that can pause for a chunk without reparsing completed children."""
 
-    def __init__(self, parent, schema, definitions, boundary=r"(?P<end>\Z)", single=False):
+    def __init__(self, parent, schema, definitions, boundary=r"(?P<end>[^<]*\Z)", single=False):
         self.parent = parent
         self.schema = schema
         self.definitions = definitions
@@ -350,12 +350,21 @@ class _XMLParser:
         self.final = False
         self.done = False
         self.reader = None
+        self.waiting_for_tag = False
+        self.pending = []
 
     @property
     def buffer(self):
         return self.text[self.pos:]
 
     def feed(self, text, final=False):
+        if self.waiting_for_tag and not final and "<" not in text:
+            self.pending.append(text)
+            return ""
+        if self.pending:
+            text = "".join([*self.pending, text])
+            self.pending.clear()
+        self.waiting_for_tag = False
         self.text = self.buffer + text
         self.pos = 0
         self.final = final
@@ -387,6 +396,9 @@ class _XMLParser:
                 yield
                 continue
             if self.pos == len(self.text) or self.text.startswith("</", self.pos):
+                return
+            # Only top-level trailing prose is ignorable; nested containers still require tags.
+            if enclosing is None and not self.text.startswith("<", self.pos):
                 return
             opening = yield from self._match(r"""<([\w.-]+)(?:\s+key=(?:"[^"]*"|'[^']*'))?\s*(/?)>""")
             name = opening[1]
@@ -437,6 +449,7 @@ class _XMLParser:
                             break
                         if self.final:
                             raise ET.ParseError(f"Missing closing tag for {name}")
+                        self.waiting_for_tag = parser.waiting_for_tag
                         yield
             if single:
                 return
@@ -498,8 +511,18 @@ class _XMLScalarParser:
         self.at_line_start = True
         self.value_started = False
         self.done = False
+        self.waiting_for_tag = False
+        self.pending = []
 
     def feed(self, text: str, final: bool = False) -> str:
+        # Plain text cannot resolve an ambiguous terminal close. Accumulate chunks
+        # without copying/rescanning the growing suffix on every token.
+        if self.waiting_for_tag and not final and "<" not in text:
+            self.pending.append(text)
+            return ""
+        if self.pending:
+            text = "".join([*self.pending, text])
+            self.pending.clear()
         self.buffer += text
         value, pos = self.read(self.buffer, 0, final=final)
         self.buffer = self.buffer[pos:]
@@ -507,6 +530,7 @@ class _XMLScalarParser:
 
     def read(self, text: str, pos: int, final: bool) -> tuple[str, int]:
         """Scan a shared response without copying its unconsumed suffix."""
+        self.waiting_for_tag = False
         if self.multiline is None:
             newline = _xml_newline.match(text, pos)
             if not newline and not final and re.compile(r"[ \t]*\r?").fullmatch(text, pos):
@@ -532,21 +556,24 @@ class _XMLScalarParser:
             if candidate.partial:
                 end = candidate.start()
                 break
-            if self.enclosing and candidate.group("scope") is not None:
-                if not final and candidate.group("end") is not None:
-                    end = candidate.start()
-                    break
-                raise ET.ParseError(f"Missing closing tag for {self.name} before container end")
             # Match in place rather than copying the response suffix for each candidate.
             continuation = continuation_pattern.match(text, candidate.end(), partial=not final)
-            if continuation is None:
-                if self.enclosing and _compile_xml_pattern(self.enclosing).match(text, candidate.start()):
+            if self.enclosing and (candidate.group("scope") is not None or continuation is None):
+                scope = _compile_xml_pattern(self.enclosing).match(text, candidate.start(), partial=not final)
+                if scope:
+                    if not final and (scope.partial or scope.group("end") is not None):
+                        end = candidate.start()
+                        self.waiting_for_tag = not scope.partial
+                        break
                     raise ET.ParseError(f"Missing closing tag for {self.name} before container end")
+            if continuation is None:
                 # An inner closing tag followed by literal text is part of the value.
                 continue
             end = candidate.start()
-            # Chunk boundaries are not EOF; hold the candidate until its continuation is known.
+            # A plain suffix may be sign-off prose or literal text before a later close.
+            # Keep it behind the candidate until another tag or EOF resolves the boundary.
             self.done = not continuation.partial and (final or continuation.group("end") is None)
+            self.waiting_for_tag = not self.done and not continuation.partial
             break
 
         if self.multiline:

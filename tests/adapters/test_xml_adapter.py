@@ -101,6 +101,31 @@ def test_xml_adapter_predict_accepts_literal_code_without_fallback(fenced, closi
     assert completion_mock.call_count == 1
 
 
+@pytest.mark.parametrize(
+    "body, annotation, expected",
+    [
+        ("<answer>Paris</answer>", str, "Paris"),
+        ("<answer>  \r\n    Paris  \r\n </answer>  ", str, "    Paris  "),
+        ("<answer>\n\n</answer>", str, ""),
+        ("<answer/>", str | None, None),
+        ("<answer><item>Paris</item><item>Lyon</item></answer>", list[str], ["Paris", "Lyon"]),
+        ("<answer>\nx = '''\n</answer>\nR&B\n'''\n</answer>", str, "x = '''\n</answer>\nR&B\n'''"),
+        ("```xml\n<answer>\nParis\n</answer>\n```", str, "Paris"),
+    ],
+)
+def test_xml_adapter_predict_ignores_trailing_prose(body, annotation, expected):
+    signature = dspy.Signature("question -> answer").with_updated_fields("answer", type_=annotation)
+    response = body + "\n\nLet me know if you need anything else."
+    with mock.patch("litellm.completion", return_value=ModelResponse(
+        choices=[Choices(message=Message(content=response))], model="openai/gpt-4o-mini"
+    )):
+        with dspy.context(
+            lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False),
+            adapter=XMLAdapter(use_json_adapter_fallback=False),
+        ):
+            assert dspy.Predict(signature)(question="Name French cities").answer == expected
+
+
 @pytest.mark.parametrize("name", ["think", "thinking"])
 def test_xml_adapter_preserves_declared_thinking_field(name):
     signature = dspy.Signature(f"question -> {name}, answer")
@@ -284,6 +309,8 @@ def test_xml_adapter_nested_tag_lines_preserve_literal_payload(newline):
         '<entry key="code">x</entry>',
         "<code>x</code><counts><item>2</counts>",
         "<code>x</code><counts>bad</counts></code>",
+        "<code>x</code>Thanks! <unknown>extra</unknown>",
+        "<code>x</code><counts><item>2</counts>Thanks!",
     ],
 )
 def test_xml_adapter_validates_outer_fields_and_structured_nesting(completion):

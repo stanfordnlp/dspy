@@ -300,7 +300,7 @@ class StreamListener:
                         self.stream_end = True
                         return StreamResponse(self.predict_name, self.signature_field_name, "", is_last_chunk=True)
                     continue
-                boundary = XMLAdapter._scalar_boundary({"properties": fields}, {}, r"(?:```\s*)?(?P<end>\Z)")
+                boundary = XMLAdapter._scalar_boundary({"properties": fields}, {}, r"(?P<end>[^<]*\Z)")
                 if self.stream_start:
                     self.xml_parser = _XMLScalarParser(opening[1], boundary)
                 else:

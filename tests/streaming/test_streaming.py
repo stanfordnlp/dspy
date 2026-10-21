@@ -1124,6 +1124,17 @@ async def test_stream_listener_returns_correct_chunk_xml_adapter():
             "right",
         ),
         ("Here is the result:\n\n<answer>\nR&B &amp; 雪\n</answer>", "R&B &amp; 雪"),
+        ("<answer>Paris</answer>\n\nLet me know if you need anything else.", "Paris"),
+        ("<answer>  \r\n    Paris  \r\n </answer>  \r\nThanks!", "    Paris  "),
+        ("<answer>\n\n</answer>\nThanks!", ""),
+        (
+            "<answer>\nx = '''\n</answer>\nR&B\n'''\n</answer>\nLet me know if you need anything else.",
+            "x = '''\n</answer>\nR&B\n'''",
+        ),
+        (
+            "<think>Check.</think>\n```xml\n<answer>\nParis\n</answer>\n```\nThanks!",
+            "Paris",
+        ),
         (
             '<answer>\n<html><style>.a { color: red; }</style>\n'
             '<body><div><div>R&B &amp; 雪</div></div><script>const x = {tag: "</answer>"};</script></body>\n'
@@ -1176,7 +1187,7 @@ async def test_xml_stream_recovers_html_without_consuming_following_field(chunk_
 
     html = "<!DOCTYPE html>\n<html><body>R&B &amp; 雪 <count/> <count>wrong</count></body>\n</html>"
     note = "A later field can also mention\n</html>"
-    response = f"<html>\n{html}\n</html>\n<count>2</count>\n<note>\n{note}\n</note>"
+    response = f"<html>\n{html}\n</html>\n<count>2</count>\n<note>\n{note}\n</note>\nHope this helps!"
 
     async def stream(*args, **kwargs):
         for start in range(0, len(response), chunk_size):
@@ -1213,7 +1224,7 @@ async def test_xml_stream_recovers_html_without_consuming_following_field(chunk_
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("chunk_size", [1, 7, 1000])
-@pytest.mark.parametrize("variant", ["model", "union", "joined_close", "unknown_field"])
+@pytest.mark.parametrize("variant", ["model", "union", "joined_close", "unknown_field", "literal_close"])
 async def test_xml_stream_skips_nested_fields_with_top_level_names(chunk_size, variant):
     class Meta(pydantic.BaseModel):
         meta: str
@@ -1224,6 +1235,8 @@ async def test_xml_stream_skips_nested_fields_with_top_level_names(chunk_size, v
         answer: str = dspy.OutputField()
 
     expected = {"meta": Meta(meta="inner", answer="wrong"), "answer": "right"}
+    if variant == "literal_close":
+        expected["meta"].meta = "inner\n</meta>\nmore"
     adapter = dspy.XMLAdapter(use_json_adapter_fallback=False)
     response = adapter.format_assistant_message_content(Result, expected)
     signature = Result
@@ -1273,6 +1286,7 @@ async def test_xml_stream_preserves_list_item_boundaries(chunk_size, compact, va
         response = response.replace("</name>", "</name>\n<extra>ignored</extra>", 1)
     if compact:
         response = response.replace("\n", "")
+    response += "\nLet me know if you need anything else."
 
     async def stream(*args, **kwargs):
         for start in range(0, len(response), chunk_size):
