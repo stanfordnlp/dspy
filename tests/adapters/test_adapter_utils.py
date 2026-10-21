@@ -5,7 +5,7 @@ from typing import Literal, Optional, Union
 import pytest
 from pydantic import BaseModel
 
-from dspy.adapters.utils import parse_value
+from dspy.adapters.utils import get_annotation_name, parse_value
 
 
 class Profile(BaseModel):
@@ -115,3 +115,18 @@ def test_parse_value_json_repair():
     malformed = "not json or literal"
     with pytest.raises(Exception):
         parse_value(malformed, dict)
+
+
+@pytest.mark.parametrize(
+    "pep604_annotation,typing_annotation,expected",
+    [
+        (str | None, Optional[str], "Union[str, NoneType]"),  # noqa: UP045
+        (int | str, Union[int, str], "Union[int, str]"),
+        (int | str | None, Union[int, str, None], "Union[int, str, NoneType]"),
+        (list[str] | None, Optional[list[str]], "Union[list[str], NoneType]"),  # noqa: UP045
+        (dict[str, int | None], dict[str, Optional[int]], "dict[str, Union[int, NoneType]]"),  # noqa: UP045
+    ],
+)
+def test_get_annotation_name_pep604_union_matches_typing_union(pep604_annotation, typing_annotation, expected):
+    assert get_annotation_name(typing_annotation) == expected
+    assert get_annotation_name(pep604_annotation) == expected

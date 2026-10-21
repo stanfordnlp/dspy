@@ -1,7 +1,7 @@
 # Decision types and System One models
 
 !!! warning "Experimental API"
-    `Noul`, `Score`, `Choice`, `TypeSafe`, and Predict's per-field decision
+    `Noul`, `Score`, `Choice`, and Predict's per-field decision
     configuration are experimental and may change without warning.
 
 Use one signature with a generative LM or a System One model. `Predict` owns
@@ -10,7 +10,7 @@ request format and derives results from probability evidence.
 
 ```python
 import dspy
-from dspy.experimental import Noul, Score, Choice, TypeSafe
+from dspy.experimental import Noul, Score, Choice
 
 Availability = Noul[(True, "Service unavailable"), (False, "Workaround available")]
 Severity = Score["Minor", "Disruptive", "Blocking"]
@@ -24,9 +24,9 @@ class Assess(dspy.Signature):
     severity: Severity = dspy.OutputField(desc="Rate impact.")
     category: Category = dspy.OutputField(desc="Classify the issue.")
 
-# pip install "dspy[typesafe]"; set TYPESAFE_API_KEY
+# pip install dspy; set TYPESAFE_API_KEY
 assess = dspy.Predict(Assess)
-assess.set_lm(TypeSafe("jev-latest"))
+assess.set_lm(dspy.LM("typesafe:jev-latest"))
 assess.demos = [dspy.Example(
     ticket="Incorrect invoice", urgent=False, severity=0.0, category="billing",
 )]
@@ -47,20 +47,22 @@ Use `set_lm()` to bind a client to the predictor, supply `lm=` per call, or conf
 `dspy.configure(lm=...)` / `dspy.context(lm=...)`.
 
 ```python
-dspy.configure(lm=TypeSafe("jev-latest"))
+dspy.configure(lm=dspy.LM("typesafe:jev-latest"))
 assess = dspy.Predict(Assess)
 ```
 
-Predict selects the request format using the client's
-`supports_decision_requests` capability. TypeSafe receives decision requests;
-generative LMs use the configured ChatAdapter or JSONAdapter and return
-probability evidence for rich outputs.
+The default `engine="auto"` routes Jev to lm15; no explicit engine is needed.
+For Jev, `DecisionAdapter` builds a typed lm15 `Request` and decodes
+`response.provider_data['typesafe']['answers']`. Generative LMs use the configured
+ChatAdapter or JSONAdapter and return probability evidence for rich outputs.
+Thresholds, cuts, and weights are still applied locally.
 
-Decision clients accept `state` and `questions` keyword arguments and return a
-field-to-evidence mapping; async calls use `acall` with the same contract.
-TypeSafe supports DSPy caching, usage tracking, LM callbacks, history, copying,
-and save/load. Generation controls such as temperature and fine-tuning are
-unsupported.
+**API break:** `dspy.experimental.TypeSafe` has been removed, with no compatibility
+shim or migration of legacy saved LM state. Use ordinary `dspy.LM` with
+`TYPESAFE_API_KEY`; specify `model` and `api_base` as ordinary
+LM settings when needed. There are no Jev-specific LM defaults. Normal LM caching,
+history, usage tracking, persistence, retry, and lifecycle semantics apply;
+synchronous and asynchronous response caches are separate.
 
 ## Annotations and evidence
 
@@ -116,7 +118,7 @@ the candidate content in the inputs:
 
 ```python
 import dspy
-from dspy.experimental import Choice, Noul, TypeSafe
+from dspy.experimental import Choice, Noul
 
 passages = {
     "p0": "Standard delivery takes three to five business days.",
@@ -137,7 +139,7 @@ select = dspy.Predict(signature)
 result = select(
     query="How long do I have to return an unused item?",
     passages=passages,
-    lm=TypeSafe("jev-latest"),
+    lm=dspy.LM("typesafe:jev-latest"),
 )
 if result.answer_exists.probability >= 0.7:  # Illustrative; tune on your own examples.
     print(passages[result.best.value])
@@ -245,7 +247,7 @@ Use ordinary `Predict.save()` / `load()` with the same signature architecture.
 | `signature` | Global instructions and field descriptions/prefixes |
 | `demos` | Demonstration inputs and answers, including rich JSON values |
 | `fields` | Explicit per-output overrides only; omitted when empty |
-| `lm` | Provider class, model, endpoint, cache setting and timeout; no API key |
+| `lm` | Ordinary LM state, including model, engine, endpoint and cache settings |
 | `traces`, `train` | Existing Predict bookkeeping |
 | `metadata` | DSPy's dependency versions |
 
@@ -257,8 +259,8 @@ Predict participates in ordinary predictor discovery, callbacks, tracing,
 batching and async calls. Numeric settings survive `reset()`; demos follow normal
 Predict reset behavior. Trace/training records are not sent as task context.
 
-TypeSafe accepts closed-set decision outputs, not free-form text generation.
-Unsupported generation options and decision streaming raise explicitly.
+Jev accepts closed-set decision outputs, not free-form text generation.
+Call-time generation settings and decision streaming remain unsupported and raise explicitly.
 
 **Nested LM decision outputs do not use evidence decoding.** Predict warns
 when called with output containers such as `list[Noul]`, `list[Score[...]]`,
@@ -276,15 +278,17 @@ does not prevent execution; ordinary native RLM outputs are unaffected.
 
 Unsupported output annotations (such as `str`, `int`, bare `float`, lists,
 arbitrary Pydantic models, or optional decision types) raise `ValueError` when
-Predict is called with TypeSafe, before any provider request. Every output must
+Predict is called with Jev, before any provider request. Every output must
 be supported; there is no automatic fallback to a generative LM. The same
 signature can still be used with an ordinary LM when its adapter supports those
 annotations. This restriction applies to outputs, not structured input data.
 
-Use TypeSafe through `Predict`, rather than calling chat adapters directly.
+Jev also rejects empty-string labels in `Choice` or `Literal` outputs before any
+provider request. Use a nonempty label such as `"no_match"` instead. Empty-string
+labels remain supported with generative LMs.
+
+Use Jev through `Predict`, rather than calling chat adapters directly.
 Generation-specific wrappers such as `BestOfN` and `Refine`, generative optimizers,
-and fine-tuning are unsupported with TypeSafe.
-[ReAnchor](ReAnchor.md) calibrates decision outputs with TypeSafe or a
+and fine-tuning are unsupported with Jev.
+[ReAnchor](ReAnchor.md) calibrates decision outputs with Jev or a
 generative LM, and it sends no generation settings.
-Wrappers that assume LM generation settings can currently raise `AttributeError`
-rather than a capability-specific error.
