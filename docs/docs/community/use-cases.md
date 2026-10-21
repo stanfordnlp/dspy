@@ -5,13 +5,13 @@
 This list represents companies that have publicly shared their use cases or have provided permission to be included. It reflects a selection of the many industry applications of DSPy currently in production. To add yours, please [open a PR](https://github.com/stanfordnlp/dspy/edit/main/docs/docs/community/use-cases.md).
 
 <div class="dspy-logo-wall">
-  <a href="https://www.shopify.com/" title="Shopify"><img class="logo-shopify" src="../../static/img/logos/shopify-wordmark.svg" alt="Shopify"></a>
-  <a href="https://www.databricks.com/" title="Databricks"><img class="logo-databricks" src="../../static/img/logos/databricks-wordmark.svg" alt="Databricks"></a>
-  <a href="https://www.dropbox.com/" title="Dropbox"><img class="logo-dropbox" src="../../static/img/logos/dropbox-wordmark.svg" alt="Dropbox"></a>
-  <a href="https://microsoft.ai/" title="Microsoft AI"><img class="logo-microsoft-ai" src="../../static/img/logos/microsoft-ai.svg" alt="Microsoft AI"></a>
-  <a href="https://replit.com/" title="Replit"><img class="logo-replit" src="../../static/img/logos/replit.svg" alt="Replit"></a>
-  <a href="https://aws.amazon.com/" title="AWS"><img class="logo-aws" src="../../static/img/logos/aws.svg" alt="AWS"></a>
-  <a href="https://nubank.com.br/" title="Nubank"><img class="logo-nubank" src="../../static/img/logos/nubank.svg" alt="Nubank"></a>
+  <a href="https://www.shopify.com/" title="Shopify"><img class="logo-shopify" src="../static/img/logos/shopify-wordmark.svg" alt="Shopify"></a>
+  <a href="https://www.databricks.com/" title="Databricks"><img class="logo-databricks" src="../static/img/logos/databricks-wordmark.svg" alt="Databricks"></a>
+  <a href="https://www.dropbox.com/" title="Dropbox"><img class="logo-dropbox" src="../static/img/logos/dropbox-wordmark.svg" alt="Dropbox"></a>
+  <a href="https://microsoft.ai/" title="Microsoft AI"><img class="logo-microsoft-ai" src="../static/img/logos/microsoft-ai.svg" alt="Microsoft AI"></a>
+  <a href="https://replit.com/" title="Replit"><img class="logo-replit" src="../static/img/logos/replit.svg" alt="Replit"></a>
+  <a href="https://aws.amazon.com/" title="AWS"><img class="logo-aws" src="../static/img/logos/aws.svg" alt="AWS"></a>
+  <a href="https://nubank.com.br/" title="Nubank"><img class="logo-nubank" src="../static/img/logos/nubank.svg" alt="Nubank"></a>
 </div>
 
 ## Featured case studies
@@ -19,14 +19,14 @@ This list represents companies that have publicly shared their use cases or have
 <div class="dspy-spotlights">
 
 <div class="dspy-spotlight">
-  <div class="dspy-spotlight-logo"><img class="logo-shopify" src="../../static/img/logos/shopify-wordmark.svg" alt="Shopify"></div>
+  <div class="dspy-spotlight-logo"><img class="logo-shopify" src="../static/img/logos/shopify-wordmark.svg" alt="Shopify"></div>
   <div class="dspy-spotlight-metric">~550× cost reduction</div>
   <div class="dspy-spotlight-desc">Scaled DSPy + GEPA for structured metadata extraction across <strong>all</strong> Shopify shops.</div>
   <div class="dspy-spotlight-link"><a href="https://www.youtube.com/watch?v=bxToahwOVpY">Watch the talk →</a></div>
 </div>
 
 <div class="dspy-spotlight">
-  <div class="dspy-spotlight-logo"><img class="logo-dropbox" src="../../static/img/logos/dropbox-wordmark.svg" alt="Dropbox"></div>
+  <div class="dspy-spotlight-logo"><img class="logo-dropbox" src="../static/img/logos/dropbox-wordmark.svg" alt="Dropbox"></div>
   <div class="dspy-spotlight-metric">Relevance judge, automated</div>
   <div class="dspy-spotlight-desc">Optimized Dash's relevance judge with DSPy for retrieval ranking and offline evaluation.</div>
   <div class="dspy-spotlight-link"><a href="https://dropbox.tech/machine-learning/optimizing-dropbox-dash-relevance-judge-with-dspy">Engineering blog →</a> · <a href="https://www.youtube.com/watch?v=gGGCJWbqHqc">Talk →</a></div>
