@@ -33,9 +33,17 @@ __all__ = ["PythonInterpreter", "FinalOutput", "CodeExecutionError", "CodeInterp
 
 logger = logging.getLogger(__name__)
 
-# Pyodide's FFI crashes at exactly 128MB (134,217,728 bytes). Use filesystem
-# injection for strings above 100MB to stay safely below this limit.
-LARGE_VAR_THRESHOLD = 100 * 1024 * 1024
+# Pyodide's FFI crashes at exactly 128MB (134,217,728 bytes). Serialized values
+# larger than this must not be inlined into the program text.
+MAX_INLINE_BYTES = 100 * 1024 * 1024
+
+# Default serialized size above which a variable is injected through the sandbox
+# filesystem instead of inlined as a Python literal. Inlining copies the literal
+# through the host, the JSON-RPC line, and Pyodide's parser; peak process-tree
+# RSS then grows by tens of times the payload, well below the FFI crash. Past
+# 64 KiB the filesystem path is both smaller and faster. An interpreter can raise
+# this up to MAX_INLINE_BYTES to restore the historical cutoff.
+LARGE_VAR_THRESHOLD = 64 * 1024
 MIN_DENO_VERSION = (2, 0, 0)
 MAX_DENO_VERSION = (3, 0, 0)
 DENO_PROBE_TIMEOUT_SECONDS = 10
@@ -214,6 +222,31 @@ def _make_jsonable(value: Any) -> Any:
         return value
 
 
+def _file_injection_round_trips(value: Any) -> bool:
+    """Return whether filesystem injection preserves inline-literal key types.
+
+    The filesystem path JSON-encodes the value and the sandbox reads it back with
+    ``json.loads``. JSON object keys are strings, so a dict with non-string keys
+    would not match the Python literal used when the value is inlined.
+    """
+    if isinstance(value, BaseModel):
+        return _file_injection_round_trips(_dump_pydantic(value))
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        try:
+            dumped = dataclasses.asdict(value)
+        except Exception:
+            return False
+        return _file_injection_round_trips(dumped)
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str) or not _file_injection_round_trips(item):
+                return False
+        return True
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return all(_file_injection_round_trips(item) for item in value)
+    return True
+
+
 class PythonInterpreter:
     """Local interpreter for secure Python execution using Deno and Pyodide.
 
@@ -251,6 +284,7 @@ class PythonInterpreter:
         tools: dict[str, Callable[..., str]] | None = None,
         output_fields: list[dict] | None = None,
         callbacks: list[BaseCallback] | None = None,
+        large_var_threshold: int | None = None,
     ) -> None:
         """
         Args:
@@ -267,9 +301,20 @@ class PythonInterpreter:
             output_fields: List of output field definitions for typed SUBMIT signature.
                    Each dict should have 'name' and optionally 'type' keys.
             callbacks: Optional instance-level callback handlers.
+            large_var_threshold: Serialized size in bytes above which a variable is loaded
+                from the sandbox filesystem instead of inlined into the program. ``None``
+                uses ``LARGE_VAR_THRESHOLD`` (64 KiB). ``0`` sends every eligible value
+                through the file. Must be between 0 and ``MAX_INLINE_BYTES`` (100 MiB).
+                Dicts with non-string keys stay inlined below that ceiling so the keys
+                keep their Python types.
         """
         if isinstance(deno_command, dict):
             raise TypeError("deno_command must be a list of strings, not a dict")
+        if large_var_threshold is not None:
+            if isinstance(large_var_threshold, bool) or not isinstance(large_var_threshold, int):
+                raise TypeError("large_var_threshold must be an int or None")
+            if not 0 <= large_var_threshold <= MAX_INLINE_BYTES:
+                raise ValueError(f"large_var_threshold must be between 0 and {MAX_INLINE_BYTES} bytes")
 
         self.enable_read_paths = enable_read_paths or []
         self.enable_write_paths = enable_write_paths or []
@@ -287,6 +332,7 @@ class PythonInterpreter:
         self.tools = dict(tools) if tools else {}
         self.output_fields = output_fields
         self.callbacks = list(callbacks or [])
+        self.large_var_threshold = large_var_threshold
         self._tools_registered = False
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
@@ -689,20 +735,45 @@ class PythonInterpreter:
                 raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}") from None
             return self._to_json_compatible(coerced)
 
+    def _resolved_large_var_threshold(self) -> int:
+        """Threshold used for one injection, capped at the Pyodide FFI ceiling."""
+        if self.large_var_threshold is None:
+            configured = LARGE_VAR_THRESHOLD
+        else:
+            configured = self.large_var_threshold
+        return min(max(configured, 0), MAX_INLINE_BYTES)
+
+    def _classify_variable(self, value: Any, threshold: int) -> tuple[str | None, str | None]:
+        """Return ``(python_literal, file_json)`` for one variable.
+
+        Exactly one entry is set. A string whose quoted literal is already past
+        ``threshold`` skips ``repr()``: that copy is thrown away on the filesystem path.
+        """
+        if isinstance(value, str) and len(value) + 2 > threshold:
+            return None, json.dumps(value)
+
+        serialized = self._serialize_value(value)
+        if len(serialized) <= threshold:
+            return serialized, None
+        if len(serialized) <= MAX_INLINE_BYTES and not _file_injection_round_trips(value):
+            return serialized, None
+        return None, json.dumps(self._to_json_compatible(value))
+
     def _inject_variables(self, code: str, variables: dict[str, Any]) -> str:
         """Insert Python assignments for each variable at the top of the code."""
         for key in variables:
             if not key.isidentifier() or keyword.iskeyword(key) or key == "json":
                 raise CodeInterpreterError(f"Invalid variable name: '{key}'")
 
+        threshold = self._resolved_large_var_threshold()
         large_vars = {}
         small_assignments = []
         for k, v in variables.items():
-            serialized = self._serialize_value(v)
-            if len(serialized) > LARGE_VAR_THRESHOLD:
-                large_vars[k] = json.dumps(self._to_json_compatible(v))
+            literal, encoded = self._classify_variable(v, threshold)
+            if encoded is None:
+                small_assignments.append(f"{k} = {literal}")
             else:
-                small_assignments.append(f"{k} = {serialized}")
+                large_vars[k] = encoded
 
         self._pending_large_vars = large_vars
 

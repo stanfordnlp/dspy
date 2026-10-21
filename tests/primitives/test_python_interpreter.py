@@ -22,6 +22,7 @@ import dspy.primitives.python_interpreter as python_interpreter
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
 from dspy.primitives.python_interpreter import (
     LARGE_VAR_THRESHOLD,
+    MAX_INLINE_BYTES,
     PythonInterpreter,
     _deno_subprocess_env,
     _find_deno_executable,
@@ -1498,6 +1499,104 @@ def test_large_variable_threshold_boundary():
     interpreter._pending_large_vars = {}
     interpreter._inject_variables("print(x)", {"x": over_threshold})
     assert "x" in interpreter._pending_large_vars, "Serialized size over threshold should use filesystem"
+
+
+# Multi-MB on purpose: this is far above the default cutoff and far below the old
+# 100 MiB gate, so the assertion fails if variables are inlined up to the FFI ceiling.
+_MULTI_MB_BYTES = 2 * 1024 * 1024
+
+
+def _multi_megabyte_text() -> str:
+    prefix = "start-\u2603-'\"\\-newline\n"
+    suffix = "-end-"
+    filler = "abcdefghij"
+    body_len = _MULTI_MB_BYTES - len(prefix) - len(suffix)
+    body = filler * (body_len // len(filler)) + filler[: body_len % len(filler)]
+    return prefix + body + suffix
+
+
+def test_multimegabyte_variable_uses_file_path_and_round_trips(pooled_interpreter):
+    """A multi-MB string must take the filesystem path and come back unchanged."""
+    payload = _multi_megabyte_text()
+    assert LARGE_VAR_THRESHOLD < len(payload) < MAX_INLINE_BYTES
+
+    interpreter = pooled_interpreter
+    code = interpreter._inject_variables("payload", {"payload": payload})
+    assert "payload = json.loads(open('/tmp/dspy_vars/payload.json').read())" in code
+    assert payload[:40] not in code
+    assert json.loads(interpreter._pending_large_vars["payload"]) == payload
+
+    result = interpreter.execute(
+        "(len(payload), payload[:24], payload[1000000:1000024], payload[-16:])",
+        variables={"payload": payload},
+    )
+    assert result == [len(payload), payload[:24], payload[1000000:1000024], payload[-16:]]
+
+
+def test_large_var_threshold_can_restore_inlining():
+    """Callers can raise the cutoff back to the FFI ceiling."""
+    payload = _multi_megabyte_text()
+    interpreter = PythonInterpreter(large_var_threshold=MAX_INLINE_BYTES)
+    code = interpreter._inject_variables("payload", {"payload": payload})
+
+    assert interpreter._pending_large_vars == {}
+    assert "json.loads" not in code
+    assert "abcdefghij" in code
+
+
+def test_large_var_threshold_lower_cutoff_round_trips():
+    """A cutoff below the default sends a modest string through the file and back."""
+    payload = "snow-\u2603-" + ("q" * 4096) + "-end\\n"
+    with PythonInterpreter(large_var_threshold=1024) as interpreter:
+        code = interpreter._inject_variables("payload", {"payload": payload})
+        assert "payload = json.loads(open('/tmp/dspy_vars/payload.json').read())" in code
+        result = interpreter.execute("payload", variables={"payload": payload})
+    assert result == payload
+
+
+def test_escaped_string_uses_serialized_length():
+    """Escapes that push repr() over the cutoff still take the filesystem path.
+
+    ``len(value) + 2`` is only a lower bound. A string of backslashes is about
+    twice as long once quoted, so a raw length under the cutoff must not be inlined.
+    """
+    raw = "\\" * (LARGE_VAR_THRESHOLD // 2)
+    interpreter = PythonInterpreter()
+    assert len(raw) + 2 <= LARGE_VAR_THRESHOLD
+    assert len(interpreter._serialize_value(raw)) > LARGE_VAR_THRESHOLD
+
+    interpreter._inject_variables("pass", {"raw": raw})
+    assert json.loads(interpreter._pending_large_vars["raw"]) == raw
+
+
+def test_non_string_dict_keys_stay_inline_and_round_trip(pooled_interpreter):
+    """JSON object keys are strings; int keys above the cutoff stay inlined."""
+    text = "k" * (LARGE_VAR_THRESHOLD + 32)
+    payload = {7: text, "ok": "v"}
+    interpreter = pooled_interpreter
+    code = interpreter._inject_variables("data", {"data": payload})
+
+    assert "json.loads" not in code
+    assert interpreter._pending_large_vars == {}
+    result = interpreter.execute(
+        '(7 in data, "7" in data, data[7][:4], len(data[7]), data["ok"])',
+        variables={"data": payload},
+    )
+    assert result == [True, False, "kkkk", len(text), "v"]
+
+
+@pytest.mark.parametrize(
+    ("value", "exc"),
+    [
+        (-1, ValueError),
+        (MAX_INLINE_BYTES + 1, ValueError),
+        (True, TypeError),
+        ("1024", TypeError),
+    ],
+)
+def test_large_var_threshold_rejects_invalid_values(value, exc):
+    with pytest.raises(exc):
+        PythonInterpreter(large_var_threshold=value)
 
 
 def test_enable_read_paths_symlink(tmp_path):
