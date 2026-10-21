@@ -149,13 +149,24 @@ for _k in ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought", "R
 dspy = _dspy
 
 # Register as the importable ``dspy`` only inside the sandbox, where the registered host tools are
-# present in globals(). A sandbox whose ``dspy`` is the host's own module image (the host process or a
-# fork of it) would hand generated code the host's memory, so the facade refuses it.
+# present in globals(). An interpreter that runs code in the host's memory (the host process or a fork
+# of it) shares the host's sys.modules, so there ``import dspy`` resolves to the shim through this
+# namespace's own __import__ and the host's ``dspy`` module stays in place.
 if "__dspy_construct__" in globals():
     _dspy_host_facade = getattr(_dspy_sys, "modules", {}).get("dspy.primitives.facade")
     if getattr(_dspy_host_facade, "_HOST_PROCESS_TOKEN", None) == __dspy_host_token:  # noqa: F821 - host-injected
-        raise RuntimeError(
-            "This interpreter runs code in the host's memory (the host process or a fork of it); "
-            "the dspy facade needs an isolated interpreter."
-        )
-    _dspy_sys.modules["dspy"] = _dspy
+        _dspy_builtins = globals()["__builtins__"]
+        _dspy_builtins = dict(_dspy_builtins if isinstance(_dspy_builtins, dict) else vars(_dspy_builtins))
+        _dspy_import_orig = _dspy_builtins["__import__"]
+
+        def _dspy_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if level == 0 and name.split(".")[0] == "dspy":
+                if name != "dspy":
+                    raise ModuleNotFoundError(f"No module named {name!r}; 'dspy' is not a package", name=name)
+                return _dspy
+            return _dspy_import_orig(name, globals, locals, fromlist, level)
+
+        _dspy_builtins["__import__"] = _dspy_import
+        globals()["__builtins__"] = _dspy_builtins
+    else:
+        _dspy_sys.modules["dspy"] = _dspy

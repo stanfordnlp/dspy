@@ -12,7 +12,7 @@ from typing import Literal
 import pytest
 
 import dspy
-from dspy.experimental import Choice, Noul, Score, TypeSafe
+from dspy.experimental import Choice, Noul, Score
 from tests.predict.test_decision_parameters import FakeClient
 
 pytestmark = pytest.mark.llm_call
@@ -81,10 +81,9 @@ def lm(lm_for_test):
 
 @pytest.fixture(scope="module")
 def client():
-    pytest.importorskip("typesafe_sdk")
     if not os.getenv("TYPESAFE_API_KEY"):
         pytest.skip("TYPESAFE_API_KEY is required for the live Jev integration checks")
-    return TypeSafe(cache=False, timeout=60)
+    return dspy.LM("typesafe:jev-latest", engine="lm15", cache=False, timeout=60)
 
 
 def invoke(backend, sig, inputs, lm, client):
@@ -169,7 +168,7 @@ def test_live_distribution_reinterpretation(client):
     module = dspy.Predict(signature(True))
     module.set_lm(client)
     initial = module(ticket=CASES[2][1])
-    raw = client.history[-1]["response"]["answers"]
+    raw = client.history[-1]["response"].provider_data["typesafe"]["answers"]
     # Replay the actual live evidence to isolate local interpretation from model variability.
     module.lm = FakeClient(answers=raw)
     module.fields["urgent"] = {"threshold": initial.urgent.probability}
@@ -194,7 +193,7 @@ def test_live_choice_weighted_reinterpretation(client):
     module.set_lm(client)
     ticket = "Checkout rejected a payment. It might be an incorrect charge or a software fault; neither is confirmed."
     initial = module(ticket=ticket).category
-    raw = client.history[-1]["response"]["answers"]
+    raw = client.history[-1]["response"].provider_data["typesafe"]["answers"]
     other = "technical" if initial.value == "billing" else "billing"
     assert initial.probabilities[other] > 0, "Live evidence must assign mass to the alternative to test reweighting"
     weights = {initial.value: 0.0, other: 1.0}

@@ -56,6 +56,7 @@ from pathlib import Path
 from typing import Any
 
 from ._authlock import CredentialLockTimeout, hold_file_lock, write_private_json_atomic
+from ._version import __version__
 from .errors import AuthError, NotConfiguredError, UnsupportedFeatureError
 
 __all__ = [
@@ -79,6 +80,7 @@ __all__ = [
     "refresh_xai_credential",
     "start_xai_device_login",
     "usable_xai_credential",
+    "xai_stored_state",
     "write_claude_code_credential",
     "write_codex_cli_credential",
     "write_xai_credential",
@@ -100,7 +102,7 @@ def _user_path(*parts: str) -> Path:
 
 
 CLAUDE_CODE_CREDENTIALS_PATH = _user_path(".claude", ".credentials.json")
-CLAUDE_CODE_CLIENT_ID = "9d1c250a-e61b-44d5-88ed-5944d1962f5e"
+CLAUDE_CODE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 CLAUDE_CODE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 CLAUDE_CODE_LOGIN_HINT = "Log in again: run `claude` and use /login (Claude subscription auth)"
 
@@ -202,7 +204,8 @@ def _post_json(url: str, payload: dict[str, Any]) -> dict[str, Any]:
     request = urllib.request.Request(
         url,
         data=body,
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        headers={"Content-Type": "application/json", "Accept": "application/json",
+                 "User-Agent": f"lm15/{__version__}"},
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 - provider token endpoint
@@ -215,7 +218,8 @@ def _post_form(url: str, payload: dict[str, Any]) -> dict[str, Any]:
     request = urllib.request.Request(
         url,
         data=body,
-        headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+        headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json",
+                 "User-Agent": f"lm15/{__version__}"},
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 - provider token endpoint
@@ -541,10 +545,19 @@ def _xai_entry_to_credential(entry: Any) -> LocalOAuthCredential | None:
         return None
     refresh = entry.get("refresh")
     expires = entry.get("expires")
+    expires_at = expires if isinstance(expires, int) and not isinstance(expires, bool) else None
+    if expires_at is not None and "issued_at" in entry:
+        # Written by the managed flow: ``expires`` is the ACTUAL expiry
+        # (AUTH-20.2).  This legacy reader's ``expired`` means "renewal is
+        # due", so apply the ratified lead here.  Entries without
+        # ``issued_at`` were written already reduced by the old 5-minute skew.
+        lifetime = entry.get("lifetime_s")
+        lead_s = min(300.0, lifetime / 10.0) if isinstance(lifetime, (int, float)) and lifetime > 0 else 300.0
+        expires_at = int(expires_at - lead_s * 1000)
     return LocalOAuthCredential(
         access_token=access,
         refresh_token=refresh if isinstance(refresh, str) and refresh else None,
-        expires_at=expires if isinstance(expires, int) and not isinstance(expires, bool) else None,
+        expires_at=expires_at,
     )
 
 
@@ -604,10 +617,34 @@ def usable_xai_credential(auth_path: str | os.PathLike[str] | None = None) -> bo
     stored subscription wins over ambient environment keys exactly when
     this returns True.
     """
-    credential = read_xai_credential(auth_path)
-    if credential is None:
-        return False
-    return not credential.expired or bool(credential.refresh_token)
+    return xai_stored_state(auth_path) == "usable"
+
+
+def xai_stored_state(auth_path: str | os.PathLike[str] | None = None) -> str:
+    """The stored xAI subscription's state, offline (spec/auth.md AUTH-1,
+    ratified R2/R3 2026-09-22):
+
+    - ``usable``: fresh, or expired with a refresh token;
+    - ``unusable``: stored but expired with no refresh token — this BLOCKS
+      the environment key (a failed subscription is never silently
+      replaced by a metered key);
+    - ``logged_out``: signed out under a managed Auth; the non-secret
+      marker in lm15's own store blocks the environment key after a
+      restart too;
+    - ``absent``: nothing stored anywhere; the ordinary key chain applies.
+    """
+    paths = (Path(auth_path).expanduser(),) if auth_path is not None else _xai_store_paths()
+    for path in paths:
+        data = _read_json_file_or_none(path)
+        if not data:
+            continue
+        credential = _xai_entry_to_credential(data.get(_XAI_PROVIDER_KEY))
+        if credential is not None:
+            return "usable" if (not credential.expired or credential.refresh_token) else "unusable"
+        slots = (data.get("_lm15") or {}).get("slots") if isinstance(data.get("_lm15"), dict) else None
+        if isinstance(slots, dict) and isinstance(slots.get(_XAI_PROVIDER_KEY), dict) and slots[_XAI_PROVIDER_KEY].get("logged_out"):
+            return "logged_out"
+    return "absent"
 
 
 def _xai_credential_from_token_response(
@@ -849,16 +886,33 @@ def login_xai(
 ) -> LocalOAuthCredential:
     """Interactive device-code login; persists the credential and returns it.
 
-    Prints the verification URL and user code via ``echo`` and blocks until
-    the user approves in a browser (or the code expires).  The credential is
-    written to lm15's own store unless ``auth_path`` overrides it.
+    Since 2026-09-22 this runs the managed xAI flow (``lm15.login``): same
+    protocol, same store entry, one implementation.  ``echo`` receives the
+    verification URL and user code; the call blocks until the user approves
+    in a browser (or the code expires).  The credential is written to lm15's
+    own store unless ``auth_path`` overrides it.
     """
-    device = start_xai_device_login()
-    target = device.verification_uri_complete or device.verification_uri
-    echo(f"Open {target} and enter code: {device.user_code}")
-    credential = poll_xai_device_login(device)
-    write_xai_credential(credential, auth_path)
-    return credential
+    from .login import Auth, AuthOperationError
+    from .login.types import DeviceCodeNotice
+
+    class _EchoUI:
+        def prompt(self, prompt: Any) -> str:
+            raise AuthOperationError("login_xai takes no input", reason="interaction_required",
+                                     stage="interaction", recovery="provide_input")
+
+        def notify(self, notice: Any) -> None:
+            if isinstance(notice, DeviceCodeNotice):
+                echo(f"Open {notice.verification_url} and enter code: {notice.user_code}")
+
+    auth = Auth.local(auth_path)
+    current = auth.status("xai").connection
+    try:
+        auth.login("xai", "device", ui=_EchoUI(), replace=current.id if current else None)
+    except AuthOperationError as exc:
+        if exc.reason == "login_denied":
+            raise AuthError(str(exc), provider="xai", credential_hint=XAI_LOGIN_HINT) from exc
+        raise
+    return load_xai_credential(auth_path)
 
 
 # ─── Uniform login entry point ───────────────────────────────────

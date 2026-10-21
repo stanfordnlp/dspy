@@ -239,7 +239,7 @@ def test_multiple_callbacks():
 def test_callback_complex_module():
     callback = MyCallback()
     dspy.configure(
-        lm=DummyLM({"How are you?": {"answer": "test output", "reasoning": "No more responses"}}),
+        lm=DummyLM({"How are you?": {"answer": "test output", "plan": "No more responses"}}),
         callbacks=[callback],
     )
 
@@ -271,7 +271,7 @@ def test_callback_complex_module():
 async def test_callback_async_module():
     callback = MyCallback()
     with dspy.context(
-        lm=DummyLM({"How are you?": {"answer": "test output", "reasoning": "No more responses"}}),
+        lm=DummyLM({"How are you?": {"answer": "test output", "plan": "No more responses"}}),
         callbacks=[callback],
     ):
         cot = dspy.ChainOfThought("question -> answer", n=3)
