@@ -84,6 +84,17 @@ def test_xml_adapter_parse_raises_on_type_error():
     assert "Failed to parse field" in str(e.value)
 
 
+def test_xml_adapter_parse_prefers_format_error_over_field_error():
+    class TestSignature(dspy.Signature):
+        number: int = dspy.OutputField()
+        explanation: str = dspy.OutputField()
+
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError) as e:
+        XMLAdapter().parse(TestSignature, "<number>not_a_number</number>")
+    assert not isinstance(e.value, dspy.AdapterFieldParseError)
+    assert "explanation" in str(e.value)
+
+
 def test_xml_adapter_repeated_dict_elements_and_empty_lists():
     class TestSignature(dspy.Signature):
         counts: dict[str, list[int]] = dspy.OutputField()

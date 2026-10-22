@@ -104,6 +104,7 @@ class XMLAdapter(ChatAdapter):
             ) from e
         elements = self._group_children(root)
         fields = {}
+        field_errors = {}
         for name, field in signature.output_fields.items():
             if name not in elements:
                 continue
@@ -121,17 +122,18 @@ class XMLAdapter(ChatAdapter):
                 except ValueError as e:
                     error = e
             else:
-                raise AdapterFieldParseError(
-                    adapter_name="XMLAdapter",
-                    signature=signature,
-                    lm_response=completion,
-                    message=f"Failed to parse field {field} with value {value}: {error}",
-                ) from error
+                field_errors[name] = (f"Failed to parse field {field} with value {value}: {error}", error)
         fields = apply_output_field_defaults(signature, fields)
-        if fields.keys() != signature.output_fields.keys():
+        # A missing required field means the format is broken, so it takes precedence over field errors.
+        if fields.keys() | field_errors.keys() != signature.output_fields.keys():
             raise AdapterParseError(
                 adapter_name="XMLAdapter", signature=signature, lm_response=completion, parsed_result=fields
             )
+        if field_errors:
+            message, error = next(iter(field_errors.values()))
+            raise AdapterFieldParseError(
+                adapter_name="XMLAdapter", signature=signature, lm_response=completion, message=message
+            ) from error
         return fields
 
     @classmethod

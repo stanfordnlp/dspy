@@ -241,24 +241,30 @@ class ChatAdapter(Adapter):
         sections = [(k, "\n".join(v).strip()) for k, v in sections]
 
         fields = {}
+        field_errors = {}
         for k, v in sections:
-            if (k not in fields) and (k in signature.output_fields):
+            if (k not in fields) and (k not in field_errors) and (k in signature.output_fields):
                 try:
                     fields[k] = parse_value(v, signature.output_fields[k].annotation)
                 except ValueError as e:
-                    raise AdapterFieldParseError(
-                        adapter_name="ChatAdapter",
-                        signature=signature,
-                        lm_response=completion,
-                        message=f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}",
+                    field_errors[k] = (
+                        f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}"
                     )
         fields = apply_output_field_defaults(signature, fields)
-        if fields.keys() != signature.output_fields.keys():
+        # A missing required field means the format is broken, so it takes precedence over field errors.
+        if fields.keys() | field_errors.keys() != signature.output_fields.keys():
             raise AdapterParseError(
                 adapter_name="ChatAdapter",
                 signature=signature,
                 lm_response=completion,
                 parsed_result=fields,
+            )
+        if field_errors:
+            raise AdapterFieldParseError(
+                adapter_name="ChatAdapter",
+                signature=signature,
+                lm_response=completion,
+                message=next(iter(field_errors.values())),
             )
 
         return fields

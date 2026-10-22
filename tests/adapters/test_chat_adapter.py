@@ -2607,6 +2607,66 @@ def test_chat_adapter_still_falls_back_when_field_markers_are_missing():
     assert result == [{"color": "red"}]
 
 
+class _ColorReasonSignature(dspy.Signature):
+    question: str = dspy.InputField()
+    color: Literal["red", "blue"] = dspy.OutputField()
+    reason: str = dspy.OutputField()
+
+
+# The `reason` marker is malformed, so its text lands inside `color`: the format is broken.
+_MALFORMED_COLOR_REASON = "[[ ## color ## ]]\nred\n\n[[ reason ]]\nBecause.\n\n[[ ## completed ## ]]"
+
+
+def test_chat_adapter_parse_prefers_format_error_over_field_error():
+    with pytest.raises(dspy.AdapterParseError) as e:
+        dspy.ChatAdapter().parse(_ColorReasonSignature, _MALFORMED_COLOR_REASON)
+
+    assert not isinstance(e.value, dspy.AdapterFieldParseError)
+
+
+def test_chat_adapter_parse_raises_field_error_when_only_defaulted_fields_are_missing():
+    class ColorWithDefaultSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        color: Literal["red", "blue"] = dspy.OutputField()
+        reason: str = dspy.OutputField(default="none")
+
+    with pytest.raises(dspy.AdapterFieldParseError):
+        dspy.ChatAdapter().parse(ColorWithDefaultSignature, "[[ ## color ## ]]\ngreen\n\n[[ ## completed ## ]]")
+
+
+def test_chat_adapter_falls_back_when_field_error_comes_with_missing_marker():
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = _mock_completion_response(_MALFORMED_COLOR_REASON)
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+
+        with mock.patch(
+            "dspy.adapters.json_adapter.JSONAdapter.__call__", return_value=[{"color": "red", "reason": "Because."}]
+        ) as mock_json_adapter_call:
+            result = adapter(lm, {}, _ColorReasonSignature, [], {"question": "Pick a color."})
+
+    mock_json_adapter_call.assert_called_once()
+    assert result == [{"color": "red", "reason": "Because."}]
+
+
+@pytest.mark.asyncio
+async def test_chat_adapter_falls_back_when_field_error_comes_with_missing_marker_async():
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.acompletion") as mock_completion:
+        mock_completion.return_value = _mock_completion_response(_MALFORMED_COLOR_REASON)
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+
+        with mock.patch(
+            "dspy.adapters.json_adapter.JSONAdapter.acall", return_value=[{"color": "red", "reason": "Because."}]
+        ) as mock_json_adapter_acall:
+            result = await adapter.acall(lm, {}, _ColorReasonSignature, [], {"question": "Pick a color."})
+
+    mock_json_adapter_acall.assert_called_once()
+    assert result == [{"color": "red", "reason": "Because."}]
+
+
 def test_chat_adapter_toolcalls_native_function_calling():
     class MySignature(dspy.Signature):
         question: str = dspy.InputField()
