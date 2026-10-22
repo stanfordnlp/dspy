@@ -10,6 +10,7 @@ import dspy
 from dspy.clients._litellm import get_litellm
 from dspy.clients.cache import request_cache
 from dspy.clients.call_context import completed_legacy, stream_emitted
+from dspy.clients.engines.base import AsyncEngine, Engine, validate_engines
 from dspy.clients.engines.lifecycle import aclosing_stream
 from dspy.clients.legacy_requests import chat_to_responses
 from dspy.clients.openai import OpenAIProvider
@@ -50,48 +51,17 @@ _ENGINE_CLASS_KEY = "class"
 _ENGINE_STATE_KEY = "state"
 
 
-def _is_coroutine_function(fn) -> bool:
-    import inspect
-
-    if inspect.iscoroutinefunction(fn):
-        return True
-    # A callable object whose __call__ (own or inherited) is async: resolve
-    # it through the MRO as Python does. A plain function's type resolves
-    # __call__ to a slot wrapper, which is not a coroutine function.
-    call = next((vars(cls)["__call__"] for cls in type(fn).__mro__ if "__call__" in vars(cls)), None)
-    return inspect.iscoroutinefunction(call)
-
-
 def _check_engines(engine, async_engine) -> None:
-    """One rule for the constructor and copy(): a selection string with no
-    async counterpart, or a custom engine object with complete(Request) — a
-    plain function on the sync engine, a coroutine function on the async one
-    (dspy.clients.engines.base). Checked here, at construction, rather than
-    on the first call, where the wrong kind fails as an unexpected error."""
+    """Validate named selections and custom engine pairs for construction and copy."""
     if isinstance(engine, str):
         if engine not in _ENGINE_SELECTIONS:
             raise ValueError("engine must be 'auto', 'lm15', 'litellm', or an engine object")
         if async_engine is not None:
             raise ValueError("async_engine is only used with a custom engine object")
         return
-    complete = getattr(engine, "complete", None)
-    if not callable(complete):
+    if engine is None:
         raise TypeError("A custom engine must implement complete(Request) -> Response")
-    if _is_coroutine_function(complete):
-        raise TypeError(
-            "engine.complete is a coroutine function; the sync engine returns a Response directly. "
-            "Pass an async engine as async_engine="
-        )
-    if async_engine is None:
-        return
-    acomplete = getattr(async_engine, "complete", None)
-    if not callable(acomplete):
-        raise TypeError("A custom async engine must implement async complete(Request) -> Response")
-    if not _is_coroutine_function(acomplete):
-        raise TypeError(
-            "async_engine.complete is not a coroutine function; the async engine is awaited "
-            "(async def complete). Pass a sync engine as engine="
-        )
+    validate_engines(engine, async_engine)
 
 
 def _refuse_client_settings(engine, kwargs, *, where: str = "dspy.LM") -> None:
@@ -214,8 +184,8 @@ class LM(BaseLM):
         launch_kwargs: dict[str, Any] | None = None,
         train_kwargs: dict[str, Any] | None = None,
         use_developer_role: bool = False,
-        engine: Any = "auto",
-        async_engine: Any = None,
+        engine: Engine | Literal["auto", "lm15", "litellm"] = "auto",
+        async_engine: AsyncEngine | None = None,
         prompt_cache: CacheConfig | None = None,
         **kwargs,
     ):
