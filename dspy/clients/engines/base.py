@@ -1,5 +1,6 @@
 """One-attempt execution interfaces for DSPy's LM layer.
 
+Only complete() is required; streaming and cleanup are optional for both engine protocols.
 Engines consume one canonical request and produce one response. They do not
 own DSPy's cache, retries, candidate fan-out, history or callbacks. A stream
 emits one leading start event and one final end event only on successful completion.
@@ -13,27 +14,17 @@ plugins, LegacyEngine/AsyncLegacyEngine, and complete_legacy() shortcuts are
 3.4 transition interfaces, deprecated for removal in 3.5.
 """
 
-from collections.abc import AsyncIterator, Iterator
 from typing import Protocol
 
-from dspy._vendor.lm15.types import StreamEvent
 from dspy.lm15 import Request, Response
 
 
 class Engine(Protocol):
     def complete(self, request: Request) -> Response: ...
 
-    def stream(self, request: Request) -> Iterator[StreamEvent]: ...
-
-    def close(self) -> None: ...
-
 
 class AsyncEngine(Protocol):
     async def complete(self, request: Request) -> Response: ...
-
-    def stream(self, request: Request) -> AsyncIterator[StreamEvent]: ...
-
-    async def aclose(self) -> None: ...
 
 
 def validate_request(request: Request) -> None:

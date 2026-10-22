@@ -10,6 +10,7 @@ import dspy
 from dspy.clients._litellm import get_litellm
 from dspy.clients.cache import request_cache
 from dspy.clients.call_context import completed_legacy, stream_emitted
+from dspy.clients.engines.base import AsyncEngine, Engine
 from dspy.clients.engines.lifecycle import aclosing_stream
 from dspy.clients.legacy_requests import chat_to_responses
 from dspy.clients.openai import OpenAIProvider
@@ -214,8 +215,8 @@ class LM(BaseLM):
         launch_kwargs: dict[str, Any] | None = None,
         train_kwargs: dict[str, Any] | None = None,
         use_developer_role: bool = False,
-        engine: Any = "auto",
-        async_engine: Any = None,
+        engine: Engine | Literal["auto", "lm15", "litellm"] = "auto",
+        async_engine: AsyncEngine | None = None,
         prompt_cache: CacheConfig | None = None,
         **kwargs,
     ):
