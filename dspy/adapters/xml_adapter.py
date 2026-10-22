@@ -12,12 +12,13 @@ from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import (
     apply_output_field_defaults,
     format_field_value,
+    missing_required_output_fields,
     parse_value,
     serialize_for_json,
     translate_field_type,
 )
 from dspy.signatures.signature import Signature
-from dspy.utils.exceptions import AdapterParseError
+from dspy.utils.exceptions import AdapterFieldParseError, AdapterParseError
 
 
 class XMLAdapter(ChatAdapter):
@@ -104,6 +105,7 @@ class XMLAdapter(ChatAdapter):
             ) from e
         elements = self._group_children(root)
         fields = {}
+        field_errors = {}
         for name, field in signature.output_fields.items():
             if name not in elements:
                 continue
@@ -121,18 +123,18 @@ class XMLAdapter(ChatAdapter):
                 except ValueError as e:
                     error = e
             else:
-                raise AdapterParseError(
-                    adapter_name="XMLAdapter",
-                    signature=signature,
-                    lm_response=completion,
-                    message=f"Failed to parse field {field} with value {value}: {error}",
-                ) from error
-        fields = apply_output_field_defaults(signature, fields)
-        if fields.keys() != signature.output_fields.keys():
+                field_errors[name] = (f"Failed to parse field {field} with value {value}: {error}", error)
+        # A missing required field means the format is broken, so it takes precedence over field errors.
+        if missing_required_output_fields(signature, fields.keys() | field_errors.keys()):
             raise AdapterParseError(
                 adapter_name="XMLAdapter", signature=signature, lm_response=completion, parsed_result=fields
             )
-        return fields
+        if field_errors:
+            message, error = next(iter(field_errors.values()))
+            raise AdapterFieldParseError(
+                adapter_name="XMLAdapter", signature=signature, lm_response=completion, message=message
+            ) from error
+        return apply_output_field_defaults(signature, fields)
 
     @classmethod
     def _value_to_xml(cls, value: Any, tag: str, key: str | None = None) -> str:

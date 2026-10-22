@@ -13,6 +13,7 @@ from dspy.clients import *  # isort: skip
 from dspy.adapters import Adapter, ChatAdapter, JSONAdapter, XMLAdapter, TwoStepAdapter, Image, Audio, File, History, Type, Tool, ToolCalls, ToolCallResults, Code, Reasoning  # isort: skip
 from dspy.primitives.sandbox_serializable import SandboxSerializable  # isort: skip
 from dspy.utils.exceptions import (
+    AdapterFieldParseError,
     AdapterParseError,
     ContextWindowExceededError,
     DSPyError,

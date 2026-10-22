@@ -11,6 +11,7 @@ from dspy.adapters.utils import (
     format_field_value,
     get_annotation_name,
     get_field_description_string,
+    missing_required_output_fields,
     parse_value,
     translate_field_type,
 )
@@ -18,7 +19,7 @@ from dspy.clients.base_lm import BaseLM
 from dspy.clients.call_context import adapter_fallback_scope
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
-from dspy.utils.exceptions import AdapterParseError
+from dspy.utils.exceptions import AdapterFieldParseError, AdapterParseError
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
 
@@ -54,7 +55,9 @@ class ChatAdapter(Adapter):
             use_native_function_calling: Whether to enable native function calling capabilities.
             native_response_types: List of output field types handled by native LM features.
             use_json_adapter_fallback: Whether to try JSONAdapter after an AdapterParseError.
-                Only invalid model output can trigger this extra call, and never after visible stream output.
+                Only malformed model output can trigger this extra call, and never after visible stream output.
+                A well-formed response whose field value fails to parse or validate (e.g. a value outside a
+                ``Literal``) raises ``AdapterFieldParseError`` without falling back.
                 Configuration errors, engine failures and programming bugs propagate. Defaults to True.
             parallel_tool_calls: Whether to request provider-side parallel tool-call generation when native function
                 calling is active. If None, the adapter does not set the provider option.
@@ -86,10 +89,15 @@ class ChatAdapter(Adapter):
         with adapter_fallback_scope() as progress:
             try:
                 return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-            except AdapterParseError:
+            except AdapterParseError as e:
                 from dspy.adapters.json_adapter import JSONAdapter
 
-                if progress.emitted or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
+                if (
+                    progress.emitted
+                    or isinstance(self, JSONAdapter)
+                    or not self.use_json_adapter_fallback
+                    or isinstance(e, AdapterFieldParseError)
+                ):
                     raise
                 return self._make_json_adapter_fallback()(lm, lm_kwargs, signature, demos, inputs)
 
@@ -104,10 +112,15 @@ class ChatAdapter(Adapter):
         with adapter_fallback_scope() as progress:
             try:
                 return await super().acall(lm, lm_kwargs, signature, demos, inputs)
-            except AdapterParseError:
+            except AdapterParseError as e:
                 from dspy.adapters.json_adapter import JSONAdapter
 
-                if progress.emitted or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
+                if (
+                    progress.emitted
+                    or isinstance(self, JSONAdapter)
+                    or not self.use_json_adapter_fallback
+                    or isinstance(e, AdapterFieldParseError)
+                ):
                     raise
                 return await self._make_json_adapter_fallback().acall(lm, lm_kwargs, signature, demos, inputs)
 
@@ -229,27 +242,32 @@ class ChatAdapter(Adapter):
         sections = [(k, "\n".join(v).strip()) for k, v in sections]
 
         fields = {}
+        field_errors = {}
         for k, v in sections:
-            if (k not in fields) and (k in signature.output_fields):
+            if (k not in fields) and (k not in field_errors) and (k in signature.output_fields):
                 try:
                     fields[k] = parse_value(v, signature.output_fields[k].annotation)
                 except ValueError as e:
-                    raise AdapterParseError(
-                        adapter_name="ChatAdapter",
-                        signature=signature,
-                        lm_response=completion,
-                        message=f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}",
+                    field_errors[k] = (
+                        f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}"
                     )
-        fields = apply_output_field_defaults(signature, fields)
-        if fields.keys() != signature.output_fields.keys():
+        # A missing required field means the format is broken, so it takes precedence over field errors.
+        if missing_required_output_fields(signature, fields.keys() | field_errors.keys()):
             raise AdapterParseError(
                 adapter_name="ChatAdapter",
                 signature=signature,
                 lm_response=completion,
                 parsed_result=fields,
             )
+        if field_errors:
+            raise AdapterFieldParseError(
+                adapter_name="ChatAdapter",
+                signature=signature,
+                lm_response=completion,
+                message=next(iter(field_errors.values())),
+            )
 
-        return fields
+        return apply_output_field_defaults(signature, fields)
 
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         """

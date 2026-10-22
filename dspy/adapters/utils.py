@@ -3,7 +3,7 @@ import enum
 import inspect
 import json
 import types
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Union, get_args, get_origin
 
 import json_repair
@@ -35,6 +35,20 @@ def annotation_allows_none(annotation: Any) -> bool:
         return any(annotation_allows_none(arg) for arg in args)
 
     return False
+
+
+def missing_required_output_fields(signature: "type[Signature]", present: Iterable[str]) -> list[str]:
+    """
+    Return the names of required output fields not in `present`, without evaluating any defaults.
+
+    A field is required when it has no default, no default factory, and an annotation that disallows None.
+    """
+    present = set(present)
+    return [
+        name
+        for name, field_info in signature.output_fields.items()
+        if name not in present and field_info.is_required() and not annotation_allows_none(field_info.annotation)
+    ]
 
 
 def apply_output_field_defaults(signature: "type[Signature]", fields: dict[str, Any]) -> dict[str, Any]:
