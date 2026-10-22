@@ -199,8 +199,8 @@ def test_react_v2_forced_submit_on_empty_tool_calls():
     assert lm.history[1]["kwargs"].get("reasoning_effort") is None
 
 
-def test_react_v2_forced_submit_with_native_flag_but_unsupported_lm():
-    adapter = dspy.JSONAdapter(use_native_function_calling=True)
+@pytest.mark.parametrize("adapter", [None, dspy.JSONAdapter()], ids=["default", "json"])
+def test_react_v2_forced_submit_with_native_flag_but_unsupported_lm(adapter):
     lm = dspy.utils.DummyLM(
         [
             {"next_thought": "No action.", "tool_calls": dspy.ToolCalls(tool_calls=[])},
@@ -305,16 +305,20 @@ class ParallelNativeToolLM(dspy.BaseLM):
         )
 
 
-def test_react_v2_native_tool_loop_replays_tool_result_with_provider_id():
+@pytest.mark.parametrize(
+    "adapter", [None, dspy.ChatAdapter(use_native_function_calling=True)], ids=["default", "chat"]
+)
+def test_react_v2_native_tool_loop_replays_tool_result_with_provider_id(adapter):
     def lookup(query: str) -> str:
         return f"found {query}"
 
     lm = NativeToolLM()
 
-    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=True)):
+    with dspy.context(lm=lm, adapter=adapter):
         pred = dspy.ReActV2("question -> answer", tools=[lookup])(question="cats")
 
     assert pred.answer == "found cats"
+    assert {tool["function"]["name"] for tool in lm.calls[0]["kwargs"]["tools"]} == {"lookup", "submit"}
     assert pred.history.messages[0]["tool_calls"].tool_calls[0].id == "call_provider_1"
     assert "tool_call_results" not in pred.history.messages[0]
     assert pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results[0].call_id == "call_provider_1"
@@ -324,17 +328,25 @@ def test_react_v2_native_tool_loop_replays_tool_result_with_provider_id():
     )
 
 
-def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed():
+@pytest.mark.parametrize(
+    "adapter",
+    [None, dspy.ChatAdapter(use_native_function_calling=True, parallel_tool_calls=True)],
+    ids=["default", "chat"],
+)
+def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed(adapter):
     def lookup(query: str) -> str:
         return f"found {query}"
 
     lm = ParallelNativeToolLM()
 
-    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=True, parallel_tool_calls=True)):
+    with dspy.context(lm=lm, adapter=adapter):
         pred = dspy.ReActV2("question -> answer", tools=[lookup])(question="cats and dogs")
 
     assert pred.answer == "found cats and found dogs"
-    assert lm.calls[0]["kwargs"]["parallel_tool_calls"] is True
+    if adapter is not None:
+        assert lm.calls[0]["kwargs"]["parallel_tool_calls"] is True
+    else:
+        assert "parallel_tool_calls" not in lm.calls[0]["kwargs"]
     assert [call.id for call in pred.history.messages[0]["tool_calls"].tool_calls] == [
         "call_provider_1",
         "call_provider_2",

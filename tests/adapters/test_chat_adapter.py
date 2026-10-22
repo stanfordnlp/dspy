@@ -88,7 +88,7 @@ def test_chat_adapter_quotes_literals_as_expected(
 def test_chat_adapter_sync_call():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.ChatAdapter()
-    lm = dspy.utils.DummyLM([{"answer": "Paris"}])
+    lm = dspy.utils.DummyLM([{"answer": "Paris"}], adapter=adapter)
     result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
     assert result == [{"answer": "Paris"}]
 
@@ -97,7 +97,7 @@ def test_chat_adapter_sync_call():
 async def test_chat_adapter_async_call():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.ChatAdapter()
-    lm = dspy.utils.DummyLM([{"answer": "Paris"}])
+    lm = dspy.utils.DummyLM([{"answer": "Paris"}], adapter=adapter)
     result = await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
     assert result == [{"answer": "Paris"}]
 

@@ -8,9 +8,9 @@ from gepa import EvaluationBatch, GEPAAdapter
 from gepa.core.adapter import ProposalFn
 
 import dspy
-from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
+from dspy.adapters.utils import _get_adapter
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
 from dspy.primitives.code_interpreter import CodeInterpreterError
@@ -433,7 +433,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
                 d = {"Inputs": new_inputs, "Generated Outputs": new_outputs}
                 if isinstance(outputs, FailedPrediction):
-                    adapter = ChatAdapter()
+                    adapter = _get_adapter()
                     structure_instruction = ""
                     for dd in adapter.format(module.signature, [], {}):
                         structure_instruction += dd["role"] + ": " + dd["content"] + "\n"

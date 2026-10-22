@@ -20,7 +20,7 @@ Every DSPy module will use these defaults unless you override them with
 | Setting | Default | Description |
 | --- | --- | --- |
 | `lm` | `None` | Default language model. Pass a [`dspy.LM`](../models/LM.md) instance. |
-| `adapter` | `None` | Formats prompts and parses LM responses. When `None`, modules use [`dspy.ChatAdapter`](../adapters/ChatAdapter.md). |
+| `adapter` | `None` | Formats prompts and parses LM responses. When `None`, modules use [`dspy.XMLAdapter(use_native_function_calling=True)`](../adapters/XMLAdapter.md): native tool calling when the LM supports it, text otherwise. |
 | `callbacks` | `[]` | Observability and logging hooks. See [Observability](../../tutorials/observability/index.md). |
 | `track_usage` | `False` | Record token counts for every LM call. |
 | `async_max_workers` | `8` | Maximum concurrent workers for async operations. |

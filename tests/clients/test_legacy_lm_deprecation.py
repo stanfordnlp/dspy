@@ -192,7 +192,7 @@ async def test_program_warns_about_legacy_lm_not_internal_messages(asynchronous)
     class ProgramLM(LegacyLM):
         def forward(self, **kwargs):
             raw = super().forward(**kwargs)
-            raw["choices"][0]["message"]["content"] = "[[ ## answer ## ]]\nok"
+            raw["choices"][0]["message"]["content"] = "<answer>ok</answer>"
             return raw
 
     lm = ProgramLM("custom")
@@ -240,7 +240,7 @@ async def test_warning_as_error_does_not_trigger_adapter_fallback(asynchronous, 
 @pytest.mark.parametrize("asynchronous", [False, True])
 async def test_two_step_extraction_preserves_warning_as_error(asynchronous):
     extraction = LegacyLM("custom")
-    main = DummyLM([{"answer": "ok"}])
+    main = DummyLM([{"answer": "ok"}], adapter=dspy.ChatAdapter())
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         with dspy.context(lm=main, adapter=dspy.TwoStepAdapter(extraction)):

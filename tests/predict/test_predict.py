@@ -50,6 +50,30 @@ def test_initialization_with_string_signature():
     assert predict.signature.instructions == Signature(signature_string).instructions
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("override", [dspy.ChatAdapter(), dspy.JSONAdapter()])
+async def test_default_xml_adapter_and_scoped_override(asynchronous, override):
+    predict = Predict("question -> answer: int")
+
+    async def call(lm):
+        with dspy.context(lm=lm):
+            return await predict.acall(question="17 - 23?") if asynchronous else predict(question="17 - 23?")
+
+    # Fix the model's wire format independently of the implicit adapter.
+    lm = DummyLM([{"answer": -6}] * 2, adapter=dspy.XMLAdapter())
+    assert (await call(lm)).answer == -6
+    assert "<question>" in lm.history[-1]["messages"][-1]["content"]
+
+    with dspy.context(adapter=override):
+        explicit_lm = DummyLM([{"answer": -6}], adapter=override)
+        assert (await call(explicit_lm)).answer == -6
+        assert "[[ ## question ## ]]" in explicit_lm.history[-1]["messages"][-1]["content"]
+
+    assert (await call(lm)).answer == -6
+    assert "<question>" in lm.history[-1]["messages"][-1]["content"]
+
+
 def test_reset_method():
     predict_instance = Predict("input -> output")
     predict_instance.lm = "modified"
@@ -619,7 +643,6 @@ def test_datetime_inputs_and_outputs():
     lm = DummyLM(
         [
             {
-                "reasoning": "Processed datetime inputs",
                 "summary": "All events are processed",
                 "next_event_time": "2024-11-27T14:00:00",
             }
@@ -652,7 +675,6 @@ def test_explicitly_valued_enum_inputs_and_outputs():
     lm = DummyLM(
         [
             {
-                "reasoning": "The current status is 'PENDING', advancing to 'IN_PROGRESS'.",
                 "next_status": "in_progress",
             }
         ]
@@ -675,11 +697,10 @@ def test_enum_inputs_and_outputs_with_shared_names_and_values():
 
     program = Predict(TicketStatusSignature)
 
-    # Mock reasoning and output
+    # Mock the declared output field only.
     lm = DummyLM(
         [
             {
-                "reasoning": "The ticket is currently 'OPEN', transitioning to 'CLOSED'.",
                 "next_status": "RESOLVED",  # Refers to TicketStatus.CLOSED by value
             }
         ]
@@ -702,7 +723,6 @@ def test_auto_valued_enum_inputs_and_outputs():
     lm = DummyLM(
         [
             {
-                "reasoning": "The current status is 'PENDING', advancing to 'IN_PROGRESS'.",
                 "next_status": "IN_PROGRESS",  # Use the auto-assigned value for IN_PROGRESS
             }
         ]
@@ -799,7 +819,7 @@ def test_lm_usage():
     with patch(
         "dspy.clients.lm.litellm_completion",
         return_value=ModelResponse(
-            choices=[{"message": {"content": "[[ ## answer ## ]]\nParis"}}],
+            choices=[{"message": {"content": "<answer>\nParis\n</answer>"}}],
             usage={"total_tokens": 10},
         ),
     ):
@@ -820,7 +840,7 @@ def test_lm_usage_with_parallel():
     with patch(
         "dspy.clients.lm.litellm_completion",
         return_value=ModelResponse(
-            choices=[{"message": {"content": "[[ ## answer ## ]]\nParis"}}],
+            choices=[{"message": {"content": "<answer>\nParis\n</answer>"}}],
             usage={"total_tokens": 10},
         ),
     ):
@@ -852,7 +872,7 @@ async def test_lm_usage_with_async():
         with patch(
             "litellm.acompletion",
             return_value=ModelResponse(
-                choices=[{"message": {"content": "[[ ## answer ## ]]\nParis"}}],
+                choices=[{"message": {"content": "<answer>\nParis\n</answer>"}}],
                 usage={"total_tokens": 10},
             ),
         ):
@@ -1069,7 +1089,7 @@ def test_input_field_default_value():
 
         def __call__(self, prompt=None, messages=None, **kwargs):
             self.calls.append({"messages": messages})
-            return ["[[ ## answer ## ]]\ntest"]
+            return ["<answer>\ntest\n</answer>"]
 
     class SignatureWithDefault(dspy.Signature):
         context: str = dspy.InputField(default="DEFAULT_CONTEXT")
