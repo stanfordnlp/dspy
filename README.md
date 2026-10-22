@@ -26,6 +26,9 @@ DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, y
 
 ## Installation
 
+Use pip >= 26.2.2 or uv >= 0.13.4. For existing environments, follow the
+[secure upgrade instructions](docs/docs/getting-started/installation.md#upgrading-existing-environments)
+before installing packages.
 
 ```bash
 pip install dspy

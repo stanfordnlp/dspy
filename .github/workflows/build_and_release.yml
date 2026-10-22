@@ -36,8 +36,10 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-      - name: Install dependencies
-        run: python3 -m pip install --upgrade setuptools wheel twine build semver packaging
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - name: Install build dependencies
+        run: uv pip install --system --upgrade 'pip>=26.2.2' 'certifi>=2026.10.19' setuptools wheel twine build semver packaging
       - name: Install Deno
         uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
@@ -59,25 +61,26 @@ jobs:
       - name: Update package name in pyproject.toml
         run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test-isaac"/;}' pyproject.toml
       - name: Build a binary wheel
-        run: python3 -m build
+        run: python3 -m build --installer uv
       - name: Validate built distributions
         run: python3 -m twine check --strict dist/*
       # Test the locally built wheel
       - name: Create test environment
-        run: python -m venv test_before_testpypi
+        run: uv venv test_before_testpypi
       - name: Test package installation and functionality
         run: |
           source test_before_testpypi/bin/activate
           # Install the locally built wheel and testing dependencies
-          pip install dist/*.whl pytest pytest-asyncio pytest-mock
+          uv pip install dist/*.whl pytest pytest-asyncio pytest-mock
           pytest tests/metadata/test_metadata.py tests/predict
           (cd "$RUNNER_TEMP" && python -c 'import dspy; assert dspy.PythonInterpreter().execute("6 * 7") == 42')
           deactivate
       # Publish to test-PyPI
       - name: Publish distribution 📦 to test-PyPI
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
+        uses: ./.github/actions/pypi-publish # zizmor: ignore[self-repository] actionlint does not yet support $/ syntax
         with:
           repository-url: https://test.pypi.org/legacy/
+          attestations: true
 
   # TODO: Add tests using dspy-ai-test
 
@@ -99,8 +102,10 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-      - name: Install dependencies
-        run: python3 -m pip install --upgrade setuptools wheel twine build
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - name: Install build dependencies
+        run: uv pip install --system --upgrade 'pip>=26.2.2' 'certifi>=2026.10.19' setuptools wheel twine build
       - name: Install Deno
         uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
@@ -119,17 +124,17 @@ jobs:
       - name: Update package name in metadata.py
         run: sed -i '/#replace_package_name_marker/{n;s/__name__ *= *"[^"]*"/__name__="dspy"/;}' ./dspy/__metadata__.py
       - name: Build a binary wheel
-        run: python3 -m build
+        run: python3 -m build --installer uv
       - name: Validate built distributions
         run: python3 -m twine check --strict dist/*
       # Test the locally built wheel before publishing to pypi
       - name: Create test environment
-        run: python -m venv test_before_pypi
+        run: uv venv test_before_pypi
       - name: Test package installation and functionality
         run: |
           source test_before_pypi/bin/activate
           # Install the locally built wheel and testing dependencies
-          pip install dist/*.whl pytest pytest-asyncio pytest-mock
+          uv pip install dist/*.whl pytest pytest-asyncio pytest-mock
           pytest tests/metadata/test_metadata.py tests/predict
           (cd "$RUNNER_TEMP" && python -c 'import dspy; assert dspy.PythonInterpreter().execute("6 * 7") == 42')
           deactivate
@@ -141,7 +146,7 @@ jobs:
           path: dist/*.whl
           if-no-files-found: error
       - name: Publish distribution 📦 to PyPI (dspy)
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        uses: ./.github/actions/pypi-publish # zizmor: ignore[self-repository] actionlint does not yet support $/ syntax
         with:
           attestations: false
       # Publish to dspy-ai
@@ -156,11 +161,11 @@ jobs:
           VERSION: ${{ needs.extract-tag.outputs.version }}
         run: sed -i "/#replace_dspy_version_marker/{n;s/dspy>=[^\"]*/dspy>=$VERSION/;}" .github/.internal_dspyai/pyproject.toml
       - name: Build a binary wheel (dspy-ai)
-        run: python3 -m build .github/.internal_dspyai/
+        run: python3 -m build --installer uv .github/.internal_dspyai/
       - name: Validate built distributions (dspy-ai)
         run: python3 -m twine check --strict .github/.internal_dspyai/dist/*
       - name: Publish distribution 📦 to PyPI (dspy-ai)
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        uses: ./.github/actions/pypi-publish # zizmor: ignore[self-repository] actionlint does not yet support $/ syntax
         with:
           attestations: false
           packages-dir: .github/.internal_dspyai/dist/
@@ -197,9 +202,12 @@ jobs:
         with:
           name: dspy-release-wheel
           path: release-wheel
+      - name: Install uv
+        if: steps.publishable.outputs.publish == 'true'
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Install documentation dependencies and release wheel
         if: steps.publishable.outputs.publish == 'true'
-        run: python -m pip install -r docs/requirements.txt release-wheel/*.whl
+        run: uv pip install --system 'pip>=26.2.2' -r docs/requirements.txt release-wheel/*.whl
       - name: Verify API introspection uses the release wheel
         if: steps.publishable.outputs.publish == 'true'
         run: |
