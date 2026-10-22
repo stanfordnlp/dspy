@@ -31,7 +31,7 @@ class CapturingEngine(RecordingEngine):
         raise StopAdapterCallCapture
 
 
-class CapturingLM(dspy.LM):
+class CapturingLM(dspy.BaseLM):
     """Record the Request an adapter builds, with the capabilities of `source_lm`."""
 
     def __init__(self, source_lm=None):
