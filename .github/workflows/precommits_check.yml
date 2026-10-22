@@ -17,8 +17,7 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.10"
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+          cache: "pip"
       - name: Check Pull Request Title
         uses: Slashgear/action-check-pr-title@76166c63ec0b25cdbe693e5e972e83ca186313fb # main
         with:
@@ -39,7 +38,8 @@ jobs:
         env:
           CHANGED_FILES: ${{ steps.files.outputs.all }}
         run: |
-          uv pip install --system 'pip>=26.2.2' 'certifi>=2026.10.19' 'virtualenv>=21.14.12' pre-commit
+          bash scripts/bootstrap_python.sh
+          pip install 'virtualenv>=21.14.12' pre-commit
           echo "Running pre-commit scans:"
           # adding log display in case of pre-commit errors
           # shellcheck disable=SC2086

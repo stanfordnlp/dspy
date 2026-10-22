@@ -115,13 +115,6 @@ cd dspy
 Next, we must set up a Python environment with the correct dependencies. There are two recommended ways to set up the
 dev environment.
 
-Use uv >= 0.13.4 and pip >= 26.2.2 because older installers trust a compromised
-certificate authority. With Python 3.10+ available, `bash scripts/bootstrap_python.sh`
-securely upgrades pip, uv, and certifi in the active Python environment. See the
-[installation security guidance](docs/docs/getting-started/installation.md#upgrading-existing-environments).
-After upgrading development dependencies, run `pre-commit clean` once to discard
-old hook environments; virtualenv >= 21.14.12 seeds their replacements with patched pip.
-
 ### [Recommended] Set Up Environment Using uv
 
 [uv](https://github.com/astral-sh/uv) is a rust-based Python package and project manager that provides a fast
@@ -162,7 +155,6 @@ To set up the environment, run:
 ```shell
 conda create -n dspy-dev python=3.10
 conda activate dspy-dev
-bash scripts/bootstrap_python.sh
 pip install -e ".[dev]"
 ```
 

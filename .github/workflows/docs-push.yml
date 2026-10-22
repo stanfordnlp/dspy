@@ -29,15 +29,10 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - name: Set up Python 3.11
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Install dependencies and build
         run: |
-          uv pip install --system 'pip>=26.2.2' -r docs/requirements.txt -e .
+          bash scripts/bootstrap_python.sh
+          pip install -r docs/requirements.txt -e .
           python docs/scripts/build_docs.py current \
             --config docs/mkdocs.yml \
             --output docs/site
@@ -59,13 +54,12 @@ jobs:
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.11"
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          enable-cache: true
-          cache-dependency-glob: docs/requirements.txt
+          cache: "pip"
+          cache-dependency-path: docs/requirements.txt
       - name: Install documentation dependencies
-        run: uv pip install --system 'pip>=26.2.2' -r docs/requirements.txt -e .
+        run: |
+          bash scripts/bootstrap_python.sh
+          python -m pip install -r docs/requirements.txt -e .
       - name: Build Current documentation
         run: |
           python docs/scripts/build_docs.py current \

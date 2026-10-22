@@ -26,7 +26,6 @@ To build and test the documentation locally:
 
 2. Install the necessary dependencies:
    ```bash
-   bash ../scripts/bootstrap_python.sh
    pip install -r requirements.txt
    ```
 
