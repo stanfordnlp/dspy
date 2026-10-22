@@ -39,7 +39,7 @@ jobs:
           CHANGED_FILES: ${{ steps.files.outputs.all }}
         run: |
           bash scripts/bootstrap_python.sh
-          pip install 'virtualenv>=21.14.12' pre-commit
+          pip install 'uv>=0.13.4' 'virtualenv>=21.14.12' pre-commit
           echo "Running pre-commit scans:"
           # adding log display in case of pre-commit errors
           # shellcheck disable=SC2086
