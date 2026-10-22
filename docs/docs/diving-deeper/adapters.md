@@ -12,9 +12,9 @@ Read this when you want to know what the prompt looks like on the wire, why a ty
 
 Same Signature, different prompt shape, no Signature changes. LMs vary a lot in what they prefer to read and produce: a model trained on instruction-following with markers loves ChatAdapter’s `[[ ## field ## ]]` format; a model with native structured-output mode does best with JSONAdapter; a reasoning model that formats unreliably wants TwoStepAdapter. Putting this decision behind one interface means Signatures, modules, and optimizers don’t have to know which family of LM they’re running against.
 
-### 2. XMLAdapter is the implicit default
+### 2. XMLAdapter is the default
 
-When no adapter is configured, DSPy uses `XMLAdapter(use_native_function_calling=True)`: XML-style field tags for text, native tool calling when the LM supports it, and text otherwise. DSPy parses and validates XML outputs; the provider does not enforce their structure. Explicit Chat, JSON, and custom adapters remain supported. Explicit `XMLAdapter()` still defaults to `use_native_function_calling=False`.
+When no adapter is configured, DSPy uses `XMLAdapter(use_native_function_calling=True)`: XML-style field tags for text, native tool calling when the LM supports it, and text otherwise. DSPy parses and validates XML outputs; the provider does not enforce their structure.
 
 ### 3. Every adapter follows a fixed lifecycle
 
@@ -59,7 +59,7 @@ Grouped by what you’re trying to do.
 ### The adapters
 
 **`dspy.ChatAdapter(callbacks=None, use_native_function_calling=False, native_response_types=None, use_json_adapter_fallback=True)`**  
-An explicit alternative. Builds a chat-style prompt with field markers, parses the response with a regex over the same markers, and (by default) falls back to JSONAdapter if the regex misses. Set `use_json_adapter_fallback=False` when you want a hard error in tests.
+An explicit alternative to be deprecated in a future release; prefer `XMLAdapter`. Builds a chat-style prompt with field markers, parses the response with a regex over the same markers, and (by default) falls back to JSONAdapter if the regex misses. Set `use_json_adapter_fallback=False` when you want a hard error in tests.
 
 **`dspy.JSONAdapter(callbacks=None, use_native_function_calling=True)`**  
 Outputs structured JSON. Internally extends ChatAdapter — formatting is similar, but the output instruction asks for JSON and parsing uses `json_repair`. The constructor’s `use_native_function_calling=True` default flips when tool calling is wired in.

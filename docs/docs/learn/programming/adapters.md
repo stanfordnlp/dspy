@@ -19,7 +19,7 @@ The adapter system is responsible for:
 You can use `dspy.configure(adapter=...)` to choose the adapter for the entire Python process, or
 `with dspy.context(adapter=...):` to only affect a certain namespace.
 
-If no adapter is specified, DSPy uses `dspy.XMLAdapter(use_native_function_calling=True)`. It uses native tool calling when the LM supports it, and text otherwise. The two code snippets below are equivalent:
+If no adapter is specified, each `dspy.Predict.__call__` uses `dspy.XMLAdapter(use_native_function_calling=True)`. It uses native tool calling when the LM supports it, and text otherwise. The two code snippets below are equivalent:
 
 ```python
 import dspy
@@ -41,8 +41,6 @@ dspy.configure(
 predict = dspy.Predict("question -> answer")
 result = predict(question="What is the capital of France?")
 ```
-
-Explicit `ChatAdapter`, `JSONAdapter`, and custom adapters remain supported. Explicit `XMLAdapter()` keeps its constructor default of `use_native_function_calling=False`; pass `True` to match the implicit default.
 
 ## Where Adapters Fit in the System
 

@@ -47,7 +47,7 @@ In just four lines we built an AI-powered program that reads like software and a
 
 DSPy manages all the prompting and templating. Call `dspy.inspect_history(n=1)` to take a look at the formatted prompt our program produced and the string the `lm` returned.
 
-First, DSPy generated the system instructions (abridged):
+First, DSPy generated the system instructions:
 
 ```
 Your input fields are:
@@ -58,9 +58,8 @@ Output format (replace placeholders):
 <haiku>
 {haiku}
 </haiku>
-
 In adhering to this structure, your objective is: 
-    Given the fields `subject`, produce the fields `haiku`.
+        Given the fields `subject`, produce the fields `haiku`.
 ```
 
 `XMLAdapter` uses tags to delimit fields.
