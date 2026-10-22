@@ -7,10 +7,8 @@
         members:
             - __call__
             - acall
-            - aforward
             - copy
             - dump_state
-            - forward
             - inspect_history
             - load_state
             - update_history
