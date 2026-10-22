@@ -154,7 +154,7 @@ Analysis: Given the current price of Apple (AAPL) at $196.58 and the slight incr
 
 ## Working with Async Tools
 
-Many Langchain tools use async operations for better performance. For details on async tools, see the [Tools documentation](../../learn/programming/tools.md#async-tools).
+Many Langchain tools use async operations for better performance. For details on async tools, see the [Tools documentation](../../diving-deeper/tools.md#arguments-are-validated-before-execution).
 
 ## Key Benefits
 
