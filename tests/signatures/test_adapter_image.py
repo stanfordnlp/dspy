@@ -465,6 +465,25 @@ def test_image_repr():
     assert "base64" in str(pil_image)
 
 
+def test_image_implements_sandbox_serializable_contract():
+    from dspy.primitives.sandbox_serializable import SandboxSerializable
+
+    image = dspy.Image(PILImage.new("RGB", (2, 3), color="red"))
+
+    assert isinstance(image, SandboxSerializable)
+    assert image.to_sandbox() == image.url.encode("utf-8")
+    assert image.to_pil().size == (2, 3)
+    assert image.to_pil().getpixel((1, 2)) == (255, 0, 0)
+    assert image.sandbox_packages() == ["Pillow", "opencv-python"]
+    assert "llm_query(..., images=[image])" in image.rlm_preview()
+
+
+def test_image_to_pil_does_not_fetch_urls(monkeypatch):
+    monkeypatch.setattr(requests, "get", lambda *a, **k: pytest.fail("to_pil must not fetch a URL"))
+    with pytest.raises(ValueError, match="requires an embedded image"):
+        dspy.Image("https://example.com/photo.png").to_pil()
+
+
 def test_image_constructor_supports_positional_source_and_url_keyword():
     source = "https://example.com/dog.jpg"
 

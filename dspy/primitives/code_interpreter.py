@@ -4,12 +4,12 @@ Abstract interpreter interface for code execution environments.
 This module defines the CodeInterpreter protocol that allows RLM and other
 code-executing modules to work with different interpreter implementations:
 - PythonInterpreter: Local Deno/Pyodide WASM interpreter
-- LocalInterpreter: Persistent local CPython worker
+- LocalInterpreter: MXC-confined persistent CPython worker (default)
 - MockInterpreter: Scriptable responses for testing
 
 It also resolves which implementation a module gets: a module's own
 ``interpreter_factory`` argument, else ``dspy.settings.interpreter_factory``, else
-``PythonInterpreter``. See :func:`resolve_interpreter_factory`.
+``LocalInterpreter``. See :func:`resolve_interpreter_factory`.
 """
 
 from typing import Any, Callable, Protocol, runtime_checkable
@@ -74,7 +74,7 @@ class CodeInterpreter(Protocol):
 
     Example implementations:
         - PythonInterpreter: Deno/Pyodide WASM interpreter (local sandbox)
-        - LocalInterpreter: Persistent local CPython worker (not a sandbox)
+        - LocalInterpreter: MXC-confined persistent CPython worker
         - MockInterpreter: Scriptable responses for testing
 
     Pooling:
@@ -182,8 +182,8 @@ def resolve_interpreter_factory(
     """Return the factory that creates the next interpreter.
 
     The module's own factory wins, then ``dspy.settings.interpreter_factory``, then
-    ``PythonInterpreter``. ``None`` and ``PythonInterpreter`` both mean "unset", since the
-    code-executing modules carry ``PythonInterpreter`` as their literal default argument.
+    ``LocalInterpreter``. Only ``None`` means "unset"; an explicit
+    ``PythonInterpreter`` selects the Deno/Pyodide backend even when a setting exists.
 
     Call this where you create an interpreter, not earlier, so that
     ``dspy.context(interpreter_factory=...)`` scopes the way callers expect.
@@ -191,15 +191,15 @@ def resolve_interpreter_factory(
     Raises:
         TypeError: If ``dspy.settings.interpreter_factory`` is not a zero-argument callable.
     """
-    # Imported here because python_interpreter imports this module.
-    from dspy.primitives.python_interpreter import PythonInterpreter
-
-    if factory is not None and factory is not PythonInterpreter:
+    if factory is not None:
         return factory
 
     configured = settings.get("interpreter_factory")
     if configured is None:
-        return PythonInterpreter
+        # Imported lazily because local_interpreter imports this module.
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        return LocalInterpreter
 
     _validate_interpreter_factory(configured, name="dspy.settings.interpreter_factory")
     return configured

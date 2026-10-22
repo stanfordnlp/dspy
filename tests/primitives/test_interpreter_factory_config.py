@@ -1,12 +1,9 @@
 """`dspy.settings.interpreter_factory` replaces the default interpreter for code-executing modules.
 
-A module's non-default `interpreter_factory` still wins. The public default remains
-`PythonInterpreter`; internally, the configured factory replaces it at runtime, so a deployment that cannot run a wasm
-sandbox with no subprocesses, say) configures one interpreter once rather than passing it
-to every module or patching DSPy's internals.
+A module's explicit factory wins, including PythonInterpreter (Deno/Pyodide).
+Otherwise the active setting is resolved lazily, falling back to LocalInterpreter.
 """
 
-import inspect
 import re
 import warnings
 
@@ -19,6 +16,7 @@ from dspy.primitives.code_interpreter import (
     _create_interpreter,
     resolve_interpreter_factory,
 )
+from dspy.primitives.local_interpreter import LocalInterpreter
 from dspy.primitives.python_interpreter import PythonInterpreter
 from tests.mock_interpreter import MockInterpreter, MockInterpreterFactory
 
@@ -62,16 +60,9 @@ def _code_act(**kwargs):
 # =============================================================================
 
 
-def test_python_interpreter_is_the_unconfigured_default():
+def test_local_interpreter_is_the_unconfigured_default():
     assert dspy.settings.interpreter_factory is None
-    assert resolve_interpreter_factory() is PythonInterpreter
-
-
-def test_code_executing_module_signatures_keep_python_interpreter_as_the_default():
-    assert inspect.signature(dspy.RLM.__init__).parameters["interpreter_factory"].default is PythonInterpreter
-    assert inspect.signature(dspy.Flex.__init__).parameters["interpreter_factory"].default is PythonInterpreter
-    assert inspect.signature(dspy.ProgramOfThought.__init__).parameters["interpreter_factory"].default is PythonInterpreter
-    assert inspect.signature(dspy.CodeAct.__init__).parameters["interpreter_factory"].default is PythonInterpreter
+    assert resolve_interpreter_factory() is LocalInterpreter
 
 
 def test_configured_factory_is_used_when_the_caller_has_none():
@@ -82,11 +73,11 @@ def test_configured_factory_is_used_when_the_caller_has_none():
     assert isinstance(_create_interpreter(None), MockInterpreter)
 
 
-def test_configured_factory_overrides_python_interpreter_default():
+def test_explicit_deno_factory_wins_over_setting():
     configured = MockInterpreterFactory()
     dspy.configure(interpreter_factory=configured)
 
-    assert resolve_interpreter_factory(PythonInterpreter) is configured
+    assert isinstance(_create_interpreter(PythonInterpreter), PythonInterpreter)
     assert resolve_interpreter_factory(MockInterpreter) is MockInterpreter
 
 
@@ -125,7 +116,6 @@ def test_rlm_forward_uses_the_configured_factory():
     dspy.configure(interpreter_factory=factory)
 
     rlm = dspy.RLM("context -> answer")
-    assert rlm._interpreter_factory is PythonInterpreter
     rlm.generate_action = StaticPredictor(reasoning="submit", code='SUBMIT("42")')
 
     assert rlm(context="ignored").answer == "42"
@@ -172,7 +162,6 @@ def test_program_of_thought_forward_uses_the_configured_factory():
     dspy.configure(interpreter_factory=factory)
 
     pot = _program_of_thought()
-    assert pot._interpreter_factory is PythonInterpreter
     pot.code_generate = StaticPredictor(generated_code="SUBMIT({'answer': 2})")
     pot.generate_output = StaticPredictor(answer="2")
 
@@ -185,7 +174,6 @@ def test_code_act_forward_uses_the_configured_factory():
     dspy.configure(interpreter_factory=factory)
 
     program = _code_act()
-    assert program._interpreter_factory is PythonInterpreter
     program.codeact = StaticPredictor(generated_code="print(add(1, 1))", finished=True)
     program.extractor = StaticPredictor(answer="2")
 
@@ -203,7 +191,6 @@ def test_flex_forward_uses_the_configured_factory():
     dspy.configure(interpreter_factory=factory)
 
     flex = Flex(Doubler)
-    assert flex._interpreter_factory is PythonInterpreter
     flex._bind_code(
         "class Doubling(dspy.Module):\n"
         "    def forward(self, value):\n"
@@ -215,9 +202,30 @@ def test_flex_forward_uses_the_configured_factory():
 
 
 def test_flex_lets_a_sub_predictor_resolve_the_configured_factory_itself():
-    # Flex hands its default factory to code-executing sub-predictors, whose resolver lets
-    # the configured factory override it at their own forward.
-    dspy.configure(interpreter_factory=MockInterpreterFactory())
-
+    factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "42"})])
     flex = Flex(Doubler)
-    assert flex._bridge.invocation()._build_predictor("RLM", "query -> answer", {})._interpreter_factory is PythonInterpreter
+    nested = flex._bridge.invocation()._build_predictor("RLM", "query -> answer", {})
+    nested.generate_action = StaticPredictor(reasoning="submit", code='SUBMIT("42")')
+    with dspy.context(interpreter_factory=factory):
+        assert nested(query="ignored").answer == "42"
+    assert len(factory.instances) == 1
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda **kw: dspy.RLM("question -> answer", **kw),
+        lambda **kw: Flex(BasicQA, **kw),
+        _program_of_thought,
+        _code_act,
+    ],
+)
+@pytest.mark.parametrize("explicit", [None, MockInterpreter, PythonInterpreter])
+def test_module_factory_precedence_at_execution_time(build, explicit):
+    module = build(interpreter_factory=explicit)
+    configured = MockInterpreterFactory()
+    with dspy.context(interpreter_factory=configured):
+        # Resolve at the same boundary used to create each forward's interpreter.
+        interpreter = _create_interpreter(module._interpreter_factory)
+    assert isinstance(interpreter, explicit or MockInterpreter)
+    assert len(configured.instances) == (1 if explicit is None else 0)

@@ -10,7 +10,6 @@ from dspy.predict.parameter import Parameter
 from dspy.predict.predict import _sanitize_lm_state
 from dspy.primitives.code_interpreter import CodeInterpreter, _validate_interpreter_factory
 from dspy.primitives.module import Module
-from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
 from dspy.utils.annotation import experimental
 
@@ -26,8 +25,8 @@ class Flex(Module, Parameter):
     plus plain Python instead of only tuning instructions.
 
     The optimizer-authored code runs inside an interpreter. ``Flex`` never
-    runs it in the host Python process. ``interpreter_factory`` defaults to
-    ``dspy.PythonInterpreter`` (Deno/Pyodide) and must be a zero-argument callable returning a new
+    runs it in the host Python process. ``interpreter_factory`` defaults to the MXC-confined
+    ``dspy.LocalInterpreter`` and must be a zero-argument callable returning a new
     ``CodeInterpreter``. ``dspy.configure(interpreter_factory=...)`` replaces that default.
     Flex may validate or lower source and install its guest shim before execution; a custom
     interpreter therefore defines the Python and standard-library subset available to that source.
@@ -38,8 +37,9 @@ class Flex(Module, Parameter):
         signature: A ``dspy.Signature`` class or string declaring inputs/outputs.
         tools: ``dspy.Tool`` instances or named callables.
         interpreter_factory: Zero-argument callable returning a fresh ``CodeInterpreter`` for each
-            interpreter session. Defaults to ``dspy.PythonInterpreter`` (sandbox, requires Deno).
-            ``dspy.configure(interpreter_factory=...)`` replaces the default.
+            interpreter session. When omitted, uses the active ``dspy.settings.interpreter_factory``
+            or MXC-confined ``dspy.LocalInterpreter``. Pass ``dspy.PythonInterpreter`` explicitly
+            to use Deno/Pyodide.
         max_predictor_calls: Maximum number of predictor calls the optimizer-authored code can
             make per ``forward`. ``None`` removes the limit.
     """
@@ -49,7 +49,7 @@ class Flex(Module, Parameter):
         signature: Any,
         *,
         tools: list[Any] | None = None,
-        interpreter_factory: Callable[[], CodeInterpreter] = PythonInterpreter,
+        interpreter_factory: Callable[[], CodeInterpreter] | None = None,
         max_predictor_calls: int | None = 100,
     ):
         super().__init__()
@@ -61,7 +61,8 @@ class Flex(Module, Parameter):
         self._module_src: str | None = None
         self.lm = None
 
-        _validate_interpreter_factory(interpreter_factory)
+        if interpreter_factory is not None:
+            _validate_interpreter_factory(interpreter_factory)
         self._interpreter_factory = interpreter_factory
         self._max_predictor_calls = max_predictor_calls
 

@@ -80,6 +80,8 @@ def _resolve_signature(signature: Any, custom_types: dict[str, type] | None = No
 
 def _jsonable(value: Any) -> Any:
     """Coerce a predictor output field to a JSON-serializable value."""
+    if isinstance(value, dspy.Image):
+        return {"url": value.url}
     try:
         return to_jsonable_python(value)
     except PydanticSerializationError:
@@ -221,6 +223,7 @@ class FacadeInvocation:
         self._reserve = reserve
         self._originals = originals or {}
         self._predictors: dict[str, Any] = {}
+        self._image_inputs: dict[str, list[str]] = {}
         self._calls = 0
         self._lm_error: tuple[LMError, str] | None = None
 
@@ -236,7 +239,11 @@ class FacadeInvocation:
                 f"dspy.{kind} is not supported through the sandbox dspy bridge yet "
                 f"(bridgeable: {', '.join(BRIDGEABLE_KINDS)})"
             )
+        signature = _resolve_signature(signature, self._custom_types)
         self._predictors[attr_name] = self._build_predictor(kind, signature, kwargs)
+        self._image_inputs[attr_name] = [
+            name for name, field in signature.input_fields.items() if field.annotation is dspy.Image
+        ]
         return attr_name
 
     def call(self, handle: str, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -252,6 +259,9 @@ class FacadeInvocation:
         if predictor is None:
             raise CodeInterpreterError(f"Unknown predictor handle: {handle!r}")
         restored = {k: restore_custom_types(v, self._originals) for k, v in (inputs or {}).items()}
+        for name in self._image_inputs[handle]:
+            if name in restored:
+                restored[name] = dspy.Image(restored[name])
         try:
             with self._lm_scope():
                 return prediction_to_fields(predictor(**restored))
@@ -280,7 +290,7 @@ class FacadeInvocation:
         # A code-executing sub-predictor always runs its inner code on the host module's backend.
         if _accepts_interpreter_factory(cls):
             extra["interpreter_factory"] = self._interpreter_factory
-        return cls(_resolve_signature(signature, self._custom_types), **extra)
+        return cls(signature, **extra)
 
     def _decode_tools(self, value: Any) -> Any:
         """Turn the shim's tool name-markers back into the real host tool objects."""

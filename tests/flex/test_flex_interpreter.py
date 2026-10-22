@@ -16,7 +16,6 @@ from __future__ import annotations
 import ast
 import datetime
 import enum
-import inspect
 import json
 import shutil
 import sys
@@ -64,19 +63,10 @@ class ShoutSig(dspy.Signature):
 # =============================================================================
 
 
-def test_default_interpreter_factory_is_python_interpreter() -> None:
-    # PythonInterpreter is the public default. The resolver lets a configured factory override it.
-    default = inspect.signature(Flex.__init__).parameters["interpreter_factory"].default
-    assert default is dspy.PythonInterpreter
-
-
-@deno_required
 def test_default_is_sandbox() -> None:
-    # With no interpreter_factory argument, Flex builds a PythonInterpreter sandbox (needs Deno).
     flex = Flex(Doubler)
     assert flex._bridge is not None
-    assert flex._interpreter_factory is dspy.PythonInterpreter
-    assert isinstance(resolve_interpreter_factory(flex._interpreter_factory)(), dspy.PythonInterpreter)
+    assert isinstance(resolve_interpreter_factory(flex._interpreter_factory)(), dspy.LocalInterpreter)
 
 
 def test_bare_instance_is_rejected() -> None:
@@ -86,10 +76,10 @@ def test_bare_instance_is_rejected() -> None:
         Flex(Doubler, interpreter_factory=MockInterpreter())  # type: ignore[arg-type]
 
 
-def test_none_interpreter_factory_is_rejected() -> None:
-    # None once meant "run in-process"; that path is gone, so it remains invalid.
-    with pytest.raises(TypeError):
-        Flex(Doubler, interpreter_factory=None)  # type: ignore[arg-type]
+def test_none_interpreter_factory_uses_active_setting() -> None:
+    flex = Flex(Doubler, interpreter_factory=None)
+    with dspy.context(interpreter_factory=MockInterpreter):
+        assert isinstance(resolve_interpreter_factory(flex._interpreter_factory)(), MockInterpreter)
 
 
 def test_factory_is_used_as_is() -> None:

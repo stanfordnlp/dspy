@@ -1,0 +1,29 @@
+{
+  "version": "1.0.1",
+  "url": "https://github.com/microsoft/mxc/releases/download/v1.0.1/mxc-release-binaries.zip",
+  "sha256": "0e832239454ba7fcd338ff56218a287eef4c0a01c1484084b869f55feff8abe9",
+  "license_url": "https://raw.githubusercontent.com/microsoft/mxc/v1.0.1/LICENSE.md",
+  "license_sha256": "d9a1b1e30d633d5732ea18e3cba9538d293ebc53e1a9e4e96ab739e0c5c4f1cb",
+  "targets": {
+    "linux-x86_64": {"system": "Linux", "machine": "x86_64", "wheel_platform": "manylinux_2_34_x86_64", "member": "x64/lxc-exec", "sha256": "5bd6bdf45bc6c0ecc9bccf372762b571de1f468142c4b2ff80fdb4c540922f26"},
+    "linux-aarch64": {"system": "Linux", "machine": "aarch64", "wheel_platform": "manylinux_2_34_aarch64", "member": "arm64/lxc-exec", "sha256": "e8391d55c566ce95c6c838d349941fa0797f037fa617aa0fa4ec39443c6ccddf"},
+    "windows-x86_64": {"system": "Windows", "machine": "x86_64", "wheel_platform": "win_amd64", "member": "x64/wxc-exec.exe", "sha256": "090f5d1f7bb93104ab08dcd4e8034ef954aeefcdaf6658dde5f7dff4cfc12f3a"},
+    "windows-aarch64": {"system": "Windows", "machine": "aarch64", "wheel_platform": "win_arm64", "member": "arm64/wxc-exec.exe", "sha256": "91aa4171e8809f33f19622c381116188eab7d8c8cffad231230a31b58146ee77"},
+    "macos-aarch64": {"system": "Darwin", "machine": "aarch64", "wheel_platform": "macosx_11_0_arm64", "member": "arm64/mxc-exec-mac", "sha256": "c54390e48a25187fdae10758c6a286bede49416cb610c88c6705fd8445e97f60"}
+  },
+  "bubblewrap": {
+    "version": "0.13.1",
+    "source_url": "https://github.com/containers/bubblewrap/releases/download/v0.13.1/bubblewrap-0.13.1.tar.xz",
+    "source_sha256": "0e85c8702248b8dd64144f594147553650cdd0e4c951690345faace79c217c4d",
+    "libcap_source_url": "https://www.kernel.org/pub/linux/libs/security/linux-privs/libcap2/libcap-2.78.tar.xz",
+    "libcap_source_sha256": "0d621e562fd932ccf67b9660fb018e468a683d7b827541df27813228c996bb11",
+    "musl_source_sha256": "d585fd3b613c66151fc3249e8ed44f77020cb5e6c1e635a616d3f9f82460512a",
+    "qualified_x86_64_sha256": "df25afa3338d316da86ec134544ca0b61882a719dab67b152d56590d9208b961",
+    "bundle_files": {
+      "licenses/bubblewrap-COPYING": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+      "licenses/libcap-License": "68467e731f4744bd6e0bb69e8df9c3a994e09cd6b203d0c41327ac6d079c581d",
+      "licenses/musl-COPYRIGHT": "b870108ec5e7790e9f9919064f1b9421d62d5f9b0e6c230c6adf7ea2da62e97b",
+      "sources/build-packages.txt": "2c31f26bd6fe81359c7ce2352759c96700734f7424072a84036ceccea3d92294"
+    }
+  }
+}
