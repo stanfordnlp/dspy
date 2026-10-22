@@ -535,7 +535,7 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter():
                 dspy.streaming.StreamListener(signature_field_name="judgement"),
             ],
         )
-        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.ChatAdapter()):
             output = program(question="why did a chicken cross the kitchen?")
             all_chunks = []
             async for value in output:
@@ -1009,7 +1009,8 @@ async def test_stream_listener_allow_reuse(adapter):
 
 
 @pytest.mark.anyio
-async def test_stream_listener_returns_correct_chunk_xml_adapter():
+@pytest.mark.parametrize("adapter", [None, dspy.XMLAdapter()], ids=["default", "explicit-xml"])
+async def test_stream_listener_returns_correct_chunk_xml_adapter(adapter):
     class MyProgram(dspy.Module):
         def __init__(self):
             super().__init__()
@@ -1062,13 +1063,17 @@ async def test_stream_listener_returns_correct_chunk_xml_adapter():
                 dspy.streaming.StreamListener(signature_field_name="judgement"),
             ],
         )
-        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.XMLAdapter()):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=adapter):
             output = program(question="why did a chicken cross the kitchen?")
             all_chunks = []
+            final = None
             async for value in output:
                 if isinstance(value, dspy.streaming.StreamResponse):
                     all_chunks.append(value)
+                elif isinstance(value, dspy.Prediction):
+                    final = value
 
+    assert final is not None and final.judgement == "The answer is humorous."
     # Verify answer chunks
     answer_chunks = [chunk for chunk in all_chunks if chunk.signature_field_name == "answer"]
     assert len(answer_chunks) > 0

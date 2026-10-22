@@ -236,11 +236,13 @@ def test_multiple_callbacks():
     assert len(callback_2.calls) == 2
 
 
-def test_callback_complex_module():
+@pytest.mark.parametrize("adapter", [None, dspy.ChatAdapter(), dspy.JSONAdapter()])
+def test_callback_complex_module(adapter):
     callback = MyCallback()
     dspy.configure(
         lm=DummyLM({"How are you?": {"answer": "test output", "plan": "No more responses"}}),
         callbacks=[callback],
+        adapter=adapter,
     )
 
     cot = dspy.ChainOfThought("question -> answer", n=3)
@@ -268,11 +270,13 @@ def test_callback_complex_module():
     ]
 
 @pytest.mark.asyncio
-async def test_callback_async_module():
+@pytest.mark.parametrize("adapter", [None, dspy.ChatAdapter(), dspy.JSONAdapter()])
+async def test_callback_async_module(adapter):
     callback = MyCallback()
     with dspy.context(
         lm=DummyLM({"How are you?": {"answer": "test output", "plan": "No more responses"}}),
         callbacks=[callback],
+        adapter=adapter,
     ):
         cot = dspy.ChainOfThought("question -> answer", n=3)
         result = await cot.acall(question="How are you?")

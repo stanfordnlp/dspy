@@ -44,7 +44,7 @@ def test_chain_of_thought_with_native_reasoning():
             choices=[
                 Choices(
                     message=Message(
-                        content="[[ ## answer ## ]]\nParis\n[[ ## completed ## ]]",
+                        content="<answer>\nParis\n</answer>",
                         reasoning_content="Paris is the capital of France.",
                     ),
                 )
@@ -60,8 +60,8 @@ def test_chain_of_thought_with_native_reasoning():
 
         _args, kwargs = mock_completion.call_args
         assert kwargs["reasoning_effort"] == "low"
-        assert "[[ ## reasoning ## ]]" not in str(kwargs["messages"])
-        assert "[[ ## plan ## ]]" not in str(kwargs["messages"])
+        assert "<reasoning>" not in str(kwargs["messages"])
+        assert "<plan>" not in str(kwargs["messages"])
 
 
 def test_chain_of_thought_with_manual_reasoning():
@@ -76,8 +76,8 @@ def test_chain_of_thought_with_manual_reasoning():
                     reasoning="Step-by-step thinking about the capital of France",
                     message=Message(
                         content=(
-                            "[[ ## plan ## ]]\nRecall the capital of France.\n"
-                            "[[ ## answer ## ]]\nParis\n[[ ## completion ## ]]"
+                            "<plan>\nRecall the capital of France.\n</plan>\n"
+                            "<answer>\nParis\n</answer>"
                         )
                     ),
                 )

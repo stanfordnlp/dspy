@@ -72,9 +72,11 @@ class Adapter:
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
 
-        # Decorate format() and parse() method with with_callbacks
-        cls.format = with_callbacks(cls.format)
-        cls.parse = with_callbacks(cls.parse)
+        # Don't wrap inherited callbacks again when subclassing a concrete adapter.
+        if "format" in cls.__dict__ or cls.format is Adapter.format:
+            cls.format = with_callbacks(cls.format)
+        if "parse" in cls.__dict__ or cls.parse is Adapter.parse:
+            cls.parse = with_callbacks(cls.parse)
 
     def _call_preprocess(
         self,
