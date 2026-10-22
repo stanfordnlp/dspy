@@ -1,11 +1,15 @@
+import gc
 import os
 import tempfile
+import threading
+import weakref
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pytest
 
 from dspy.retrievers.embeddings import Embeddings, EmbeddingsWithScores
+from dspy.utils.unbatchify import Unbatchify
 
 
 def dummy_corpus():
@@ -167,3 +171,93 @@ def test_embeddings_with_scores_save_load():
         assert loaded_result.passages == original_result.passages
         assert loaded_result.indices == original_result.indices
         assert loaded_result.scores == pytest.approx(original_result.scores)
+
+
+@pytest.mark.parametrize("retriever_cls", [Embeddings, EmbeddingsWithScores])
+@pytest.mark.parametrize("from_saved", [False, True])
+def test_discarded_embeddings_release_corpus_and_worker(retriever_cls, from_saved, tmp_path):
+    retriever = retriever_cls(dummy_corpus(), dummy_embedder, k=1)
+    if from_saved:
+        retriever.save(str(tmp_path))
+        retriever.search_fn.close()
+        retriever = retriever_cls.from_saved(str(tmp_path), dummy_embedder)
+
+    assert retriever("dog").indices == [1]
+    owner_ref = weakref.ref(retriever)
+    corpus_ref = weakref.ref(retriever.corpus_embeddings)
+    batcher = retriever.search_fn
+    try:
+        del retriever
+        gc.collect()
+        batcher.worker_thread.join(timeout=2)
+        assert owner_ref() is None
+        assert corpus_ref() is None
+        assert not batcher.worker_thread.is_alive()
+    finally:
+        batcher.close()
+
+
+def test_failed_embeddings_load_does_not_leave_worker(monkeypatch, tmp_path):
+    batchers = []
+
+    def track_batcher(*args, **kwargs):
+        batcher = Unbatchify(*args, **kwargs)
+        batchers.append(batcher)
+        return batcher
+
+    monkeypatch.setattr("dspy.retrievers.embeddings.Unbatchify", track_batcher)
+    try:
+        with pytest.raises(FileNotFoundError):
+            Embeddings.from_saved(str(tmp_path / "missing"), dummy_embedder)
+        assert not any(batcher.worker_thread.is_alive() for batcher in batchers)
+    finally:
+        for batcher in batchers:
+            batcher.close()
+
+
+def test_embeddings_context_manager_closes_on_error():
+    retriever = Embeddings(dummy_corpus(), dummy_embedder, k=1)
+    try:
+        with pytest.raises(ValueError, match="caller failed"), retriever as opened:
+            assert opened("dog").indices == [1]
+            raise ValueError("caller failed")
+        assert not retriever.search_fn.worker_thread.is_alive()
+        retriever.close()
+        with pytest.raises(RuntimeError, match="closed"):
+            retriever("dog")
+    finally:
+        retriever.search_fn.close()
+
+
+def test_discarded_embeddings_finish_active_search():
+    started = threading.Event()
+    release = threading.Event()
+
+    def embedder(texts):
+        if texts == ["dog"]:
+            started.set()
+            assert release.wait(timeout=2)
+        return dummy_embedder(texts)
+
+    retriever = Embeddings(dummy_corpus(), embedder, k=1)
+    owner_ref = weakref.ref(retriever)
+    corpus_ref = weakref.ref(retriever.corpus_embeddings)
+    batcher = retriever.search_fn
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            result = executor.submit(batcher, "dog")
+            try:
+                assert started.wait(timeout=2)
+                del retriever
+                gc.collect()
+                assert owner_ref() is not None
+            finally:
+                release.set()
+            assert result.result(timeout=2)[1] == [1]
+        batcher.worker_thread.join(timeout=2)
+        assert not batcher.worker_thread.is_alive()
+        assert owner_ref() is None
+        assert corpus_ref() is None
+    finally:
+        release.set()
+        batcher.close()

@@ -1,6 +1,10 @@
+import queue
+import threading
 import time
 from concurrent.futures import Future
 from unittest.mock import MagicMock
+
+import pytest
 
 from dspy.utils.unbatchify import Unbatchify
 
@@ -48,6 +52,78 @@ def test_unbatchify_batch_size_trigger():
     assert results_3_4 == [31, 41]
 
     unbatcher.close()
+
+
+def test_unbatchify_close_finishes_active_batch_and_rejects_pending():
+    started = threading.Event()
+    release = threading.Event()
+
+    def process(batch):
+        started.set()
+        assert release.wait(timeout=2)
+        return simple_batch_processor(batch)
+
+    unbatcher = Unbatchify(process, max_batch_size=1)
+    closer = threading.Thread(target=unbatcher.close, daemon=True)
+    try:
+        active = unbatcher.submit(10)
+        assert started.wait(timeout=2)
+        pending = unbatcher.submit(20)
+        closer.start()
+        assert unbatcher.stop_event.wait(timeout=2)
+        assert closer.is_alive()
+        release.set()
+        assert active.result(timeout=2) == 11
+        with pytest.raises(RuntimeError, match="closed"):
+            pending.result(timeout=2)
+        closer.join(timeout=2)
+        assert not closer.is_alive()
+        assert not unbatcher.worker_thread.is_alive()
+        unbatcher.close()
+    finally:
+        release.set()
+        unbatcher.close()
+
+
+def test_unbatchify_call_after_close_raises_without_waiting():
+    unbatcher = Unbatchify(simple_batch_processor)
+    unbatcher.close()
+    result = Future()
+
+    def call():
+        try:
+            result.set_result(unbatcher(10))
+        except Exception as exc:
+            result.set_exception(exc)
+
+    caller = threading.Thread(target=call, daemon=True)
+    caller.start()
+    try:
+        with pytest.raises(RuntimeError, match="closed"):
+            result.result(timeout=2)
+    finally:
+        # Unblock the caller if a regression enqueues work after the worker exits.
+        try:
+            _, pending = unbatcher.input_queue.get_nowait()
+        except queue.Empty:
+            pass
+        else:
+            pending.set_exception(RuntimeError("Unbatchify is closed"))
+        caller.join(timeout=2)
+
+
+def test_unbatchify_can_close_from_batch_function():
+    def process(batch):
+        unbatcher.close()
+        return simple_batch_processor(batch)
+
+    unbatcher = Unbatchify(process, max_batch_size=1)
+    try:
+        assert unbatcher.submit(10).result(timeout=2) == 11
+        unbatcher.worker_thread.join(timeout=2)
+        assert not unbatcher.worker_thread.is_alive()
+    finally:
+        unbatcher.close()
 
 
 def test_unbatchify_timeout_trigger():
