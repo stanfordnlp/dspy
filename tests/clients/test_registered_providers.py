@@ -20,9 +20,11 @@ from dspy.clients.backend_selection import select_backend
 from dspy.clients.execution import _select_engine, prepare
 from dspy.lm15 import (
     AccessPolicy,
+    AnthropicCompat,
     EndpointSupport,
     ModelSupport,
     OpenAIChatCompat,
+    OpenAIResponsesCompat,
     ProviderDefinition,
     RegisteredProvider,
     register_provider,
@@ -45,6 +47,15 @@ def server():
             out = {"id": "x", "object": "chat.completion", "model": body["model"],
                    "choices": [{"index": 0, "message": {"role": "assistant", "content": "Paris"}, "finish_reason": "stop"}],
                    "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
+            if self.path == "/v1/responses":
+                out = {"id": "x", "object": "response", "model": body["model"], "status": "completed",
+                       "output": [{"type": "message", "role": "assistant", "content": [
+                           {"type": "output_text", "text": "Paris", "annotations": []}]}],
+                       "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}}
+            elif self.path == "/v1/messages":
+                out = {"id": "x", "type": "message", "model": body["model"], "role": "assistant",
+                       "content": [{"type": "text", "text": "Paris"}], "stop_reason": "end_turn",
+                       "usage": {"input_tokens": 10, "output_tokens": 5}}
             data = json.dumps(out).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -202,6 +213,44 @@ def test_replacing_a_registration_never_splits_an_lm(server):
 
 
 # ─── routing through dspy.LM ──────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("preset", [False, True])
+@pytest.mark.parametrize("dialect", ["chat", "responses", "anthropic"])
+async def test_built_requests_reach_each_registered_dialect(server, dialect, preset, asynchronous):
+    from dspy.clients.requests import build_request
+
+    base, seen = server
+    compat = {"chat": OpenAIChatCompat(max_tokens_field="max_tokens"),
+              "responses": OpenAIResponsesCompat(), "anthropic": AnthropicCompat()}[dialect]
+    declared_base = base
+    if preset:
+        compat, declared_base = {
+            "chat": ("groq", "https://api.groq.com/openai/v1"),
+            "responses": ("openai", "https://api.openai.com/v1"),
+            "anthropic": ("anthropic", "https://api.anthropic.com/v1"),
+        }[dialect]
+    auth = "x-api-key" if dialect == "anthropic" else "bearer"
+    access = AccessPolicy(provider="private-dialect", base_url=declared_base,
+                          auth_modes=(auth,), auth_scheme=(auth,))
+    register_provider(getattr(ProviderDefinition, dialect)(access, compat=compat))
+    lm = dspy.LM("private-dialect/private-model", api_key="lm-key", api_base=base, cache=False, num_retries=0)
+    try:
+        request = build_request(lm, "capital of France?", {"max_tokens": 37, "temperature": 0.3})
+        response = await lm.acall(request) if asynchronous else lm(request)
+        assert response.text == "Paris"
+        sent = seen[-1]
+        assert sent["path"] == {"chat": "/v1/chat/completions", "responses": "/v1/responses",
+                                "anthropic": "/v1/messages"}[dialect]
+        assert sent["headers"]["x-api-key"] == "lm-key" if dialect == "anthropic" else sent["auth"] == "Bearer lm-key"
+        assert sent["body"]["model"] == "private-model"
+        assert sent["body"]["temperature"] == 0.3
+        token_key = "max_output_tokens" if dialect == "responses" else "max_tokens"
+        assert sent["body"][token_key] == 37
+    finally:
+        await lm.aclose() if asynchronous else lm.close()
 
 
 @pytest.mark.parametrize("prefix", ["private-fireworks", "private_fireworks_ai", "private-fireworks-ai"])
@@ -392,7 +441,12 @@ async def test_fallback_is_still_the_declared_provider_for_pricing(litellm_stub)
     assert "names no metadata namespace" in plain.history[-1]["cost_details"]["reason"]
 
 
-def test_a_declared_refusal_is_final_under_auto(litellm_stub, server):
+@pytest.mark.parametrize("reasoning", [
+    {"reasoning_effort": "low"}, {"reasoning": {"effort": "low"}}, {"reasoning": {"enabled": False}},
+])
+def test_a_declared_refusal_is_final_under_auto(litellm_stub, server, reasoning):
+    from dspy.clients.requests import build_request
+
     # thinking_format="none" says the wire has no reasoning field. A
     # reasoning dial on it is a refusal (lm15 MAP-7); sending it through
     # LiteLLM anyway would drop the dial silently, so engine="auto" refuses
@@ -402,8 +456,11 @@ def test_a_declared_refusal_is_final_under_auto(litellm_stub, server):
     register_provider(_definition(base, thinking_format="none", json_schema="reject"))
     lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
     with pytest.raises(dspy.LMUnsupportedFeatureError):
-        lm("hi", reasoning_effort="low")
+        build_request(lm, "hi", reasoning)
+    with pytest.raises(dspy.LMUnsupportedFeatureError):
+        lm("hi", **reasoning)
     assert not litellm_stub
+    assert not seen
     assert lm("hi", response_format={"type": "json_schema", "json_schema": {"name": "x", "schema": {"type": "object"}}}) == ["Paris"]
     assert "response_format" not in seen[-1]["body"]  # adapted and recorded, natively
     lm.close()
