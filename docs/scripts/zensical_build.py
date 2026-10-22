@@ -307,6 +307,20 @@ def page_titles(config: dict[str, object], docs: Path) -> dict[str, str]:
     return titles
 
 
+def _social_card_font_candidates() -> list[Path]:
+    """Resolve DejaVu Sans from a docs-bundled copy, then common OS install paths."""
+    bundled = Path(__file__).resolve().parents[1] / "static" / "fonts" / "DejaVuSans.ttf"
+    return [
+        bundled,
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/TTF/DejaVuSans.ttf"),
+        Path("/usr/local/share/fonts/DejaVuSans.ttf"),
+        Path("/opt/homebrew/share/fonts/DejaVuSans.ttf"),
+        Path("/Library/Fonts/DejaVuSans.ttf"),
+        Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "DejaVuSans.ttf",
+    ]
+
+
 def social_cards(site: Path, site_url: str, titles: dict[str, str], logo: Path) -> None:
     from PIL import Image, ImageDraw, ImageFont
 
@@ -314,10 +328,16 @@ def social_cards(site: Path, site_url: str, titles: dict[str, str], logo: Path) 
     card_dir.mkdir(parents=True, exist_ok=True)
 
     def load_font(size: int):
+        for candidate in _social_card_font_candidates():
+            if candidate.is_file():
+                try:
+                    return ImageFont.truetype(str(candidate), size)
+                except OSError:
+                    continue
         try:
             return ImageFont.truetype("DejaVuSans.ttf", size)
         except OSError:
-            # DejaVu is only guaranteed on Linux; fall back to Pillow's bundled font elsewhere.
+            # Last resort when no DejaVu is installed or bundled (Pillow 10.1+ supports size).
             return ImageFont.load_default(size)
 
     font = load_font(32)
