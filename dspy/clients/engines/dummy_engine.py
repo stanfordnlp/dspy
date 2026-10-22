@@ -4,17 +4,22 @@ from dspy.clients.engines.base import validate_request
 from dspy.lm15 import Message, Response, TextPart, ThinkingPart, Usage, response_to_events
 
 
+def _text(parts):
+    return "".join(part.text for part in parts if isinstance(part, TextPart))
+
+
 class DummyEngine:
     def __init__(self, owner):
         self.owner = owner
 
     def complete(self, request):
         validate_request(request)
+        # Scripted answers are keyed on visible text; media parts carry none.
         messages = []
         if request.system is not None:
-            system = request.system if isinstance(request.system, str) else "".join(p.text for p in request.system)
+            system = request.system if isinstance(request.system, str) else _text(request.system)
             messages.append({"role": "system", "content": system})
-        messages.extend({"role": m.role, "content": m.text or ""} for m in request.messages)
+        messages.extend({"role": m.role, "content": _text(m.parts)} for m in request.messages)
         return self._complete_messages(messages)
 
     def complete_legacy(self, lm, request, *, prompt=None, messages=None, **context):

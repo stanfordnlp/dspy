@@ -13,6 +13,7 @@ import dspy
 from dspy.adapters.types import Type
 from dspy.experimental import Citations, Document
 from dspy.streaming import StatusMessage, StatusMessageProvider, StreamResponse, streaming_response
+from tests.test_utils.engines import patch_litellm_streaming
 
 
 @pytest.mark.anyio
@@ -342,7 +343,7 @@ async def test_streaming_handles_space_correctly():
             model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))]
         )
 
-    with mock.patch("litellm.acompletion", side_effect=gpt_4o_mini_stream):
+    with patch_litellm_streaming(side_effect=gpt_4o_mini_stream):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.ChatAdapter()):
             output = program(question="What is the capital of France?")
             all_chunks = []
@@ -355,16 +356,16 @@ async def test_streaming_handles_space_correctly():
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "parts",
+    "parts, expected",
     [
-        ["[[ ## answer ## ]]\n", "How ", "are ", "you ", "doing?\n\n", "[[ ## completed ## ]]"],
-        ["[[ ## answer ## ]]", "\nHow ", "are ", "you ", "doing?", "\n\n", "[[ ## completed ## ]]"],
-        ["[[ ## answer", " ## ]]", "\nHow ", "are ", "you ", "doing?", "\n\n[[ ## completed ## ]]"],
-        ["[[ ## answer ## ]]\n", "How\n", "are you\n", "doing?", "\n\n[[ ## completed ## ]]"],
-        ["[[ ## answer ## ]]\n", "How ", "are ", "you ", "doing?\n\n"],
+        (["[[ ## answer ## ]]\n", "How ", "are ", "you ", "doing?\n\n", "[[ ## completed ## ]]"], "How are you doing?"),
+        (["[[ ## answer ## ]]", "\nHow ", "are ", "you ", "doing?", "\n\n", "[[ ## completed ## ]]"], "How are you doing?"),
+        (["[[ ## answer", " ## ]]", "\nHow ", "are ", "you ", "doing?", "\n\n[[ ## completed ## ]]"], "How are you doing?"),
+        (["[[ ## answer ## ]]\n", "How\n", "are you\n", "doing?", "\n\n[[ ## completed ## ]]"], "How\nare you\ndoing?"),
+        (["[[ ## answer ## ]]\n", "How ", "are ", "you ", "doing?\n\n"], "How are you doing?"),
     ],
 )
-async def test_streaming_strips_boundary_whitespace_regardless_of_chunking(parts):
+async def test_streaming_strips_boundary_whitespace_regardless_of_chunking(parts, expected):
     program = dspy.streamify(
         dspy.Predict("question->answer"),
         stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
@@ -374,7 +375,7 @@ async def test_streaming_strips_boundary_whitespace_regardless_of_chunking(parts
         for part in parts:
             yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=part))])
 
-    with mock.patch("litellm.acompletion", side_effect=stream):
+    with patch_litellm_streaming(side_effect=stream):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.ChatAdapter()):
             all_chunks = []
             final = None
@@ -384,7 +385,7 @@ async def test_streaming_strips_boundary_whitespace_regardless_of_chunking(parts
                 elif isinstance(value, dspy.Prediction):
                     final = value
 
-    assert "".join([chunk.chunk for chunk in all_chunks]) == final.answer
+    assert "".join([chunk.chunk for chunk in all_chunks]) == final.answer == expected
 
 
 @pytest.mark.llm_call
@@ -527,7 +528,7 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter():
     async def completion_side_effect(*args, **kwargs):
         return stream_generators.pop(0)()  # return new async generator instance
 
-    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+    with patch_litellm_streaming(side_effect=completion_side_effect):
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
@@ -632,9 +633,7 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="None"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="None"))])
 
-    with mock.patch(
-        "litellm.acompletion", new_callable=AsyncMock, side_effect=[gpt_4o_mini_stream_1(), gpt_4o_mini_stream_2()]
-    ):
+    with patch_litellm_streaming(new_callable=AsyncMock, side_effect=[gpt_4o_mini_stream_1(), gpt_4o_mini_stream_2()]):
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
@@ -730,7 +729,7 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter_untokenized_st
         )
         yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content="}\n"))])
 
-    with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[gemini_stream_1(), gemini_stream_2()]):
+    with patch_litellm_streaming(new_callable=AsyncMock, side_effect=[gemini_stream_1(), gemini_stream_2()]):
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
@@ -800,7 +799,7 @@ async def test_stream_listener_missing_completion_marker_chat_adapter():
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="."))])
         # NO COMPLETION MARKER
 
-    with mock.patch("litellm.acompletion", side_effect=incomplete_stream):
+    with patch_litellm_streaming(side_effect=incomplete_stream):
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
@@ -863,7 +862,7 @@ async def test_stream_listener_returns_correct_chunk_json_adapter_untokenized_st
         )
         yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content="}\n"))])
 
-    with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[gemini_stream_1(), gemini_stream_2()]):
+    with patch_litellm_streaming(new_callable=AsyncMock, side_effect=[gemini_stream_1(), gemini_stream_2()]):
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
@@ -903,7 +902,7 @@ async def test_status_message_non_blocking():
 
     program = dspy.streamify(MyProgram(), status_message_provider=StatusMessageProvider())
 
-    with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[dummy_tool]):
+    with patch_litellm_streaming(new_callable=AsyncMock, side_effect=[dummy_tool]):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)):
             output = program(question="why did a chicken cross the kitchen?")
             timestamps = []
@@ -931,7 +930,7 @@ async def test_status_message_non_blocking_async_program():
 
     program = dspy.streamify(MyProgram(), status_message_provider=StatusMessageProvider(), is_async_program=True)
 
-    with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[dummy_tool]):
+    with patch_litellm_streaming(new_callable=AsyncMock, side_effect=[dummy_tool]):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)):
             output = program(question="why did a chicken cross the kitchen?")
             timestamps = []
@@ -995,7 +994,7 @@ async def test_stream_listener_allow_reuse(adapter):
     async def completion_side_effect(*args, **kwargs):
         return stream_generators.pop(0)()  # return new async generator instance
 
-    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+    with patch_litellm_streaming(side_effect=completion_side_effect):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=adapter):
             output = program(question="why did a chicken cross the kitchen?")
             all_chunks = []
@@ -1054,7 +1053,7 @@ async def test_stream_listener_returns_correct_chunk_xml_adapter():
     async def completion_side_effect(*args, **kwargs):
         return stream_generators.pop(0)()
 
-    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+    with patch_litellm_streaming(side_effect=completion_side_effect):
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
@@ -1161,7 +1160,7 @@ async def test_xml_stream_preserves_literal_text(response, expected, chunk_size,
                 )],
             )
 
-    with mock.patch("litellm.acompletion", side_effect=stream):
+    with patch_litellm_streaming(side_effect=stream):
         with dspy.context(
             lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False),
             adapter=dspy.XMLAdapter(use_json_adapter_fallback=False),
@@ -1207,7 +1206,7 @@ async def test_xml_stream_recovers_html_without_consuming_following_field(chunk_
             dspy.streaming.StreamListener(signature_field_name=name) for name in ("html", "count", "note")
         ],
     )
-    with mock.patch("litellm.acompletion", side_effect=stream):
+    with patch_litellm_streaming(side_effect=stream):
         with dspy.context(
             lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False),
             adapter=dspy.XMLAdapter(use_json_adapter_fallback=False),
@@ -1252,7 +1251,7 @@ async def test_xml_stream_skips_nested_fields_with_top_level_names(chunk_size, v
             yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(content=response[start:start + chunk_size]))])
 
     program = dspy.streamify(dspy.Predict(signature), stream_listeners=[dspy.streaming.StreamListener("answer")])
-    with mock.patch("litellm.acompletion", side_effect=stream):
+    with patch_litellm_streaming(side_effect=stream):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=adapter):
             if variant == "unknown_field":
                 with pytest.raises(dspy.utils.exceptions.AdapterParseError):
@@ -1293,7 +1292,7 @@ async def test_xml_stream_preserves_list_item_boundaries(chunk_size, compact, va
             yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(content=response[start:start + chunk_size]))])
 
     program = dspy.streamify(dspy.Predict(Result), stream_listeners=[dspy.streaming.StreamListener("answer")])
-    with mock.patch("litellm.acompletion", side_effect=stream):
+    with patch_litellm_streaming(side_effect=stream):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=adapter):
             if variant != "valid":
                 with pytest.raises(dspy.utils.exceptions.AdapterParseError):
@@ -1327,7 +1326,7 @@ async def test_xml_stream_reuse_after_native_reasoning():
 
     program = dspy.streamify(Twice(), stream_listeners=[dspy.streaming.StreamListener("reasoning", allow_reuse=True)])
     with (
-        mock.patch("litellm.acompletion", side_effect=stream),
+        patch_litellm_streaming(side_effect=stream),
         mock.patch("litellm.supports_reasoning", return_value=True),
         dspy.context(
             lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False),
@@ -1358,7 +1357,7 @@ async def test_xml_stream_native_tools_ignore_incomplete_accompanying_thought():
 
     program = dspy.streamify(dspy.Predict(Result), stream_listeners=[dspy.streaming.StreamListener("answer")])
     with (
-        mock.patch("litellm.acompletion", side_effect=stream),
+        patch_litellm_streaming(side_effect=stream),
         mock.patch("litellm.supports_function_calling", return_value=True),
         dspy.context(
             lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False),
@@ -1412,11 +1411,12 @@ async def test_streaming_allows_custom_streamable_type():
 
         @classmethod
         def parse_stream_chunk(cls, chunk):
-            return CustomType(message=chunk.choices[0].delta.content)
+            content = chunk.choices[0].delta.content
+            return CustomType(message=content) if content is not None else None
 
         @classmethod
-        def parse_lm_response(cls, response: dict) -> "CustomType":
-            return CustomType(message=response.split("\n\n")[0])
+        def parse_lm_response(cls, response) -> "CustomType":
+            return CustomType(message=response.text.split("\n\n")[0])
 
     class CustomSignature(dspy.Signature):
         question: str = dspy.InputField()
@@ -1438,7 +1438,7 @@ async def test_streaming_allows_custom_streamable_type():
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]"))])
 
-    with mock.patch("litellm.acompletion", side_effect=stream):
+    with patch_litellm_streaming(side_effect=stream):
         with dspy.context(
             lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.ChatAdapter(native_response_types=[CustomType])
         ):
@@ -1514,11 +1514,13 @@ async def test_streaming_with_citations():
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" at"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" 100°C"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=".\n\n[[ ##"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" citations ## ]]\n[]\n\n[[ ##"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" completed"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" ## ]]"))])
 
-    # Mock the final response choice to include provider_specific_fields with citations
-    with mock.patch("litellm.acompletion", return_value=citation_stream()):
+    # The provider's citation reaches the listener as a streamed part and the
+    # final prediction as a CitationPart of the response.
+    with patch_litellm_streaming(return_value=citation_stream()):
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
@@ -1560,7 +1562,8 @@ async def test_streaming_with_citations():
             # Test that prediction contains the expected fields
             assert final_prediction is not None
             assert hasattr(final_prediction, "answer")
-            assert hasattr(final_prediction, "citations")
+            assert final_prediction.citations[0].cited_text == "water boils at 100°C"
+            assert final_prediction.citations[0].document_title == "Physics Facts"
 
 
 # Test Pydantic Models
@@ -1618,7 +1621,7 @@ async def test_chat_adapter_simple_pydantic_streaming():
         ],
     )
 
-    with mock.patch("litellm.acompletion", side_effect=chat_stream):
+    with patch_litellm_streaming(side_effect=chat_stream):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.ChatAdapter()):
             output = program(question="Say hello")
             chunks = []
@@ -1667,7 +1670,7 @@ async def test_chat_adapter_with_generic_type_annotation():
         ],
     )
 
-    with mock.patch("litellm.acompletion", side_effect=chat_stream):
+    with patch_litellm_streaming(side_effect=chat_stream):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.ChatAdapter()):
             output = program(question="Say hello")
             chunks = []
@@ -1717,7 +1720,7 @@ async def test_chat_adapter_nested_pydantic_streaming():
         ],
     )
 
-    with mock.patch("litellm.acompletion", side_effect=nested_stream):
+    with patch_litellm_streaming(side_effect=nested_stream):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.ChatAdapter()):
             output = program(question="Generate nested response")
             chunks = []
@@ -1773,7 +1776,7 @@ async def test_chat_adapter_mixed_fields_streaming():
         ],
     )
 
-    with mock.patch("litellm.acompletion", side_effect=mixed_stream):
+    with patch_litellm_streaming(side_effect=mixed_stream):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.ChatAdapter()):
             output = program(question="Generate mixed response")
             summary_chunks = []
@@ -1825,7 +1828,7 @@ async def test_json_adapter_simple_pydantic_streaming():
         ],
     )
 
-    with mock.patch("litellm.acompletion", side_effect=json_stream):
+    with patch_litellm_streaming(side_effect=json_stream):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()):
             output = program(question="Say hello in JSON")
             chunks = []
@@ -1876,7 +1879,7 @@ async def test_json_adapter_bracket_balance_detection():
         ],
     )
 
-    with mock.patch("litellm.acompletion", side_effect=complex_json_stream):
+    with patch_litellm_streaming(side_effect=complex_json_stream):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()):
             output = program(question="Generate complex JSON")
             chunks = []
@@ -1929,7 +1932,7 @@ async def test_json_adapter_multiple_fields_detection():
         ],
     )
 
-    with mock.patch("litellm.acompletion", side_effect=multi_field_stream):
+    with patch_litellm_streaming(side_effect=multi_field_stream):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()):
             output = program(question="Generate two responses")
             first_chunks = []
@@ -2077,7 +2080,7 @@ async def test_streaming_reasoning_model():
             choices=[StreamingChoices(delta=Delta(content="!\n\n[[ ## completed ## ]]"))],
         )
 
-    with mock.patch("litellm.acompletion", side_effect=reasoning_stream):
+    with patch_litellm_streaming(side_effect=reasoning_stream):
         with mock.patch("litellm.supports_reasoning", return_value=True):
             program = dspy.streamify(
                 MyProgram(),
@@ -2169,7 +2172,7 @@ async def test_stream_listener_empty_last_chunk_chat_adapter():
             choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))],
         )
 
-    with mock.patch("litellm.acompletion", side_effect=mock_stream):
+    with patch_litellm_streaming(side_effect=mock_stream):
         program = dspy.streamify(
             predict,
             stream_listeners=[
@@ -2224,7 +2227,7 @@ async def test_stream_listener_empty_last_chunk_json_adapter():
         )
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n}"))])
 
-    with mock.patch("litellm.acompletion", side_effect=mock_stream):
+    with patch_litellm_streaming(side_effect=mock_stream):
         program = dspy.streamify(
             predict,
             stream_listeners=[
@@ -2363,7 +2366,7 @@ async def test_streaming_reasoning_fallback():
             choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))],
         )
 
-    with mock.patch("litellm.acompletion", side_effect=non_reasoning_stream):
+    with patch_litellm_streaming(side_effect=non_reasoning_stream):
         with mock.patch("litellm.supports_reasoning", return_value=False):
             program = dspy.streamify(
                 MyProgram(),
@@ -2482,7 +2485,7 @@ async def test_default_cot_fallback_streams_reasoning(adapter_type, mode):
     # Keep supported-but-disabled cases distinct from models without native reasoning.
     with (
         mock.patch("litellm.supports_reasoning", return_value=mode != "unsupported"),
-        mock.patch("litellm.acompletion", side_effect=stream),
+        patch_litellm_streaming(side_effect=stream),
         dspy.context(lm=lm, adapter=adapter_type()),
     ):
         values = [value async for value in program(question="Count items", config=config)]
@@ -2515,7 +2518,7 @@ async def test_xml_streaming_recognizes_a_renamed_reasoning_sibling():
     )
     with (
         mock.patch("litellm.supports_reasoning", return_value=False),
-        mock.patch("litellm.acompletion", side_effect=stream),
+        patch_litellm_streaming(side_effect=stream),
         dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.XMLAdapter()),
     ):
         values = [value async for value in program(question="Count items")]
@@ -2541,3 +2544,135 @@ def test_streamify_keeps_a_group_of_several_failures():
     assert _single_failure(group_class("two", [ValueError("a"), ValueError("b")])) is None
     assert isinstance(_single_failure(group_class("outer", [group_class("inner", [KeyError("k")])])), KeyError)
     assert _single_failure(ValueError("plain")) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("model_type", ["text", "responses"])
+async def test_streamify_mixes_nonchat_predictions_with_streamed_chat(model_type, asynchronous, monkeypatch):
+    import litellm
+
+    from dspy.lm15 import StreamDeltaEvent, StreamEndEvent, StreamStartEvent, TextDelta
+    from tests.test_utils.engines import AsyncRecordingEngine
+
+    calls = []
+    text = "[[ ## city ## ]]\nParis\n\n[[ ## completed ## ]]"
+
+    def complete(**kwargs):
+        calls.append(kwargs)
+        assert not kwargs.get("stream")
+        if model_type == "text":
+            return {"choices": [{"text": text, "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 9, "completion_tokens": 4, "total_tokens": 13}}
+        return {"status": "completed", "output": [{"type": "message", "role": "assistant", "content": [
+            {"type": "output_text", "text": text, "annotations": []}]}],
+            "usage": {"input_tokens": 9, "output_tokens": 4, "total_tokens": 13}}
+
+    async def acomplete(**kwargs):
+        return complete(**kwargs)
+
+    method = "text_completion" if model_type == "text" else "responses"
+    monkeypatch.setattr(litellm, method, complete)
+    monkeypatch.setattr(litellm, f"a{method}", acomplete)
+    nonchat = dspy.LM("openai/fake", engine="litellm", model_type=model_type, cache=True, num_retries=0)
+
+    class Chat:
+        def complete(self, request):
+            raise AssertionError("The chat prediction must still stream")
+
+        def stream(self, request):
+            yield StreamStartEvent(model=request.model)
+            text = "[[ ## answer ## ]]\nEurope\n\n[[ ## completed ## ]]"
+            for offset in range(0, len(text), 4):
+                yield StreamDeltaEvent(TextDelta(text[offset:offset + 4]))
+            yield StreamEndEvent(finish_reason="stop")
+
+    engine = Chat()
+    chat = dspy.LM("custom/chat", engine=engine, async_engine=AsyncRecordingEngine(engine), cache=True)
+
+    class Program(dspy.Module):
+        def __init__(self):
+            self.helper = dspy.Predict("question -> city")
+            self.helper.set_lm(nonchat)
+            self.chat = dspy.Predict("city -> answer")
+            self.chat.set_lm(chat)
+
+        def forward(self, question):
+            return self.chat(city=self.helper(question=question).city)
+
+        async def aforward(self, question):
+            city = (await self.helper.acall(question=question)).city
+            return await self.chat.acall(city=city)
+
+    program = dspy.streamify(Program(), is_async_program=asynchronous, stream_listeners=[
+        dspy.streaming.StreamListener("city"), dspy.streaming.StreamListener("answer"),
+    ])
+    with dspy.context(adapter=dspy.ChatAdapter(use_json_adapter_fallback=False)):
+        for cached in (False, True):
+            values = [value async for value in program(question="Capital of France?")]
+            assert values[-1].answer == "Europe"
+            chunks = [value for value in values if isinstance(value, StreamResponse)]
+            assert all(chunk.signature_field_name == "answer" for chunk in chunks)
+            assert "".join(chunk.chunk for chunk in chunks) == ("" if cached else "Europe")
+    assert len(calls) == 1
+    assert nonchat.history[0]["usage"]["total_tokens"] == 13
+    assert nonchat.history[1]["usage"] == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("placement", ["top", "nested", "both"])
+@pytest.mark.parametrize("indexed", [False, True])
+async def test_litellm_thinking_stream_preserves_text_and_replay(asynchronous, placement, indexed):
+    import json
+
+    from dspy.lm15 import AnthropicLM, Message, Request, ThinkingPart
+
+    async def stream(*args, **kwargs):
+        # Older SDK signatures repeat accumulated thinking; newer versions
+        # emit an empty signature fragment and include a block index.
+        fragments = [
+            (0, {"type": "thinking", "thinking": "First "}),
+            (0, {"type": "thinking", "thinking": "thought. "}),
+            (0, {"type": "thinking", "thinking": "" if indexed else "First thought. ", "signature": "sig-one"}),
+            (1, {"type": "redacted_thinking", "data": "opaque-redacted"}),
+            (2, {"type": "thinking", "thinking": "Second thought."}),
+            (2, {"type": "thinking", "thinking": "" if indexed else "First thought. Second thought.",
+                 "signature": "sig-two"}),
+        ]
+        for index, fragment in fragments:
+            block = {**fragment, **({"index": index + 7} if indexed else {})}
+            reasoning = fragment.get("thinking", "") if not fragment.get("signature") else ""
+            fields = {"reasoning_content": reasoning}
+            if placement in {"top", "both"}:
+                fields["thinking_blocks"] = [block]
+            if placement in {"nested", "both"}:
+                fields["provider_specific_fields"] = {"thinking_blocks": [block]}
+            yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(**fields))])
+        for text in ("[[ ## answer ## ]]\n", "42\n\n[[ ## completed ## ]]"):
+            yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(content=text))])
+        yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(), finish_reason="stop")],
+                                  usage={"prompt_tokens": 9, "completion_tokens": 4, "total_tokens": 13})
+
+    lm = dspy.LM("anthropic/claude-sonnet-4-5", engine="litellm", cache=True, num_retries=0)
+    program = dspy.streamify(dspy.ChainOfThought("question -> answer"), is_async_program=asynchronous,
+                            stream_listeners=[dspy.streaming.StreamListener("reasoning")])
+    with patch_litellm_streaming(side_effect=stream), dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        for cached in (False, True):
+            values = [value async for value in program(question="Think carefully")]
+            assert values[-1].answer == "42"
+            assert values[-1].reasoning == "First thought. Second thought."
+            text = "".join(value.chunk for value in values if isinstance(value, StreamResponse))
+            assert text == ("" if cached else "First thought. Second thought.")
+    response = lm.history[0]["response"]
+    thoughts = response.message.parts_of(ThinkingPart)
+    assert [part.text for part in thoughts] == ["First thought. ", "", "Second thought."]
+    replay = Request(model="claude-sonnet-4-5", messages=(Message.user("Think"), response.message, Message.user("Continue")))
+    body = AnthropicLM(api_key="test").build_request(replay, stream=False).body
+    assert json.loads(body)["messages"][1]["content"][:3] == [
+        {"type": "thinking", "thinking": "First thought. ", "signature": "sig-one"},
+        {"type": "redacted_thinking", "data": "opaque-redacted"},
+        {"type": "thinking", "thinking": "Second thought.", "signature": "sig-two"},
+    ]
+    assert lm.history[0]["usage"]["total_tokens"] == 13
+    assert lm.history[1]["usage"] == {}
