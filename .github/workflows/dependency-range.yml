@@ -54,6 +54,8 @@ jobs:
         env:
           PROFILE: ${{ matrix.profile }}
           RESOLUTION: ${{ matrix.resolution }}
+          # Let new package uploads age for 72 hours before testing the latest versions.
+          UV_EXCLUDE_NEWER: ${{ matrix.profile == 'latest' && '3 days' || 'false' }}
         run: |
           uv pip compile pyproject.toml \
             --extra deno \
