@@ -609,7 +609,8 @@ class LM(BaseLM):
         state.update(
             {
                 "finetuning_model": self.finetuning_model,
-                "launch_kwargs": self.launch_kwargs,
+                # The launch API key is a server credential; keep it out of saved state.
+                "launch_kwargs": {key: value for key, value in self.launch_kwargs.items() if key != "api_key"},
                 "train_kwargs": self.train_kwargs,
             }
         )
