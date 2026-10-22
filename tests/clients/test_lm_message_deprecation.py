@@ -214,7 +214,9 @@ def test_callback_call_on_another_lm_is_not_hidden_even_with_same_messages():
 
     class Callback(BaseCallback):
         def on_lm_start(self, call_id, instance, inputs):
-            other(messages=inputs["messages"])
+            from dspy.clients.lm15_boundary import request_kwargs
+
+            other(messages=request_kwargs(inputs["prompt"], "chat")["messages"])
 
     lm, _ = make_lm("[[ ## answer ## ]]\nok", callbacks=[Callback()])
     with warnings.catch_warnings(record=True) as recorded:

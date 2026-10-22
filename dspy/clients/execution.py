@@ -58,7 +58,9 @@ class PreparedCall:
     def key(self, lm, asynchronous):
         if self.request is not None:
             return {"_fn_identifier": "dspy.clients.lm15.complete.async" if asynchronous else "dspy.clients.lm15.complete",
-                    "request": request_to_dict(self.request), "rollout_id": self.kwargs.get("rollout_id")}
+                    "request": request_to_dict(self.request), "model_type": lm.model_type,
+                    "rollout_id": self.kwargs.get("rollout_id"),
+                    **{key: value for key, value in {**lm.kwargs, **self.kwargs}.items() if key in CLIENT_KEYS}}
         suffix = {"chat": "completion", "text": "text_completion", "responses": "responses_completion"}[lm.model_type]
         name = ("alitellm_" if asynchronous else "litellm_") + suffix
         key = {**self.legacy, "_fn_identifier": f"dspy.clients.lm.{name}"}
@@ -128,13 +130,18 @@ def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
 
         validate_request(request)
         _check_encodable(request_to_dict(request), "request")
-        extra = set(kwargs) - {"cache", "rollout_id"}
+        extra = set(kwargs) - {"cache", "rollout_id"} - CLIENT_KEYS
         if extra:
             raise TypeError(f"Generation options belong in Request.config: {sorted(extra)}")
         from dspy.clients.lm15_boundary import snapshot_request
 
         request = snapshot_request(request)
-        legacy = {"model": lm.model}
+        if managed:
+            from dspy.clients.lm import _refuse_client_settings
+
+            _refuse_client_settings(lm._engine_spec, kwargs, where="LM call")
+        legacy = {"model": lm.model, **{key: value for key, value in kwargs.items() if key in CLIENT_KEYS}}
+        kwargs.setdefault("rollout_id", lm.kwargs.get("rollout_id"))
         use_cache = kwargs.get("cache", lm.cache) if managed and getattr(lm, "_cache_responses", True) else False
         return PreparedCall(None, None, kwargs, legacy, request, use_cache, 1, managed)
     if managed and not isinstance(getattr(lm, "_engine_spec", "auto"), str):
@@ -288,7 +295,7 @@ def _select_engine(lm, call, asynchronous):
                 warn_legacy_shortcut()
             return backend, None, None
         return backend, _canonical(call), None
-    selection = select_backend(lm, call.legacy)
+    selection = select_backend(lm, call.legacy, call.request)
     native, resolution, clients = selection.native, selection.resolution, selection.clients
     from dspy.lm15 import _binding_for, _definitions
 
@@ -487,12 +494,19 @@ def _accept_response(lm, call, state, results, response, provider, request):
 
 
 def _accept_end(lm, call, state, results, accumulator, provider, request):
+    from dspy.clients.lm15_boundary import repair_tool_arguments
+
     state.completed = True
     try:
         response = accumulator.response()
     except StreamAssemblyError as exc:
         _retain_response_usage(state, results, exc.partial, provider)
         raise
+    response = repair_tool_arguments(response, (
+        (str(meta.get("id") or f"tool_call_{index}"), str(meta["name"]), raw)
+        for index, raw in accumulator.tool_call_raw.items()
+        if (meta := accumulator.tool_call_meta.get(index)) and meta.get("name")
+    ))
     _accept_response(lm, call, state, results, response, provider, request)
 
 
@@ -583,7 +597,9 @@ def _attempt(lm, call, backend, request, provider, state, results):
                 _price_legacy(lm, result, provider)
         finally:
             _legacy_done(state, results, progress)
-    elif stream is None:
+    # Program-level streaming must allow non-streaming helper predictions.
+    # These compatibility endpoints complete without token chunks.
+    elif stream is None or (isinstance(backend, LiteLLMEngine) and backend.model_type != "chat"):
         try:
             response = backend.complete(request)
         except StreamAssemblyError as exc:
@@ -662,7 +678,7 @@ async def _aattempt(lm, call, backend, request, provider, state, results):
                 await asyncio.to_thread(_price_legacy, lm, result, provider)  # metadata lookup off the loop
         finally:
             _legacy_done(state, results, progress)
-    elif stream is None:
+    elif stream is None or (isinstance(backend, AsyncLiteLLMEngine) and backend.model_type != "chat"):
         try:
             response = await backend.complete(request)
         except StreamAssemblyError as exc:

@@ -121,6 +121,16 @@ class BaseLM:
         return dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
 
     @property
+    def engine(self):
+        """The configured engine, or None for a legacy custom LM."""
+        return getattr(self, "_engine_spec", None)
+
+    @property
+    def async_engine(self):
+        """The configured async engine, or None for a legacy custom LM."""
+        return getattr(self, "_async_engine_spec", None)
+
+    @property
     def supports_function_calling(self) -> bool:
         """Whether the model supports function calling (tool use)."""
         return False

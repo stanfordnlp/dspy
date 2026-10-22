@@ -20,13 +20,10 @@ anyio = require("anyio")
 logger = logging.getLogger(__name__)
 
 
-def _is_litellm_model_response_stream(value: Any) -> bool:
+def _is_lm_stream_chunk(value: Any) -> bool:
     from dspy.clients.engines.streaming import EngineChunk
 
-    if isinstance(value, EngineChunk):
-        return True
-    cls = type(value)
-    return cls.__name__ == "ModelResponseStream" and cls.__module__.startswith("litellm")
+    return isinstance(value, EngineChunk)
 
 
 if TYPE_CHECKING:
@@ -227,7 +224,7 @@ def streamify(
                                 yield final_chunk
                             listener._reset()
                         listener._set_signature(value.signature)
-                elif _is_litellm_model_response_stream(value):
+                elif _is_lm_stream_chunk(value):
                     if len(predict_id_to_listener) == 0:
                         # No listeners are configured, yield the chunk directly for backwards compatibility.
                         yield value
@@ -325,7 +322,7 @@ async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:
         if isinstance(value, Prediction):
             data = {"prediction": dict(value.items(include_dspy=False))}
             yield f"data: {orjson.dumps(data).decode()}\n\n"
-        elif _is_litellm_model_response_stream(value):
+        elif _is_lm_stream_chunk(value):
             data = {"chunk": value.json()}
             yield f"data: {orjson.dumps(data).decode()}\n\n"
         elif isinstance(value, str) and value.startswith("data:"):

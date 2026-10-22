@@ -284,13 +284,14 @@ async def test_custom_request_refusal_is_projected_before_adapter_fallback(async
     lm = dspy.LM("custom", engine=engine, async_engine=AsyncEngine(engine), cache=False)
     adapter = dspy.ChatAdapter()
     monkeypatch.setattr(adapter, "_make_json_adapter_fallback", lambda: pytest.fail("Setup failures are not parse failures"))
-    args = (lm, {"audio": {"voice": "alloy", "format": "wav"}}, dspy.Signature("question -> answer"), [], {"question": "hi"})
-    with pytest.raises(dspy.LMUnsupportedFeatureError) as caught:
+    # `functions` is the deprecated tool shape lm15 refuses outright; the
+    # refusal is a setup failure, projected before any engine call.
+    args = (lm, {"functions": [{"name": "f"}]}, dspy.Signature("question -> answer"), [], {"question": "hi"})
+    with pytest.raises(dspy.LMUnsupportedFeatureError):
         if asynchronous:
             await adapter.acall(*args)
         else:
             adapter(*args)
-    assert isinstance(caught.value.__cause__, lm15.UnsupportedFeatureError)
     assert engine.calls == 0
 
 

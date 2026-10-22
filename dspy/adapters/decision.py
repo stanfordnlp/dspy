@@ -10,11 +10,11 @@ from functools import lru_cache
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
 from dspy.adapters.decision_state import DecisionState
-from dspy.adapters.types.base_type import split_message_content_for_custom_types
+from dspy.adapters.types.base_type import parts_from_text
 from dspy.adapters.types.bounding_box import BoundingBox
 from dspy.adapters.types.decision import Choice, Noul, Probability, Score
 from dspy.dsp.utils.settings import settings
-from dspy.lm15 import Config, DataPart, Message, Request, bounding_box, choice, request_from_openai_chat, score, yes_no
+from dspy.lm15 import Config, DataPart, Message, Request, TextPart, bounding_box, choice, score, yes_no
 from dspy.utils.exceptions import AdapterParseError
 
 
@@ -118,14 +118,10 @@ class DecisionAdapter:
                     instructions = name if desc == f"${{{name}}}" else desc or name
                     properties[name] = bounding_box(instructions)
                     questions[name] = {"type": "box", "instructions": instructions}
-            # Keep text-only state structured. For media, reuse DSPy's marker
-            # expansion and lm15's conversion rather than encoding images here.
-            messages = split_message_content_for_custom_types([
-                {"role": "user", "content": json.dumps(state, ensure_ascii=False)}
-            ])
-            message = Message.user(DataPart(value=state))
-            if isinstance(messages[0]["content"], list):
-                message = request_from_openai_chat({"model": lm.model, "messages": messages}).messages[0]
+            # Keep text-only state structured; expand media markers directly to
+            # canonical parts without round-tripping through provider messages.
+            parts = parts_from_text(json.dumps(state, ensure_ascii=False))
+            message = Message.user(parts if any(not isinstance(part, TextPart) for part in parts) else DataPart(value=state))
             # The schema declares answer spaces; native questions retain structured instructions and criteria.
             response_format = {"type": "json_schema", "schema": {"type": "object", "properties": properties}}
             return Request(

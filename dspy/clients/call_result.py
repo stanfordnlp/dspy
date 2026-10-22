@@ -1,5 +1,6 @@
 """DSPy execution metadata around unmodified lm15 responses."""
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -32,25 +33,27 @@ def attributes(obj):
     return obj
 
 
-def legacy_output(response: Response, *, logprobs=False):
-    import json
-
-    # Adapters still consume JSON text; typed callers keep the original DataPart.
+def response_text(response: Response) -> str | None:
+    """The visible answer text, even when tool calls or media accompany it."""
     texts = [part.text if isinstance(part, TextPart) else json.dumps(part.value, ensure_ascii=False)
              for part in response.message.parts if isinstance(part, (TextPart, DataPart))]
-    thinking = [part.text for part in response.message.parts if isinstance(part, ThinkingPart)]
-    output = {"text": "".join(texts) if texts else None}
-    if any(thinking):
-        output["reasoning_content"] = "".join(thinking)
-    if response.tool_calls:
+    return "".join(texts) if texts else None
+
+
+def legacy_output(response: Response, *, logprobs=False):
+    thinking = "".join(part.text for part in response.message.parts if isinstance(part, ThinkingPart))
+    output = {"text": response_text(response)}
+    if thinking:
+        output["reasoning_content"] = thinking
+    if tool_calls := response.tool_calls:
         output["tool_calls"] = [attributes({
             "id": call.id, "type": "function",
             "function": {"name": call.name, "arguments": json.dumps(call.input)},
-        }) for call in response.tool_calls]
-    if response.citations:
+        }) for call in tool_calls]
+    if citations := response.citations:
         output["citations"] = [
             {key: val for key, val in {"text": part.text, "title": part.title, "url": part.url}.items() if val is not None}
-            for part in response.citations
+            for part in citations
         ]
     if logprobs:
         output["logprobs"] = attributes({"content": [

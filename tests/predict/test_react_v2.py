@@ -3,8 +3,8 @@ import asyncio
 import pytest
 
 import dspy
-from dspy.dsp.utils.utils import dotdict
 from dspy.utils.exceptions import ContextWindowExceededError
+from tests.test_utils.engines import make_response
 
 
 class ReasoningDummyLM(dspy.utils.DummyLM):
@@ -194,9 +194,9 @@ def test_react_v2_forced_submit_on_empty_tool_calls():
 
     assert pred.answer == "forced"
     assert pred.termination_reason == "forced_submit"
-    assert lm.history[0]["kwargs"]["reasoning_effort"] == "low"
-    assert "tool_choice" not in lm.history[1]["kwargs"]
-    assert lm.history[1]["kwargs"].get("reasoning_effort") is None
+    assert lm.history[0]["request"].config.reasoning.effort == "low"
+    assert lm.history[1]["request"].config.tool_choice is None
+    assert lm.history[1]["request"].config.reasoning is None
 
 
 @pytest.mark.parametrize("adapter", [None, dspy.JSONAdapter()], ids=["default", "json"])
@@ -224,101 +224,63 @@ def test_react_v2_forced_submit_with_native_flag_but_unsupported_lm(adapter):
     assert "tools" not in lm.history[1]["kwargs"]
 
 
-class NativeToolLM(dspy.BaseLM):
-    def __init__(self):
-        super().__init__("native-tool-lm", "chat", 0.0, 1000, True)
-        self.calls = []
+class _ToolCallEngine:
+    """Answer the first request with the given tool calls, then submit."""
 
-    @property
-    def supports_function_calling(self):
-        return True
+    def __init__(self, first_calls, final_answer):
+        self.first_calls = first_calls
+        self.final_answer = final_answer
+        self.requests = []
+        self.supports_function_calling = True
 
-    def forward(self, prompt=None, messages=None, **kwargs):
-        self.calls.append({"messages": messages, "kwargs": kwargs})
-        if len(self.calls) == 1:
-            tool_call = dotdict(
-                id="call_provider_1",
-                type="function",
-                function=dotdict(name="lookup", arguments='{"query":"cats"}'),
-            )
+    def complete(self, request):
+        self.requests.append(request)
+        if len(self.requests) == 1:
+            calls = self.first_calls
         else:
-            tool_call = dotdict(
-                id="call_submit",
-                type="function",
-                function=dotdict(name="submit", arguments='{"answer":"found cats"}'),
-            )
-
-        return dotdict(
-            choices=[
-                dotdict(
-                    message=dotdict(content=None, tool_calls=[tool_call]),
-                    finish_reason="tool_calls",
-                )
-            ],
-            usage=dotdict(prompt_tokens=0, completion_tokens=0, total_tokens=0),
-            model="native-tool-lm",
-        )
+            calls = [("call_submit", "submit", {"answer": self.final_answer})]
+        return make_response(tool_calls=calls, model=request.model)
 
 
-class ParallelNativeToolLM(dspy.BaseLM):
-    def __init__(self):
-        super().__init__("parallel-native-tool-lm", "chat", 0.0, 1000, True)
-        self.calls = []
-
+class _ToolCallLM(dspy.LM):
     @property
-    def supports_function_calling(self):
-        return True
+    def calls(self):
+        from dspy.clients.lm15_boundary import request_kwargs
 
-    def forward(self, prompt=None, messages=None, **kwargs):
-        self.calls.append({"messages": messages, "kwargs": kwargs})
-        if len(self.calls) == 1:
-            tool_calls = [
-                dotdict(
-                    id="call_provider_1",
-                    type="function",
-                    function=dotdict(name="lookup", arguments='{"query":"cats"}'),
-                ),
-                dotdict(
-                    id="call_provider_2",
-                    type="function",
-                    function=dotdict(name="lookup", arguments='{"query":"dogs"}'),
-                ),
-            ]
-        else:
-            tool_calls = [
-                dotdict(
-                    id="call_submit",
-                    type="function",
-                    function=dotdict(name="submit", arguments='{"answer":"found cats and found dogs"}'),
-                )
-            ]
+        return [{"messages": request_kwargs(r, "chat")["messages"], "request": r} for r in self.engine.requests]
 
-        return dotdict(
-            choices=[
-                dotdict(
-                    message=dotdict(content=None, tool_calls=tool_calls),
-                    finish_reason="tool_calls",
-                )
-            ],
-            usage=dotdict(prompt_tokens=0, completion_tokens=0, total_tokens=0),
-            model="parallel-native-tool-lm",
-        )
+
+def NativeToolLM():
+    engine = _ToolCallEngine([("call_provider_1", "lookup", {"query": "cats"})], "found cats")
+    return _ToolCallLM("native-tool-lm", engine=engine, cache=False)
+
+
+def ParallelNativeToolLM():
+    engine = _ToolCallEngine(
+        [("call_provider_1", "lookup", {"query": "cats"}), ("call_provider_2", "lookup", {"query": "dogs"})],
+        "found cats and found dogs",
+    )
+    return _ToolCallLM("parallel-native-tool-lm", engine=engine, cache=False)
 
 
 @pytest.mark.parametrize(
     "adapter", [None, dspy.ChatAdapter(use_native_function_calling=True)], ids=["default", "chat"]
 )
-def test_react_v2_native_tool_loop_replays_tool_result_with_provider_id(adapter):
+@pytest.mark.parametrize("max_iters", [1, 20])
+def test_react_v2_native_tool_loop_replays_tool_result_with_provider_id(adapter, max_iters):
     def lookup(query: str) -> str:
         return f"found {query}"
 
     lm = NativeToolLM()
 
     with dspy.context(lm=lm, adapter=adapter):
-        pred = dspy.ReActV2("question -> answer", tools=[lookup])(question="cats")
+        pred = dspy.ReActV2("question -> answer", tools=[lookup], max_iters=max_iters)(question="cats")
 
     assert pred.answer == "found cats"
-    assert {tool["function"]["name"] for tool in lm.calls[0]["kwargs"]["tools"]} == {"lookup", "submit"}
+    assert {tool.name for tool in lm.engine.requests[0].tools} == {"lookup", "submit"}
+    assert pred.termination_reason == ("forced_submit" if max_iters == 1 else "submit")
+    if max_iters == 1:
+        assert lm.engine.requests[-1].config.tool_choice.allowed == ("submit",)
     assert pred.history.messages[0]["tool_calls"].tool_calls[0].id == "call_provider_1"
     assert "tool_call_results" not in pred.history.messages[0]
     assert pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results[0].call_id == "call_provider_1"
@@ -344,9 +306,9 @@ def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed(adapter)
 
     assert pred.answer == "found cats and found dogs"
     if adapter is not None:
-        assert lm.calls[0]["kwargs"]["parallel_tool_calls"] is True
+        assert lm.calls[0]["request"].config.tool_choice.parallel is True
     else:
-        assert "parallel_tool_calls" not in lm.calls[0]["kwargs"]
+        assert lm.calls[0]["request"].config.tool_choice is None
     assert [call.id for call in pred.history.messages[0]["tool_calls"].tool_calls] == [
         "call_provider_1",
         "call_provider_2",
