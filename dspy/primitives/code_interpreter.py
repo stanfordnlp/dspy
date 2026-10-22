@@ -135,8 +135,11 @@ class CodeInterpreter(Protocol):
         Returns:
             One of:
             - FinalOutput: If SUBMIT() was called in code
-            - str: Captured stdout from print() statements
-            - list: Multiple output lines
+            - str: Captured stdout from print() statements, when the cell does not
+              end in an expression value
+            - Any: The last expression's value otherwise, including falsy values
+              such as ``0``, ``False``, and empty containers. A list is that
+              value, not a sequence of stdout lines.
             - None: If no output was produced
 
         Raises:
