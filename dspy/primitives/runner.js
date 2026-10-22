@@ -363,12 +363,16 @@ while (true) {
 
       // Get error args for other exception types
       let errorArgs = [];
-      if (errorType !== "SyntaxError") {
-        // Only python exceptions have args.
-        const last_exception_args = pyodide.globals.get("last_exception_args");
-        // Regarding https://pyodide.org/en/stable/usage/type-conversions.html#type-translations-errors,
-        // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
-        errorArgs = JSON.parse(last_exception_args()) || [];
+      if (setupCompleted && error instanceof pyodide.ffi.PythonError) {
+        // Python SyntaxError has args too; JavaScript errors must not reuse sys.last_exc.
+        try {
+          const last_exception_args = pyodide.globals.get("last_exception_args");
+          // Regarding https://pyodide.org/en/stable/usage/type-conversions.html#type-translations-errors,
+          // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
+          errorArgs = JSON.parse(last_exception_args()) || [];
+        } catch {
+          // Unserializable args must not prevent reporting the original error.
+        }
       }
 
       // Map error type to JSON-RPC error code
