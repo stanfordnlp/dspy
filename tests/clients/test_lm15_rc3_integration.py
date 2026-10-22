@@ -153,7 +153,7 @@ def test_collection_limit_wrap_does_not_require_raising_to_access_partial():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
-async def test_request_conversion_refusal_keeps_the_feature(asynchronous, monkeypatch):
+async def test_request_routing_refusal_keeps_the_feature(asynchronous, monkeypatch):
     import dspy.clients.execution as execution
 
     original = lm15.UnsupportedFeatureError("cannot convert", feature="config.custom")
@@ -161,7 +161,7 @@ async def test_request_conversion_refusal_keeps_the_feature(asynchronous, monkey
     def refuse(*args, **kwargs):
         raise original
 
-    monkeypatch.setattr(execution, "_canonical", refuse)
+    monkeypatch.setattr(execution, "select_backend", refuse)
     lm = dspy.LM("openai/gpt-4o", engine="lm15", api_key="unused", cache=False, num_retries=0)
     with pytest.raises(dspy.LMUnsupportedFeatureError) as caught:
         await invoke(lm, asynchronous, "hello")
@@ -179,9 +179,8 @@ async def test_judgment_response_preserves_json_prediction_and_typed_value(async
     import json
     from typing import Literal
 
-    from dspy._vendor.lm15.providers.base import HttpResponse
-    from dspy._vendor.lm15.providers.openai_chat import OpenAIChatLM
-    from dspy.clients.execution import _canonical, prepare
+    from dspy.clients.execution import prepare
+    from tests.clients.test_lm_engine_execution import DualResponse, native_transport
 
     class Answer(dspy.Signature):
         question: str = dspy.InputField()
@@ -191,30 +190,25 @@ async def test_judgment_response_preserves_json_prediction_and_typed_value(async
     body = {"model": "gpt-4o", "choices": [{"index": 0, "message": {
         "role": "assistant", "content": '{"accepted":false,"label":"yes"}',
     }, "finish_reason": "stop"}]}
-    monkeypatch.setattr(OpenAIChatLM, "_send", lambda *args: HttpResponse(
-        status=200, reason="OK", headers=[], body=json.dumps(body).encode(),
-    ))
     # Exercise the real native parser with a fake wire, including async mirrors.
-    from dspy._vendor.lm15.providers.async_base import AsyncOpenAIChatLM
-
-    async def send(*args):
-        return HttpResponse(status=200, reason="OK", headers=[], body=json.dumps(body).encode())
-
-    monkeypatch.setattr(AsyncOpenAIChatLM, "_send", send)
+    transport = native_transport(monkeypatch, [
+        DualResponse(status=200, body=json.dumps(body).encode()) for _ in range(2)
+    ])
     lm = dspy.LM("openai/gpt-4o", api_key="test", cache=False, num_retries=0)
-    with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
-        predict = dspy.Predict(Answer)
-        result = await predict.acall(question="test") if asynchronous else predict(question="test")
-    assert result.accepted is False and result.label == "yes"
-    request = _canonical(prepare(lm, "test", None, {"response_format": {
+    request = prepare(lm, "test", {"response_format": {
         "type": "json_schema", "json_schema": {"name": "Answer", "schema": {
             "type": "object", "properties": {"accepted": {"type": "boolean"}},
         }},
-    }}))
+    }}).request
     response = await invoke(lm, asynchronous, request)
     assert isinstance(response.message.parts[0], lm15.DataPart)
     assert response.data == {"accepted": False, "label": "yes"}
     assert CallResult.load(CallResult.native(response).dump()).responses[0] == response
+    with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
+        predict = dspy.Predict(Answer)
+        result = await predict.acall(question="test") if asynchronous else predict(question="test")
+    assert result.accepted is False and result.label == "yes"
+    assert len(transport.requests) == 2
 
 
 @pytest.mark.asyncio
