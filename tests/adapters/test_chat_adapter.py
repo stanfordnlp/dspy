@@ -2549,6 +2549,64 @@ async def test_chat_adapter_async_fallback_preserves_native_function_calling_fla
     assert seen["use_native_function_calling"] is False
 
 
+class _ColorSignature(dspy.Signature):
+    question: str = dspy.InputField()
+    color: Literal["red", "blue"] = dspy.OutputField()
+
+
+def _mock_completion_response(content):
+    return ModelResponse(choices=[Choices(message=Message(content=content))], model="openai/gpt-4o-mini")
+
+
+def test_chat_adapter_does_not_fall_back_on_field_validation_error():
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = _mock_completion_response("[[ ## color ## ]]\ngreen\n\n[[ ## completed ## ]]")
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+
+        with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__") as mock_json_adapter_call:
+            with pytest.raises(dspy.AdapterFieldParseError) as e:
+                adapter(lm, {}, _ColorSignature, [], {"question": "Pick a color."})
+
+    mock_json_adapter_call.assert_not_called()
+    assert mock_completion.call_count == 1
+    assert "Failed to parse field color with value green" in str(e.value)
+
+
+@pytest.mark.asyncio
+async def test_chat_adapter_does_not_fall_back_on_field_validation_error_async():
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.acompletion") as mock_completion:
+        mock_completion.return_value = _mock_completion_response("[[ ## color ## ]]\ngreen\n\n[[ ## completed ## ]]")
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+
+        with mock.patch("dspy.adapters.json_adapter.JSONAdapter.acall") as mock_json_adapter_acall:
+            with pytest.raises(dspy.AdapterFieldParseError) as e:
+                await adapter.acall(lm, {}, _ColorSignature, [], {"question": "Pick a color."})
+
+    mock_json_adapter_acall.assert_not_called()
+    assert mock_completion.call_count == 1
+    assert "Failed to parse field color with value green" in str(e.value)
+
+
+def test_chat_adapter_still_falls_back_when_field_markers_are_missing():
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = _mock_completion_response("green")
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+
+        with mock.patch(
+            "dspy.adapters.json_adapter.JSONAdapter.__call__", return_value=[{"color": "red"}]
+        ) as mock_json_adapter_call:
+            result = adapter(lm, {}, _ColorSignature, [], {"question": "Pick a color."})
+
+    mock_json_adapter_call.assert_called_once()
+    assert result == [{"color": "red"}]
+
+
 def test_chat_adapter_toolcalls_native_function_calling():
     class MySignature(dspy.Signature):
         question: str = dspy.InputField()

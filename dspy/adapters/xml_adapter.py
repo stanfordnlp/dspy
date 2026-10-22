@@ -17,7 +17,7 @@ from dspy.adapters.utils import (
     translate_field_type,
 )
 from dspy.signatures.signature import Signature
-from dspy.utils.exceptions import AdapterParseError
+from dspy.utils.exceptions import AdapterFieldParseError, AdapterParseError
 
 
 class XMLAdapter(ChatAdapter):
@@ -121,7 +121,7 @@ class XMLAdapter(ChatAdapter):
                 except ValueError as e:
                     error = e
             else:
-                raise AdapterParseError(
+                raise AdapterFieldParseError(
                     adapter_name="XMLAdapter",
                     signature=signature,
                     lm_response=completion,
