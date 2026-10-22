@@ -587,6 +587,58 @@ def test_base_lm_copy_is_shallow_runtime_copy_with_isolated_dspy_state():
     assert lm.kwargs == {"temperature": 0.1, "max_tokens": None}
 
 
+def test_lm_copy_reasoning_model_validation_and_token_normalization():
+    """Verify that copying an LM to a reasoning model validates parameters and normalizes tokens (fixes #10577)."""
+    # 1. Invalid temperature on copy to reasoning model must raise LMConfigurationError
+    lm_chat = dspy.LM("openai/gpt-4o", temperature=0.2)
+    with pytest.raises(
+        dspy.LMConfigurationError,
+        match=r"reasoning models require passing temperature=1\.0 or None",
+    ):
+        lm_chat.copy(model="openai/gpt-5")
+
+    # 2. Token normalization from max_tokens to max_completion_tokens on copy
+    lm_valid = dspy.LM("openai/gpt-4o", max_tokens=16000)
+    copied_reasoning = lm_valid.copy(model="openai/gpt-5")
+    assert copied_reasoning.kwargs["max_completion_tokens"] == 16000
+    assert "max_tokens" not in copied_reasoning.kwargs
+
+    # 3. Token normalization back to max_tokens when copying from reasoning to standard chat model
+    copied_back = copied_reasoning.copy(model="openai/gpt-4o")
+    assert copied_back.kwargs["max_tokens"] == 16000
+    assert "max_completion_tokens" not in copied_back.kwargs
+
+    # 4. Clearing token limit on reasoning model with max_tokens=None or max_completion_tokens=None
+    cleared_reasoning_1 = copied_reasoning.copy(max_tokens=None)
+    assert "max_tokens" not in cleared_reasoning_1.kwargs
+    assert "max_completion_tokens" not in cleared_reasoning_1.kwargs
+
+    cleared_reasoning_2 = copied_reasoning.copy(max_completion_tokens=None)
+    assert "max_tokens" not in cleared_reasoning_2.kwargs
+    assert "max_completion_tokens" not in cleared_reasoning_2.kwargs
+
+    # 5. Clearing token limit on standard chat model with max_tokens=None or max_completion_tokens=None
+    cleared_chat_1 = copied_back.copy(max_tokens=None)
+    assert "max_tokens" not in cleared_chat_1.kwargs
+    assert "max_completion_tokens" not in cleared_chat_1.kwargs
+
+    cleared_chat_2 = copied_back.copy(max_completion_tokens=None)
+    assert "max_tokens" not in cleared_chat_2.kwargs
+    assert "max_completion_tokens" not in cleared_chat_2.kwargs
+
+    # 6. Copying default model with explicit max_completion_tokens preserves the explicit limit
+    lm_default = dspy.LM("openai/gpt-4o")
+    copied_explicit = lm_default.copy(model="openai/gpt-5", max_completion_tokens=16000)
+    assert copied_explicit.kwargs["max_completion_tokens"] == 16000
+    assert "max_tokens" not in copied_explicit.kwargs
+
+    # 7. Copying default reasoning model to standard model with explicit max_tokens preserves the explicit limit
+    lm_default_reasoning = dspy.LM("openai/gpt-5")
+    copied_explicit_chat = lm_default_reasoning.copy(model="openai/gpt-4o", max_tokens=2000)
+    assert copied_explicit_chat.kwargs["max_tokens"] == 2000
+    assert "max_completion_tokens" not in copied_explicit_chat.kwargs
+
+
 def test_dump_state():
     lm = dspy.LM(
         model="openai/gpt-4o-mini",
