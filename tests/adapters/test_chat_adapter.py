@@ -2634,6 +2634,18 @@ def test_chat_adapter_parse_raises_field_error_when_only_defaulted_fields_are_mi
         dspy.ChatAdapter().parse(ColorWithDefaultSignature, "[[ ## color ## ]]\ngreen\n\n[[ ## completed ## ]]")
 
 
+def test_chat_adapter_parse_does_not_run_default_factory_of_invalid_field():
+    def failing_factory():
+        raise AssertionError("default_factory should not run for a supplied field")
+
+    class ColorWithFactorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        color: Literal["red", "blue"] = dspy.OutputField(default_factory=failing_factory)
+
+    with pytest.raises(dspy.AdapterFieldParseError):
+        dspy.ChatAdapter().parse(ColorWithFactorySignature, "[[ ## color ## ]]\ngreen\n\n[[ ## completed ## ]]")
+
+
 def test_chat_adapter_falls_back_when_field_error_comes_with_missing_marker():
     adapter = dspy.ChatAdapter()
 

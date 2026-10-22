@@ -95,6 +95,17 @@ def test_xml_adapter_parse_prefers_format_error_over_field_error():
     assert "explanation" in str(e.value)
 
 
+def test_xml_adapter_parse_does_not_run_default_factory_of_invalid_field():
+    def failing_factory():
+        raise AssertionError("default_factory should not run for a supplied field")
+
+    class TestSignature(dspy.Signature):
+        number: int = dspy.OutputField(default_factory=failing_factory)
+
+    with pytest.raises(dspy.AdapterFieldParseError):
+        XMLAdapter().parse(TestSignature, "<number>not_a_number</number>")
+
+
 def test_xml_adapter_repeated_dict_elements_and_empty_lists():
     class TestSignature(dspy.Signature):
         counts: dict[str, list[int]] = dspy.OutputField()

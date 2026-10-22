@@ -11,6 +11,7 @@ from dspy.adapters.utils import (
     format_field_value,
     get_annotation_name,
     get_field_description_string,
+    missing_required_output_fields,
     parse_value,
     translate_field_type,
 )
@@ -250,9 +251,8 @@ class ChatAdapter(Adapter):
                     field_errors[k] = (
                         f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}"
                     )
-        fields = apply_output_field_defaults(signature, fields)
         # A missing required field means the format is broken, so it takes precedence over field errors.
-        if fields.keys() | field_errors.keys() != signature.output_fields.keys():
+        if missing_required_output_fields(signature, fields.keys() | field_errors.keys()):
             raise AdapterParseError(
                 adapter_name="ChatAdapter",
                 signature=signature,
@@ -267,7 +267,7 @@ class ChatAdapter(Adapter):
                 message=next(iter(field_errors.values())),
             )
 
-        return fields
+        return apply_output_field_defaults(signature, fields)
 
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         """

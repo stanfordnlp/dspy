@@ -12,6 +12,7 @@ from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import (
     apply_output_field_defaults,
     format_field_value,
+    missing_required_output_fields,
     parse_value,
     serialize_for_json,
     translate_field_type,
@@ -123,9 +124,8 @@ class XMLAdapter(ChatAdapter):
                     error = e
             else:
                 field_errors[name] = (f"Failed to parse field {field} with value {value}: {error}", error)
-        fields = apply_output_field_defaults(signature, fields)
         # A missing required field means the format is broken, so it takes precedence over field errors.
-        if fields.keys() | field_errors.keys() != signature.output_fields.keys():
+        if missing_required_output_fields(signature, fields.keys() | field_errors.keys()):
             raise AdapterParseError(
                 adapter_name="XMLAdapter", signature=signature, lm_response=completion, parsed_result=fields
             )
@@ -134,7 +134,7 @@ class XMLAdapter(ChatAdapter):
             raise AdapterFieldParseError(
                 adapter_name="XMLAdapter", signature=signature, lm_response=completion, message=message
             ) from error
-        return fields
+        return apply_output_field_defaults(signature, fields)
 
     @classmethod
     def _value_to_xml(cls, value: Any, tag: str, key: str | None = None) -> str:
