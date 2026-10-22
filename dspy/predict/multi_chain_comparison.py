@@ -36,10 +36,11 @@ class MultiChainComparison(Module):
         attempts = []
 
         for c in completions:
-            rationale = c.get("rationale", c.get("reasoning")).strip().split("\n")[0].strip()
+            rationale = str(c.get("rationale", c.get("reasoning")) or "").strip().split("\n")[0].strip()
             answer = str(c[self.last_key]).strip().split("\n")[0].strip()
             attempts.append(
-                f"«I'm trying to {rationale} I'm not sure but my prediction is {answer}»",
+                f"«I'm trying to {rationale} I'm not sure but my prediction is {answer}»"
+                if rationale else f"«My prediction is {answer}»",
             )
 
         assert (

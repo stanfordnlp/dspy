@@ -2,10 +2,13 @@ import functools
 import inspect
 import logging
 import uuid
-from typing import Any, Callable
+from types import FunctionType
+from typing import Any, Callable, TypeVar, cast
 
 import dspy
 import dspy.utils.callback_context as callback_context
+
+F = TypeVar("F", bound=FunctionType)
 
 ACTIVE_CALL_ID = callback_context.ACTIVE_CALL_ID
 
@@ -89,7 +92,7 @@ class BaseCallback:
         self,
         call_id: str,
         outputs: Any | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         """A handler triggered after forward() method of a module (subclass of dspy.Module) is executed.
 
@@ -121,7 +124,7 @@ class BaseCallback:
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         """A handler triggered after __call__ method of dspy.LM instance is executed.
 
@@ -153,7 +156,7 @@ class BaseCallback:
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         """A handler triggered after format() method of an adapter (subclass of dspy.Adapter) is called..
 
@@ -185,7 +188,7 @@ class BaseCallback:
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         """A handler triggered after parse() method of an adapter (subclass of dspy.Adapter) is called.
 
@@ -217,7 +220,7 @@ class BaseCallback:
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         """A handler triggered after a tool is executed.
 
@@ -249,7 +252,7 @@ class BaseCallback:
         self,
         call_id: str,
         outputs: Any | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         """A handler triggered after evaluation is executed.
 
@@ -264,34 +267,62 @@ class BaseCallback:
     def on_interpreter_execute_start(self, call_id: str, instance: Any, inputs: dict[str, Any]):
         pass
 
-    def on_interpreter_execute_end(self, call_id: str, outputs: Any | None, exception: Exception | None = None):
+    def on_interpreter_execute_end(self, call_id: str, outputs: Any | None, exception: BaseException | None = None):
         pass
 
     def on_interpreter_tool_call_start(self, call_id: str, instance: Any, inputs: dict[str, Any]):
         pass
 
-    def on_interpreter_tool_call_end(self, call_id: str, outputs: Any | None, exception: Exception | None = None):
+    def on_interpreter_tool_call_end(self, call_id: str, outputs: Any | None, exception: BaseException | None = None):
         pass
 
     def on_interpreter_startup_start(self, call_id: str, instance: Any, inputs: dict[str, Any]):
         pass
 
-    def on_interpreter_startup_end(self, call_id: str, outputs: Any | None, exception: Exception | None = None):
+    def on_interpreter_startup_end(self, call_id: str, outputs: Any | None, exception: BaseException | None = None):
         pass
 
     def on_interpreter_shutdown_start(self, call_id: str, instance: Any, inputs: dict[str, Any]):
         pass
 
-    def on_interpreter_shutdown_end(self, call_id: str, outputs: Any | None, exception: Exception | None = None):
+    def on_interpreter_shutdown_end(self, call_id: str, outputs: Any | None, exception: BaseException | None = None):
+        pass
+
+    def on_compile_start(self, call_id: str, instance: Any, inputs: dict[str, Any]):
+        """A handler triggered when an optimizer's compile method is called.
+
+        Args:
+            call_id: A unique identifier for the compile call. Can be used to connect start/end handlers.
+            instance: The optimizer instance.
+            inputs: The inputs to the optimizer's compile method as key-value pairs.
+        """
+        pass
+
+    def on_compile_end(self, call_id: str, outputs: Any | None, exception: Exception | None = None):
+        """A handler triggered after an optimizer's compile method is called.
+
+        Args:
+            call_id: A unique identifier for the compile call. Can be used to connect start/end handlers.
+            outputs: The compiled program, or None if compilation failed.
+            exception: The exception raised during compilation, if any.
+        """
         pass
 
 
-def with_callbacks(fn):
-    """Decorator to add callback functionality to instance methods."""
+def with_callbacks(fn: F) -> F:
+    """Add callbacks to an instance method while preserving its parameters and return type."""
 
-    def _execute_start_callbacks(instance, fn, call_id, callbacks, args, kwargs):
+    def _execute_start_callbacks(
+        instance: object,
+        fn: F,
+        call_id: str,
+        callbacks: list[BaseCallback],
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ) -> None:
         """Execute all start callbacks for a function call."""
-        inputs = inspect.getcallargs(fn, instance, *args, **kwargs)
+        # Keep the existing argument-binding behavior during this typing-only migration.
+        inputs = inspect.getcallargs(fn, instance, *args, **kwargs)  # ty: ignore[deprecated]
         if "self" in inputs:
             inputs.pop("self")
         elif "instance" in inputs:
@@ -302,7 +333,14 @@ def with_callbacks(fn):
             except Exception as e:
                 logger.warning(f"Error when calling callback {callback}: {e}")
 
-    def _execute_end_callbacks(instance, fn, call_id, results, exception, callbacks):
+    def _execute_end_callbacks(
+        instance: object,
+        fn: F,
+        call_id: str,
+        results: object,
+        exception: BaseException | None,
+        callbacks: list[BaseCallback],
+    ) -> None:
         """Execute all end callbacks for a function call."""
         for callback in callbacks:
             try:
@@ -314,14 +352,15 @@ def with_callbacks(fn):
             except Exception as e:
                 logger.warning(f"Error when applying callback {callback}'s end handler on function {fn.__name__}: {e}.")
 
-    def _get_active_callbacks(instance):
+    def _get_active_callbacks(instance: object) -> list[BaseCallback]:
         """Get combined global and instance-level callbacks."""
-        return dspy.settings.get("callbacks", []) + getattr(instance, "callbacks", [])
+        callbacks: list[BaseCallback] = dspy.settings.get("callbacks", []) + getattr(instance, "callbacks", [])
+        return callbacks
 
     if inspect.iscoroutinefunction(fn):
 
         @functools.wraps(fn)
-        async def async_wrapper(instance, *args, **kwargs):
+        async def async_wrapper(instance: object, *args: Any, **kwargs: Any) -> object:
             callbacks = _get_active_callbacks(instance)
             if not callbacks:
                 return await fn(instance, *args, **kwargs)
@@ -339,19 +378,21 @@ def with_callbacks(fn):
             try:
                 results = await fn(instance, *args, **kwargs)
                 return results
-            except Exception as e:
+            except BaseException as e:
                 exception = e
-                raise exception
+                raise
             finally:
                 callback_context.ACTIVE_CALL_ID.set(parent_call_id)
                 _execute_end_callbacks(instance, fn, call_id, results, exception, callbacks)
 
-        return async_wrapper
+        # Both wrappers forward arguments and results unchanged. Preserve the full
+        # callable type, including generic/overloaded methods and coroutine results.
+        return cast(F, async_wrapper)
 
     else:
 
         @functools.wraps(fn)
-        def sync_wrapper(instance, *args, **kwargs):
+        def sync_wrapper(instance: object, *args: Any, **kwargs: Any) -> object:
             callbacks = _get_active_callbacks(instance)
             if not callbacks:
                 return fn(instance, *args, **kwargs)
@@ -369,24 +410,28 @@ def with_callbacks(fn):
             try:
                 results = fn(instance, *args, **kwargs)
                 return results
-            except Exception as e:
+            except BaseException as e:
                 exception = e
-                raise exception
+                raise
             finally:
                 callback_context.ACTIVE_CALL_ID.set(parent_call_id)
                 _execute_end_callbacks(instance, fn, call_id, results, exception, callbacks)
 
-        return sync_wrapper
+        return cast(F, sync_wrapper)
 
 
-def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -> Callable:
+def _get_on_start_handler(callback: BaseCallback, instance: object, fn: FunctionType) -> Callable[..., Any]:
     """Selects the appropriate on_start handler of the callback based on the instance and function name."""
+    from dspy.teleprompt.teleprompt import Teleprompter
+
     if isinstance(instance, dspy.BaseLM):
         return callback.on_lm_start
     elif isinstance(instance, dspy.Evaluate):
         return callback.on_evaluate_start
     elif isinstance(instance, dspy.CodeInterpreter):
         return getattr(callback, f"on_interpreter_{_INTERPRETER_OPERATIONS[fn.__name__]}_start")
+    elif isinstance(instance, Teleprompter):
+        return callback.on_compile_start
 
     if isinstance(instance, dspy.Adapter):
         if fn.__name__ == "format":
@@ -403,14 +448,18 @@ def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -
     return callback.on_module_start
 
 
-def _get_on_end_handler(callback: BaseCallback, instance: Any, fn: Callable) -> Callable:
+def _get_on_end_handler(callback: BaseCallback, instance: object, fn: FunctionType) -> Callable[..., Any]:
     """Selects the appropriate on_end handler of the callback based on the instance and function name."""
+    from dspy.teleprompt.teleprompt import Teleprompter
+
     if isinstance(instance, dspy.BaseLM):
         return callback.on_lm_end
     elif isinstance(instance, dspy.Evaluate):
         return callback.on_evaluate_end
     elif isinstance(instance, dspy.CodeInterpreter):
         return getattr(callback, f"on_interpreter_{_INTERPRETER_OPERATIONS[fn.__name__]}_end")
+    elif isinstance(instance, Teleprompter):
+        return callback.on_compile_end
 
     if isinstance(instance, (dspy.Adapter)):
         if fn.__name__ == "format":

@@ -113,7 +113,7 @@ class Image(Type):
         return [{"type": "image_url", "image_url": {"url": image_url}}]
 
     @classmethod
-    def from_url(cls, url: str, verify: bool = True) -> "Image":
+    def from_url(cls, url: str, verify: bool = True, timeout: float | None = 30.0) -> "Image":
         """Download an HTTP(S) resource and encode it as a data URI.
 
         Security: this performs an explicit, caller-initiated fetch and applies no
@@ -124,7 +124,7 @@ class Image(Type):
         """
         if not _is_http_url(url):
             raise ValueError(f"Image.from_url requires an HTTP(S) URL, received: {url}")
-        return cls(_encode_image_from_url(url, verify=verify))
+        return cls(_encode_image_from_url(url, verify=verify, timeout=timeout))
 
     @classmethod
     def from_path(cls, file_path: str) -> "Image":
@@ -236,14 +236,16 @@ def _encode_image_from_file(file_path: str) -> str:
     return f"data:{mime_type};base64,{encoded_data}"
 
 
-def _encode_image_from_url(image_url: str, verify: bool = True) -> str:
+def _encode_image_from_url(image_url: str, verify: bool = True, timeout: float | None = 30.0) -> str:
     """Encode a file from a URL to a base64 data URI.
 
     Args:
         image_url: The URL of the image to download.
         verify: Whether to verify SSL certificates. Set to False for self-signed certs.
+        timeout: Seconds to wait for the server before raising ``requests.exceptions.Timeout``.
+            ``None`` disables the timeout and can hang indefinitely on an unresponsive host.
     """
-    response = requests.get(image_url, verify=verify)
+    response = requests.get(image_url, verify=verify, timeout=timeout)
     response.raise_for_status()
     content_type = response.headers.get("Content-Type", "")
 

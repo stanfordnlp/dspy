@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 from contextlib import contextmanager
-from typing import Any, Generator
+from typing import Any, Generator, TypeGuard
 
 from pydantic import BaseModel
 
@@ -12,7 +12,7 @@ from dspy.dsp.utils.settings import settings
 class UsageTracker:
     """Tracks LM usage data within a context."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Map of LM name to list of usage entries. For example:
         # {
         #     "openai/gpt-4o-mini": [
@@ -20,10 +20,11 @@ class UsageTracker:
         #         {"prompt_tokens": 300, "completion_tokens": 400},
         #     ],
         # }
-        self.usage_data = defaultdict(list)
+        # Providers can include arbitrary extra fields, not just token counts.
+        self.usage_data: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
 
     def _flatten_usage_entry(self, usage_entry: dict[str, Any]) -> dict[str, Any]:
-        result = {}
+        result: dict[str, Any] = {}
         for key, value in usage_entry.items():
             if isinstance(value, BaseModel):
                 # Convert Pydantic models to dicts, like `PromptTokensDetailsWrapper` from litellm.
@@ -32,21 +33,37 @@ class UsageTracker:
                 result[key] = value
         return result
 
+    @staticmethod
+    def _is_summable(value: object) -> TypeGuard[int | float]:
+        """Whether a usage value is a count that can be added across entries.
+
+        `bool` is excluded even though it is an `int` subclass: providers report flags
+        (such as OpenRouter's `is_byok`) alongside token counts, and summing those would
+        turn a flag into a meaningless tally.
+        """
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+
     def _merge_usage_entries(
         self, usage_entry1: dict[str, Any] | None, usage_entry2: dict[str, Any] | None
     ) -> dict[str, Any]:
         if usage_entry1 is None or len(usage_entry1) == 0:
-            return dict(usage_entry2)
+            return dict(usage_entry2 or {})
         if usage_entry2 is None or len(usage_entry2) == 0:
-            return dict(usage_entry1)
+            return dict(usage_entry1 or {})
 
-        result = dict(usage_entry2)
-        for k, v in usage_entry1.items():
+        result = dict(usage_entry1)
+        for k, v in usage_entry2.items():
             current_v = result.get(k)
             if isinstance(v, dict) or isinstance(current_v, dict):
                 result[k] = self._merge_usage_entries(current_v, v)
-            elif current_v is not None or v is not None:
-                result[k] = (current_v or 0) + (v or 0)
+            elif current_v is None:
+                if v is not None:
+                    result[k] = v
+            elif self._is_summable(current_v) and self._is_summable(v):
+                result[k] = current_v + v
+            # Otherwise keep `current_v` as-is. `usage` is not guaranteed to hold only
+            # counts: both litellm's `Usage` and dspy's `LMUsage` allow extra fields, so
+            # whatever a provider reports flows through verbatim.
         return result
 
     def add_usage(self, lm: str, usage_entry: dict[str, Any]) -> None:
@@ -56,9 +73,9 @@ class UsageTracker:
 
     def get_total_tokens(self) -> dict[str, dict[str, Any]]:
         """Calculate total tokens from all tracked usage."""
-        total_usage_by_lm = {}
+        total_usage_by_lm: dict[str, dict[str, Any]] = {}
         for lm, usage_entries in self.usage_data.items():
-            total_usage = {}
+            total_usage: dict[str, Any] = {}
             for usage_entry in usage_entries:
                 total_usage = self._merge_usage_entries(total_usage, usage_entry)
             total_usage_by_lm[lm] = total_usage
@@ -67,8 +84,18 @@ class UsageTracker:
 
 @contextmanager
 def track_usage() -> Generator[UsageTracker, None, None]:
-    """Context manager for tracking LM usage."""
+    """Context manager for tracking LM usage.
+
+    When nested, the child will roll-up recorded usage into the parent upon exit.
+    Note that usage added after the scope exit will not be recorded in the parent.
+    """
     tracker = UsageTracker()
 
+    parent: UsageTracker | None = settings.usage_tracker
     with settings.context(usage_tracker=tracker):
-        yield tracker
+        try:
+            yield tracker
+        finally:
+            if parent is not None:
+                for lm, entries in tracker.usage_data.items():
+                    parent.usage_data[lm].extend(entries)

@@ -39,12 +39,12 @@ class Dataset:
         dev_size: int | None = None,
         test_size: int | None = None,
     ) -> None:
-        self.train_size = train_size or self.train_size
-        self.train_seed = train_seed or self.train_seed
-        self.dev_size = dev_size or self.dev_size
-        self.dev_seed = eval_seed or self.dev_seed
-        self.test_size = test_size or self.test_size
-        self.test_seed = eval_seed or self.test_seed
+        self.train_size = train_size if train_size is not None else self.train_size
+        self.train_seed = train_seed if train_seed is not None else self.train_seed
+        self.dev_size = dev_size if dev_size is not None else self.dev_size
+        self.dev_seed = eval_seed if eval_seed is not None else self.dev_seed
+        self.test_size = test_size if test_size is not None else self.test_size
+        self.test_seed = eval_seed if eval_seed is not None else self.test_seed
 
         if hasattr(self, "_train_"):
             del self._train_

@@ -15,16 +15,62 @@ from dspy.utils.exceptions import AdapterParseError, ContextWindowExceededError,
 
 logger = logging.getLogger(__name__)
 
+# Keys ReActV2 attaches to every returned `Prediction` alongside the user's output fields.
+# A user signature that declares any of these as an output would collide with the keyword
+# expansion at the `Prediction(**final_outputs, history=..., termination_reason=...)` call sites.
+_RESERVED_PREDICTION_KEYS = frozenset({"history", "termination_reason"})
+
+# Internal input field names ReActV2 injects into its inner Predict signature. A user
+# input with one of these names would be silently overwritten by `_make_react_signature`
+# and replaced or popped out of the caller's kwargs by `forward`/`aforward`, so it must be rejected.
+_RESERVED_INPUT_KEYS = frozenset({"history", "tools", "turn_budget"})
+
+# Per-turn input that tells the model where it is in its turn budget. Each turn's value is
+# stored in that turn's history event, so replay rebuilds the exact request that was sent and
+# every request stays a prefix of the next one for provider prompt caching.
+_TURN_BUDGET_FIELD = "turn_budget"
+_FINAL_TURN_BUDGET = "No turns remain. Call `submit` now with your final outputs."
+
 if TYPE_CHECKING:
     from dspy.signatures.signature import Signature
 
 
 @experimental
 class ReActV2(Module):
+    """An agent that interleaves reasoning and tool calls to fulfill a signature.
+
+    The model selects tools, observes their results, and calls ``submit`` with the
+    final outputs. Supports native function calling and text-based tool calls.
+    Predictions include the declared outputs, conversation history, and termination
+    reason.
+
+    Args:
+        signature: The signature defining the agent's inputs and outputs.
+        tools: Functions, callable objects, or ``dspy.Tool`` instances available to the agent.
+        max_iters: Maximum number of tool-calling turns before a final submit attempt. Every call
+            shows the model its current turn and how many remain.
+    """
+
     def __init__(self, signature: type[Signature], tools: list[Callable | Tool], max_iters: int = 20):
         super().__init__()
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
+
+        reserved_outputs = _RESERVED_PREDICTION_KEYS.intersection(self.signature.output_fields)
+        if reserved_outputs:
+            names = ", ".join(f"`{name}`" for name in sorted(reserved_outputs))
+            raise ValueError(
+                f"Output field name(s) {names} are reserved by ReActV2 and attached to every "
+                "returned Prediction. Rename these output fields on your signature."
+            )
+
+        reserved_inputs = _RESERVED_INPUT_KEYS.intersection(self.signature.input_fields)
+        if reserved_inputs:
+            names = ", ".join(f"`{name}`" for name in sorted(reserved_inputs))
+            raise ValueError(
+                f"Input field name(s) {names} are reserved by ReActV2 for its internal "
+                "conversation history, tool list, and turn budget. Rename these input fields on your signature."
+            )
 
         user_tools = [tool if isinstance(tool, Tool) else Tool(tool) for tool in tools]
         self.tools = {tool.name: tool for tool in user_tools}
@@ -67,6 +113,10 @@ class ReActV2(Module):
 
         fields["history"] = (dspy.History, dspy.InputField())
         fields["tools"] = (list[dspy.Tool], dspy.InputField())
+        fields[_TURN_BUDGET_FIELD] = (
+            str,
+            dspy.InputField(desc="Your current turn and how many turns remain before you must submit."),
+        )
         fields["next_thought"] = (dspy.Reasoning, dspy.OutputField())
         fields["tool_calls"] = (dspy.ToolCalls, dspy.OutputField())
 
@@ -92,11 +142,12 @@ class ReActV2(Module):
 
         break_reason = "max_iters"
         for turn_index in range(max_iters):
+            turn_inputs = {**pending_inputs, **self._turn_budget_inputs(turn_index, max_iters)}
             try:
                 pred = self.react(
                     history=history,
                     tools=list(self.tools.values()),
-                    **pending_inputs,
+                    **turn_inputs,
                 )
                 tool_calls = _coerce_tool_calls(getattr(pred, "tool_calls", None))
             except (AdapterParseError, ValueError) as err:
@@ -114,7 +165,7 @@ class ReActV2(Module):
 
             tool_calls = _ensure_tool_call_ids(tool_calls, turn_index)
             tool_call_results, final_outputs = self._execute_tool_calls(tool_calls)
-            event = self._history_event(pending_inputs, pred, tool_calls, tool_call_results)
+            event = self._history_event(turn_inputs, pred, tool_calls, tool_call_results)
             if final_outputs is not None:
                 event.update(final_outputs)
             _append_history_event(history, event)
@@ -124,6 +175,59 @@ class ReActV2(Module):
                 return Prediction(**final_outputs, history=history, termination_reason="submit")
 
         return self._forced_submit(history, pending_inputs, break_reason, max_iters)
+
+    async def aforward(self, **input_args):
+        max_iters = input_args.pop("max_iters", self.max_iters)
+        history = _coerce_history(input_args.pop("history", None))
+        pending_inputs = {name: input_args[name] for name in self.signature.input_fields if name in input_args}
+
+        break_reason = "max_iters"
+        for turn_index in range(max_iters):
+            turn_inputs = {**pending_inputs, **self._turn_budget_inputs(turn_index, max_iters)}
+            try:
+                pred = await self.react.acall(
+                    history=history,
+                    tools=list(self.tools.values()),
+                    **turn_inputs,
+                )
+                tool_calls = _coerce_tool_calls(getattr(pred, "tool_calls", None))
+            except (AdapterParseError, ValueError) as err:
+                logger.warning("Ending ReActV2 loop after parse failure: %s", format_error_for_lm(err, traceback_frames=5))
+                break_reason = "parse_error"
+                break
+            except ContextWindowExceededError:
+                logger.warning("Ending ReActV2 loop after context window exceeded.")
+                break_reason = "context_window_exceeded"
+                break
+
+            if not tool_calls.tool_calls:
+                break_reason = "empty_tool_calls"
+                break
+
+            tool_calls = _ensure_tool_call_ids(tool_calls, turn_index)
+            tool_call_results, final_outputs = await self._aexecute_tool_calls(tool_calls)
+            event = self._history_event(turn_inputs, pred, tool_calls, tool_call_results)
+            if final_outputs is not None:
+                event.update(final_outputs)
+            _append_history_event(history, event)
+            pending_inputs = {}
+
+            if final_outputs is not None:
+                return Prediction(**final_outputs, history=history, termination_reason="submit")
+
+        return await self._aforced_submit(history, pending_inputs, break_reason, max_iters)
+
+    def _turn_budget_inputs(self, turn_index: int | None, max_iters: int | None) -> dict[str, str]:
+        """Build the per-call turn budget input; ``turn_index=None`` marks the forced final submit."""
+        # Agents pickled before this field existed skip `__init__` and keep their old signature.
+        if _TURN_BUDGET_FIELD not in self.react.signature.input_fields:
+            return {}
+        if turn_index is None:
+            return {_TURN_BUDGET_FIELD: _FINAL_TURN_BUDGET}
+        turn = turn_index + 1
+        remaining = max_iters - turn
+        after = "this is your last turn" if remaining == 0 else f"{remaining} more after this one"
+        return {_TURN_BUDGET_FIELD: f"Turn {turn} of {max_iters} ({after})."}
 
     def _execute_tool_calls(self, tool_calls: ToolCalls) -> tuple[ToolCallResults, dict[str, Any] | None]:
         values = []
@@ -138,6 +242,29 @@ class ReActV2(Module):
 
             try:
                 value = self.tools[tool_call.name](**(tool_call.args or {}))
+                values.append(value)
+                is_errors.append(False)
+                if tool_call.name == "submit" and isinstance(value, dict):
+                    final_outputs = value
+            except Exception as err:
+                values.append(f"Execution error in {tool_call.name}: {format_error_for_lm(err, traceback_frames=5)}")
+                is_errors.append(True)
+
+        return ToolCallResults.from_tool_calls_and_values(tool_calls, values, is_errors), final_outputs
+
+    async def _aexecute_tool_calls(self, tool_calls: ToolCalls) -> tuple[ToolCallResults, dict[str, Any] | None]:
+        values = []
+        is_errors = []
+        final_outputs = None
+
+        for tool_call in tool_calls.tool_calls:
+            if tool_call.name not in self.tools:
+                values.append(f"Unknown tool: {tool_call.name}")
+                is_errors.append(True)
+                continue
+
+            try:
+                value = await self.tools[tool_call.name].acall(**(tool_call.args or {}))
                 values.append(value)
                 is_errors.append(False)
                 if tool_call.name == "submit" and isinstance(value, dict):
@@ -171,6 +298,7 @@ class ReActV2(Module):
         break_reason: str,
         turn_index: int,
     ) -> Prediction:
+        turn_inputs = {**pending_inputs, **self._turn_budget_inputs(None, None)}
         try:
             pred = self.react(
                 history=history,
@@ -179,19 +307,19 @@ class ReActV2(Module):
                     "tool_choice": {"type": "function", "function": {"name": "submit"}},
                     "reasoning_effort": None,
                 },
-                **pending_inputs,
+                **turn_inputs,
             )
             tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
         except (AdapterParseError, ValueError, ContextWindowExceededError) as err:
             logger.warning("Forced submit failed: %s", format_error_for_lm(err, traceback_frames=5))
-            return Prediction(history=history, termination_reason=break_reason or "failed")
+            raise
 
         submit_calls = ToolCalls(tool_calls=[call for call in tool_calls.tool_calls if call.name == "submit"])
         if not submit_calls.tool_calls:
-            return Prediction(history=history, termination_reason=break_reason or "failed")
+            raise ValueError(f"ReActV2 failed to produce final outputs after {break_reason}: no submit call.")
 
         tool_call_results, final_outputs = self._execute_tool_calls(submit_calls)
-        event = self._history_event(pending_inputs, pred, submit_calls, tool_call_results)
+        event = self._history_event(turn_inputs, pred, submit_calls, tool_call_results)
         if final_outputs is not None:
             event.update(final_outputs)
         _append_history_event(history, event)
@@ -199,7 +327,51 @@ class ReActV2(Module):
         if final_outputs is not None:
             return Prediction(**final_outputs, history=history, termination_reason="forced_submit")
 
-        return Prediction(history=history, termination_reason=break_reason or "failed")
+        errors = "\n".join(str(result.value) for result in tool_call_results.tool_call_results if result.is_error)
+        raise ValueError(
+            f"ReActV2 failed to produce final outputs after {break_reason}: submit failed.\n{errors}"
+        )
+
+    async def _aforced_submit(
+        self,
+        history: dspy.History,
+        pending_inputs: dict[str, Any],
+        break_reason: str,
+        turn_index: int,
+    ) -> Prediction:
+        turn_inputs = {**pending_inputs, **self._turn_budget_inputs(None, None)}
+        try:
+            pred = await self.react.acall(
+                history=history,
+                tools=list(self.tools.values()),
+                config={
+                    "tool_choice": {"type": "function", "function": {"name": "submit"}},
+                    "reasoning_effort": None,
+                },
+                **turn_inputs,
+            )
+            tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
+        except (AdapterParseError, ValueError, ContextWindowExceededError) as err:
+            logger.warning("Forced submit failed: %s", format_error_for_lm(err, traceback_frames=5))
+            raise
+
+        submit_calls = ToolCalls(tool_calls=[call for call in tool_calls.tool_calls if call.name == "submit"])
+        if not submit_calls.tool_calls:
+            raise ValueError(f"ReActV2 failed to produce final outputs after {break_reason}: no submit call.")
+
+        tool_call_results, final_outputs = await self._aexecute_tool_calls(submit_calls)
+        event = self._history_event(turn_inputs, pred, submit_calls, tool_call_results)
+        if final_outputs is not None:
+            event.update(final_outputs)
+        _append_history_event(history, event)
+
+        if final_outputs is not None:
+            return Prediction(**final_outputs, history=history, termination_reason="forced_submit")
+
+        errors = "\n".join(str(result.value) for result in tool_call_results.tool_call_results if result.is_error)
+        raise ValueError(
+            f"ReActV2 failed to produce final outputs after {break_reason}: submit failed.\n{errors}"
+        )
 
 
 def _json_schema_for_annotation(annotation: Any) -> dict[str, Any]:

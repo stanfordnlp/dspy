@@ -1,11 +1,13 @@
 from typing import Any, ClassVar
 from unittest import mock
 
+import pytest
 from litellm import Choices, Message, ModelResponse
 
 import dspy
 from dspy.primitives.example import Example
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, bootstrap_trace_data
+from dspy.utils import DummyLM
 
 
 def test_bootstrap_trace_data():
@@ -35,45 +37,21 @@ def test_bootstrap_trace_data():
         return example.number == prediction.number
 
     # Configure dspy
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
 
-    # Mock litellm completion responses
-    # 4 successful responses and 1 that will trigger AdapterParseError
-    successful_responses = [
+    # One reply per example: JSON parsing failures do not restart execution in
+    # another format. Keep four successes and one captured parsing failure.
+    responses = [
         ModelResponse(
-            choices=[Choices(message=Message(content='```json\n{"number": 1}\n```'))],
+            choices=[Choices(message=Message(content=(
+                "This is an invalid JSON!" if number is None else f'```json\n{{"number": {number}}}\n```'
+            )))],
             model="openai/gpt-4o-mini",
-        ),
-        ModelResponse(
-            choices=[Choices(message=Message(content='```json\n{"number": 2}\n```'))],
-            model="openai/gpt-4o-mini",
-        ),
-        ModelResponse(
-            choices=[Choices(message=Message(content='```json\n{"number": 3}\n```'))],
-            model="openai/gpt-4o-mini",
-        ),
-        ModelResponse(
-            choices=[Choices(message=Message(content='```json\n{"number": 4}\n```'))],
-            model="openai/gpt-4o-mini",
-        ),
+        )
+        for number in (1, 2, None, 4, 5)
     ]
 
-    # Create a side effect that will trigger AdapterParseError on the 3rd call (index 2)
-    def completion_side_effect(*args, **kwargs):
-        call_count = completion_side_effect.call_count
-        completion_side_effect.call_count += 1
-
-        if call_count in (2, 3):
-            # Return malformed responses for both structured-output mode and JSON-mode fallback.
-            return ModelResponse(
-                choices=[Choices(message=Message(content="This is an invalid JSON!"))],
-                model="openai/gpt-4o-mini",
-            )
-        return successful_responses[call_count if call_count < 2 else call_count - 2]
-
-    completion_side_effect.call_count = 0
-
-    with mock.patch("litellm.completion", side_effect=completion_side_effect):
+    with mock.patch("litellm.completion", side_effect=responses) as completion:
         # Call bootstrap_trace_data
         results = bootstrap_trace_data(
             program=program,
@@ -84,7 +62,8 @@ def test_bootstrap_trace_data():
             capture_failed_parses=True,
         )
 
-    # Verify results
+    # Verify results, including the absence of a hidden JSON-mode replay.
+    assert completion.call_count == 5
     assert len(results) == 5, f"Expected 5 results, got {len(results)}"
 
     # Count successful and failed predictions
@@ -119,6 +98,43 @@ def test_bootstrap_trace_data():
         # Each trace entry should be a tuple of (predictor, inputs, prediction)
         for trace_entry in result["trace"]:
             assert len(trace_entry) == 3, "Trace entry should have 3 elements"
+
+
+@pytest.mark.parametrize("response, format_failure_score, expected_score", [
+    ({}, -2, -2),
+    ({"answer": "4"}, -2, -0.5),
+    ({"answer": "4"}, -1, 0),
+])
+@pytest.mark.parametrize("adapter", [
+    dspy.ChatAdapter(use_json_adapter_fallback=False),
+    dspy.JSONAdapter(),
+    dspy.XMLAdapter(use_json_adapter_fallback=False),
+])
+def test_chain_of_thought_parse_failure_is_captured(adapter, response, format_failure_score, expected_score):
+    program = dspy.ChainOfThought("question -> answer")
+    example = Example(question="2+2?", answer="4").with_inputs("question")
+    lm = DummyLM([response], adapter=adapter)
+
+    with dspy.context(lm=lm, adapter=adapter):
+        data = bootstrap_trace_data(
+            program=program,
+            dataset=[example],
+            metric=lambda e, p, t=None: 1.0,
+            num_threads=1,
+            raise_on_error=False,
+            capture_failed_parses=True,
+            failure_score=1,
+            format_failure_score=format_failure_score,
+        )
+
+    assert len(data) == 1
+    result = data[0]
+    prediction = result["prediction"]
+    assert isinstance(prediction, FailedPrediction)
+    assert prediction.completion_text == lm.history[-1]["outputs"][0]
+    assert prediction.format_reward == expected_score
+    assert result["score"] == expected_score
+    assert result["trace"] == [(program.predict, {"question": "2+2?"}, prediction)]
 
 
 def test_bootstrap_trace_data_passes_callback_metadata(monkeypatch):

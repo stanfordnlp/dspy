@@ -1,0 +1,39 @@
+name: Verify bundled lm15
+
+on:
+  pull_request:
+    paths:
+      - 'dspy/_vendor/**'
+      - 'dspy/lm15.py'
+      - 'dspy/__init__.py'
+      - 'pyproject.toml'
+      - 'scripts/update_vendored_lm15.py'
+      - 'tests/test_vendored_lm15.py'
+      - '.github/workflows/vendored_lm15.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installed-wheel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: '3.12'
+      - name: Build source distribution and wheel
+        # By default, uv builds the wheel from the source distribution.
+        run: uv build
+      - name: Test the installed wheel outside the checkout
+        run: |
+          uv venv --python 3.12 "$RUNNER_TEMP/lm15-wheel-venv"
+          uv pip install --python "$RUNNER_TEMP/lm15-wheel-venv/bin/python" dist/*.whl pytest
+          mkdir "$RUNNER_TEMP/lm15-wheel-tests"
+          cp tests/test_vendored_lm15.py "$RUNNER_TEMP/lm15-wheel-tests/"
+          cd "$RUNNER_TEMP/lm15-wheel-tests"
+          "$RUNNER_TEMP/lm15-wheel-venv/bin/python" -I -m pytest -q test_vendored_lm15.py

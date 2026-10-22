@@ -1,9 +1,11 @@
 import asyncio
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
 
 import json_repair
 import pydantic
+import pydantic_core
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
 
@@ -16,6 +18,10 @@ if TYPE_CHECKING:
     from langchain.tools import BaseTool
 
 _TYPE_MAPPING = {"string": str, "integer": int, "number": float, "boolean": bool, "array": list, "object": dict}
+
+
+class _MCPToolClient(Protocol):
+    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any: ...
 
 
 class Tool(Type):
@@ -107,7 +113,7 @@ class Tool(Type):
             else:
                 args[k] = _resolve_json_schema_reference(TypeAdapter(v).json_schema())
             if default_values[k] is not inspect.Parameter.empty:
-                args[k]["default"] = default_values[k]
+                args[k]["default"] = _to_json_default(default_values[k])
             if arg_desc and k in arg_desc:
                 args[k]["description"] = arg_desc[k]
 
@@ -172,7 +178,13 @@ class Tool(Type):
 
         if loop is None:
             return asyncio.run(coroutine)
-        return loop.run_until_complete(coroutine)
+
+        coroutine.close()
+        raise ValueError(
+            "You are calling `__call__` on an async tool from within a running event loop, which cannot be "
+            "converted to a sync call, even with `allow_tool_async_sync_conversion` enabled. Please use "
+            "`await tool.acall(...)` instead."
+        )
 
     @with_callbacks
     def __call__(self, **kwargs):
@@ -200,20 +212,29 @@ class Tool(Type):
             return result
 
     @classmethod
-    def from_mcp_tool(cls, session: "mcp.ClientSession", tool: "mcp.types.Tool") -> "Tool":
+    def from_mcp_tool(
+        cls,
+        session: _MCPToolClient,
+        tool: "mcp.types.Tool",
+        *,
+        result_mode: Literal["text", "structured"] = "text",
+    ) -> "Tool":
         """
-        Build a DSPy tool from an MCP tool and a ClientSession.
+        Build a DSPy tool from an MCP tool and a compatible MCP client.
 
         Args:
-            session: The MCP session to use.
+            session: An MCP client or session with an async ``call_tool`` method.
             tool: The MCP tool to convert.
+            result_mode: ``"text"`` preserves DSPy's existing text/non-text
+                conversion. ``"structured"`` returns MCP structured content
+                exactly when present, with the existing conversion as fallback.
 
         Returns:
             A Tool object.
         """
         from dspy.utils.mcp import convert_mcp_tool
 
-        return convert_mcp_tool(session, tool)
+        return convert_mcp_tool(session, tool, result_mode=result_mode)
 
     @classmethod
     def from_langchain(cls, tool: "BaseTool") -> "Tool":
@@ -346,7 +367,7 @@ class ToolCalls(Type):
         """Convert a list of dictionaries to a ToolCalls instance.
 
         Args:
-            dict_list: A list of dictionaries, where each dictionary should have 'name' and 'args' keys.
+            tool_calls_dicts: A list of dictionaries, where each dictionary should have 'name' and 'args' keys.
 
         Returns:
             A ToolCalls instance.
@@ -411,9 +432,22 @@ class ToolCalls(Type):
                     if "tool_call_results" in data:
                         normalized["tool_call_results"] = data["tool_call_results"]
                     return normalized
+                # Models in JSON mode write `"tool_calls": null` to mean "no
+                # tool calls this turn"; treat it like an empty list.
+                if tool_calls_data is None:
+                    return {"tool_calls": []}
             elif _is_tool_call_dict(data):
                 # Handle case where data is a dict with "name" and "args" keys
                 return {"tool_calls": [cls.ToolCall(**_normalize_tool_call_dict(data))]}
+            elif not data:
+                # An empty dict is also "no tool calls".
+                return {"tool_calls": []}
+
+        # `None` (models in JSON mode) means "no tool calls this turn" and
+        # normalizes to an empty call list, matching the native-path behavior
+        # where the field stays None when the provider returns no calls.
+        if data is None:
+            return {"tool_calls": []}
 
         raise ValueError(f"Received invalid value for `dspy.ToolCalls`: {data}")
 
@@ -499,6 +533,17 @@ def _normalize_tool_call_dict(data: dict[str, Any]) -> dict[str, Any]:
         "name": name,
         "args": arguments,
     }
+
+
+def _to_json_default(value: Any) -> Any:
+    """Convert a parameter default to its JSON form, e.g. an Enum member to its value."""
+    if isinstance(value, Decimal):
+        # A JSON number fits both float and Decimal arguments; pydantic would give a string.
+        return float(value)
+    try:
+        return pydantic_core.to_jsonable_python(value)
+    except Exception:
+        return value
 
 
 def _resolve_json_schema_reference(schema: dict) -> dict:

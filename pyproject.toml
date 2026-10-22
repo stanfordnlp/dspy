@@ -8,12 +8,12 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="3.3.0"
+version="3.4.1"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
 license = {file = "LICENSE"}
-requires-python = ">=3.10, <3.15"
+requires-python = ">=3.10, <3.16"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -26,21 +26,26 @@ dependencies = [
     "orjson>=3.9.0",
     "tqdm>=4.66.1",
     "requests>=2.31.0",
-    "pydantic>=2.0",
-    "litellm>=1.65.8",
+    "pydantic>=2.11.0",
+    "pyyaml>=6.0.1",
+    # litellm and gepa declare requires-python <3.15, so pip cannot install them on 3.15.
+    # The bundled lm15 engine serves LM calls without litellm; `dspy[litellm]` opts back in.
+    "litellm>=1.65.8; python_version < '3.15'",
+    "jsonschema>=4.0.0",
     "diskcache>=5.6.0",
     "json-repair>=0.54.2",
     "tenacity>=8.2.3",  # undeclared runtime dep of litellm, needed for exponential_backoff_retry
     "anyio",
     "cachetools>=5.5.0",
     "cloudpickle>=3.1.2",
-    "gepa[dspy]==0.1.1",
+    "gepa[dspy]==0.1.4; python_version < '3.15'",
 ]
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
 weaviate = ["weaviate-client>=4.5.4,<4.22.0"]
 mcp = ["mcp; python_version >= '3.10'"]
+deno = ["deno>=2.4.5,<3.0.0"]
 langchain = ["langchain_core>=0.3.0"]
 optuna = ["optuna>=3.4.0"]
 numpy = ["numpy>=1.26.0"]
@@ -51,6 +56,7 @@ dev = [
     "pytest-asyncio>=0.26.0",
     "pytest-xdist>=3.5.0",
     "ruff>=0.3.0",
+    "ty==0.0.89",
     "pre-commit>=3.7.0",
     "pillow>=10.1.0",
     "datamodel_code_generator>=0.26.3",
@@ -58,8 +64,9 @@ dev = [
     "numpy>=1.26.0",
     # LiteLLM proxy imports an internal FastAPI helper removed in 0.140.7.
     "fastapi<0.140.7; sys_platform != 'win32' and python_version < '3.14'",
-    "litellm>=1.65.8; sys_platform == 'win32' or python_version == '3.14'",
-    "litellm[proxy]>=1.65.8; sys_platform != 'win32' and python_version < '3.14'",  # Remove 3.14 condition once uvloop supports
+    "litellm>=1.65.8; sys_platform == 'win32' or python_version >= '3.14'",
+    "litellm[proxy]>=1.65.8; sys_platform != 'win32' and python_version < '3.14'",  # Remove the 3.14+ condition once uvloop supports it
+    "gepa[dspy]==0.1.4",
 ]
 test_extras = [
     "mcp; python_version >= '3.10'",
@@ -70,6 +77,11 @@ test_extras = [
     "numpy>=1.26.0",
 ]
 
+[dependency-groups]
+dev = [
+    "dspy-interpreters @ git+https://github.com/cmpnd-ai/dspy-interpreters",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["dspy", "dspy.*"]
@@ -77,6 +89,9 @@ exclude = ["tests", "tests.*"]
 
 [tool.setuptools.package-data]
 dspy = ["primitives/*.js"]
+"dspy.clients.model_metadata" = ["snapshot.json.gz", "LICENSE", "provenance.json"]
+"dspy._vendor" = ["lm15-LICENSE", "lm15-provenance.txt", "UPDATING.md"]
+"dspy._vendor.lm15" = ["py.typed"]
 
 [project.urls]
 homepage = "https://github.com/stanfordnlp/dspy"
@@ -120,10 +135,28 @@ filterwarnings = [
     "ignore:.+class-based `config` is deprecated, use ConfigDict:DeprecationWarning",
 ]
 
+[tool.ty.src]
+# Expand this list as internal modules are migrated. Dynamic Signature-derived
+# inputs/outputs are not part of this initial type-checking contract.
+include = [
+    "dspy/utils/asyncify.py",
+    "dspy/utils/callback.py",
+    "dspy/utils/callback_context.py",
+    "dspy/utils/parallelizer.py",
+    "dspy/utils/usage_tracker.py",
+    "tests/typing",
+]
+
+[tool.ty.rules]
+missing-type-argument = "error"
+unsound-return-statement = "error"
+unused-ignore-comment = "error"
+
 [tool.ruff]
 include = ["dspy/**/*.py", "tests/**/*.py"]
 exclude = [
   "dspy/__metadata__.py",
+  "dspy/_vendor/**",  # vendored lm15, linted in its own repository
   "tests/reliability/*.py",
 ]
 

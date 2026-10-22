@@ -1,5 +1,9 @@
 # dspy.CodeAct
 
+!!! warning "Deprecated"
+
+    `CodeAct` is deprecated and will be removed in DSPy 3.5. [`RLM`](RLM.md) is the preferred replacement.
+
 <!-- START_API_REF -->
 ::: dspy.CodeAct
     handler: python

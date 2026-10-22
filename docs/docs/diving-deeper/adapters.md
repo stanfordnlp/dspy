@@ -65,7 +65,7 @@ The default. Builds a chat-style prompt with field markers, parses the response 
 Outputs structured JSON. Internally extends ChatAdapter — formatting is similar, but the output instruction asks for JSON and parsing uses `json_repair`. The constructor’s `use_native_function_calling=True` default flips when tool calling is wired in.
 
 **`dspy.XMLAdapter(callbacks=None)`**  
-`<field_name>value</field_name>` tags. The parser is a regex (`r"<(\w+)>(.*?)</\1>"` with `DOTALL`); it’s robust to whitespace but doesn’t tolerate nested tags of the same name.
+`<field_name>value</field_name>` tags. Lists use repeated `<item>` tags.
 
 **`dspy.TwoStepAdapter(extraction_model: BaseLM, **kwargs)`**  
 Two LM calls per inference. Use it when the main LM is a reasoning model that’s bad at formatting — the extractor is usually a cheap general-purpose LM with ChatAdapter. Doesn’t support finetuning yet.
@@ -182,4 +182,5 @@ Safe in-memory inputs such as data URIs, bytes, PIL images, audio arrays, and st
 
 - [Signatures in depth](signatures-in-depth.md) — what the adapter consumes.
 - [Settings and context()](settings-and-context.md) — how `configure` and `context` propagate the adapter choice.
-- Tools, ReAct, and MCP DD page — `Tool` and `ToolCalls` are adapter-formatted but module-driven.
+- [Tools and MCP](tools.md) — `Tool` and `ToolCalls` are adapter-formatted but module-driven.
+- [ReAct and ReActV2](react.md) — how the two agent loops present history and tool calls to adapters.
