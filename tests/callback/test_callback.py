@@ -236,6 +236,46 @@ def test_multiple_callbacks():
     assert len(callback_2.calls) == 2
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_custom_adapter_mixin_keeps_local_and_global_callbacks(asynchronous):
+    class FormatMixin:
+        def format(self, signature, demos, inputs):
+            return [{"role": "user", "content": inputs["question"]}]
+
+        def parse(self, signature, completion):
+            return {"answer": int(completion)}
+
+    class CustomAdapter(FormatMixin, dspy.ChatAdapter):
+        pass
+
+    class Engine:
+        def complete(self, request):
+            return dspy.lm15.Response(
+                id="response", model=request.model,
+                message=dspy.lm15.Message.assistant("42"), usage=dspy.lm15.Usage(),
+                finish_reason="stop",
+            )
+
+    class AsyncEngine:
+        async def complete(self, request):
+            return Engine().complete(request)
+
+    local, global_ = MyCallback(), MyCallback()
+    with dspy.context(
+        lm=dspy.LM("test/mixin", engine=Engine(), async_engine=AsyncEngine(), cache=False),
+        adapter=CustomAdapter(callbacks=[local]), callbacks=[global_],
+    ):
+        predict = dspy.Predict("question -> answer: int")
+        result = await predict.acall(question="6 * 7?") if asynchronous else predict(question="6 * 7?")
+
+    assert result.answer == 42
+    for callback in (local, global_):
+        assert [call["handler"] for call in callback.calls if call["handler"].startswith("on_adapter_")] == [
+            "on_adapter_format_start", "on_adapter_format_end", "on_adapter_parse_start", "on_adapter_parse_end",
+        ]
+
+
 @pytest.mark.parametrize("adapter", [None, dspy.ChatAdapter(), dspy.JSONAdapter()])
 def test_callback_complex_module(adapter):
     callback = MyCallback()

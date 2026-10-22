@@ -311,6 +311,9 @@ class BaseCallback:
 
 def with_callbacks(fn: F) -> F:
     """Add callbacks to an instance method while preserving its parameters and return type."""
+    # Adapter subclasses may inherit an already-decorated method.
+    if getattr(fn, "__dspy_with_callbacks__", False):
+        return fn
 
     def _execute_start_callbacks(
         instance: object,
@@ -387,6 +390,7 @@ def with_callbacks(fn: F) -> F:
 
         # Both wrappers forward arguments and results unchanged. Preserve the full
         # callable type, including generic/overloaded methods and coroutine results.
+        async_wrapper.__dict__["__dspy_with_callbacks__"] = True
         return cast(F, async_wrapper)
 
     else:
@@ -417,6 +421,7 @@ def with_callbacks(fn: F) -> F:
                 callback_context.ACTIVE_CALL_ID.set(parent_call_id)
                 _execute_end_callbacks(instance, fn, call_id, results, exception, callbacks)
 
+        sync_wrapper.__dict__["__dspy_with_callbacks__"] = True
         return cast(F, sync_wrapper)
 
 
