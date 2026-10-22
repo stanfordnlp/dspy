@@ -156,6 +156,7 @@ nav:
         - Primitives:
             - api/primitives/index.md
             - Audio: api/primitives/Audio.md
+            - BoundingBox: api/primitives/BoundingBox.md
             - Code: api/primitives/Code.md
             - Example: api/primitives/Example.md
             - History: api/primitives/History.md

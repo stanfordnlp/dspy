@@ -18,11 +18,11 @@ Text-only, model-agnostic, uses `[[ ## field ## ]]` markers. It needs no special
 
 ### 3. Every adapter follows a fixed lifecycle
 
-preprocess → format → LM call → postprocess → parse. You can debug any adapter by walking these five steps. Preprocess adapts the signature for native LM features (function calling, reasoning). Format builds the messages. The LM call returns raw outputs. Postprocess pulls out tool calls and native-typed responses (Reasoning, Citations). Parse runs `parse_value` on each declared output field.
+preprocess → format → LM call → postprocess → parse. You can debug any adapter by walking these five steps. Preprocess adapts the signature for native LM features (function calling, reasoning). Format builds the messages. The LM call returns raw outputs. Postprocess pulls out tool calls and native-typed responses (Reasoning, Citations). Parse converts declared output fields to typed values.
 
 ### 4. Type coercion is centralized
 
-`dspy/adapters/utils.py::parse_value` is the single function every adapter delegates to. Adapters differ in how they *find* a field’s value in the LM’s output (regex marker, JSON key, XML tag), but once they have the raw string they all call the same `parse_value(value, annotation)`. That keeps coercion rules consistent across adapter swaps and gives you one place to look when a typed field misbehaves.
+Adapters use `dspy/adapters/utils.py::parse_value` for text. XML containers use Pydantic validation by field name with `strict=False`, since their scalar values arrive as text.
 
 ### 5. Custom types own their own serialization
 
@@ -65,7 +65,9 @@ The default. Builds a chat-style prompt with field markers, parses the response 
 Outputs structured JSON. Internally extends ChatAdapter — formatting is similar, but the output instruction asks for JSON and parsing uses `json_repair`. The constructor’s `use_native_function_calling=True` default flips when tool calling is wired in.
 
 **`dspy.XMLAdapter(callbacks=None)`**  
-`<field_name>value</field_name>` tags. Lists use repeated `<item>` tags.
+Uses `<field_name>...</field_name>` tags, with nested fields for objects and `<item>` for lists. Supports streaming and leading reasoning blocks. Use `<field/>` for null, `<field></field>` for an empty string. Untyped (`Any`) values still require user validation.
+
+Container-closing tag sequences are reserved inside strings. Undeclared object fields are rejected unless the schema allows extras.
 
 **`dspy.TwoStepAdapter(extraction_model: BaseLM, **kwargs)`**  
 Two LM calls per inference. Use it when the main LM is a reasoning model that’s bad at formatting — the extractor is usually a cheap general-purpose LM with ChatAdapter. Doesn’t support finetuning yet.

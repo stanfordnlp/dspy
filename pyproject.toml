@@ -26,6 +26,7 @@ dependencies = [
     "orjson>=3.9.0",
     "tqdm>=4.66.1",
     "requests>=2.31.0",
+    "certifi>=2026.10.19",  # distrust the compromised emSign CA
     "pydantic>=2.11.0",
     "pyyaml>=6.0.1",
     # litellm and gepa declare requires-python <3.15, so pip cannot install them on 3.15.
@@ -58,6 +59,7 @@ dev = [
     "ruff>=0.3.0",
     "ty==0.0.89",
     "pre-commit>=3.7.0",
+    "virtualenv>=21.14.12",  # seed pre-commit environments with pip>=26.2.2
     "pillow>=10.1.0",
     "datamodel_code_generator>=0.26.3",
     "build>=1.0.3",
@@ -81,6 +83,10 @@ test_extras = [
 dev = [
     "dspy-interpreters @ git+https://github.com/cmpnd-ai/dspy-interpreters",
 ]
+
+[tool.uv]
+# Also used by setup-uv when selecting the CI installer.
+required-version = ">=0.13.4"
 
 [tool.setuptools.packages.find]
 where = ["."]
