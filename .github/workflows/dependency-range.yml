@@ -21,6 +21,8 @@ jobs:
   dependency-range:
     name: Dependencies (${{ matrix.profile }})
     runs-on: ubuntu-latest
+    # Temporary xfail until certifi>=2026.10.19 ages in after 2026-10-23 02:24:15 UTC.
+    continue-on-error: ${{ matrix.profile == 'latest' }}
     permissions:
       contents: read
     strategy:
@@ -54,6 +56,8 @@ jobs:
         env:
           PROFILE: ${{ matrix.profile }}
           RESOLUTION: ${{ matrix.resolution }}
+          # Let new package uploads age for 72 hours before testing the latest versions.
+          UV_EXCLUDE_NEWER: ${{ matrix.profile == 'latest' && '3 days' || 'false' }}
         run: |
           uv pip compile pyproject.toml \
             --extra deno \
