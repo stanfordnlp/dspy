@@ -21,6 +21,8 @@ jobs:
   dependency-range:
     name: Dependencies (${{ matrix.profile }})
     runs-on: ubuntu-latest
+    # Temporary xfail until certifi>=2026.10.19 ages in after 2026-10-23 02:24:15 UTC.
+    continue-on-error: ${{ matrix.profile == 'latest' }}
     permissions:
       contents: read
     strategy:
