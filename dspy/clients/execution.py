@@ -1,4 +1,4 @@
-"""One execution path for native, compatibility and custom DSPy LMs.
+"""One execution path for native and custom DSPy LMs.
 
 Every call becomes one lm15 Request before anything here runs. This module
 owns what engines do not: cache reads and writes, retries, candidate fan-out,
@@ -6,7 +6,6 @@ usage accounting, history and the public return shapes.
 """
 
 import asyncio
-import os
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -19,7 +18,6 @@ from dspy.clients.call_context import stream_emitted
 from dspy.clients.call_result import CACHE_FORMAT, CallResult, combine, usage_dict
 from dspy.clients.engines.base import validate_request
 from dspy.clients.engines.lifecycle import aclosing_stream, closing_stream
-from dspy.clients.engines.litellm_engine import AsyncLiteLLMEngine, LiteLLMEngine
 from dspy.clients.engines.lm15_engine import AsyncLM15Engine, LM15Engine, timeouts_for
 from dspy.clients.engines.stream_guard import achecked_stream, checked_stream
 from dspy.clients.engines.streaming import ListenerBridge
@@ -27,8 +25,8 @@ from dspy.clients.errors import error_boundary
 from dspy.clients.lm15_boundary import snapshot_request
 from dspy.clients.requests import CLIENT_KEYS, build_request
 from dspy.dsp.utils.settings import settings
-from dspy.lm15 import ProviderError, Request, Response, RouterConfig, StreamAssemblyError, UnsupportedFeatureError
-from dspy.utils.exceptions import LMConfigurationError, LMUnsupportedFeatureError, is_retryable_lm_error
+from dspy.lm15 import ProviderError, Request, Response, RouterConfig, StreamAssemblyError
+from dspy.utils.exceptions import LMUnsupportedFeatureError, is_retryable_lm_error
 
 IGNORED_CACHE_KEYS = ["api_key", "api_base", "base_url"]
 _MESSAGES_REMOVED = (
@@ -123,56 +121,6 @@ def prepare(lm, prompt, options, *, cache=None, rollout_id=None, asynchronous=Fa
     return PreparedCall(request, prompt, options, bool(use_cache), rollout_id, count, True, asynchronous)
 
 
-_LITELLM_GENERIC_DOOR = {
-    "openai-chat": ("openai", "bearer"),
-    "openai-responses": ("openai", "bearer"),
-    "anthropic": ("anthropic", "x-api-key"),
-}
-
-
-def _declared_fallback(lm, binding, resolution, clients):
-    """Keep a declared provider's destination and credential across fallback."""
-    from dspy._vendor.lm15.access import select_scheme
-    from dspy._vendor.lm15.credentials import AwsCredentials
-    from dspy._vendor.lm15.providers.base import resolve_credential_value
-
-    definition = binding.definition
-    door, sends = _LITELLM_GENERIC_DOOR.get(definition.dialect, (None, None))
-    if door is None or definition.hosted:
-        raise LMUnsupportedFeatureError(
-            f"{lm.model!r}: the declared provider {definition.id!r} has no LiteLLM route for these client "
-            f"settings; use settings the native engine carries (api_key, api_base, timeout)",
-            model=lm.model, provider=definition.id,
-        )
-    options = dict(clients)
-    if not (options.get("api_base") or options.get("base_url")):
-        options["api_base"] = definition.access.base_url
-    key = options.get("api_key")
-    if not key:
-        key = next((os.environ[name] for name in definition.access.env_keys if os.environ.get(name)), None)
-        key = key or definition.placeholder_key
-        if not key:
-            variables = " or ".join(definition.access.env_keys) or "api_key="
-            raise LMConfigurationError(
-                f"no credential for the declared provider {definition.id!r}: set {variables} or pass api_key=",
-                model=lm.model, provider=definition.id,
-            )
-    credential = resolve_credential_value(key)
-    scheme = select_scheme(definition.access, credential)
-    if scheme != sends or isinstance(credential, AwsCredentials):
-        raise LMUnsupportedFeatureError(
-            f"{lm.model!r}: the declared provider {definition.id!r} authenticates with {scheme!r}, which the "
-            f"LiteLLM {door}/ door cannot send (it sends {sends!r}); use settings the native engine carries "
-            "(api_key, api_base, timeout)",
-            model=lm.model, provider=definition.id, features=[scheme],
-        )
-    options["api_key"] = credential.value
-    static = dict(definition.access.headers)
-    if static:
-        options["extra_headers"] = {**static, **(options.get("extra_headers") or {})}
-    return f"{door}/{resolution.model}", options
-
-
 def _engine(lm, call, asynchronous):
     # Setup is outside the retry loop. Routing refusals need the same public
     # error projection as engine-call failures.
@@ -194,24 +142,8 @@ def _select_engine(lm, call, asynchronous):
         return backend, None
     selection = select_backend(lm, call.options, request=call.request)
     resolution, clients = selection.resolution, selection.clients
-    from dspy.lm15 import _binding_for, _definitions
+    from dspy.lm15 import _definitions
 
-    binding = _binding_for(lm._providers, resolution.provider) if resolution is not None and resolution.declared else None
-
-    def compatibility_engine():
-        if call.request.config.cache is not None:
-            raise LMUnsupportedFeatureError(
-                "Provider prompt caching requires the native lm15 engine or a custom engine; "
-                "the LiteLLM compatibility engine has no prompt-cache bridge.", model=lm.model,
-            )
-        cls = AsyncLiteLLMEngine if asynchronous else LiteLLMEngine
-        if binding is not None:
-            wire_model, options = _declared_fallback(lm, binding, resolution, clients)
-            return cls(model_type=lm.model_type, wire_model=wire_model, **options), resolution.provider
-        return cls(model_type=lm.model_type, **clients), None
-
-    if not selection.native:
-        return compatibility_engine()
     # Long-lived sync pools and a separate async pool per event loop. Copies
     # share the store; a copy with changed client settings gets a distinct key.
     loop = asyncio.get_running_loop() if asynchronous else None
@@ -232,15 +164,6 @@ def _select_engine(lm, call, asynchronous):
             cls = AsyncLM15Engine if asynchronous else LM15Engine
             backend = cls(config, model_type=lm.model_type)
             lm._engine_store[key] = backend
-    if spec == "auto" and call.request.config.cache is None:
-        # Representational fallback happens before inference, never after a
-        # failed provider call. A declared provider's refusal remains final.
-        try:
-            backend.plan(call.request)
-        except UnsupportedFeatureError:
-            if binding is not None:
-                raise
-            return compatibility_engine()
     return backend, resolution.provider
 
 
@@ -408,9 +331,7 @@ def _bridge(lm):
 def _attempt(lm, call, backend, provider, state, results):
     stream = settings.send_stream
     request = call.request
-    # Program-level streaming must allow non-streaming helper predictions.
-    # These compatibility endpoints complete without token chunks.
-    if stream is None or (isinstance(backend, LiteLLMEngine) and backend.model_type != "chat"):
+    if stream is None:
         try:
             response = backend.complete(request)
         except (ProviderError, StreamAssemblyError) as exc:
@@ -442,7 +363,7 @@ def _attempt(lm, call, backend, provider, state, results):
 async def _aattempt(lm, call, backend, provider, state, results):
     stream = settings.send_stream
     request = call.request
-    if stream is None or (isinstance(backend, AsyncLiteLLMEngine) and backend.model_type != "chat"):
+    if stream is None:
         try:
             response = await backend.complete(request)
         except (ProviderError, StreamAssemblyError) as exc:

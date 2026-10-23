@@ -86,7 +86,7 @@ def test_strict_schema_unravels_a_ref_with_siblings_and_a_lone_allof():
     assert out["required"] == ["a", "b"]
 
 
-@pytest.mark.parametrize("engine", ["lm15", "litellm"])
+@pytest.mark.parametrize("engine", ["lm15", "auto"])
 def test_pydantic_response_format_is_strict_on_both_engines(engine):
     lm = dspy.LM("openai/gpt-4o", engine=engine, api_key="k", cache=False)
     request = prepare(lm, "hi", {"response_format": _Record}).request
@@ -209,33 +209,6 @@ def test_provider_option_spellings_survive_native_serialization(model, options, 
     engine = LM15Engine(RouterConfig(api_keys={"openrouter": "test", "groq": "test"}, transport=transport))
     assert engine.complete(request).text == "hello"
     assert json.loads(transport.requests[0].body)[field] == expected
-
-
-@pytest.mark.parametrize("route", [{"engine": "litellm"}, {"engine": "auto", "extra_headers": {"X-Gateway": "test"}}])
-@pytest.mark.parametrize("control", [
-    {"thinking": {"type": "disabled"}},
-    {"thinking": {"type": "enabled", "budget_tokens": 2048}},
-    {"enable_thinking": False},
-    {"chat_template_kwargs": {"enable_thinking": False, "preserve_thinking": True}},
-    {"reasoning_format": "raw"},
-])
-def test_compatibility_routes_preserve_provider_thinking_controls(route, control, monkeypatch):
-    import litellm
-
-    seen = []
-
-    def complete(**kwargs):
-        seen.append(kwargs)
-        return litellm.ModelResponse(choices=[{"message": {"role": "assistant", "content": "hello"},
-                                               "finish_reason": "stop"}])
-
-    monkeypatch.setattr(litellm, "completion", complete)
-    lm = dspy.LM("deepseek/deepseek-chat", cache=False, num_retries=0, **route)
-    request = build_request(lm, "hello", control)
-    assert lm(request).text == "hello"
-    for key, value in control.items():
-        assert seen[0][key] == value
-    assert "reasoning_effort" not in seen[0]
 
 
 @pytest.mark.asyncio

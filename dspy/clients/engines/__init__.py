@@ -6,7 +6,6 @@ backend.
 """
 
 from dspy.clients.engines.base import AsyncEngine, Engine
-from dspy.clients.engines.litellm_engine import AsyncLiteLLMEngine, LiteLLMEngine
 from dspy.clients.engines.lm15_engine import AsyncLM15Engine, LM15Engine
 
 __all__ = [
@@ -14,6 +13,4 @@ __all__ = [
     "AsyncEngine",
     "LM15Engine",
     "AsyncLM15Engine",
-    "LiteLLMEngine",
-    "AsyncLiteLLMEngine",
 ]

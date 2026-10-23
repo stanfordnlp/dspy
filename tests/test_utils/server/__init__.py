@@ -1,99 +1,100 @@
+"""A deterministic OpenAI-compatible HTTP server, shared once per pytest worker."""
+
 import json
-import os
-import socket
-import subprocess
-import sys
-import tempfile
-import time
-from collections.abc import Iterator
-from typing import Any
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
 
 import pytest
 
-from tests.test_utils.server.litellm_server import LITELLM_TEST_SERVER_LOG_FILE_PATH_ENV_VAR
 
+class _Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
 
-@pytest.fixture()
-def litellm_test_server(_litellm_test_server: tuple[str, str]) -> Iterator[tuple[str, str]]:
-    """Provide the shared LiteLLM server with request logs isolated to this test."""
-    server_url, server_log_file_path = _litellm_test_server
-    open(server_log_file_path, "w").close()
-    yield server_url, server_log_file_path
+    def do_POST(self):
+        request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        with open(self.server.log_path, "a") as log:
+            log.write(json.dumps(request) + "\n")
+        content = str(request.get("messages", [{}])[0].get("content", ""))
+        for status, message in [
+            (429, "Rate limit exceeded"),
+            (504, "Request timed out!"),
+            (400, "Bad request"),
+            (401, "Authentication error"),
+        ]:
+            if str(status) in content:
+                self._json({"error": {"message": message, "type": "test_error", "code": str(status)}}, status)
+                return
+        if request.get("stream"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            for delta, finish in [({"role": "assistant", "content": '{"output_text": "Hello!"}'}, None), ({}, "stop")]:
+                chunk = {
+                    "id": "test",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": request["model"],
+                    "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+                }
+                self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+            usage = {
+                "id": "test",
+                "object": "chat.completion.chunk",
+                "created": 0,
+                "model": request["model"],
+                "choices": [],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            }
+            self.wfile.write(f"data: {json.dumps(usage)}\n\ndata: [DONE]\n\n".encode())
+            self.wfile.flush()
+        else:
+            self._json(
+                {
+                    "id": "test",
+                    "object": "chat.completion",
+                    "created": 0,
+                    "model": request["model"],
+                    "choices": [
+                        {"index": 0, "message": {"role": "assistant", "content": "Hi!"}, "finish_reason": "stop"}
+                    ],
+                    "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+                }
+            )
+
+    def _json(self, data, status=200):
+        body = json.dumps(data).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
 
 @pytest.fixture(scope="session")
-def _litellm_test_server() -> Iterator[tuple[str, str]]:
-    """
-    Start one LiteLLM test server per pytest worker and tear it down when the
-    session completes.
-    """
-    if sys.version_info[:2] >= (3, 14):
-        pytest.skip("Litellm proxy server is not supported on Python 3.14+.")
-    with tempfile.TemporaryDirectory() as server_log_dir_path:
-        # Create a server log file used to store request logs
-        server_log_file_path = os.path.join(server_log_dir_path, "request_logs.jsonl")
-        open(server_log_file_path, "a").close()
-
-        port = _get_random_port()
-        host = "127.0.0.1"
-        print(f"Starting LiteLLM proxy server on port {port}")
-
-        process = subprocess.Popen(
-            ["litellm", "--host", host, "--port", str(port), "--config", _get_litellm_config_path()],
-            env={LITELLM_TEST_SERVER_LOG_FILE_PATH_ENV_VAR: server_log_file_path, **os.environ.copy()},
-            text=True,
-        )
-
-        try:
-            _wait_for_port(host=host, port=port, process=process)
-        except TimeoutError as e:
-            process.terminate()
-            raise e
-
-        server_url = f"http://{host}:{port}"
-        yield server_url, server_log_file_path
-
-        process.kill()
-        process.wait()
+def _openai_test_server(tmp_path_factory):
+    log_path = tmp_path_factory.mktemp("openai-server") / "requests.jsonl"
+    log_path.touch()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    server.log_path = log_path
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/v1", str(log_path)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
 
 
-def read_litellm_test_server_request_logs(server_log_file_path: str) -> list[dict[str, Any]]:
-    """
-    Read request logs from a LiteLLM server used during DSPy integration tests.
-
-    Args:
-        server_log_file_path: The filesystem path to the LiteLLM server request logs jsonlines file.
-    Return:
-        A list of log entries, where each entry corresponds to one request handled by the server.
-    """
-    data = []
-    with open(server_log_file_path) as f:
-        for line in f:
-            data.append(json.loads(line))
-
-    return data
+@pytest.fixture
+def openai_test_server(_openai_test_server):
+    url, log_path = _openai_test_server
+    with open(log_path, "w"):
+        pass
+    return url, log_path
 
 
-def _get_litellm_config_path():
-    module_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(module_dir, "litellm_server_config.yaml")
-
-
-def _get_random_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
-
-
-def _wait_for_port(host, port, process=None, timeout=60):
-    start_time = time.monotonic()
-    while time.monotonic() - start_time < timeout:
-        if process is not None and process.poll() is not None:
-            raise TimeoutError(f"Server process exited with status {process.returncode} before port {port} was ready.")
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            try:
-                sock.connect((host, port))
-                return True
-            except ConnectionRefusedError:
-                time.sleep(0.05)
-    raise TimeoutError(f"Server on port {port} did not become ready within {timeout} seconds.")
+def read_test_server_request_logs(log_path):
+    with open(log_path) as log:
+        return [json.loads(line) for line in log]

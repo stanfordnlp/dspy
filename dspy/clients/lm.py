@@ -27,7 +27,7 @@ def _is_openai_reasoning_model(model: str) -> bool:
     ) is not None
 
 
-_ENGINE_SELECTIONS = ("auto", "lm15", "litellm")
+_ENGINE_SELECTIONS = ("auto", "lm15")
 # Serialized custom engines: {"class": "pkg.module:Qual.Name", "state": {...}}.
 _ENGINE_CLASS_KEY = "class"
 _ENGINE_STATE_KEY = "state"
@@ -37,7 +37,10 @@ def _check_engines(engine, async_engine) -> None:
     """Validate named selections and custom engine pairs for construction and copy."""
     if isinstance(engine, str):
         if engine not in _ENGINE_SELECTIONS:
-            raise ValueError("engine must be 'auto', 'lm15', 'litellm', or an engine object")
+            raise ValueError(
+                "engine must be 'auto', 'lm15', or an engine object. DSPy 3.5 removed the LiteLLM backend; "
+                "see https://dspy.ai/community/normalized-lm-api-migration/."
+            )
         if async_engine is not None:
             raise ValueError("async_engine is only used with a custom engine object")
         return
@@ -155,7 +158,7 @@ class LM(BaseLM):
     def __init__(
         self,
         model: str,
-        model_type: Literal["chat", "text", "responses"] = "chat",
+        model_type: Literal["chat", "responses"] = "chat",
         temperature: float | None = None,
         max_tokens: int | None = None,
         cache: bool = True,
@@ -166,7 +169,7 @@ class LM(BaseLM):
         launch_kwargs: dict[str, Any] | None = None,
         train_kwargs: dict[str, Any] | None = None,
         use_developer_role: bool = False,
-        engine: Engine | Literal["auto", "lm15", "litellm"] | None = "auto",
+        engine: Engine | Literal["auto", "lm15"] | None = "auto",
         async_engine: AsyncEngine | None = None,
         prompt_cache: CacheConfig | None = None,
         **kwargs,
@@ -175,10 +178,9 @@ class LM(BaseLM):
 
         Args:
             model: The model to use. This should be a string of the form
-                `"llm_provider/llm_name"` supported by LiteLLM. For example,
+                `"provider/model"` supported by lm15 or a registered provider. For example,
                 `"openai/gpt-4o"`.
-            model_type: The type of the model, such as `"chat"`, `"text"`, or
-                `"responses"`.
+            model_type: The API to use: `"chat"` or `"responses"`.
             temperature: The sampling temperature to use when generating responses.
             max_tokens: The maximum number of tokens to generate per response.
             cache: Whether to cache the model responses for reuse to improve performance
@@ -187,8 +189,7 @@ class LM(BaseLM):
             num_retries: The number of times to retry a request if it fails transiently due to
                 network error, rate limiting, etc. Requests are retried with exponential
                 backoff.
-            engine: 'auto' prefers lm15 for representable requests; 'litellm' preserves the compatibility backend;
-                'lm15' refuses unsupported mappings rather than selecting LiteLLM. A custom engine implements
+            engine: 'auto' and 'lm15' both use native lm15 execution without fallback. A custom engine implements
                 complete(Request) -> Response and optionally stream(Request). Engines are borrowed and own
                 their connection: api_key, api_base, timeout and the other client settings are refused with a
                 custom engine, at construction and on every call.
@@ -211,11 +212,15 @@ class LM(BaseLM):
         """
         _check_engines(engine, async_engine)
         _refuse_client_settings(engine, kwargs)
+        if isinstance(engine, str) and model_type not in {"chat", "responses"}:
+            raise LMUnsupportedFeatureError(
+                "DSPy 3.5 supports model_type='chat' or 'responses'; legacy text completions require a custom engine.",
+                model=model,
+            )
         if not isinstance(model, str) or not model:
             raise ValueError("model must be a non-empty string")
         _, separator, rest = model.partition("/")
         if separator and not rest:
-            # "openai/" selected LiteLLM silently and failed at call time.
             raise ValueError(f"model {model!r} has a provider prefix but no model id after it")
         if isinstance(num_retries, bool) or not isinstance(num_retries, int) or num_retries < 0:
             raise ValueError("num_retries must be a nonnegative integer")
@@ -256,7 +261,7 @@ class LM(BaseLM):
         self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
 
     def _get_initial_kwargs(self, *, temperature, max_tokens, **kwargs) -> dict[str, Any]:
-        # Override BaseLM's default kwargs shape for LiteLLM/model-family-specific token parameters.
+        # Override BaseLM's default kwargs shape for model-family-specific token parameters.
         if _is_openai_reasoning_model(self.model):
             if (temperature and temperature != 1.0) or (max_tokens and max_tokens < 16000):
                 raise LMConfigurationError(
@@ -306,8 +311,6 @@ class LM(BaseLM):
 
         if not isinstance(self.engine, str):
             return getattr(self._capability_engine, "supports_decision_requests", False) is True
-        if self.engine == "litellm":
-            return False
         try:
             return resolve(self).provider == "typesafe"
         except (UnknownModelError, UnsupportedFeatureError):
@@ -414,6 +417,7 @@ class LM(BaseLM):
         self.__dict__.update(state)
         self._engine_spec = getattr(self, "_engine_spec", "auto")
         self._async_engine_spec = getattr(self, "_async_engine_spec", None)
+        _check_engines(self._engine_spec, self._async_engine_spec)
         self._providers = getattr(self, "_providers", ())
         self._engine_lock = threading.RLock()
         self._engine_store = {}
