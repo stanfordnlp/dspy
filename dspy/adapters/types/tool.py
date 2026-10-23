@@ -552,7 +552,6 @@ def _resolve_json_schema_reference(schema: dict) -> dict:
     resolved_schema = resolve_refs(schema)
     # Remove the definitions key as it is no longer needed.
     resolved_schema.pop("$defs", None)
-    resolved_schema.pop("definitions", None)
     return resolved_schema
 
 
