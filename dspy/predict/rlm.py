@@ -45,7 +45,7 @@ from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from dspy.primitives.sandbox_serializable import SandboxSerializable, build_repl_variable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
-from dspy.utils.exceptions import format_error_for_lm
+from dspy.utils.exceptions import AdapterParseError, format_error_for_lm
 
 if TYPE_CHECKING:
 
@@ -769,6 +769,30 @@ class RLM(Module):
             logger.info(REPLEntry.format_output(output, self.max_output_chars))
         return history.append(reasoning=reasoning, code=code, output=output)
 
+    def _record_unparseable_action(
+        self,
+        error: AdapterParseError,
+        history: REPLHistory,
+        iteration: int,
+    ) -> REPLHistory:
+        """Record a turn reply the adapter could not parse and let the loop continue.
+
+        No code runs for the turn. The parse error goes into the history, as a code
+        error would, so the next action request differs from this one and the model
+        sees what went wrong. The turn still counts against ``max_iters``, so repeated
+        failures end in the extract fallback with the trajectory intact.
+        """
+        logger.warning(
+            "RLM iteration %d/%d: could not parse the action reply; recording the error and continuing",
+            iteration + 1,
+            self.max_iters,
+        )
+        output = (
+            "[Error] Your previous reply could not be parsed into the required output fields, "
+            f"so no code was run.\n{format_error_for_lm(error)}"
+        )
+        return history.append(code="", output=output)
+
     def _execute_code(
         self,
         repl: CodeInterpreter,
@@ -796,12 +820,15 @@ class RLM(Module):
         variables_info = [variable.format() for variable in variables]
         # A per-call signature, not a mutation of generate_action.signature, keeps a
         # dspy.context override local to this invocation.
-        action = self.generate_action(
-            signature=self._action_signature_for_current_factory(interpreter_factory, sub_agent_rules),
-            variables_info=variables_info,
-            repl_history=history,
-            iteration=f"{iteration + 1}/{self.max_iters}",
-        )
+        try:
+            action = self.generate_action(
+                signature=self._action_signature_for_current_factory(interpreter_factory, sub_agent_rules),
+                variables_info=variables_info,
+                repl_history=history,
+                iteration=f"{iteration + 1}/{self.max_iters}",
+            )
+        except AdapterParseError as e:
+            return self._record_unparseable_action(e, history, iteration)
         if self.verbose:
             logger.info(
                 f"RLM iteration {iteration + 1}/{self.max_iters}\n"
@@ -898,12 +925,15 @@ class RLM(Module):
     ) -> Prediction | REPLHistory:
         """Async version: Execute one iteration."""
         variables_info = [variable.format() for variable in variables]
-        pred = await self.generate_action.acall(
-            signature=self._action_signature_for_current_factory(interpreter_factory, sub_agent_rules),
-            variables_info=variables_info,
-            repl_history=history,
-            iteration=f"{iteration + 1}/{self.max_iters}",
-        )
+        try:
+            pred = await self.generate_action.acall(
+                signature=self._action_signature_for_current_factory(interpreter_factory, sub_agent_rules),
+                variables_info=variables_info,
+                repl_history=history,
+                iteration=f"{iteration + 1}/{self.max_iters}",
+            )
+        except AdapterParseError as e:
+            return self._record_unparseable_action(e, history, iteration)
         if self.verbose:
             logger.info(
                 f"RLM iteration {iteration + 1}/{self.max_iters}\n"

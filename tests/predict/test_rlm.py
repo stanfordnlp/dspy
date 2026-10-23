@@ -8,6 +8,7 @@ Test organization:
 
 import base64
 import io
+import json
 import sys
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
@@ -28,6 +29,7 @@ from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from dspy.primitives.sandbox_serializable import SandboxSerializable
 from dspy.utils.dummies import DummyLM
+from dspy.utils.exceptions import AdapterParseError
 from tests.mock_interpreter import MockInterpreter, MockInterpreterFactory
 
 # ============================================================================
@@ -1038,6 +1040,119 @@ class TestRLMToolExceptions:
         with pytest.raises(CodeInterpreterError, match="protocol corrupt"):
             await rlm.aforward(query="test", interpreter_factory=lambda: mock)
         assert mock._shutdown
+
+
+class TestRLMUnparseableActionReply:
+    """A turn reply the adapter cannot parse costs one iteration, not the whole run."""
+
+    @staticmethod
+    def _parse_error(reply: str = "{We need answer user with JSON reasoning and code.") -> AdapterParseError:
+        return AdapterParseError(
+            adapter_name="JSONAdapter",
+            signature=dspy.Signature("variables_info, repl_history, iteration -> reasoning, code"),
+            lm_response=reply,
+            message="LM response cannot be serialized to a JSON object.",
+        )
+
+    @classmethod
+    def _scripted_predictor(cls, script: list):
+        """Like make_mock_predictor, but an exception in the script is raised from that call."""
+
+        class ScriptedPredictor:
+            def __init__(self):
+                self.calls = 0
+
+            def _next(self):
+                item = script[self.calls]
+                self.calls += 1
+                if isinstance(item, BaseException):
+                    raise item
+                return Prediction(**item)
+
+            def __call__(self, **kwargs):
+                return self._next()
+
+            async def acall(self, **kwargs):
+                return self._next()
+
+        return ScriptedPredictor()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("async_mode", [False, True])
+    async def test_unparseable_reply_is_recorded_and_the_loop_continues(self, async_mode):
+        mock = MockInterpreter(responses=["ok: cell 1", FinalOutput({"answer": "done"})])
+        rlm = RLM("query -> answer", max_iters=5)
+        rlm.generate_action = self._scripted_predictor([
+            {"reasoning": "Explore", "code": "print(1)"},
+            self._parse_error(),
+            {"reasoning": "Finish", "code": 'SUBMIT("done")'},
+        ])
+        rlm.extract = make_mock_predictor([{"answer": "extracted"}])
+
+        if async_mode:
+            result = await rlm.aforward(query="t", interpreter_factory=lambda: mock)
+        else:
+            result = rlm.forward(query="t", interpreter_factory=lambda: mock)
+
+        assert result.answer == "done"
+        assert rlm.generate_action.calls == 3
+        assert [step["code"] for step in result.trajectory] == ["print(1)", "", 'SUBMIT("done")']
+        assert result.trajectory[0]["output"] == "ok: cell 1"
+        failed = result.trajectory[1]
+        assert failed["output"].startswith("[Error]")
+        assert "LM response cannot be serialized to a JSON object." in failed["output"]
+        # Nothing ran for the unparseable turn.
+        assert [code for code, _ in mock.call_history] == ["print(1)", 'SUBMIT("done")']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("async_mode", [False, True])
+    async def test_unparseable_replies_until_max_iters_use_extract_fallback(self, async_mode):
+        mock = MockInterpreter(responses=["ok: cell 1"])
+        rlm = RLM("query -> answer", max_iters=3)
+        rlm.generate_action = self._scripted_predictor([
+            {"reasoning": "Explore", "code": "print(1)"},
+            self._parse_error(),
+            self._parse_error(""),
+        ])
+        rlm.extract = make_mock_predictor([{"answer": "extracted"}])
+
+        if async_mode:
+            result = await rlm.aforward(query="t", interpreter_factory=lambda: mock)
+        else:
+            result = rlm.forward(query="t", interpreter_factory=lambda: mock)
+
+        assert result.answer == "extracted"
+        assert result.final_reasoning == "Extract forced final output"
+        assert len(result.trajectory) == 3
+        assert result.trajectory[0]["code"] == "print(1)"
+        assert all(step["output"].startswith("[Error]") for step in result.trajectory[1:])
+
+    @pytest.mark.asyncio
+    async def test_malformed_json_reply_from_lm_does_not_escape_aforward(self):
+        """End to end through JSONAdapter: the raw reply shape reported in the wild."""
+
+        class RawLM(DummyLM):
+            def _format_answer_fields(self, field_names_and_values):
+                return field_names_and_values["__raw__"]
+
+        def good(plan, code):
+            # DummyLM has no native reasoning, so RLM's reasoning field is serialized as `plan`.
+            return {"__raw__": json.dumps({"plan": plan, "code": code})}
+
+        lm = RawLM([
+            good("1", "print(1)"),
+            {"__raw__": "{We need answer user with JSON reasoning and code. Need inspect situation."},
+            good("3", "SUBMIT(answer='done')"),
+        ])
+        mock = MockInterpreter(responses=["ok: cell 1", FinalOutput({"answer": "done"})])
+        rlm = RLM("task -> answer", max_iters=10)
+
+        with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
+            result = await rlm.aforward(task="t", interpreter_factory=lambda: mock)
+
+        assert result.answer == "done"
+        assert len(result.trajectory) == 3
+        assert result.trajectory[1]["output"].startswith("[Error]")
 
 
 class TestRLMDynamicSignature:
