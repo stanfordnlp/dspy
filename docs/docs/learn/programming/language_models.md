@@ -88,6 +88,52 @@ dspy.configure(lm=lm)
         dspy.configure(lm=lm)
         ```
 
+    === "OCI Generative AI"
+        For Oracle Cloud Infrastructure's [Generative AI service](https://docs.oracle.com/en-us/iaas/Content/generative-ai/pretrained-models.htm), use the `oci/` prefix with the vendor-qualified model ID (e.g. `xai.grok-4.6`, `meta.llama-3.3-70b-instruct`, `openai.gpt-oss-120b`). Requests are signed with an [OCI API signing key](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/apisigningkey.htm), so pass the values from your `~/.oci/config` profile plus the compartment to bill and the region to call.
+
+        ```python linenums="1"
+        import dspy
+        lm = dspy.LM(
+            "oci/xai.grok-4.6",
+            oci_region="us-chicago-1",
+            oci_compartment_id="your-compartment-ocid",
+            oci_tenancy="your-tenancy-ocid",
+            oci_user="your-user-ocid",
+            oci_fingerprint="your-key-fingerprint",
+            oci_key_file="/path/to/oci_api_key.pem",  # absolute path; or oci_key="<PEM contents>"
+        )
+        dspy.configure(lm=lm)
+        ```
+
+        Alternatively, set environment variables and skip the kwargs:
+
+        ```bash
+        export OCI_REGION="us-chicago-1"  # defaults to us-ashburn-1 if unset
+        export OCI_COMPARTMENT_ID="your-compartment-ocid"
+        export OCI_TENANCY="your-tenancy-ocid"
+        export OCI_USER="your-user-ocid"
+        export OCI_FINGERPRINT="your-key-fingerprint"
+        export OCI_KEY_FILE="/path/to/oci_api_key.pem"  # or OCI_KEY="<PEM contents>"
+        ```
+
+        ```python linenums="1"
+        import dspy
+        lm = dspy.LM("oci/xai.grok-4.6")
+        dspy.configure(lm=lm)
+        ```
+
+        OCI also offers an [OpenAI-compatible endpoint](https://docs.oracle.com/en-us/iaas/Content/generative-ai/openai-compatible-api.htm) that authenticates with a Generative AI API key instead of request signing. To use it, add the `openai/` prefix and point `api_base` at your region:
+
+        ```python linenums="1"
+        import dspy
+        lm = dspy.LM(
+            "openai/xai.grok-4.6",
+            api_base="https://inference.generativeai.us-chicago-1.oci.oraclecloud.com/openai/v1",
+            api_key="YOUR_OCI_GENAI_API_KEY",
+        )
+        dspy.configure(lm=lm)
+        ```
+
     === "Local LMs on a GPU server"
           First, install [SGLang](https://docs.sglang.ai/docs/get-started/install) and launch its server with your LM.
 
