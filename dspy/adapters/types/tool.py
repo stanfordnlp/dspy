@@ -522,9 +522,9 @@ def _normalize_tool_call_dict(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _resolve_json_schema_reference(schema: dict) -> dict:
-    """Recursively resolve json model schema, expanding all references."""
+    """Recursively resolve JSON Schema references while preserving sibling keywords."""
 
-    # If there are no definitions to resolve, return the main schema
+    # If there are no definitions to resolve, return the main schema.
     if "$defs" not in schema and "definitions" not in schema:
         return schema
 
@@ -534,16 +534,25 @@ def _resolve_json_schema_reference(schema: dict) -> dict:
         if isinstance(obj, dict):
             if "$ref" in obj:
                 ref_path = obj["$ref"].split("/")[-1]
-                return resolve_refs(schema["$defs"][ref_path])
+                resolved = resolve_refs(schema["$defs"][ref_path])
+                # JSON Schema permits sibling keywords alongside $ref. Keep annotations
+                # such as Annotated[Model, Field(description=...)] when inlining it.
+                siblings = {
+                    key: resolve_refs(value)
+                    for key, value in obj.items()
+                    if key != "$ref"
+                }
+                return {**resolved, **siblings}
             return {k: resolve_refs(v) for k, v in obj.items()}
 
-        # Must be a list
+        # Must be a list.
         return [resolve_refs(item) for item in obj]
 
-    # Resolve all references in the main schema
+    # Resolve all references in the main schema.
     resolved_schema = resolve_refs(schema)
-    # Remove the $defs key as it's no longer needed
+    # Remove the definitions key as it is no longer needed.
     resolved_schema.pop("$defs", None)
+    resolved_schema.pop("definitions", None)
     return resolved_schema
 
 
