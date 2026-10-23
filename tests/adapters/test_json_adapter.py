@@ -305,7 +305,9 @@ def test_json_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
                  '["math", "machines"]}\n'
                  '\n'
                  '[[ ## question ## ]]\n'
-                 'Who is Ada?'},
+                 'Who is Ada?\n\n'
+                 'Respond with a JSON object in the following order of fields: `answer` '
+                 '(must be formatted as a valid Python AnswerCard).'},
      {"role": "assistant",
       "content": '{\n'
                  '  "answer": {\n'
@@ -1226,9 +1228,10 @@ def test_json_adapter_formats_conversation_history():
     messages = adapter.format(MySignature, [], {"question": "What is the capital of France?", "history": history})
 
     assert len(messages) == 6
-    assert messages[1]["content"] == "[[ ## question ## ]]\nWhat is the capital of France?"
+    reminder = "\n\nRespond with a JSON object in the following order of fields: `answer`."
+    assert messages[1]["content"] == "[[ ## question ## ]]\nWhat is the capital of France?" + reminder
     assert messages[2]["content"] == '{\n  "answer": "Paris"\n}'
-    assert messages[3]["content"] == "[[ ## question ## ]]\nWhat is the capital of Germany?"
+    assert messages[3]["content"] == "[[ ## question ## ]]\nWhat is the capital of Germany?" + reminder
     assert messages[4]["content"] == '{\n  "answer": "Berlin"\n}'
 
 

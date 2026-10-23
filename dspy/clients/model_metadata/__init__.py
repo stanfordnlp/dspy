@@ -102,6 +102,7 @@ def _provider_names(provider):
         "moonshotai-responses": ("moonshot", "moonshotai"),
         "moonshotai-anthropic": ("moonshot", "moonshotai"),
         "vllm": ("hosted_vllm", "vllm"),
+        "fireworks": ("fireworks_ai",), "together": ("together_ai",),
     }.get(provider, (provider,))
 
 
@@ -140,6 +141,9 @@ def model_info(provider, model, *, namespaces=None):
     rules = data.get("fallback_generalizations", {}).get("rules", [])
     for rule in rules if isinstance(rules, list) else []:
         if not isinstance(rule, dict) or not isinstance(rule.get("pattern"), str):
+            continue
+        providers = rule.get("fill_missing_for_providers")
+        if found is not None and providers is not None and found.get("litellm_provider") not in providers:
             continue
         try:
             matches = re.search(rule["pattern"], model) is not None

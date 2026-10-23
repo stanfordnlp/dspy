@@ -1,9 +1,11 @@
 import asyncio
 import inspect
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
 
 import json_repair
 import pydantic
+import pydantic_core
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
 
@@ -111,7 +113,7 @@ class Tool(Type):
             else:
                 args[k] = _resolve_json_schema_reference(TypeAdapter(v).json_schema())
             if default_values[k] is not inspect.Parameter.empty:
-                args[k]["default"] = default_values[k]
+                args[k]["default"] = _to_json_default(default_values[k])
             if arg_desc and k in arg_desc:
                 args[k]["description"] = arg_desc[k]
 
@@ -365,7 +367,7 @@ class ToolCalls(Type):
         """Convert a list of dictionaries to a ToolCalls instance.
 
         Args:
-            dict_list: A list of dictionaries, where each dictionary should have 'name' and 'args' keys.
+            tool_calls_dicts: A list of dictionaries, where each dictionary should have 'name' and 'args' keys.
 
         Returns:
             A ToolCalls instance.
@@ -430,9 +432,22 @@ class ToolCalls(Type):
                     if "tool_call_results" in data:
                         normalized["tool_call_results"] = data["tool_call_results"]
                     return normalized
+                # Models in JSON mode write `"tool_calls": null` to mean "no
+                # tool calls this turn"; treat it like an empty list.
+                if tool_calls_data is None:
+                    return {"tool_calls": []}
             elif _is_tool_call_dict(data):
                 # Handle case where data is a dict with "name" and "args" keys
                 return {"tool_calls": [cls.ToolCall(**_normalize_tool_call_dict(data))]}
+            elif not data:
+                # An empty dict is also "no tool calls".
+                return {"tool_calls": []}
+
+        # `None` (models in JSON mode) means "no tool calls this turn" and
+        # normalizes to an empty call list, matching the native-path behavior
+        # where the field stays None when the provider returns no calls.
+        if data is None:
+            return {"tool_calls": []}
 
         raise ValueError(f"Received invalid value for `dspy.ToolCalls`: {data}")
 
@@ -518,6 +533,17 @@ def _normalize_tool_call_dict(data: dict[str, Any]) -> dict[str, Any]:
         "name": name,
         "args": arguments,
     }
+
+
+def _to_json_default(value: Any) -> Any:
+    """Convert a parameter default to its JSON form, e.g. an Enum member to its value."""
+    if isinstance(value, Decimal):
+        # A JSON number fits both float and Decimal arguments; pydantic would give a string.
+        return float(value)
+    try:
+        return pydantic_core.to_jsonable_python(value)
+    except Exception:
+        return value
 
 
 def _resolve_json_schema_reference(schema: dict) -> dict:

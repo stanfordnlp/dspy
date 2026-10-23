@@ -66,11 +66,11 @@ def server():
         worker.join()
 
 
-def _definition(base_url, provider="fireworks", aliases=("fireworks-ai",), headers=(), auth_scheme=("bearer",), **compat):
+def _definition(base_url, provider="private-fireworks", aliases=("private-fireworks-ai",), headers=(), auth_scheme=("bearer",), **compat):
     compat.setdefault("max_tokens_field", "max_tokens")
     return ProviderDefinition.chat(
         AccessPolicy(provider=provider, supports=EndpointSupport(complete=True, stream=True, models=True),
-                     auth_modes=("bearer",), auth_scheme=auth_scheme, env_keys=("FIREWORKS_API_KEY",),
+                     auth_modes=("bearer",), auth_scheme=auth_scheme, env_keys=("PRIVATE_FIREWORKS_API_KEY",),
                      base_url=base_url, headers=tuple(headers)),
         compat=OpenAIChatCompat(**compat),
         aliases=aliases, note="Fireworks (test)",
@@ -81,7 +81,7 @@ def _definition(base_url, provider="fireworks", aliases=("fireworks-ai",), heade
 def clean_registry(monkeypatch):
     import dspy.clients.model_metadata as metadata
 
-    for name in ("FIREWORKS_API_KEY", "FIREWORKS_API_BASE", "FIREWORKS_BASE_URL", "OPENAI_API_KEY"):
+    for name in ("PRIVATE_FIREWORKS_API_KEY", "PRIVATE_FIREWORKS_API_BASE", "PRIVATE_FIREWORKS_BASE_URL", "OPENAI_API_KEY"):
         monkeypatch.delenv(name, raising=False)
     # Capabilities and prices come from the bundled metadata snapshot, not
     # from whatever the live LiteLLM map says today (or whichever a sibling
@@ -134,15 +134,15 @@ def test_register_is_idempotent_and_replace_is_explicit():
         register_provider(definition, metadata_namespaces=("fireworks_ai",))  # statements are part of it
     replaced = register_provider(_definition("https://other.test/v1"), replace=True)
     assert registered_providers() == (replaced,)
-    unregister_provider("fireworks")
+    unregister_provider("private-fireworks")
     assert registered_providers() == ()
-    unregister_provider("fireworks")  # unknown: ignored
+    unregister_provider("private-fireworks")  # unknown: ignored
 
 
 def test_arguments_are_type_checked():
     definition = _definition("https://x.test/v1")
     with pytest.raises(TypeError, match="ProviderDefinition"):
-        register_provider("fireworks")
+        register_provider("private-fireworks")
     with pytest.raises(TypeError, match="ModelSupport"):
         register_provider(definition, supports={"function_calling": True})
     with pytest.raises(TypeError, match="models= maps"):
@@ -154,12 +154,12 @@ def test_arguments_are_type_checked():
 
 
 def test_spellings_lm15_or_litellm_already_use_are_refused():
-    for taken in ("groq", "ollama-chat"):
+    for taken in ("groq", "ollama-chat", "fireworks"):
         with pytest.raises(Exception, match="already names"):
             register_provider(_definition("https://x.test/v1", provider="new-door", aliases=(taken,)))
     register_provider(_definition("https://x.test/v1"))
-    with pytest.raises(ValueError, match=r"spells \['fireworks-ai'\] like the registered provider 'fireworks'"):
-        register_provider(_definition("https://x.test/v1", provider="other", aliases=("fireworks-ai",)))
+    with pytest.raises(ValueError, match=r"spells \['private-fireworks-ai'\] like the registered provider 'private-fireworks'"):
+        register_provider(_definition("https://x.test/v1", provider="other", aliases=("private-fireworks-ai",)))
 
 
 # ─── one binding per LM ───────────────────────────────────────────────
@@ -167,9 +167,9 @@ def test_spellings_lm15_or_litellm_already_use_are_refused():
 
 def test_an_lm_binds_the_registrations_present_at_construction(server):
     base, _ = server
-    before = dspy.LM(f"fireworks/{MODEL}", api_key="k", cache=False)
+    before = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False)
     register_provider(_definition(base))
-    after = dspy.LM(f"fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
+    after = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
     assert not select_backend(before).native  # bound nothing; stays as it was
     assert select_backend(after).native
     assert after("hi") == ["Paris"]
@@ -180,7 +180,7 @@ def test_an_lm_binds_the_registrations_present_at_construction(server):
 def test_replacing_a_registration_never_splits_an_lm(server):
     base, _ = server
     register_provider(_definition(base, max_tokens_field="max_tokens"))
-    lm = dspy.LM(f"fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
+    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
     call = prepare(lm, "hi", None, {"max_tokens": 7})
     sync_engine, _, _ = _select_engine(lm, call, False)
     register_provider(_definition("http://127.0.0.1:9/v1", max_tokens_field="max_completion_tokens"), replace=True)
@@ -196,7 +196,7 @@ def test_replacing_a_registration_never_splits_an_lm(server):
 
     assert asyncio.run(async_engine()) == base
     assert lm("hi") == ["Paris"]  # still the address it was built with
-    fresh = dspy.LM(f"fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
+    fresh = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
     assert select_backend(fresh).resolution.compat.max_tokens_field == "max_completion_tokens"
     lm.close()
 
@@ -204,13 +204,13 @@ def test_replacing_a_registration_never_splits_an_lm(server):
 # ─── routing through dspy.LM ──────────────────────────────────────────
 
 
-@pytest.mark.parametrize("prefix", ["fireworks", "fireworks_ai", "fireworks-ai"])
+@pytest.mark.parametrize("prefix", ["private-fireworks", "private_fireworks_ai", "private-fireworks-ai"])
 def test_registered_provider_routes_natively_with_the_lm_key(server, prefix):
     base, seen = server
     register_provider(_definition(base))
     lm = dspy.LM(f"{prefix}/{MODEL}", api_key="lm-key", cache=False, num_retries=0)
     selection = select_backend(lm)
-    assert selection.native and selection.resolution.provider == "fireworks" and selection.resolution.declared
+    assert selection.native and selection.resolution.provider == "private-fireworks" and selection.resolution.declared
     assert lm("capital of France?") == ["Paris"]
     assert seen[-1]["auth"] == "Bearer lm-key"
     assert seen[-1]["path"] == "/v1/chat/completions"
@@ -221,19 +221,19 @@ def test_registered_provider_routes_natively_with_the_lm_key(server, prefix):
 def test_env_key_and_client_settings_are_honored(server, monkeypatch):
     base, seen = server
     register_provider(_definition(base))
-    monkeypatch.setenv("FIREWORKS_API_KEY", "env-key")
-    lm = dspy.LM(f"fireworks/{MODEL}", cache=False, num_retries=0, max_tokens=9, timeout=5)
+    monkeypatch.setenv("PRIVATE_FIREWORKS_API_KEY", "env-key")
+    lm = dspy.LM(f"private-fireworks/{MODEL}", cache=False, num_retries=0, max_tokens=9, timeout=5)
     assert select_backend(lm).native
     assert lm("hi") == ["Paris"]
     assert seen[-1]["auth"] == "Bearer env-key"
     assert seen[-1]["body"]["max_tokens"] == 9  # the declared compat's spelling
     lm.close()
-    moved = dspy.LM(f"fireworks/{MODEL}", api_base="http://127.0.0.1:9/v1", cache=False, num_retries=0)
+    moved = dspy.LM(f"private-fireworks/{MODEL}", api_base="http://127.0.0.1:9/v1", cache=False, num_retries=0)
     with pytest.raises(dspy.LMError):
         moved("hi")  # api_base moves the call; a closed port fails, never a silent success elsewhere
-    monkeypatch.delenv("FIREWORKS_API_KEY")
-    with pytest.raises(dspy.LMError, match="FIREWORKS_API_KEY"):
-        dspy.LM(f"fireworks/{MODEL}", cache=False, num_retries=0)("hi")
+    monkeypatch.delenv("PRIVATE_FIREWORKS_API_KEY")
+    with pytest.raises(dspy.LMError, match="PRIVATE_FIREWORKS_API_KEY"):
+        dspy.LM(f"private-fireworks/{MODEL}", cache=False, num_retries=0)("hi")
 
 
 def test_a_declaration_beats_the_ambient_gateway_variable(server, monkeypatch):
@@ -241,8 +241,8 @@ def test_a_declaration_beats_the_ambient_gateway_variable(server, monkeypatch):
     # providers (legacy gateways). A declaration states its address itself.
     base, seen = server
     register_provider(_definition(base))
-    monkeypatch.setenv("FIREWORKS_API_BASE", "http://127.0.0.1:9/v1")
-    lm = dspy.LM(f"fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
+    monkeypatch.setenv("PRIVATE_FIREWORKS_API_BASE", "http://127.0.0.1:9/v1")
+    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
     assert select_backend(lm).native
     assert lm("hi") == ["Paris"] and seen[-1]["path"] == "/v1/chat/completions"
     lm.close()
@@ -252,25 +252,25 @@ def test_a_declaration_beats_the_ambient_gateway_variable(server, monkeypatch):
 async def test_async_path(server):
     base, seen = server
     register_provider(_definition(base))
-    lm = dspy.LM(f"fireworks/{MODEL}", api_key="lm-key", cache=False, num_retries=0)
+    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="lm-key", cache=False, num_retries=0)
     assert await lm.acall("hi") == ["Paris"]
     assert seen[-1]["auth"] == "Bearer lm-key"
     await lm.aclose()
 
 
 def test_unregistered_prefix_is_not_native():
-    lm = dspy.LM(f"fireworks/{MODEL}", api_key="k", cache=False)
+    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False)
     assert not select_backend(lm).native
 
 
 # ─── the fallback keeps the declared connection ───────────────────────
 
 
-@pytest.mark.parametrize("prefix", ["fireworks", "fireworks_ai"])
+@pytest.mark.parametrize("prefix", ["private-fireworks", "private_fireworks_ai"])
 def test_fallback_reaches_the_declared_address_with_the_declared_credential(litellm_stub, prefix, monkeypatch):
     # extra_headers is a client setting only LiteLLM carries. The route it
     # takes is LiteLLM's generic OpenAI-compatible door at the DECLARED
-    # address, not LiteLLM's own idea of "fireworks_ai".
+    # address, not LiteLLM's own idea of the private provider.
     register_provider(_definition("https://private-gateway.test/v1", headers=(("X-Gateway", "tenant-1"),)))
     lm = dspy.LM(f"{prefix}/{MODEL}", api_key="private-key", extra_headers={"X-Test": "1"}, cache=False, num_retries=0)
     selection = select_backend(lm)
@@ -287,18 +287,18 @@ def test_fallback_reaches_the_declared_address_with_the_declared_credential(lite
 def test_fallback_reads_the_declared_key_variable_and_never_an_ambient_openai_key(litellm_stub, monkeypatch):
     register_provider(_definition("https://private-gateway.test/v1"))
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-must-not-leak")
-    lm = dspy.LM(f"fireworks/{MODEL}", extra_headers={"X-Test": "1"}, cache=False, num_retries=0)
-    with pytest.raises(dspy.LMError, match="FIREWORKS_API_KEY") as info:
+    lm = dspy.LM(f"private-fireworks/{MODEL}", extra_headers={"X-Test": "1"}, cache=False, num_retries=0)
+    with pytest.raises(dspy.LMError, match="PRIVATE_FIREWORKS_API_KEY") as info:
         lm("hi")
     assert not litellm_stub and "sk-openai" not in str(info.value)
-    monkeypatch.setenv("FIREWORKS_API_KEY", "env-key")
+    monkeypatch.setenv("PRIVATE_FIREWORKS_API_KEY", "env-key")
     assert "Paris" in lm("hi")[0]
     assert litellm_stub[-1]["api_key"] == "env-key"
 
 
 def test_fallback_under_engine_litellm_takes_the_same_route(litellm_stub):
     register_provider(_definition("https://private-gateway.test/v1"))
-    lm = dspy.LM(f"fireworks_ai/{MODEL}", engine="litellm", api_key="k", cache=False, num_retries=0)
+    lm = dspy.LM(f"private_fireworks_ai/{MODEL}", engine="litellm", api_key="k", cache=False, num_retries=0)
     assert "Paris" in lm("hi")[0]
     assert litellm_stub[-1]["model"] == f"openai/{MODEL}"
     assert litellm_stub[-1]["api_base"] == "https://private-gateway.test/v1"
@@ -307,7 +307,7 @@ def test_fallback_under_engine_litellm_takes_the_same_route(litellm_stub):
 @pytest.mark.asyncio
 async def test_async_fallback_keeps_the_connection_too(litellm_stub):
     register_provider(_definition("https://private-gateway.test/v1"))
-    lm = dspy.LM(f"fireworks/{MODEL}", api_key="k", extra_headers={"X": "1"}, cache=False, num_retries=0)
+    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", extra_headers={"X": "1"}, cache=False, num_retries=0)
     assert "Paris" in (await lm.acall("hi"))[0]
     assert litellm_stub[-1]["api_base"] == "https://private-gateway.test/v1"
 
@@ -318,7 +318,7 @@ def test_capabilities_on_the_fallback_route_come_from_the_declaration(litellm_st
     # does not know. The whole program runs.
     register_provider(_definition("https://private-gateway.test/v1"),
                       supports=ModelSupport(function_calling=True, response_schema=True))
-    lm = dspy.LM(f"fireworks/{MODEL}", api_key="k", extra_headers={"X": "1"}, cache=False, num_retries=0)
+    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", extra_headers={"X": "1"}, cache=False, num_retries=0)
     assert not select_backend(lm).native
     assert lm.supports_function_calling and lm.supports_response_schema and "tools" in lm.supported_params
     with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False)):
@@ -363,7 +363,7 @@ def test_fallback_resolves_a_callable_credential_per_call(litellm_stub):
     # LiteLLM the string (greptile on dspy#10442).
     register_provider(_definition("https://private-gateway.test/v1"))
     tokens = iter(["token-1", "token-2"])
-    lm = dspy.LM(f"fireworks/{MODEL}", api_key=lambda: next(tokens), extra_headers={"X": "1"}, cache=False, num_retries=0)
+    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key=lambda: next(tokens), extra_headers={"X": "1"}, cache=False, num_retries=0)
     lm("hi")
     lm("hi again")
     assert [call["api_key"] for call in litellm_stub[-2:]] == ["token-1", "token-2"]
@@ -375,14 +375,14 @@ async def test_fallback_is_still_the_declared_provider_for_pricing(litellm_stub)
     # declaration's namespaces on every path, never from LiteLLM's reading
     # of the generic door's model string (greptile on dspy#10442).
     register_provider(_definition("https://private-gateway.test/v1"), metadata_namespaces=("fireworks_ai",))
-    lm = dspy.LM(f"fireworks/{MODEL}", api_key="k", extra_headers={"X": "1"}, cache=False, num_retries=0)
+    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", extra_headers={"X": "1"}, cache=False, num_retries=0)
     lm("hi")  # legacy body path
     lm(dspy.lm15.Request(model=lm.model, messages=(dspy.lm15.Message.user("hi"),)))  # canonical path
     await lm.acall("hi")  # async legacy path
     costs = [entry["cost"] for entry in lm.history[-3:]]
     assert all(cost is not None and cost > 0 for cost in costs) and len(set(costs)) == 1
     for entry in lm.history[-3:]:
-        assert entry["cost_details"]["provider"] == "fireworks"
+        assert entry["cost_details"]["provider"] == "private-fireworks"
         assert entry["cost_details"]["metadata"]["namespaces"] == ["fireworks_ai"]
     # A colliding name on a gateway with no namespace is unknown, not OpenAI's price.
     register_provider(_definition("https://private-gateway.test/v1", provider="gw", aliases=()))
@@ -400,7 +400,7 @@ def test_a_declared_refusal_is_final_under_auto(litellm_stub, server):
     # is not a refusal and never leaves the native route.)
     base, seen = server
     register_provider(_definition(base, thinking_format="none", json_schema="reject"))
-    lm = dspy.LM(f"fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
+    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
     with pytest.raises(dspy.LMUnsupportedFeatureError):
         lm("hi", reasoning_effort="low")
     assert not litellm_stub
@@ -413,7 +413,7 @@ def test_engine_lm15_refuses_client_settings_it_cannot_carry(server):
     base, _ = server
     register_provider(_definition(base))
     with pytest.raises(Exception, match="require the LiteLLM"):
-        select_backend(dspy.LM(f"fireworks/{MODEL}", engine="lm15", api_key="k", extra_headers={"X": "1"}))
+        select_backend(dspy.LM(f"private-fireworks/{MODEL}", engine="lm15", api_key="k", extra_headers={"X": "1"}))
 
 
 # ─── aliases grant a spelling, nothing else ───────────────────────────
@@ -421,8 +421,8 @@ def test_engine_lm15_refuses_client_settings_it_cannot_carry(server):
 
 def test_an_alias_grants_no_metadata(server):
     base, _ = server
-    register_provider(_definition(base))  # alias fireworks-ai, no namespaces
-    lm = dspy.LM(f"fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
+    register_provider(_definition(base))  # alias private-fireworks-ai, no namespaces
+    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
     assert not (lm.supports_function_calling or lm.supports_reasoning or lm.supports_response_schema)
     lm("hi")
     assert lm.history[-1]["cost"] is None
@@ -433,13 +433,13 @@ def test_an_alias_grants_no_metadata(server):
 def test_metadata_namespaces_are_an_explicit_opt_in(server):
     base, _ = server
     register_provider(_definition(base), metadata_namespaces=("fireworks_ai",))
-    lm = dspy.LM(f"fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
+    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
     assert lm.supports_function_calling and lm.supports_reasoning and lm.supports_response_schema
     assert {"reasoning_effort", "max_tokens", "response_format", "tools"} <= lm.supported_params
     lm("hi")
     entry = lm.history[-1]
     assert entry["cost"] is not None and entry["cost_details"]["kind"] == "estimate"
-    assert entry["cost_details"]["provider"] == "fireworks"
+    assert entry["cost_details"]["provider"] == "private-fireworks"
     assert entry["cost_details"]["metadata"]["namespaces"] == ["fireworks_ai"]
     lm.close()
 
@@ -450,14 +450,14 @@ def test_stated_support_fills_what_no_snapshot_says(server):
         _definition(base), supports=ModelSupport(function_calling=True),
         models={"private-v1": ModelSupport(response_schema=True, function_calling=False)},
     )
-    default = dspy.LM("fireworks/private-v2", api_key="k")
+    default = dspy.LM("private-fireworks/private-v2", api_key="k")
     assert default.supports_function_calling and not default.supports_response_schema and not default.supports_reasoning
     assert "tools" in default.supported_params
-    specific = dspy.LM("fireworks/private-v1", api_key="k")
+    specific = dspy.LM("private-fireworks/private-v1", api_key="k")
     assert not specific.supports_function_calling and specific.supports_response_schema
     assert "response_format" in specific.supported_params and "tools" not in specific.supported_params
     # A statement never prices anything.
-    specific = dspy.LM("fireworks/private-v1", api_key="k", cache=False, num_retries=0)
+    specific = dspy.LM("private-fireworks/private-v1", api_key="k", cache=False, num_retries=0)
     specific("hi")
     assert specific.history[-1]["cost"] is None
     specific.close()
@@ -469,15 +469,15 @@ def test_a_snapshot_entry_is_more_specific_than_a_statement(server):
     # says the provider does not. The per-model fact wins.
     register_provider(_definition(base), metadata_namespaces=("fireworks_ai",),
                       supports=ModelSupport(function_calling=False))
-    assert dspy.LM(f"fireworks/{MODEL}", api_key="k").supports_function_calling
-    assert not dspy.LM("fireworks/private-v9", api_key="k").supports_function_calling
+    assert dspy.LM(f"private-fireworks/{MODEL}", api_key="k").supports_function_calling
+    assert not dspy.LM("private-fireworks/private-v9", api_key="k").supports_function_calling
 
 
 def test_compat_object_shapes_capabilities(server):
     base, _ = server
     register_provider(_definition(base, json_schema="reject", thinking_format="none"),
                       supports=ModelSupport(function_calling=True, reasoning=True, response_schema=True))
-    lm = dspy.LM(f"fireworks/{MODEL}", api_key="k")
+    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k")
     assert lm.supports_function_calling
     assert not lm.supports_response_schema and not lm.supports_reasoning  # the wire cannot carry them
     assert "reasoning_effort" not in lm.supported_params
@@ -489,11 +489,11 @@ def test_compat_object_shapes_capabilities(server):
 def test_state_is_the_model_string(server):
     base, _ = server
     register_provider(_definition(base))
-    state = dspy.LM(f"fireworks/{MODEL}", api_key="k").dump_state()
+    state = dspy.LM(f"private-fireworks/{MODEL}", api_key="k").dump_state()
     json.dumps(state)
     assert "engine" not in state and "api_key" not in state and "_providers" not in state
     loaded = dspy.LM.load_state(state)
-    assert loaded.model == f"fireworks/{MODEL}" and select_backend(loaded).native  # bound at load time
+    assert loaded.model == f"private-fireworks/{MODEL}" and select_backend(loaded).native  # bound at load time
 
 
 def test_pickled_lm_keeps_its_binding(server):
@@ -501,7 +501,7 @@ def test_pickled_lm_keeps_its_binding(server):
 
     base, _ = server
     register_provider(_definition(base))
-    lm = dspy.LM(f"fireworks/{MODEL}", api_key="k", cache=False)
-    unregister_provider("fireworks")
+    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False)
+    unregister_provider("private-fireworks")
     restored = pickle.loads(pickle.dumps(lm))
     assert select_backend(restored).native and restored._providers == lm._providers
