@@ -68,7 +68,12 @@ class Unbatchify:
             if batch:
                 try:
                     outputs = self.batch_fn(batch)
-                    for output, future in zip(outputs, futures, strict=False):
+                    if len(outputs) != len(futures):
+                        raise ValueError(
+                            f"batch_fn returned {len(outputs)} outputs for "
+                            f"{len(futures)} inputs; cannot unbatch."
+                        )
+                    for output, future in zip(outputs, futures):
                         future.set_result(output)
                 except Exception as e:
                     for future in futures:
