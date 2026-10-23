@@ -3,14 +3,13 @@ from unittest import mock
 
 import pydantic
 import pytest
-from litellm import Choices, Message, ModelResponse
 from typing_extensions import TypedDict
 
 import dspy
 from dspy.adapters.chat_adapter import FieldInfoWithName
 from dspy.adapters.xml_adapter import XMLAdapter
 from tests.adapters.conftest import format_messages_and_lm_kwargs
-from tests.test_utils.engines import litellm_response
+from tests.test_utils.engines import make_response
 
 
 def test_xml_adapter_format_and_parse_basic():
@@ -88,12 +87,12 @@ def test_xml_adapter_predict_accepts_literal_code_without_fallback(fenced, closi
     completion = f"{prefix}<reasoning>\nKeep R&B tracks\n</reasoning>\n<code>\n{code}{closing_newline}</code>"
     if fenced:
         completion = f"```xml\n{completion}\n```"
-    with mock.patch("litellm.completion") as completion_mock:
-        completion_mock.return_value = ModelResponse(
-            choices=[Choices(message=Message(content=completion))], model="openai/gpt-4o-mini"
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as completion_mock:
+        completion_mock.return_value = make_response(
+            completion, model="openai/gpt-4o-mini"
         )
         with dspy.context(
-            lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False),
+            lm=dspy.LM("openai/gpt-4o-mini", cache=False),
             adapter=XMLAdapter(use_json_adapter_fallback=False),
         ):
             result = dspy.Predict(Generate)(question="Write a pagination check")
@@ -117,11 +116,11 @@ def test_xml_adapter_predict_accepts_literal_code_without_fallback(fenced, closi
 def test_xml_adapter_predict_ignores_trailing_prose(body, annotation, expected):
     signature = dspy.Signature("question -> answer").with_updated_fields("answer", type_=annotation)
     response = body + "\n\nLet me know if you need anything else."
-    with mock.patch("litellm.completion", return_value=ModelResponse(
-        choices=[Choices(message=Message(content=response))], model="openai/gpt-4o-mini"
+    with mock.patch("dspy.clients.engines.LM15Engine.complete", return_value=make_response(
+        response, model="openai/gpt-4o-mini"
     )):
         with dspy.context(
-            lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False),
+            lm=dspy.LM("openai/gpt-4o-mini", cache=False),
             adapter=XMLAdapter(use_json_adapter_fallback=False),
         ):
             assert dspy.Predict(signature)(question="Name French cities").answer == expected
@@ -203,10 +202,10 @@ def test_xml_predict_round_trips_nested_html_and_unicode_keys(case):
     response = adapter.format_assistant_message_content(signature, {"result": expected})
     if case == "html_with_extra":
         response = response.replace("</name>", "</name>\n<extra>ignored</extra>")
-    with mock.patch("litellm.completion", return_value=ModelResponse(
-        choices=[Choices(message=Message(content=response))], model="openai/gpt-4o-mini"
+    with mock.patch("dspy.clients.engines.LM15Engine.complete", return_value=make_response(
+        response, model="openai/gpt-4o-mini"
     )):
-        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=adapter):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=adapter):
             if case == "html_with_extra":
                 with pytest.raises(dspy.utils.exceptions.AdapterParseError):
                     dspy.Predict(signature)()
@@ -781,13 +780,13 @@ def test_xml_adapter_with_code():
         code: dspy.Code = dspy.OutputField()
 
     adapter = dspy.XMLAdapter()
-    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content='<code>print("Hello, world!")</code>'))],
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            '<code>print("Hello, world!")</code>',
             model="openai/gpt-4o-mini",
         )
         result = adapter(
-            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(model="openai/gpt-4o-mini", cache=False),
             {},
             CodeGeneration,
             [],

@@ -20,10 +20,42 @@ original lm15 classes, not DSPy wrappers or subclasses.
 | `Type.parse_lm_response(...)` | Took an OpenAI-shaped output dictionary | Takes the lm15 `Response` |
 | `Tool.format_as_litellm_function_call()` | OpenAI function-tool dictionary | Renamed `Tool.as_function_tool()`, returns an lm15 `FunctionTool` |
 
-Nothing OpenAI-shaped exists inside DSPy anymore. Provider wire formats belong
-to engines: the native lm15 engines and the LiteLLM compatibility engine, which
-still follows the same request/response contract. LiteLLM itself is **not**
-removed.
+Provider wire formats belong to engines. DSPy's built-in LM engines now use
+native lm15 only; the LiteLLM compatibility engines and optional dependency are
+removed. The `Request`/`Response` contract and one-call-per-candidate execution
+remain unchanged.
+
+### Migrating from LiteLLM-backed DSPy
+
+- Remove `engine="litellm"`; `engine="auto"` and `engine="lm15"` both select
+  native lm15, with **no compatibility fallback**. A provider or setting that
+  native lm15 cannot represent is rejected, not sent through another backend.
+- `model_type="text"` is no longer supported. Use a chat or Responses endpoint,
+  or supply a custom engine for a backend that only offers text completions.
+- Provider prefixes, credentials and options supported only by LiteLLM do not
+  become native integrations automatically. For an unlisted compatible HTTP
+  endpoint, [register a provider](../tutorials/custom_lm_engines/index.md#declaring-a-provider-instead-of-writing-an-engine).
+  For a different protocol or authentication flow, implement a custom engine.
+- Replace `cache_control_injection_points` with the native
+  [`prompt_cache` policy](../tutorials/cache/index.md#using-provider-side-prompt-caching).
+  Other provider-shaped options need a native equivalent or an engine that
+  explicitly handles them; they are not silently forwarded.
+- Remove calls to `dspy.enable_litellm_logging()` and
+  `dspy.disable_litellm_logging()`. These helpers and the `dspy[litellm]` extra
+  no longer exist. `dspy.enable_logging()` / `disable_logging()` still control
+  DSPy's own logging.
+- Hosted `dspy.Embedder` calls now use the OpenAI SDK against OpenAI, Azure
+  OpenAI, or an OpenAI-compatible embeddings endpoint. Other providers require a
+  callable; their old LiteLLM model prefixes no longer route automatically.
+  See [Embedder](../api/models/Embedder.md).
+
+DSPy still uses **LiteLLM-derived model metadata** for capability and pricing
+hints, without importing the LiteLLM library. On first use it attempts to fetch
+the upstream catalog, falling back to the bundled snapshot. Set
+`LITELLM_LOCAL_MODEL_COST_MAP=True` to use only the snapshot;
+`LITELLM_MODEL_COST_MAP_URL` still overrides the catalog URL. These legacy
+environment names remain supported. A catalog entry does not establish a
+supported native route, and missing pricing is unknown, not zero cost.
 
 Signatures are untouched. `'context, image: dspy.Image, question -> reasoning: dspy.Reasoning, answer: str'`
 means exactly what it did before.
@@ -48,34 +80,21 @@ for one call with `predict(question="Why?", config={"temperature": 0.2})`.
 Those options are read with lm15's own Chat Completions reader into
 `Request.config`; DSPy keeps no second copy of that vocabulary.
 
-Engine selection is unchanged:
+`engine="auto"` (the default) and `engine="lm15"` both use native lm15.
+Unsupported providers, client settings and request features raise rather than
+selecting a compatibility engine. Authentication failures, timeouts and provider
+errors never cause a switch to another backend.
 
-- `engine="auto"` (default): prefer native lm15 for supported routes.
-  Provider-specific options lm15 has no mapping for (for example
-  `vertex_project`) ride in `Config.extensions` and select the LiteLLM
-  compatibility engine **before execution**.
-- `engine="lm15"`: require the native backend. Options it cannot carry raise.
-- `engine="litellm"`: explicitly use the compatibility backend.
-
-Authentication failures, timeouts and provider errors never cause a switch to
-another backend. Text completions and client settings not implemented by the
-native integration remain on LiteLLM. The `timeout` setting, a number of seconds
-or an `httpx.Timeout`, stays native: it bounds the wait for the next byte of the
-reply (headers first, then each streamed chunk), the send, and a free
-connection; the native default is 600 seconds, the same as LiteLLM's. An
+The `timeout` setting, a number of seconds or an `httpx.Timeout`, bounds the wait
+for the next byte of the reply (headers first, then each streamed chunk), the
+send, and a free connection; the native default is 600 seconds. An
 `httpx.Timeout` component set to `None` means "wait forever", which the native
-engine cannot honour: under `engine="auto"` that call uses LiteLLM, and under
-`engine="lm15"` it raises `LMUnsupportedFeatureError` (feature `timeout`)
+engine cannot honour: it raises `LMUnsupportedFeatureError` (feature `timeout`)
 rather than silently substituting a default.
 
 Text that no provider can receive (a lone surrogate character) raises a plain
 `ValueError` before any engine is chosen, on every engine setting, so it is
 never reported as an unexpected engine failure or retried.
-
-Typed Requests through the LiteLLM engine forward `top_k` as a LiteLLM
-argument on the Chat Completions path (LiteLLM translates it for providers
-that take it); on the Responses path, which has no such field, it is dropped
-and recorded under `"adaptations"`.
 
 A setting the native route cannot carry exactly as written is **adapted and
 recorded**, rather than silently ignored or unnecessarily refused (lm15 MAP-13): `seed` on Anthropic is
@@ -83,24 +102,16 @@ left out, `temperature=1.5` on Anthropic becomes `1.0`, a thinking-summary
 level the wire lacks becomes `auto`. Each history entry carries the record
 under `"adaptations"` (`field`, `action`, `asked`, `applied`, `reason`); the
 lm15 `Response` in the entry carries the same. Nothing is printed. What lm15
-still refuses is known before any request is sent. Under `engine="auto"`, a
-representational refusal selects LiteLLM before inference, so Chat audio and
-file inputs can use its SDK bridge. Explicit native selection, declared-provider
-refusals and provider prompt-cache requests do not take this fallback; unsupported
-inputs raise `LMUnsupportedFeatureError`. All engines still take `Request`,
-including the compatibility engine. DSPy implements
+still refuses is known before any request is sent. Unsupported inputs raise
+`LMUnsupportedFeatureError`; there is no SDK bridge for Chat audio or file inputs.
+All engines still take `Request`. DSPy implements
 `n > 1` by making separate requests, not by asking the native engine for `n`.
 
-For stop sequences on the Responses API, the engine matters:
+For stop sequences on the Responses API, native lm15 streams internally and
+closes at the stop. Final usage is unavailable after an early cut; closing does
+not guarantee billing stops.
 
-- **Native lm15:** streams internally and closes at the stop. Final usage is
-  unavailable after an early cut; closing does not guarantee billing stops.
-- **Typed Requests through LiteLLM:** trims the completed reply using lm15's
-  stop helper. Generation is not stopped early; full provider usage is retained.
-  This is recorded in `response.adaptations` and history. Typed Responses
-  streaming through LiteLLM remains unsupported; use native lm15 for it.
-
-Both preserve scores for whole retained tokens. If a stop cuts through a token,
+Scores are preserved for whole retained tokens. If a stop cuts through a token,
 `response.logprobs_complete` is false: the retained partial token has no invented
 score. The flag survives saved-response caching. Chat Completions still sends
 stop sequences to the provider directly.
@@ -129,12 +140,9 @@ at 60 seconds unless the provider specifies `retry_after`. A stream is not retri
 once a chunk has been sent to the caller.
 
 `dspy.streamify` keeps its listener-facing chunks (`chunk.choices[0].delta`),
-built from lm15 stream events. Streaming through the LiteLLM engine now uses the
-same event mapping as native streaming, so every chunk has the same shape.
-Predictions and direct calls to LiteLLM text and Responses models inside a
-streamified module complete without token chunks. Other calls in the module
-can still stream. Token streaming on these compatibility endpoints remains
-unsupported; use native lm15 for Responses token streaming.
+built from lm15 stream events. Chat and Responses token streaming use the same
+event mapping. Custom engines must implement the canonical streaming interface
+to produce token chunks.
 
 Token usage is recorded once per public call, and cache hits add no billed usage.
 For adapter calls, `lm.history[-1]` holds the `Request` under `"request"`, one
@@ -180,7 +188,7 @@ they do not accept `n` or `num_generations`, or inherit the LM's candidate count
 
 ## Errors and retry ownership
 
-**Engines report failures; DSPy owns retry and fallback policy.** New engines raise
+**Engines report failures; DSPy owns retries.** New engines raise
 specific errors from `dspy.lm15`, the same bundled vocabulary as their requests and
 responses. Use these imports, not a separately installed lm15 package whose Python
 classes have different identities.
@@ -192,9 +200,9 @@ from dspy.lm15 import RateLimitError
 raise RateLimitError("Provider rate limit", provider="my-backend", retry_after=2.0)
 ```
 
-Do not return an error dictionary or a fake successful `Response`. LiteLLM engines
-translate their SDK's exception classes and documented provider codes into lm15
-errors. Native engines propagate lm15 errors. Arbitrary custom exceptions are not
+Do not return an error dictionary or a fake successful `Response`. Native engines
+propagate lm15 errors; custom engines should translate their backend's documented
+failures into those same errors. Arbitrary custom exceptions are not
 classified by words such as "network" or "timeout".
 
 At its owned engine/capability boundaries, DSPy translates canonical errors into its
@@ -275,8 +283,8 @@ engine pair, and each side must be its kind (a coroutine function on the async s
 An engine is saved by `dump_state()`/`load_state()` of its own, and loading one is
 gated by `allow_unsafe_lm_state=True` like a custom LM class. For an HTTP provider
 lm15 can speak to, declare it with `dspy.lm15.register_provider(...)` instead of
-writing an engine: each `dspy.LM` binds the registrations present at construction,
-and a fallback to LiteLLM keeps the declared address and credential. See the
+writing an engine: each `dspy.LM` binds the registrations present at construction
+and uses the declared address and credential, without a fallback backend. See the
 [custom-engine tutorial](../tutorials/custom_lm_engines/index.md).
 
 An engine may declare `supports_function_calling`, `supports_reasoning`,
@@ -345,14 +353,11 @@ Chat Completions writer through `dspy.adapters.base.prompt_to_openai_messages`.
 - **`Citations.Citation` fields other than `cited_text` are optional.** lm15
   citations carry text, title and URL; character offsets appear only when a
   provider reports them.
-- **Audio and files on Chat Completions endpoints.** With `engine="litellm"`,
-  DSPy preserves `input_audio` and `file` blocks for `dspy.Audio`, inline
-  `dspy.File` data and uploaded file IDs; training exports use the same
-  conversion. Native lm15 Chat still carries text and images only and raises
+- **Audio and files on Chat Completions endpoints.** The former LiteLLM SDK
+  bridge is removed. Native lm15 Chat carries text and images only and raises
   `LMUnsupportedFeatureError` for these inputs. For native audio and files,
   use `model_type="responses"` on OpenAI or a Gemini model. Anthropic supports
-  documents but not audio. Text-completion endpoints reject image, audio and
-  file inputs rather than silently dropping them.
+  documents but not audio. Text-completion endpoints are no longer supported.
 - **Strict function tools.** The bundled lm15 `FunctionTool` cannot represent
   per-tool `strict=True`. Both Chat Completions and flat Responses tool
   dictionaries with this setting raise `LMUnsupportedFeatureError` rather than

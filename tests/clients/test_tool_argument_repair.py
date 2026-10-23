@@ -8,7 +8,7 @@ import pytest
 import dspy
 from dspy import lm15
 from dspy.clients.engines.lm15_engine import AsyncLM15Engine, LM15Engine
-from dspy.clients.lm15_boundary import response_value
+from dspy.clients.lm15_boundary import repair_tool_arguments, response_value
 from tests.clients.test_engine_errors import AsyncEngine, Sink, invoke
 from tests.test_utils.engines import RecordingEngine, make_response, recording_lm
 
@@ -39,7 +39,7 @@ def read_raw(body, model_type, request):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_type", ["chat", "responses"])
-@pytest.mark.parametrize("reader", ["sdk", "native", "async_native"])
+@pytest.mark.parametrize("reader", ["native", "async_native", "sdk"])
 async def test_readers_repair_only_malformed_wire_arguments(model_type, reader, monkeypatch):
     request = lm15.Request(model="openai/gpt-4o", messages=(lm15.Message.user("hi"),))
     body = body_for(model_type)
@@ -68,7 +68,7 @@ def test_nonobject_arguments_are_not_replaced(raw):
     body = body_for("chat")
     body["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] = raw
     original = read_raw(body, "chat", request)
-    response = response_value(body, "chat", request)
+    response = repair_tool_arguments(original)
     assert response.tool_calls[0] == original.tool_calls[0]
 
 
@@ -90,7 +90,7 @@ class Search(dspy.Signature):
 async def test_adapter_consumers_use_repaired_reader_response(two_step):
     class Reader(RecordingEngine):
         def complete(self, request):
-            return response_value(body_for("chat"), "chat", request)
+            return repair_tool_arguments(read_raw(body_for("chat"), "chat", request))
 
     engine = Reader()
     lm = dspy.LM("openai/gpt-4o", engine=engine, async_engine=AsyncEngine(engine), cache=False)

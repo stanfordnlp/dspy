@@ -1,5 +1,6 @@
 """Gauntlet follow-ups fixed directly in DSPy, checked without provider calls."""
 
+import json
 import re
 
 import pytest
@@ -10,6 +11,7 @@ from dspy.clients.backend_selection import select_backend
 from dspy.clients.engines.lm15_engine import timeouts_for
 from dspy.clients.execution import _engine, prepare
 from dspy.clients.lm import _is_openai_reasoning_model
+from tests.clients.test_lm_engine_execution import DualResponse, native_transport
 
 # ─── gpt-5.6 style names are reasoning models ────────────────────────
 
@@ -48,13 +50,10 @@ def test_dotted_reasoning_model_gets_validation_and_token_field():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
-@pytest.mark.parametrize("engine", ["auto", "lm15", "litellm"])
+@pytest.mark.parametrize("engine", ["auto", "lm15"])
 @pytest.mark.parametrize("where", ["prompt", "request_keyword", "request", "system"])
 async def test_lone_surrogate_is_refused_before_execution(asynchronous, engine, where, monkeypatch):
-    import litellm
-
-    monkeypatch.setattr(litellm, "completion", lambda **kw: pytest.fail("must not reach the provider SDK"))
-    monkeypatch.setattr(litellm, "acompletion", lambda **kw: pytest.fail("must not reach the provider SDK"))
+    transport = native_transport(monkeypatch, [])
     lm = dspy.LM("openai/gpt-4o", engine=engine, api_key="k", cache=False, num_retries=3)
     bad = "hello \ud800 world"
     if where == "prompt":
@@ -72,6 +71,7 @@ async def test_lone_surrogate_is_refused_before_execution(asynchronous, engine, 
             lm(*args, **kwargs)
     assert not isinstance(caught.value, dspy.LMError)
     assert not lm.history
+    assert not transport.requests
 
 
 def test_valid_unicode_is_not_refused():
@@ -95,61 +95,44 @@ def test_httpx_timeout_with_a_disabled_component_is_not_native():
 
 
 @pytest.mark.parametrize("value", [None, "unset"])
-def test_disabled_timeout_selects_litellm_under_auto_and_refuses_under_lm15(value):
+@pytest.mark.parametrize("engine", ["auto", "lm15"])
+def test_disabled_timeout_refuses_on_native_engines(value, engine):
     httpx = pytest.importorskip("httpx")
     timeout = httpx.Timeout(None) if value is None else httpx.Timeout(connect=5.0, read=None, write=None, pool=None)
-    assert not select_backend(dspy.LM("openai/gpt-4o", api_key="k", cache=False, timeout=timeout)).native
     with pytest.raises(lm15.UnsupportedFeatureError, match="disables"):
-        select_backend(dspy.LM("openai/gpt-4o", api_key="k", cache=False, engine="lm15", timeout=timeout))
+        select_backend(dspy.LM("openai/gpt-4o", api_key="k", cache=False, engine=engine, timeout=timeout))
     # Through the public call the refusal is a DSPy error naming the setting.
     with pytest.raises(dspy.LMUnsupportedFeatureError, match="disables") as caught:
-        dspy.LM("openai/gpt-4o", api_key="k", cache=False, engine="lm15", timeout=timeout)("hi")
+        dspy.LM("openai/gpt-4o", api_key="k", cache=False, engine=engine, timeout=timeout)("hi")
     assert caught.value.feature == "timeout"
-    assert select_backend(dspy.LM("openai/gpt-4o", api_key="k", cache=False, timeout=httpx.Timeout(60.0))).native
+    assert select_backend(dspy.LM("openai/gpt-4o", api_key="k", timeout=httpx.Timeout(60.0))).resolution.provider == "openai-chat"
 
 
-# ─── top_k survives the typed LiteLLM route ─────────────────────────
+# ─── top_k survives the typed native route ─────────────────────────
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
-async def test_typed_litellm_chat_forwards_top_k_and_records_nothing(asynchronous, monkeypatch):
-    import litellm
-
-    calls = []
-
-    def reply(**kwargs):
-        calls.append(kwargs)
-        return {"model": "claude-haiku-4-5", "choices": [{"index": 0,
-                "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}]}
-
-    async def areply(**kwargs):
-        return reply(**kwargs)
-
-    monkeypatch.setattr(litellm, "completion", reply)
-    monkeypatch.setattr(litellm, "acompletion", areply)
-    lm = dspy.LM("anthropic/claude-haiku-4-5", engine="litellm", cache=False, num_retries=0)
-    request = lm15.Request(model=lm.model, messages=(lm15.Message.user("hi"),), config=lm15.Config(top_k=7))
+async def test_typed_native_anthropic_forwards_top_k_and_records_nothing(asynchronous, monkeypatch):
+    body = {"id": "r", "model": "claude-haiku-4-5", "content": [{"type": "text", "text": "ok"}],
+            "stop_reason": "end_turn", "usage": {"input_tokens": 1, "output_tokens": 1}}
+    transport = native_transport(monkeypatch, [DualResponse(status=200, body=json.dumps(body).encode())])
+    lm = dspy.LM("anthropic/claude-haiku-4-5", api_key="fake", cache=False, num_retries=0)
+    request = lm15.Request(model=lm.model, messages=(lm15.Message.user("hi"),), config=lm15.Config(top_k=7, max_tokens=100))
     response = await (lm.acall(request) if asynchronous else __import__("anyio").to_thread.run_sync(lambda: lm(request)))
-    assert calls[0]["top_k"] == 7
+    assert json.loads(transport.requests[0].body)["top_k"] == 7
     assert response.text == "ok" and response.adaptations == ()
 
 
-def test_typed_litellm_responses_records_a_dropped_top_k(monkeypatch):
-    import litellm
-
-    calls = []
-
-    def reply(**kwargs):
-        calls.append(kwargs)
-        return {"id": "r", "model": "gpt-4o", "status": "completed",
+def test_typed_native_responses_records_a_dropped_top_k(monkeypatch):
+    body = {"id": "r", "model": "gpt-4o", "status": "completed",
                 "output": [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "ok"}]}],
                 "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}
 
-    monkeypatch.setattr(litellm, "responses", reply)
-    lm = dspy.LM("openai/gpt-4o", model_type="responses", engine="litellm", cache=False, num_retries=0)
+    transport = native_transport(monkeypatch, [DualResponse(status=200, body=json.dumps(body).encode())])
+    lm = dspy.LM("openai/gpt-4o", model_type="responses", api_key="fake", cache=False, num_retries=0)
     request = lm15.Request(model=lm.model, messages=(lm15.Message.user("hi"),), config=lm15.Config(top_k=7))
     response = lm(request)
-    assert "top_k" not in calls[0]
+    assert "top_k" not in json.loads(transport.requests[0].body)
     note, = response.adaptations
     assert (note.field, note.action, note.asked) == ("config.top_k", "dropped", 7)
     assert re.search(r"Responses", note.reason)

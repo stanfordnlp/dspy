@@ -7,13 +7,13 @@ generation options in the OpenAI vocabulary that `dspy.LM(...)` and
 own Chat Completions reader, so DSPy keeps no second copy of that vocabulary.
 Everything past this boundary is an lm15 `Request`.
 
-Three groups of keys never reach a Request:
+Two groups of keys never reach a Request:
 
 - execution controls owned by the DSPy LM layer (`cache`, `rollout_id`, `n`);
 - client settings owned by engines (`api_key`, `api_base`, ...);
-- provider-specific options lm15 has no verdict for. They ride in
-  `Config.extensions` and select the LiteLLM compatibility engine under
-  `engine="auto"`; `engine="lm15"` refuses them before execution.
+
+Provider-specific options ride in `Config.extensions`. Native execution
+refuses options with no mapping; custom engines own their interpretation.
 """
 
 from dataclasses import replace
@@ -23,6 +23,7 @@ import pydantic
 
 from dspy._vendor.lm15.providers import openai_chat as _openai_chat
 from dspy.clients.backend_selection import CLIENT_KEYS, select_backend
+from dspy.clients.errors import error_boundary
 from dspy.lm15 import (
     BuiltinTool,
     CacheConfig,
@@ -42,8 +43,8 @@ __all__ = ["CLIENT_KEYS", "EXECUTION_KEYS", "build_request", "generation_options
 _KNOWN_KEYS = (
     _openai_chat._INGEST_CONFIG_KEYS | _openai_chat._INGEST_EXTENSIONS_KEYS | _openai_chat._INGEST_CALL_MODE_KEYS
 )
-# Deprecated function-calling shapes are rejected outright; every other key
-# lm15 refuses is a provider option only the compatibility engine can carry.
+# Deprecated function-calling shapes are rejected outright; other unknown
+# keys remain available to custom engines as extensions.
 _REJECTED_KEYS = frozenset({"functions", "function_call"})
 # Extension keys lm15 itself reads back from a Chat Completions body.
 _CANONICAL_EXTENSION_KEYS = _openai_chat._INGEST_EXTENSIONS_KEYS | frozenset({"reasoning_format"})
@@ -51,7 +52,7 @@ _STUB_MESSAGES = [{"role": "user", "content": "."}]
 
 
 def passthrough_keys(request: Request) -> frozenset[str]:
-    """Extension keys lm15 has no canonical verdict for; they need LiteLLM."""
+    """Extension keys that need an explicit provider-specific mapping."""
     return frozenset(key for key in (request.config.extensions or {}) if key not in _CANONICAL_EXTENSION_KEYS)
 
 
@@ -166,7 +167,7 @@ def _compat(lm, options):
     except Exception:
         return None
     resolution = selection.resolution
-    if not selection.native or resolution is None or resolution.adapter != "OpenAIChatLM":
+    if resolution.adapter != "OpenAIChatLM":
         return None
     compat = resolution.compat
     if isinstance(compat, str):
@@ -213,11 +214,9 @@ def build_request(lm, prompt, options: dict | None = None) -> Request:
     provider_controls = {"thinking", "enable_thinking", "chat_template_kwargs", "reasoning_format"}.intersection(body)
     native_thinking = None
     if provider_controls and isinstance(getattr(lm, "engine", None), str):
-        selection = select_backend(lm, options)
-        if not selection.native:
-            # LiteLLM owns these provider spellings on the compatibility route.
-            passthrough.update({key: body.pop(key) for key in provider_controls})
-        elif selection.resolution.adapter == "AnthropicLM" and "thinking" in body:
+        with error_boundary(lm.model):
+            selection = select_backend(lm, options)
+        if selection.resolution.adapter == "AnthropicLM" and "thinking" in body:
             # The Messages writer already accepts this object via extensions.
             # Keep its budget/disable semantics out of the Chat-only reader.
             native_thinking = passthrough["thinking"] = body.pop("thinking")

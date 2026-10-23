@@ -31,7 +31,7 @@ def _wire(text="hello"):
 
 def test_timeout_is_a_native_setting_now():
     lm = dspy.LM("openai/gpt-4o", timeout=30, api_key="k", cache=False)
-    assert select_backend(lm).native
+    assert select_backend(lm).clients["timeout"] == 30
 
 
 @pytest.mark.parametrize("timeout,expected", [
@@ -110,7 +110,6 @@ def test_auto_engine_refuses_unrepresentable_tool_result_images_before_io(monkey
     transport = FakeTransport([])
     router_config = dspy.lm15.RouterConfig
     monkeypatch.setattr(execution, "RouterConfig", lambda **kwargs: router_config(**{**kwargs, "transport": transport}))
-    monkeypatch.setattr("litellm.completion", lambda **kwargs: pytest.fail("must not send a lossy fallback"))
     lm = dspy.LM("openai/gpt-4o", api_key="k", cache=False)
     # An image inside a tool result has no slot on the Chat Completions wire:
     # neither native nor compatibility serialization can roundtrip this data.

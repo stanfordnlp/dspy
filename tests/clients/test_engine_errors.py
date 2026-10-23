@@ -2,11 +2,9 @@
 
 import asyncio
 import inspect
-from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import anyio
-import litellm
 import pytest
 
 import dspy
@@ -14,8 +12,6 @@ from dspy import lm15
 from dspy._vendor.lm15._authlock import CredentialLockTimeout
 from dspy._vendor.lm15.authkit import DeviceCodeExpiredError
 from dspy._vendor.lm15.router import MissingCredentialError
-from dspy.clients.engines import AsyncLiteLLMEngine, LiteLLMEngine
-from dspy.clients.engines.litellm_errors import to_lm15_error
 from dspy.clients.errors import wrap_error
 from dspy.utils.callback import BaseCallback
 
@@ -148,7 +144,6 @@ async def test_unexpected_engine_errors_are_not_guessed_or_retried(asynchronous,
     original.status_code = 503  # An arbitrary plugin attribute is not SDK evidence.
     engine = Engine(original)
     lm = dspy.LM("custom", engine=engine, async_engine=AsyncEngine(engine), cache=False, num_retries=3)
-    monkeypatch.setattr("dspy.clients._litellm.get_litellm", lambda **kwargs: pytest.fail("Native errors must not load LiteLLM"))
     with pytest.raises(dspy.LMUnexpectedError) as caught:
         await invoke(lm, asynchronous, "hello")
     assert caught.value.__cause__ is original
@@ -171,60 +166,6 @@ async def test_cancellation_is_not_translated(asynchronous):
     assert engine.calls == 1
 
 
-@pytest.mark.parametrize("error,target", [
-    (litellm.BadRequestError("timeout must be positive", model="wire", llm_provider="openai"), lm15.InvalidRequestError),
-    (litellm.AuthenticationError("network access denied", model="wire", llm_provider="openai"), lm15.AuthError),
-    (litellm.UnsupportedParamsError("timeout unsupported", model="wire", llm_provider="openai"), lm15.UnsupportedFeatureError),
-    (litellm.BudgetExceededError(current_cost=2, max_budget=1), lm15.BillingError),
-    (litellm.APIConnectionError("failed", model="wire", llm_provider="openai"), lm15.TransportError),
-    (litellm.Timeout("failed", model="wire", llm_provider="openai"), lm15.TimeoutError),
-])
-def test_sdk_classes_override_messages_and_status(error, target):
-    mapped = to_lm15_error(error)
-    assert isinstance(mapped, target)
-    if target in (lm15.InvalidRequestError, lm15.AuthError, lm15.UnsupportedFeatureError, lm15.BillingError):
-        assert not dspy.is_retryable_lm_error(wrap_error(mapped, model="custom"))
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("asynchronous", [False, True])
-async def test_litellm_engine_raises_canonical_errors_and_public_lm_projects_once(asynchronous, monkeypatch):
-    sdk = litellm.BadRequestError("timeout must be positive", model="wire", llm_provider="openai")
-
-    def fail(**kwargs):
-        raise sdk
-
-    async def afail(**kwargs):
-        raise sdk
-
-    monkeypatch.setattr(litellm, "completion", fail)
-    monkeypatch.setattr(litellm, "acompletion", afail)
-    request = lm15.Request(model="openai/test", messages=(lm15.Message.user("hi"),))
-    with pytest.raises(lm15.InvalidRequestError) as canonical:
-        if asynchronous:
-            await AsyncLiteLLMEngine().complete(request)
-        else:
-            LiteLLMEngine().complete(request)
-    assert canonical.value.__cause__ is sdk
-    lm = dspy.LM(request.model, engine="litellm", cache=False, num_retries=0)
-    with pytest.raises(dspy.LMInvalidRequestError) as public:
-        await invoke(lm, asynchronous, request)
-    assert isinstance(public.value.__cause__, lm15.InvalidRequestError)
-    assert public.value.__cause__.__cause__ is sdk
-    assert public.value.model == "wire"
-
-
-def test_billing_code_on_generic_429_is_not_retryable():
-    sdk = litellm.RateLimitError("quota", model="wire", llm_provider="openai")
-    sdk.body = {"error": {"code": "insufficient_quota"}}
-    canonical = to_lm15_error(sdk)
-    assert isinstance(canonical, lm15.BillingError)
-    assert canonical.status == 429
-    assert not dspy.is_retryable_lm_error(wrap_error(canonical, model="custom"))
-    sdk.llm_provider = "unrelated-provider"
-    assert isinstance(to_lm15_error(sdk), lm15.RateLimitError)  # no cross-provider code guesses
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("error_class", [lm15.RateLimitError, lm15.TimeoutError, lm15.TransportError, lm15.ServerError, lm15.LockTimeoutError])
@@ -245,27 +186,6 @@ async def test_invalid_request_controls_fail_before_engine_execution(asynchronou
     with pytest.raises(ValueError, match="execution controls"):
         await invoke(lm, asynchronous, request)
     assert engine.calls == 0
-
-
-def test_headers_are_case_insensitive_and_body_metadata_wins(monkeypatch):
-    import dspy.clients._http as http
-
-    class Clock(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return cls(2025, 1, 1, tzinfo=timezone.utc)
-
-    monkeypatch.setattr(http, "datetime", Clock)
-    error = litellm.RateLimitError("wait", model="wire", llm_provider="openai")
-    error.response = SimpleNamespace(status_code=429, headers={
-        "ReTrY-AfTeR": "Wed, 01 Jan 2025 00:00:09 GMT", "X-Request-ID": "header-id",
-    })
-    assert to_lm15_error(error).retry_after == 9.0
-    assert to_lm15_error(error).request_id == "header-id"
-    error.retry_after = 0.0
-    error.request_id = "body-id"
-    assert to_lm15_error(error).retry_after == 0.0
-    assert to_lm15_error(error).request_id == "body-id"
 
 
 @pytest.mark.parametrize("hint", [float("nan"), float("inf"), -1, "bad", True, object()])
@@ -342,7 +262,6 @@ def test_capability_routing_failure_is_projected_without_backend_fallback(monkey
         raise error
 
     monkeypatch.setattr(LM15Engine, "resolve", fail)
-    monkeypatch.setattr("dspy.clients._litellm.get_litellm", lambda **kwargs: pytest.fail("No backend switch on auth errors"))
     with pytest.raises(dspy.LMAuthError) as caught:
         _ = dspy.LM("openai/test").supports_function_calling
     assert caught.value.__cause__ is error

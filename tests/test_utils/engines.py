@@ -89,76 +89,53 @@ def recording_lm(responses=None, *, model="test/model", **kwargs):
     return dspy.LM(model, engine=engine, async_engine=AsyncRecordingEngine(engine), **kwargs)
 
 
-def litellm_response(text="", *, model="openai/gpt-4o-mini", tool_calls=None, usage=None):
-    """A minimal valid LiteLLM ModelResponse for tests that mock `litellm.completion`."""
-    from litellm import Choices, Message, ModelResponse
+def patch_streaming(**kwargs):
+    """Replay recorded OpenAI chunks or canonical events at the engine boundary.
 
-    message = Message(content=text, tool_calls=tool_calls)
-    return ModelResponse(choices=[Choices(message=message, finish_reason="stop")], model=model, usage=usage)
-
-
-def _has_finish_reason(chunk):
-    choices = getattr(chunk, "choices", None) or (chunk.get("choices") if isinstance(chunk, dict) else None) or []
-    for choice in choices:
-        reason = getattr(choice, "finish_reason", None) if not isinstance(choice, dict) else choice.get("finish_reason")
-        if reason is not None:
-            return True
-    return False
-
-
-def _terminal_chunk():
-    from litellm import ModelResponseStream
-    from litellm.types.utils import Delta, StreamingChoices
-
-    return ModelResponseStream(choices=[StreamingChoices(delta=Delta(), finish_reason="stop")])
-
-
-async def _terminated(source):
-    """Recorded fixtures often omit the final chunk a real LiteLLM stream sends."""
-    import inspect
-
-    if inspect.isawaitable(source):
-        source = await source
-    last = None
-    async for chunk in source:
-        last = chunk
-        yield chunk
-    if last is not None and not _has_finish_reason(last):
-        yield _terminal_chunk()
-
-
-def _materialize_stream(value):
-    """Turn what a patched `litellm.acompletion` returned into a sync chunk iterator."""
-    import asyncio
-
-    async def collect(source):
-        return [chunk async for chunk in _terminated(source)]
-
-    return iter(asyncio.run(collect(value)))
-
-
-def patch_litellm_streaming(**kwargs):
-    """Patch `litellm.acompletion` as given, and `litellm.completion` with a sync view of it.
-
-    Streaming tests describe chunks as async generators. A synchronous DSPy
-    program streams through `litellm.completion(stream=True)` in a worker
-    thread, so the same recorded chunks are replayed there as a plain iterator.
+    The native parser reads plain wire dictionaries, without provider SDK
+    objects. Sync programs consume the same async fixtures in their worker.
     """
+    import asyncio
+    import inspect
+    import json
     from contextlib import contextmanager
+    from dataclasses import replace
     from unittest import mock
+
+    from dspy._vendor.lm15.sse import SSEEvent
+    from dspy.lm15 import OpenAIChatLM, StreamEndEvent, StreamStartEvent
 
     @contextmanager
     def patched():
-        with mock.patch("litellm.acompletion", **kwargs) as recorded:
-            def completion(*args, **kw):
-                return _materialize_stream(recorded(*args, **kw))
+        options = dict(kwargs)
+        factory = options.pop("new_callable", mock.AsyncMock)
+        recorded = factory(**options)
 
-            async def acompletion(*args, **kw):
-                return _terminated(recorded(*args, **kw))
+        async def astream(request):
+            source = recorded()
+            if inspect.isawaitable(source):
+                source = await source
+            yield StreamStartEvent(model=request.model)
+            end = StreamEndEvent(finish_reason="stop")
+            parser = OpenAIChatLM(api_key="test")
+            async for chunk in source:
+                events = parser.parse_stream_events(request, SSEEvent(event=None, data=json.dumps(chunk))) if isinstance(chunk, dict) else [chunk]
+                for event in events:
+                    if isinstance(event, StreamEndEvent):
+                        end = replace(end, finish_reason=event.finish_reason or end.finish_reason,
+                                      usage=event.usage or end.usage, provider_data=event.provider_data or end.provider_data)
+                    else:
+                        yield event
+            yield end
 
-            with mock.patch("litellm.completion", side_effect=completion), \
-                 mock.patch("litellm.acompletion", side_effect=acompletion):
-                yield recorded
+        def stream(request):
+            async def collect():
+                return [event async for event in astream(request)]
+            return iter(asyncio.run(collect()))
+
+        with mock.patch("dspy.clients.engines.LM15Engine.stream", side_effect=stream), \
+             mock.patch("dspy.clients.engines.AsyncLM15Engine.stream", side_effect=astream):
+            yield recorded
 
     return patched()
 

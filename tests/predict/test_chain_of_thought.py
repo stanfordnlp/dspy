@@ -1,13 +1,12 @@
 from unittest import mock
 
 import pytest
-from litellm.utils import Choices, Message, ModelResponse
 
 import dspy
 from dspy import ChainOfThought
 from dspy.utils import DummyLM
 from dspy.utils.exceptions import AdapterParseError
-from tests.test_utils.engines import litellm_response
+from tests.test_utils.engines import make_response
 
 
 def test_initialization_with_string_signature():
@@ -33,23 +32,16 @@ async def test_async_chain_of_thought():
 def test_chain_of_thought_with_native_reasoning():
     """Native-capable models need no explicit reasoning or plan output."""
 
-    lm = dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", cache=False)
+    lm = dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", cache=False)
     dspy.settings.configure(lm=lm)
 
-    # Match the mocked response's capability independently of LiteLLM's bundled model catalog.
     with (
-        mock.patch("litellm.supports_reasoning", return_value=True),
-        mock.patch("litellm.completion") as mock_completion,
+        mock.patch.object(dspy.LM, "supports_reasoning", new_callable=mock.PropertyMock, return_value=True),
+        mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion,
     ):
-        mock_completion.return_value = ModelResponse(
-            choices=[
-                Choices(
-                    message=Message(
-                        content="[[ ## answer ## ]]\nParis\n[[ ## completed ## ]]",
-                        reasoning_content="Paris is the capital of France.",
-                    ),
-                )
-            ],
+        mock_completion.return_value = make_response(
+            "[[ ## answer ## ]]\nParis\n[[ ## completed ## ]]",
+            thinking="Paris is the capital of France.",
             model="anthropic/claude-3-7-sonnet-20250219",
         )
 
@@ -59,30 +51,21 @@ def test_chain_of_thought_with_native_reasoning():
         assert isinstance(result.reasoning, dspy.Reasoning)
         assert result.reasoning == "Paris is the capital of France."
 
-        _args, kwargs = mock_completion.call_args
-        assert kwargs["reasoning_effort"] == "low"
-        assert "[[ ## reasoning ## ]]" not in str(kwargs["messages"])
-        assert "[[ ## plan ## ]]" not in str(kwargs["messages"])
+        request = mock_completion.call_args.args[0]
+        assert request.config.reasoning.effort == "low"
+        assert "[[ ## reasoning ## ]]" not in str(request.messages)
+        assert "[[ ## plan ## ]]" not in str(request.messages)
 
 
 def test_chain_of_thought_with_manual_reasoning():
     """Test ChainOfThought with manual reasoning where LM doesn't support native reasoning."""
-    lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
+    lm = dspy.LM(model="openai/gpt-4o-mini")
     dspy.settings.configure(lm=lm)
 
-    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[
-                Choices(
-                    reasoning="Step-by-step thinking about the capital of France",
-                    message=Message(
-                        content=(
-                            "[[ ## plan ## ]]\nRecall the capital of France.\n"
-                            "[[ ## answer ## ]]\nParis\n[[ ## completion ## ]]"
-                        )
-                    ),
-                )
-            ],
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            "[[ ## plan ## ]]\nRecall the capital of France.\n"
+            "[[ ## answer ## ]]\nParis\n[[ ## completion ## ]]",
             model="openai/gpt-4o-mini",
         )
 

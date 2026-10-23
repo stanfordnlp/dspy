@@ -78,6 +78,7 @@ from .common import (
     parse_json_object,
     tool_description,
     unnamed_tool_call_error,
+    with_partial_usage,
     parts_to_text,
     data_part_text,
 )
@@ -959,7 +960,10 @@ def _response_from_chat_body(
         raise TypeError(f"a Chat Completions response body is a JSON object, got {type(data).__name__}")
     resp_error = data.get("error")
     if isinstance(resp_error, dict):
-        raise on_error(str(resp_error.get("code") or ""), str(resp_error.get("message") or resp_error))
+        raise with_partial_usage(
+            on_error(str(resp_error.get("code") or ""), str(resp_error.get("message") or resp_error)),
+            data, model=model, parse_usage=_usage_from_chat,
+        )
 
     unmapped: list[dict[str, str]] = []
     choices = data.get("choices") or []
@@ -1019,7 +1023,10 @@ def _response_from_chat_body(
             continue
         function = call.get("function") if isinstance(call.get("function"), dict) else {}
         if not function.get("name"):
-            raise unnamed_tool_call_error(provider, f"{path}.message.tool_calls[{call_index}]")
+            raise with_partial_usage(
+                unnamed_tool_call_error(provider, f"{path}.message.tool_calls[{call_index}]"),
+                data, model=model, parse_usage=_usage_from_chat,
+            )
         parts.append(
             ToolCallPart(
                 id=str(call.get("id") or f"call_{len(parts)}"),

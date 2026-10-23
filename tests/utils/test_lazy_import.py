@@ -238,19 +238,19 @@ def test_require_stub_raises_on_access_with_install_hint():
     assert "dspy.Test" in msg
 
 
-def test_require_stub_uses_install_hint_for_litellm(monkeypatch):
+def test_require_stub_uses_install_hint_for_optional_dependency(monkeypatch):
     import importlib.util
     import sys
 
     dist = _detect_dspy_dist()
     find_spec = importlib.util.find_spec
-    monkeypatch.delitem(sys.modules, "litellm", raising=False)
-    monkeypatch.setattr(importlib.util, "find_spec", lambda module: None if module == "litellm" else find_spec(module))
+    monkeypatch.delitem(sys.modules, "datasets", raising=False)
+    monkeypatch.setattr(importlib.util, "find_spec", lambda module: None if module == "datasets" else find_spec(module))
 
-    stub = require("litellm", feature="dspy.LM")
+    stub = require("datasets", feature="dspy.datasets")
     with pytest.raises(ImportError) as exc_info:
         _ = stub.something
-    assert f"{dist}[litellm]" in str(exc_info.value)
+    assert f"{dist}[datasets]" in str(exc_info.value)
 
 
 def test_require_stub_uses_explicit_extra():

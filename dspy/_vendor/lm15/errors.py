@@ -307,9 +307,15 @@ class CapabilityError(LM15Error):
 
 
 class ProviderError(LM15Error):
-    """The provider returned an error response."""
+    """The provider returned an error response.
+
+    ``partial`` may carry reported usage when a completed reply cannot be
+    parsed. It is diagnostic accounting data, not a successful completion.
+    Providers that cannot recover usage leave it as ``None``.
+    """
 
     default_code = "provider"
+    partial: Response | None = None
 
     def __str__(self) -> str:
         # The displayed form carries provider / HTTP status / request id so

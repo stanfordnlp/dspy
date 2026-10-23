@@ -2,17 +2,14 @@
 
 import pytest
 
-import dspy
 from dspy.clients.lm15_boundary import request_kwargs, response_value
-from dspy.clients.requests import build_request
 from dspy.lm15 import AudioPart, Config, DocumentPart, ImagePart, Message, Request, TextPart, UnsupportedFeatureError
 
 
 @pytest.mark.parametrize("count", [0, 5])
-def test_text_completion_logprobs_round_trip(count):
-    lm = dspy.LM("openai/test", model_type="text")
-    request = build_request(lm, "hello", {"logprobs": count})
-    assert request.config.logprobs == count
+def test_text_export_logprobs_round_trip(count):
+    # This private export utility remains available; built-in LM text mode does not.
+    request = Request(model="openai/test", messages=(Message.user("hello"),), config=Config(logprobs=count))
     wire = request_kwargs(request, "text")
     assert type(wire["logprobs"]) is int
     assert wire["logprobs"] == count
@@ -32,7 +29,7 @@ def test_text_completion_scores_preserve_unknown_tokens_and_offsets():
     assert response.provider_data["choices"][0]["logprobs"] == scores
 
 
-def test_text_completion_preserves_the_output_token_limit():
+def test_text_completion_export_preserves_the_output_token_limit():
     request = Request(model="openai/test", messages=(Message.user("hello"),), config=Config(max_tokens=23))
     assert request_kwargs(request, "text") == {"prompt": "hello\n\nBEGIN RESPONSE:", "max_tokens": 23}
     assert request_kwargs(request, "chat")["max_completion_tokens"] == 23
@@ -73,7 +70,7 @@ def test_chat_media_does_not_fetch_unrepresentable_sources(part):
 @pytest.mark.parametrize("part", [AudioPart(data="YXVkaW8=", media_type="audio/wav"),
                                   DocumentPart(file_id="file-123"), ImagePart(url="https://example.com/image.png")])
 @pytest.mark.parametrize("mixed", [False, True])
-def test_text_completion_does_not_discard_media(part, mixed):
+def test_text_completion_export_does_not_discard_media(part, mixed):
     parts = (TextPart(text="Describe this:"), part) if mixed else (part,)
     request = Request(model="openai/test", messages=(Message.user(parts),))
     with pytest.raises(UnsupportedFeatureError):

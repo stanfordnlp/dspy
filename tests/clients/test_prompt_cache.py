@@ -97,32 +97,14 @@ async def test_answer_caching_still_works(asynchronous):
     assert lm.history[-1]["usage"] == {}
 
 
-@pytest.mark.parametrize("options", [
-    {"engine": "litellm"}, {"engine": "auto", "headers": {"x-test": "yes"}},
-    {"engine": "auto", "model_type": "text"},
-])
-def test_no_compatibility_fallback(options, monkeypatch):
-    from dspy.clients.engines import LiteLLMEngine
-
-    def forbidden(*args, **kwargs):
-        raise AssertionError("prompt_cache must not reach LiteLLM")
-
-    monkeypatch.setattr(LiteLLMEngine, "complete", forbidden)
-    lm = dspy.LM("openai/gpt-4o", cache=False, prompt_cache=CacheConfig(prefix="stable"), **options)
-    with pytest.raises(dspy.LMUnsupportedFeatureError):
-        lm("hello")
-
-
 def test_unrepresentable_input_does_not_fallback_with_prompt_cache(monkeypatch):
-    from dspy.clients.engines import LiteLLMEngine
+    from tests.clients.test_lm_engine_execution import native_transport
 
-    def forbidden(*args, **kwargs):
-        raise AssertionError("Compatibility fallback attempted")
-
-    monkeypatch.setattr(LiteLLMEngine, "complete", forbidden)
+    transport = native_transport(monkeypatch, [])
     lm = dspy.LM("openai/gpt-4o", cache=False, prompt_cache=CacheConfig(prefix="stable"))
     with pytest.raises(dspy.LMUnsupportedFeatureError):
         lm("hello", audio={"voice": "alloy", "format": "wav"})
+    assert not transport.requests
 
 
 def test_provider_cache_options_cannot_conflict():
@@ -131,16 +113,16 @@ def test_provider_cache_options_cannot_conflict():
         build_request(lm, "hello", {"prompt_cache_key": "other"})
 
 
-def test_none_is_not_forwarded_to_litellm(monkeypatch):
-    from dspy.clients.engines import LiteLLMEngine
+def test_none_is_not_forwarded_to_native_engine(monkeypatch):
+    from dspy.clients.engines import LM15Engine
 
     def complete(self, request):
         assert request.config.cache is None
         assert not (request.config.extensions or {})
         return Response(None, request.model, Message.assistant("ok"), "stop", Usage())
 
-    monkeypatch.setattr(LiteLLMEngine, "complete", complete)
-    assert dspy.LM("openai/gpt-4o", engine="litellm", cache=False)("hello", prompt_cache=None) == ["ok"]
+    monkeypatch.setattr(LM15Engine, "complete", complete)
+    assert dspy.LM("openai/gpt-4o", cache=False)("hello", prompt_cache=None) == ["ok"]
 
 
 def test_native_anthropic_marks_system_prefix(monkeypatch):

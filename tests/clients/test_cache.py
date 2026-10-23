@@ -398,11 +398,11 @@ def test_cache_init_with_disk_disabled_and_none_dir():
 
 
 def test_model_response_roundtrip_in_restricted_mode(restricted_cache):
-    from litellm import ModelResponse
+    from openai.types.chat import ChatCompletion
 
-    response = ModelResponse(
-        id="test-123",
-        choices=[{"message": {"content": "cached response"}, "index": 0, "finish_reason": "stop"}],
+    response = ChatCompletion(
+        id="test-123", model="gpt-4o", created=0, object="chat.completion",
+        choices=[{"message": {"role": "assistant", "content": "cached response"}, "index": 0, "finish_reason": "stop"}],
         usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
     )
     request = {"model": "openai/gpt-5-nano", "prompt": "test"}
@@ -411,7 +411,7 @@ def test_model_response_roundtrip_in_restricted_mode(restricted_cache):
     restricted_cache.reset_memory_cache()
 
     result = restricted_cache.get(request)
-    assert isinstance(result, ModelResponse)
+    assert isinstance(result, ChatCompletion)
     assert result.choices[0].message.content == "cached response"
 
 
@@ -538,7 +538,7 @@ def test_safe_types_rejects_non_types(tmp_path):
 
 
 class _StrictProviderResponse(pydantic.BaseModel):
-    """Mimics strict provider SDK models (e.g. litellm's ResponsesAPIResponse)."""
+    """Mimics a provider SDK response that forbids undeclared fields."""
 
     model_config = pydantic.ConfigDict(extra="forbid")
 

@@ -15,7 +15,7 @@ except dspy.LMError as e:
     print(f"LM failed with code={e.code}, provider={e.provider}, request_id={e.request_id}")
 ```
 
-Use `dspy.is_retryable_lm_error(error)` to classify LM failures that are generally safe to retry: rate limits, timeouts, server errors, and transport errors. DSPy's built-in `dspy.LM` delegates provider retries to LiteLLM, but callers can use this helper after retries are exhausted. Retryability is advisory: respect provider policy and `retry_after` when present.
+Use `dspy.is_retryable_lm_error(error)` to classify LM failures that are generally eligible for retry: rate limits, timeouts, server errors, and transport errors. DSPy owns retries around engine attempts; `num_retries` counts additional attempts, and a stream is not retried after output reaches the caller. Callers can use this helper after retries are exhausted. Retryability is advisory, not an exactly-once guarantee: respect provider policy and `retry_after` when present.
 
 ```python
 try:
