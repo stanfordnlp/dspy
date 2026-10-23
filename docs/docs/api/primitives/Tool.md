@@ -11,7 +11,7 @@
             - description
             - extract_custom_type_from_annotation
             - format
-            - format_as_litellm_function_call
+            - as_function_tool
             - from_langchain
             - from_mcp_tool
             - is_streamable
