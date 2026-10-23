@@ -137,6 +137,12 @@ def test_cache_key_generation(cache):
     key_with_model_class = cache.cache_key(request_with_model_class)
     assert isinstance(key_with_model_class, str)
 
+    # Lists of pydantic models appear in tool/message payloads; walk them the same way as dicts.
+    request_with_model_list = {"items": [model, TestModel(name="other", value=7)]}
+    key_with_model_list = cache.cache_key(request_with_model_list)
+    assert isinstance(key_with_model_list, str)
+    assert cache.cache_key({"items": [TestModel(name="test", value=42), TestModel(name="other", value=7)]}) == key_with_model_list
+
 
 def test_put_and_get(cache):
     """Test putting and getting from cache."""
