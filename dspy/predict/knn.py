@@ -37,6 +37,8 @@ class KNN:
             similar_examples = knn(input="hello")
             ```
         """
+        if k is not None and k < 0:
+            raise ValueError(f"k must be a non-negative integer, got {k}")
         self.k = k
         self.trainset = trainset
         self.embedding = vectorizer

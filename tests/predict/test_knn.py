@@ -65,16 +65,38 @@ def test_knn_query_zero_k():
 
 
 def test_knn_query_negative_k():
-    """Tests that KNN with negative k returns an empty list."""
+    """Tests that KNN with negative k raises ValueError."""
     trainset = [
         mock_example("What is the capital of France?", "Paris"),
         mock_example("What is the largest ocean?", "Pacific"),
         mock_example("What is 2+2?", "4"),
     ]
-    knn = KNN(k=-1, trainset=trainset, vectorizer=dspy.Embedder(DummyVectorizer()))
+    with pytest.raises(ValueError, match="k must be a non-negative integer"):
+        KNN(k=-1, trainset=trainset, vectorizer=dspy.Embedder(DummyVectorizer()))
+
+
+def test_knn_query_empty_trainset():
+    """Tests that KNN with empty trainset returns an empty list without shape mismatch errors."""
+    knn = KNN(k=3, trainset=[], vectorizer=dspy.Embedder(DummyVectorizer()))
     query = {"question": "What is 3+3?"}
     nearest_samples = knn(**query)
-    assert nearest_samples == [], "Expected empty list when k < 0"
+    assert nearest_samples == [], "Expected empty list when trainset is empty"
+
+
+def test_knn_fewshot_zero_k():
+    """Tests that KNNFewShot with k=0 compiles and runs forward pass without UnboundLocalError."""
+    from dspy.teleprompt import KNNFewShot
+    from dspy.utils import DummyLM
+
+    trainset = [mock_example("What is the capital of France?", "Paris")]
+    knn_fewshot = KNNFewShot(k=0, trainset=trainset, vectorizer=dspy.Embedder(DummyVectorizer()))
+    predictor = dspy.Predict("question -> answer")
+    compiled = knn_fewshot.compile(predictor)
+
+    lm = DummyLM([{"answer": "Paris"}])
+    with dspy.settings.context(lm=lm):
+        res = compiled(question="What is the capital of France?")
+        assert res.answer == "Paris"
 
 
 def test_knn_query_k_exceeding_trainset():
