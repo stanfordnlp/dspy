@@ -15,11 +15,26 @@ from typing import Any
 
 _protocol_output = os.fdopen(os.dup(sys.__stdout__.fileno()), "w", encoding="utf-8")
 os.set_inheritable(_protocol_output.fileno(), False)
+_protocol_input = os.fdopen(os.dup(sys.__stdin__.fileno()), "r", encoding="utf-8")
+os.set_inheritable(_protocol_input.fileno(), False)
 _worker_stdout, _worker_stderr = sys.stdout, sys.stderr
+# On Windows the text layer translates "\n" to "\r\n" on write, which would
+# leak "\r" into captured guest output. Pin newline translation off so guest
+# prints are captured verbatim on every platform.
+for _stream in (_worker_stdout, _worker_stderr):
+    with contextlib.suppress(Exception):
+        _stream.reconfigure(newline="\n")
 _sink = os.open(os.devnull, os.O_WRONLY)
 os.dup2(_sink, 1)
 os.dup2(_sink, 2)
 os.close(_sink)
+# Give the guest a private stdin instead of the protocol channel. A guest that
+# reads fd 0 would otherwise consume protocol bytes, and on Windows a child
+# process inheriting the pipe as its stdin deadlocks behind the reader thread's
+# pending synchronous read on the same pipe.
+_sink_in = os.open(os.devnull, os.O_RDONLY)
+os.dup2(_sink_in, 0)
+os.close(_sink_in)
 _send_lock = threading.Lock()
 
 
@@ -198,7 +213,7 @@ def send(message: dict[str, Any]) -> None:
 
 
 def receive() -> dict[str, Any]:
-    line = sys.__stdin__.readline()
+    line = _protocol_input.readline()
     if not line:
         raise EOFError
     message = json.loads(line)
