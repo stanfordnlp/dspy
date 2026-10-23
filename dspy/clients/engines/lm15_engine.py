@@ -150,8 +150,10 @@ class LM15Engine(_Routing):
         self.router = LMRouter(self.config)
 
     def complete(self, request: Request) -> Response:
+        from dspy.clients.lm15_boundary import repair_tool_arguments
+
         provider, routed = self._target(request)
-        return provider.complete(routed)
+        return repair_tool_arguments(provider.complete(routed))
 
     def stream(self, request: Request) -> Iterator[StreamEvent]:
         provider, routed = self._target(request, streaming=True)
@@ -181,9 +183,11 @@ class AsyncLM15Engine(_Routing):
     async def complete(self, request: Request) -> Response:
         import asyncio
 
+        from dspy.clients.lm15_boundary import repair_tool_arguments
+
         # Construction may load or refresh credentials synchronously.
         provider, routed = await asyncio.to_thread(self._target, request)
-        return await provider.complete(routed)
+        return repair_tool_arguments(await provider.complete(routed))
 
     async def stream(self, request: Request) -> AsyncIterator[StreamEvent]:
         import asyncio

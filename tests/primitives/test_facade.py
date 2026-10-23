@@ -2,7 +2,9 @@
 
 import pytest
 
-from dspy.primitives.facade import SANDBOX_LM_KWARGS, SandboxLM
+import dspy
+from dspy.lm15 import Config, Message, Request, Response
+from dspy.primitives.facade import SANDBOX_LM_KWARGS, FacadeInvocation, SandboxLM
 from dspy.utils.dummies import DummyLM
 
 
@@ -18,9 +20,12 @@ def _lm():
 
 def test_generation_parameters_pass_and_the_wrapped_lm_does_the_work():
     lm = _lm()
-    outputs = SandboxLM(lm)(messages=[{"role": "user", "content": "hi"}], temperature=0.3, max_tokens=5)
-    assert outputs == ["[[ ## answer ## ]]\na"]
+    request = Request(model=lm.model, messages=(Message.user("hi"),), config=Config(temperature=0.3, max_tokens=5))
+    output = SandboxLM(lm)(request)
+    assert isinstance(output, Response)
+    assert output.message.text == "[[ ## answer ## ]]\na"
     assert len(lm.history) == 1
+    assert lm.history[0]["request"].config == request.config
 
 
 @pytest.mark.parametrize(
@@ -41,22 +46,31 @@ def test_routing_credential_and_transport_options_are_rejected_before_any_reques
 @pytest.mark.asyncio
 async def test_acall_applies_the_same_allowlist():
     lm = _lm()
+    request = Request(model=lm.model, messages=(Message.user("prompt"),), config=Config(temperature=0.2))
     with pytest.raises(TypeError, match=r"may not set LM option\(s\) \['api_key'\]"):
-        await SandboxLM(lm).acall("prompt", api_key="sk-x")
+        await SandboxLM(lm).acall(request, api_key="sk-x")
     assert lm.history == []
-    assert await SandboxLM(lm).acall("prompt", temperature=0.2) == ["[[ ## answer ## ]]\na"]
+    output = await SandboxLM(lm).acall(request)
+    assert isinstance(output, Response)
+    assert output.message.text == "[[ ## answer ## ]]\na"
 
 
 def test_reserve_meters_admitted_calls_only():
     reserved = []
-    sandbox = SandboxLM(_lm(), reserve=reserved.append)
-    sandbox("one")
+    lm = _lm()
+    lm.kwargs["n"] = 4  # Typed requests remain singular despite a legacy sampling default.
+    sandbox = SandboxLM(lm, reserve=reserved.append)
+
+    def request(text):
+        return Request(model=lm.model, messages=(Message.user(text),))
+
+    sandbox(request("one"))
     with pytest.raises(TypeError):
-        sandbox("two", api_key="sk-x")
-    sandbox.copy(temperature=0.9)("three")
-    sandbox.forward("four")
+        sandbox(request("two"), api_key="sk-x")
+    sandbox.copy(temperature=0.9)(request("three"))
+    sandbox(request=request("four"))
     with pytest.raises(TypeError):
-        sandbox.forward("five", api_base="http://evil.example")
+        sandbox(request("five"), api_base="http://evil.example")
     assert reserved == [1, 1, 1]
 
 
@@ -91,6 +105,61 @@ def test_proxy_mirrors_identity_kwargs_and_capabilities_of_the_wrapped_lm():
     assert not SandboxLM(_lm()).supports_function_calling
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["sync", "async", "bridge", "two-step-async"])
+async def test_predictions_keep_trusted_host_defaults(mode):
+    lm = _lm()
+    lm.kwargs.update(frequency_penalty=0.6, top_k=7, extra_body={"host_option": "enabled"}, temperature=0.2)
+    reserved = []
+    sandbox = SandboxLM(SandboxLM(lm), reserve=reserved.append)
+    adapter = dspy.TwoStepAdapter(_lm()) if mode == "two-step-async" else dspy.ChatAdapter()
+    with dspy.context(lm=sandbox, adapter=adapter):
+        if mode == "bridge":
+            invocation = FacadeInvocation({}, lambda: None, 2)
+            handle = invocation.construct("Predict", "question -> answer", "solve", {"temperature": 0.7})
+            assert invocation.call(handle, {"question": "hello"})["answer"] == "a"
+        else:
+            predictor = dspy.Predict("question -> answer", temperature=0.7)
+            result = predictor(question="hello") if mode == "sync" else await predictor.acall(question="hello")
+            assert result.answer == "a"
+    [entry] = lm.history
+    config = entry["request"].config
+    assert config.frequency_penalty == 0.6
+    assert config.top_k == 7
+    assert config.extensions["extra_body"] == {"host_option": "enabled"}
+    assert config.temperature == 0.7
+    assert lm.kwargs["temperature"] == 0.2
+    assert not {"frequency_penalty", "extra_body"} & sandbox.kwargs.keys()
+    assert reserved == [1]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["sync", "async", "bridge", "two-step-async"])
+@pytest.mark.parametrize("options", [
+    {"frequency_penalty": 0.6}, {"extra_body": {"host_option": "enabled"}},
+    {"extra_body": None}, {"api_key": None}, {"num_generations": 2},
+])
+async def test_predict_options_cannot_bypass_sandbox_allowlist(mode, options):
+    lm = _lm()
+    lm.kwargs.update(frequency_penalty=0.6, extra_body={"host_option": "enabled"})
+    reserved = []
+    sandbox = SandboxLM(lm, reserve=reserved.append)
+    adapter = dspy.TwoStepAdapter(_lm()) if mode == "two-step-async" else dspy.ChatAdapter()
+    with dspy.context(lm=sandbox, adapter=adapter), pytest.raises(TypeError, match="may not set LM option"):
+        if mode == "bridge":
+            invocation = FacadeInvocation({}, lambda: None, 2)
+            handle = invocation.construct("Predict", "question -> answer", "solve", options)
+            invocation.call(handle, {"question": "hello"})
+        else:
+            predictor = dspy.Predict("question -> answer")
+            if mode == "sync":
+                predictor(question="hello", config=options)
+            else:
+                await predictor.acall(question="hello", config=options)
+    assert lm.history == []
+    assert reserved == []
+
+
 def test_wraps_a_callable_only_lm():
     # RLM accepts any callable as sub_lm; the facade is installed by default, so the proxy must too.
     class PlainLM:
@@ -102,3 +171,15 @@ def test_wraps_a_callable_only_lm():
     assert (sandbox.model, sandbox.kwargs, sandbox.supports_function_calling, sandbox.supported_params) == (
         None, {}, False, set()
     )
+
+
+def test_predict_wraps_a_request_callable_without_lm_metadata():
+    class Host:
+        model = "custom/host"
+
+        def __call__(self, request):
+            assert request.config.temperature == 0.3
+            return Response(None, self.model, Message.assistant("[[ ## answer ## ]]\na"), "stop", dspy.lm15.Usage())
+
+    result = dspy.Predict("question -> answer", temperature=0.3)(question="hello", lm=SandboxLM(Host()))
+    assert result.answer == "a"

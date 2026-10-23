@@ -248,12 +248,17 @@ def test_callback_complex_module():
     assert result["answer"] == "test output"
     assert result["reasoning"] == "No more responses"
 
-    assert len(callback.calls) == 14
+    assert len(callback.calls) == 18
     assert [call["handler"] for call in callback.calls] == [
         "on_module_start",
         "on_module_start",
         "on_adapter_format_start",
         "on_adapter_format_end",
+        # Each candidate is a separate LM call (n=3).
+        "on_lm_start",
+        "on_lm_end",
+        "on_lm_start",
+        "on_lm_end",
         "on_lm_start",
         "on_lm_end",
         # Parsing will run per output (n=3)
@@ -279,12 +284,17 @@ async def test_callback_async_module():
     assert result["answer"] == "test output"
     assert result["reasoning"] == "No more responses"
 
-    assert len(callback.calls) == 14
+    assert len(callback.calls) == 18
     assert [call["handler"] for call in callback.calls] == [
         "on_module_start",
         "on_module_start",
         "on_adapter_format_start",
         "on_adapter_format_end",
+        # Each candidate is a separate LM call (n=3).
+        "on_lm_start",
+        "on_lm_end",
+        "on_lm_start",
+        "on_lm_end",
         "on_lm_start",
         "on_lm_end",
         # Parsing will run per output (n=3)

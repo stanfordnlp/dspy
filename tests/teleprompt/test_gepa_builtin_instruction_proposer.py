@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 import dspy
 from dspy.adapters.types.tool import ToolCallResults, ToolCalls
+from dspy.lm15 import ImagePart, TextPart
 from dspy.primitives.repl_types import REPLHistory
 from dspy.teleprompt.gepa import InstructionProposer
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
@@ -22,6 +23,7 @@ from dspy.teleprompt.gepa.instruction_proposal import (
     compact_repl_history,
 )
 from dspy.utils.dummies import DummyLM
+from tests.test_utils.engines import spy_lm
 
 GEPA_PARAGRAPH_1 = (
     "Read the inputs carefully and identify the input format and infer detailed task description about the "
@@ -512,6 +514,7 @@ def react_metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
 def test_gepa_truncate_history_outputs_on_a_react_program_and_custom_proposers_see_the_context_string(caplog):
     trainset = [dspy.Example(question="cats?", answer="cats purr loudly").with_inputs("question")]
 
+    # Each evaluation must consume a full lookup/submit pair from the shared DummyLM script.
     # The built-in proposer with truncate_history_outputs: the reflection prompt omits the long tool output.
     program, task_lm = react_program_and_lm()
     reflection_lm = DummyLM([{"new_instruction": "Search, then answer in detail."}] * 5, adapter=dspy.JSONAdapter())
@@ -521,6 +524,7 @@ def test_gepa_truncate_history_outputs_on_a_react_program_and_custom_proposers_s
             reflection_lm=reflection_lm,
             instruction_proposer=InstructionProposer(truncate_history_outputs=True),
             max_metric_calls=4,
+            num_threads=1,
         ).compile(program, trainset=trainset, valset=trainset)
 
     assert no_reflection_errors(caplog)
@@ -539,7 +543,7 @@ def test_gepa_truncate_history_outputs_on_a_react_program_and_custom_proposers_s
 
     program, task_lm = react_program_and_lm()
     with dspy.context(lm=task_lm, adapter=dspy.ChatAdapter()):
-        dspy.GEPA(metric=react_metric, instruction_proposer=custom_proposer, max_metric_calls=4).compile(
+        dspy.GEPA(metric=react_metric, instruction_proposer=custom_proposer, max_metric_calls=4, num_threads=1).compile(
             program, trainset=trainset, valset=trainset
         )
 
@@ -666,14 +670,14 @@ def test_examples_reach_adapter_as_structured_values():
             "Feedback": "ok",
         }
     ]
-    lm = json_lm("New instruction.")
+    lm = spy_lm(replies=[json.dumps({"new_instruction": "New instruction."})])
     propose(InstructionProposer(adapter=InspectAdapter()), lm, examples=examples)
     assert seen == [examples]
     assert seen[0][0]["Inputs"]["Context"] is history
     assert seen[0][0]["Inputs"]["repl"] is repl
-    content = lm.history[-1]["messages"][-1]["content"]
-    assert any(part.get("type") == "image_url" for part in content)
-    text = "".join(part.get("text", "") for part in content)
+    content = lm.engine.requests[-1].messages[-1].parts
+    assert any(isinstance(part, ImagePart) for part in content)
+    text = "".join(part.text for part in content if isinstance(part, TextPart))
     assert '"amount": "1200", "claim": "claim #7"' in text
     assert '"Feedback": "ok"' in text
 

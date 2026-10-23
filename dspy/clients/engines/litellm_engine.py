@@ -1,6 +1,7 @@
 """LiteLLM behind the same single-response interface as native lm15 engines."""
 
 import json
+import os
 from dataclasses import replace
 
 from dspy._vendor.lm15.result import apply_client_side_stop
@@ -15,12 +16,15 @@ from dspy.clients.lm15_boundary import request_kwargs, response_value
 from dspy.lm15 import (
     Adaptation,
     ConfigurationError,
+    ContinuationDelta,
     OpenAIChatLM,
     ProviderError,
     Request,
     StreamAssemblyError,
+    StreamDeltaEvent,
     StreamEndEvent,
     StreamStartEvent,
+    ThinkingDelta,
     UnsupportedFeatureError,
 )
 
@@ -34,6 +38,7 @@ class _ChatStream:
         self.indices = {}
         self.started = False
         self.terminal = False
+        self.thinking_index = 0
         self.chunks = []
 
     def feed(self, chunk):
@@ -43,11 +48,12 @@ class _ChatStream:
             raise ProviderError("A single-response engine received multiple streaming candidates.")
         for choice in choices:
             delta = choice.get("delta") or {}
-            supported = {"role", "content", "reasoning_content", "reasoning", "tool_calls", "provider_specific_fields"}
+            supported = {"role", "content", "reasoning_content", "reasoning", "thinking_blocks", "tool_calls",
+                         "provider_specific_fields"}
             unknown = [key for key, val in delta.items() if key not in supported and val not in (None, "", [], {})]
             extras = delta.get("provider_specific_fields") or {}
             unknown.extend(f"provider_specific_fields.{key}" for key, val in extras.items()
-                           if key != "citation" and val not in (None, "", [], {}))
+                           if key not in {"citation", "thinking_blocks"} and val not in (None, "", [], {}))
             if unknown:
                 raise UnsupportedFeatureError(
                     f"LiteLLM streaming fields have no implemented lm15 event mapping: {sorted(unknown)}",
@@ -58,6 +64,36 @@ class _ChatStream:
             yield StreamStartEvent(id=body.get("id") or None, model=body.get("model") or self.request.model)
         if choices and choices[0].get("finish_reason") is not None:
             self.terminal = True
+        for choice in choices:
+            delta = choice.get("delta") or {}
+            blocks = delta.get("thinking_blocks") or (delta.get("provider_specific_fields") or {}).get("thinking_blocks")
+            if not blocks:
+                continue
+            # These SDK fields mirror the same text, not additional reasoning.
+            delta.pop("reasoning_content", None)
+            delta.pop("reasoning", None)
+            for block in blocks:
+                kind = block.get("type")
+                if kind not in {"thinking", "redacted_thinking"}:
+                    raise UnsupportedFeatureError(f"Unsupported LiteLLM thinking block: {kind!r}")
+                source_index = block.get("index", self.thinking_index)
+                self.thinking_index = source_index
+                key = ("thinking", source_index)
+                text = block.get("thinking") or ""
+                # Older SDK signature chunks repeat the accumulated text.
+                if block.get("signature") and key in self.indices:
+                    text = ""
+                index = self.indices.setdefault(key, len(self.indices))
+                yield StreamDeltaEvent(ThinkingDelta(text=text, part_index=index))
+                if kind == "redacted_thinking" or block.get("signature"):
+                    field = "data" if kind == "redacted_thinking" else "signature"
+                    yield StreamDeltaEvent(ContinuationDelta(
+                        provider="anthropic", kind="redacted_thinking" if field == "data" else "thinking_signature",
+                        data={field: block[field]}, part_index=index,
+                    ))
+                    # SDKs without block indices delimit thinking with its
+                    # signature or with a self-contained redacted block.
+                    self.thinking_index = source_index + 1
         for event in self.dialect.parse_stream_events(
             self.request, SSEEvent(event=None, data=json.dumps(body)),
         ):
@@ -68,7 +104,7 @@ class _ChatStream:
             if event.type != "delta":
                 continue
             delta = event.delta
-            key = (delta.type, delta.part_index)
+            key = (delta.type, self.thinking_index if delta.type == "thinking" else delta.part_index)
             index = self.indices.setdefault(key, len(self.indices))
             yield replace(event, delta=replace(delta, part_index=index))
         # LiteLLM exposes Anthropic citations as a provider-specific delta.
@@ -76,7 +112,7 @@ class _ChatStream:
             delta = choice.get("delta") or {}
             citation = (delta.get("provider_specific_fields") or {}).get("citation")
             if isinstance(citation, dict):
-                from dspy.lm15 import CitationDelta, StreamDeltaEvent
+                from dspy.lm15 import CitationDelta
 
                 text = citation.get("cited_text") or citation.get("text") or citation.get("supported_text")
                 title = citation.get("document_title") or citation.get("title")
@@ -96,12 +132,16 @@ class _ChatStream:
         )
 
 
+def _user_agent(headers):
+    import dspy
+
+    return {"User-Agent": f"DSPy/{dspy.__version__}", **(headers or {})}
+
+
 class _LiteLLMConfig:
     def __init__(self, *, model_type="chat", wire_model=None, **client_options):
         if model_type not in {"chat", "responses", "text"}:
-            raise UnsupportedFeatureError(
-                "Typed LiteLLM engines support chat and Responses APIs. Use ordinary LM calls for text completions."
-            )
+            raise UnsupportedFeatureError("LiteLLM engines support the chat, Responses and text completion APIs.")
         allowed = {
             "api_key", "api_base", "base_url", "api_version", "organization", "project",
             "headers", "extra_headers", "extra_query", "timeout", "azure_ad_token_provider",
@@ -122,8 +162,6 @@ class _LiteLLMConfig:
         validate_request(request)
         if self._closed:
             raise ConfigurationError("Engine is closed")
-        if self.model_type == "text":
-            raise UnsupportedFeatureError("Text-completion models accept ordinary prompt/messages calls, not typed requests.")
         if streaming and self.model_type != "chat":
             raise UnsupportedFeatureError(
                 "LiteLLMEngine streaming currently requires model_type='chat'. "
@@ -136,14 +174,25 @@ class _LiteLLMConfig:
         if self.model_type == "responses" and request.config.stop:
             wire_request = replace(request, config=replace(request.config, stop=()))
         data = request_kwargs(wire_request, self.model_type)
-        if self.model_type == "chat" and request.config.top_k is not None:
+        if self.model_type in {"chat", "text"} and request.config.top_k is not None:
             # The conversion speaks OpenAI's chat dialect, which has no top_k
             # field. LiteLLM translates top_k for providers that take it
             # (Anthropic, Gemini, local servers), so the setting is forwarded
             # as a LiteLLM argument rather than dropped by the conversion.
             data["top_k"] = request.config.top_k
         data.update(self.client_options)
-        data.update(model=self.wire_model or request.model, num_retries=0, cache={"no-cache": True, "no-store": True})
+        data["headers"] = _user_agent(data.pop("headers", None))
+        data.update(num_retries=0, cache={"no-cache": True, "no-store": True})
+        if self.model_type == "text":
+            # Text completions are addressed through LiteLLM's OpenAI-compatible
+            # text endpoint; credentials follow the provider prefix, as before.
+            provider, _, model = request.model.partition("/")
+            provider, model = (provider, model) if model else ("openai", provider)
+            data.setdefault("api_key", os.getenv(f"{provider}_API_KEY"))
+            data.setdefault("api_base", os.getenv(f"{provider}_API_BASE"))
+            data["model"] = f"text-completion-openai/{model}"
+            return data
+        data["model"] = self.wire_model or request.model
         if self.model_type == "chat":
             data["n"] = 1
         if streaming:
@@ -195,7 +244,7 @@ class LiteLLMEngine(_LiteLLMConfig):
     def complete(self, request: Request):
         data = self._arguments(request)
         litellm = get_litellm(feature="LiteLLM engine")
-        fn = litellm.responses if self.model_type == "responses" else litellm.completion
+        fn = {"chat": litellm.completion, "responses": litellm.responses, "text": litellm.text_completion}[self.model_type]
         with litellm_errors(model=request.model):
             raw = fn(**data)
         return self._response(raw, request)
@@ -241,7 +290,7 @@ class AsyncLiteLLMEngine(_LiteLLMConfig):
     async def complete(self, request: Request):
         data = self._arguments(request)
         litellm = get_litellm(feature="LiteLLM engine")
-        fn = litellm.aresponses if self.model_type == "responses" else litellm.acompletion
+        fn = {"chat": litellm.acompletion, "responses": litellm.aresponses, "text": litellm.atext_completion}[self.model_type]
         with litellm_errors(model=request.model):
             raw = await fn(**data)
         return self._response(raw, request)

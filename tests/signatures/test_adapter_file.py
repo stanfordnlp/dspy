@@ -6,6 +6,7 @@ import pytest
 
 import dspy
 from dspy.adapters.types.file import encode_file_to_dict
+from dspy.lm15 import DocumentPart
 from dspy.utils.dummies import DummyLM
 
 
@@ -22,7 +23,8 @@ def sample_text_file():
 
 
 def count_messages_with_file_pattern(messages):
-    pattern = {"type": "file", "file": lambda x: isinstance(x, dict)}
+    """Count lm15 document parts as recorded in LM history."""
+    pattern = {"type": "document", "media_type": lambda x: isinstance(x, str)}
 
     def check_pattern(obj, pattern):
         if isinstance(pattern, dict):
@@ -117,17 +119,13 @@ def test_file_format_with_file_data():
     formatted = file_obj.format()
     assert isinstance(formatted, list)
     assert len(formatted) == 1
-    assert formatted[0]["type"] == "file"
-    assert "file" in formatted[0]
-    assert "file_data" in formatted[0]["file"]
-    assert "filename" in formatted[0]["file"]
+    assert formatted[0] == DocumentPart(data="dGVzdA==", media_type="application/octet-stream")
 
 
 def test_file_format_with_file_id():
     file_obj = dspy.File.from_file_id("file-123")
     formatted = file_obj.format()
-    assert formatted[0]["type"] == "file"
-    assert formatted[0]["file"]["file_id"] == "file-123"
+    assert formatted[0] == DocumentPart(file_id="file-123")
 
 
 def test_file_repr_with_file_data():
@@ -262,10 +260,10 @@ def test_file_with_all_fields():
     assert file_obj.file_id == "file-123"
     assert file_obj.filename == "test.txt"
 
+    # A part is addressed by one source; the reference wins, and the display
+    # name stays on the DSPy object.
     formatted = file_obj.format()
-    assert formatted[0]["file"]["file_data"] == file_data_uri
-    assert formatted[0]["file"]["file_id"] == "file-123"
-    assert formatted[0]["file"]["filename"] == "test.txt"
+    assert formatted[0] == DocumentPart(file_id="file-123")
 
 
 def test_file_path_not_found():
@@ -286,4 +284,5 @@ def test_file_from_bytes_custom_mime():
 def test_file_data_uri_in_format():
     file_obj = dspy.File.from_bytes(b"test", filename="test.txt", mime_type="text/plain")
     formatted = file_obj.format()
-    assert "data:text/plain;base64," in formatted[0]["file"]["file_data"]
+    assert formatted[0].media_type == "text/plain"
+    assert formatted[0].data == "dGVzdA=="

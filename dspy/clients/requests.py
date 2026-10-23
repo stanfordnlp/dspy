@@ -94,7 +94,7 @@ def close_object_schemas(schema: Any, *, root: dict | None = None) -> Any:
 
 def generation_options(lm, options: dict | None = None) -> dict[str, Any]:
     """LM defaults overridden by call options; None removes a default."""
-    merged = dict(lm.kwargs)
+    merged = dict(getattr(lm, "kwargs", None) or {})
     for aliases in (("max_tokens", "max_completion_tokens"), ("reasoning", "reasoning_effort")):
         if options and any(name in options for name in aliases):
             # A call overrides the setting, regardless of its default spelling.
@@ -159,7 +159,7 @@ def _typed_tool_choice(choice, tools):
 
 def _compat(lm, options):
     """Chat-reader policy only; other dialects keep their policy in the writer."""
-    if not isinstance(lm.engine, str):
+    if not isinstance(getattr(lm, "engine", None), str):
         return None
     try:
         selection = select_backend(lm, options)
@@ -182,6 +182,9 @@ def build_request(lm, prompt, options: dict | None = None) -> Request:
         prompt: A `dspy.adapters.Prompt`, or a string rendered as one user message.
         options: Call-time generation options in the OpenAI vocabulary.
     """
+    # Proxies validate call options before merging them with trusted defaults.
+    if (build := getattr(lm, "_build_adapter_request", None)) is not None:
+        return build(prompt, options)
     if isinstance(prompt, str):
         system, messages = None, (Message.user(prompt),)
     else:
