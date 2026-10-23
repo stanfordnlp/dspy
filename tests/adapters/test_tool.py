@@ -796,3 +796,20 @@ def test_tool_annotated_field_metadata_reaches_schema_and_validation():
     with pytest.raises(ValueError, match="days"):
         tool(city="Paris", days=0)
 
+
+
+def test_tool_annotated_model_description_survives_reference_expansion():
+    """A Field description on an Annotated model argument must reach the tool schema."""
+
+    class ForecastRequest(BaseModel):
+        city: str
+
+    def get_forecast(
+        request: Annotated[ForecastRequest, Field(description="Forecast query")],
+    ) -> str:
+        """Get the weather forecast."""
+        return request.city
+
+    tool = dspy.Tool(get_forecast)
+    assert tool.args["request"]["description"] == "Forecast query"
+    assert tool.args["request"]["properties"]["city"]["type"] == "string"
