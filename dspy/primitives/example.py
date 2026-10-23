@@ -85,6 +85,7 @@ class Example:
         [`Metrics`](../../learn/evaluation/metrics.md): Write metric functions
             that compare an `Example` with a prediction.
     """
+
     # TODO: Add a `dspy.datasets.DataLoader` API link once the datasets API
     # pages exist.
 
@@ -248,6 +249,13 @@ class Example:
             >>> ex.labels().keys()
             ['answer']
         """
+        unknown = set(keys) - set(self._store)
+        if unknown:
+            raise ValueError(
+                f"Unknown input field(s) {sorted(unknown)}. Available fields: "
+                f"{sorted(self._store)}. A typo here would silently make "
+                f"inputs() empty and labels() include every field."
+            )
         copied = self.copy()
         copied._input_keys = set(keys)
         return copied
@@ -338,6 +346,7 @@ class Example:
             >>> dspy.Example(question="Why?", answer="Because.").toDict()
             {'question': 'Why?', 'answer': 'Because.'}
         """
+
         def convert_to_serializable(value):
             if hasattr(value, "toDict"):
                 return value.toDict()
