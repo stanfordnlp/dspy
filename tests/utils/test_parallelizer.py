@@ -80,6 +80,31 @@ def test_max_errors_not_met():
     assert results == [1, 2, None, 4, 5]
 
 
+def test_max_errors_stops_queued_inputs_promptly():
+    calls = []
+
+    def task(item):
+        calls.append(item)
+        raise ValueError("Intentional error")
+
+    executor = ParallelExecutor(num_threads=2, max_errors=1)
+
+    with pytest.raises(Exception, match="Execution cancelled"):
+        executor.execute(task, list(range(200)))
+
+    # Each worker charges its failure before taking another input, so no worker
+    # starts a second one after the budget is spent.
+    assert len(calls) <= 2
+    assert executor.exceptions_map
+
+
+def test_task_returning_the_string_cancelled_is_a_normal_result():
+    outputs = iter(["cancelled", "rerun"])
+    executor = ParallelExecutor(num_threads=2)
+
+    assert executor.execute(lambda _: next(outputs), [1]) == ["cancelled"]
+
+
 def test_parallel_executor_tracks_failed_indices_and_exceptions():
     def task(item):
         if item == 3:
@@ -481,7 +506,7 @@ def test_clear_stale_failure_frees_the_error_budget():
     otherwise it can combine with one later unrelated failure to trigger cancellation
     even though only one input is actually still failing."""
     executor = ParallelExecutor(num_threads=2, max_errors=2)
-    executor._record_error("item-a", RuntimeError("stale"))
+    executor._record_error(0, "item-a", RuntimeError("stale"))
     assert executor.error_count == 1
 
     executor.exceptions_map[0] = RuntimeError("stale")
@@ -499,7 +524,7 @@ def test_clear_stale_failure_uncancels_a_run_the_stale_failure_alone_cancelled()
     failure must also clear cancel_jobs -- error_count alone dropping back under the
     threshold isn't enough if the stale cancellation is never undone."""
     executor = ParallelExecutor(num_threads=2, max_errors=1)
-    executor._record_error("item-a", RuntimeError("stale"))
+    executor._record_error(0, "item-a", RuntimeError("stale"))
     assert executor.cancel_jobs.is_set()
 
     executor.exceptions_map[0] = RuntimeError("stale")
@@ -513,7 +538,7 @@ def test_clear_stale_failure_never_uncancels_a_real_interrupt():
     resolving an unrelated stale failure -- only error-budget-triggered cancellation is
     ever safe to undo."""
     executor = ParallelExecutor(num_threads=2, max_errors=1)
-    executor._record_error("item-a", RuntimeError("stale"))
+    executor._record_error(0, "item-a", RuntimeError("stale"))
     executor.interrupted.set()
     assert executor.cancel_jobs.is_set()
 
