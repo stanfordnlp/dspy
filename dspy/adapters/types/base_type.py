@@ -1,3 +1,4 @@
+import inspect
 import json
 import re
 from typing import TYPE_CHECKING, Any, Optional, get_args, get_origin
@@ -40,6 +41,19 @@ class Type(pydantic.BaseModel):
     def description(cls) -> str:
         """Description of the custom type"""
         return ""
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema: Any, handler: pydantic.GetJsonSchemaHandler) -> dict[str, Any]:
+        json_schema = handler(core_schema)
+        # Pydantic embeds the class docstring as the schema "description". For DSPy custom types the
+        # docstring is developer documentation (often containing full code examples), not LLM
+        # instructions, and it leaks into adapter prompts whenever the type appears in a composite
+        # annotation, e.g. `list[dspy.Code]` (see #9251). Strip it; LLM-facing guidance belongs in
+        # `description()`. Descriptions set explicitly (not derived from the docstring) are preserved.
+        docstring = inspect.cleandoc(cls.__doc__) if cls.__doc__ else None
+        if docstring and json_schema.get("description") == docstring:
+            json_schema.pop("description")
+        return json_schema
 
     @classmethod
     def extract_custom_type_from_annotation(cls, annotation):
