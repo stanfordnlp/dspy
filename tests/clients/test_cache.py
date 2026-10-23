@@ -39,8 +39,12 @@ def cache_config(tmp_path):
 
 @pytest.fixture
 def cache(cache_config):
-    """Create a cache instance with the default configuration."""
-    return Cache(**cache_config)
+    """Create a cache instance with the default configuration.
+
+    Allowlist DummyResponse so disk round-trips in these tests still work under
+    the default restrict_pickle=True policy.
+    """
+    return Cache(**cache_config, safe_types=[DummyResponse])
 
 
 @pytest.fixture
@@ -496,6 +500,7 @@ def test_restricted_and_unrestricted_share_wire_format(tmp_path):
     unrestricted = Cache(
         enable_disk_cache=True, enable_memory_cache=False,
         disk_cache_dir=shared_dir, disk_size_limit_bytes=1024 * 1024,
+        restrict_pickle=False,
     )
     unrestricted.put(request, {"value": "hello"})
     unrestricted.disk_cache.close()
@@ -524,6 +529,21 @@ def test_unlisted_type_rejected_on_read(restricted_cache):
     # After clearing memory, restricted unpickler rejects the unlisted type
     restricted_cache.reset_memory_cache()
     assert restricted_cache.get(request) is None
+
+
+def test_default_cache_restricts_pickle(tmp_path):
+    """Default Cache() rejects unlisted types on disk read (CVE-2025-69872 mitigation)."""
+    cache = Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=True,
+        disk_cache_dir=str(tmp_path / "default_restricted"),
+        disk_size_limit_bytes=1024 * 1024,
+        memory_max_entries=100,
+    )
+    request = {"model": "test", "prompt": "default_restrict"}
+    cache.put(request, _UnlistedDataclass(value=99))
+    cache.reset_memory_cache()
+    assert cache.get(request) is None
 
 
 def test_safe_types_rejects_non_types(tmp_path):
