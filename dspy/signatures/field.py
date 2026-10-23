@@ -76,12 +76,50 @@ def _warn_deprecated_field_args(**kwargs):
             warnings.warn(message, DeprecationWarning, stacklevel=3)
 
 
-def InputField(**kwargs): # noqa: N802
+def InputField(**kwargs):  # noqa: N802
+    """Declare an input field on a `dspy.Signature`.
+
+    Use `InputField` for fields that should be passed into the module.
+    If you omit the type annotation, DSPy treats the field as `str`.
+
+    Args:
+        **kwargs: `pydantic.Field` keyword arguments. Use `desc` for a short
+            field description shown to the language model.
+
+    Returns:
+        (pydantic.fields.FieldInfo): A field marked as a DSPy input.
+
+    Examples:
+        >>> import dspy
+        >>> class QA(dspy.Signature):
+        ...     question: str = dspy.InputField(desc="A factual question")
+        ...     answer: str = dspy.OutputField()
+    """
     _warn_deprecated_field_args(**kwargs)
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="input"))
 
 
-def OutputField(**kwargs): # noqa: N802
+def OutputField(**kwargs):  # noqa: N802
+    """Declare an output field on a `dspy.Signature`.
+
+    Use `OutputField` for fields the module should produce. Constraints like
+    `ge`, `le`, `min_length`, and `max_length` are described to the language
+    model and validated on the parsed output. If you omit the type annotation,
+    DSPy treats the field as `str`.
+
+    Args:
+        **kwargs: `pydantic.Field` keyword arguments. Use `desc` for a short
+            field description shown to the language model.
+
+    Returns:
+        (pydantic.fields.FieldInfo): A field marked as a DSPy output.
+
+    Examples:
+        >>> import dspy
+        >>> class Review(dspy.Signature):
+        ...     text: str = dspy.InputField()
+        ...     rating: int = dspy.OutputField(ge=0, le=5)
+    """
     _warn_deprecated_field_args(**kwargs)
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="output"))
 
@@ -95,7 +133,7 @@ def new_to_old_field(field):
 
 
 class OldField:
-    """A more ergonomic datatype that infers prefix and desc if omitted."""
+    """Legacy field type. Use `InputField` or `OutputField` instead."""
 
     def __init__(self, *, prefix=None, desc=None, input, format=None):
         self.prefix = prefix  # This can be None initially and set later
