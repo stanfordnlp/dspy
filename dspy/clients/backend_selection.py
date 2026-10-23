@@ -26,9 +26,13 @@ class BackendSelection:
     clients: dict = field(default_factory=dict, repr=False)
 
 
-def select_backend(lm, options=None):
-    """Select using LM defaults plus call overrides, without inference I/O."""
-    spec = lm._engine_spec
+def select_backend(lm, options=None, request=None):
+    """Select using LM defaults plus call overrides, without inference I/O.
+
+    A built Request may carry provider options lm15 has no verdict for in
+    `Config.extensions`; only the LiteLLM compatibility engine can send them.
+    """
+    spec = lm.engine
     if not isinstance(spec, str):
         raise TypeError("Custom engines supply their own capability contract")
     clients = {key: val for key, val in lm.kwargs.items() if key in CLIENT_KEYS}
@@ -45,6 +49,24 @@ def select_backend(lm, options=None):
         except (UnknownModelError, UnsupportedFeatureError):
             if spec == "lm15":
                 raise
+            native = False
+    if native and request is not None:
+        from dspy.clients.requests import passthrough_keys
+
+        extra = passthrough_keys(request)
+        if resolution.provider == "typesafe":
+            # System One natively accepts structured instructions and criteria.
+            extra -= {"questions"}
+        if resolution.adapter == "AnthropicLM":
+            # Messages owns the provider-shaped thinking object, including
+            # budget and disable controls carried unchanged by the builder.
+            extra -= {"thinking"}
+        if extra:
+            if spec == "lm15":
+                raise UnsupportedFeatureError(
+                    f"The native lm15 engine has no mapping for these provider options: {sorted(extra)}. "
+                    "Use engine='auto' or 'litellm' to send them through LiteLLM."
+                )
             native = False
     if native and resolution is not None:
         try:
