@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import pytest
 
@@ -197,6 +198,19 @@ def test_react_v2_forced_submit_on_empty_tool_calls():
     assert lm.history[0]["kwargs"]["reasoning_effort"] == "low"
     assert "tool_choice" not in lm.history[1]["kwargs"]
     assert lm.history[1]["kwargs"].get("reasoning_effort") is None
+
+
+@pytest.mark.parametrize("empty_tool_calls", [None, {}])
+def test_react_v2_json_null_or_empty_tool_calls_mean_no_tool_calls(empty_tool_calls):
+    adapter = dspy.JSONAdapter()
+    lm = dspy.utils.DummyLM([{"next_thought": "Nothing to call.", "tool_calls": empty_tool_calls}] * 2, adapter=adapter)
+
+    with dspy.context(lm=lm, adapter=adapter):
+        with pytest.raises(ValueError, match="after empty_tool_calls: no submit call"):
+            dspy.ReActV2("question -> answer", tools=[])(question="cats")
+
+    assert f'"tool_calls": {json.dumps(empty_tool_calls)}' in lm.history[0]["outputs"][0]
+    assert len(lm.history) == 2
 
 
 def test_react_v2_forced_submit_with_native_flag_but_unsupported_lm():
