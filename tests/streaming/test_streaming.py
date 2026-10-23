@@ -2623,7 +2623,8 @@ async def test_streamify_mixes_nonchat_predictions_with_streamed_chat(model_type
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("placement", ["top", "nested", "both"])
 @pytest.mark.parametrize("indexed", [False, True])
-async def test_litellm_thinking_stream_preserves_text_and_replay(asynchronous, placement, indexed):
+@pytest.mark.parametrize("direct", [False, True])
+async def test_litellm_thinking_stream_preserves_text_and_replay(asynchronous, placement, indexed, direct):
     import json
 
     from dspy.lm15 import AnthropicLM, Message, Request, ThinkingPart
@@ -2649,21 +2650,34 @@ async def test_litellm_thinking_stream_preserves_text_and_replay(asynchronous, p
             if placement in {"nested", "both"}:
                 fields["provider_specific_fields"] = {"thinking_blocks": [block]}
             yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(**fields))])
-        for text in ("[[ ## answer ## ]]\n", "42\n\n[[ ## completed ## ]]"):
+        texts = ("4", "2") if direct else ("[[ ## answer ## ]]\n", "42\n\n[[ ## completed ## ]]")
+        for text in texts:
             yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(content=text))])
         yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(), finish_reason="stop")],
                                   usage={"prompt_tokens": 9, "completion_tokens": 4, "total_tokens": 13})
 
     lm = dspy.LM("anthropic/claude-sonnet-4-5", engine="litellm", cache=True, num_retries=0)
-    program = dspy.streamify(dspy.ChainOfThought("question -> answer"), is_async_program=asynchronous,
-                            stream_listeners=[dspy.streaming.StreamListener("reasoning")])
+    module = dspy.ChainOfThought("question -> answer")
+    if direct:
+        class Direct(dspy.Module):
+            def forward(self, question):
+                output = lm(question)[0]
+                return dspy.Prediction(answer=output["text"], reasoning=output["reasoning_content"])
+
+            async def aforward(self, question):
+                output = (await lm.acall(question))[0]
+                return dspy.Prediction(answer=output["text"], reasoning=output["reasoning_content"])
+
+        module = Direct()
+    program = dspy.streamify(module, is_async_program=asynchronous,
+                            stream_listeners=[] if direct else [dspy.streaming.StreamListener("reasoning")])
     with patch_litellm_streaming(side_effect=stream), dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
         for cached in (False, True):
             values = [value async for value in program(question="Think carefully")]
             assert values[-1].answer == "42"
             assert values[-1].reasoning == "First thought. Second thought."
             text = "".join(value.chunk for value in values if isinstance(value, StreamResponse))
-            assert text == ("" if cached else "First thought. Second thought.")
+            assert text == ("" if cached or direct else "First thought. Second thought.")
     response = lm.history[0]["response"]
     thoughts = response.message.parts_of(ThinkingPart)
     assert [part.text for part in thoughts] == ["First thought. ", "", "Second thought."]
@@ -2674,5 +2688,48 @@ async def test_litellm_thinking_stream_preserves_text_and_replay(asynchronous, p
         {"type": "redacted_thinking", "data": "opaque-redacted"},
         {"type": "thinking", "thinking": "Second thought.", "signature": "sig-two"},
     ]
+    assert lm.history[0]["usage"]["total_tokens"] == 13
+    assert lm.history[1]["usage"] == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("model_type", ["text", "responses"])
+async def test_streamify_preserves_nonstreaming_string_calls(model_type, asynchronous, monkeypatch):
+    import litellm
+
+    calls = []
+
+    def complete(**kwargs):
+        calls.append(kwargs)
+        assert not kwargs.get("stream")
+        if model_type == "text":
+            return {"choices": [{"text": "Paris", "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 9, "completion_tokens": 4, "total_tokens": 13}}
+        return {"status": "completed", "output": [{"type": "message", "role": "assistant", "content": [
+            {"type": "output_text", "text": "Paris", "annotations": []}]}],
+            "usage": {"input_tokens": 9, "output_tokens": 4, "total_tokens": 13}}
+
+    async def acomplete(**kwargs):
+        return complete(**kwargs)
+
+    method = "text_completion" if model_type == "text" else "responses"
+    monkeypatch.setattr(litellm, method, complete)
+    monkeypatch.setattr(litellm, f"a{method}", acomplete)
+    lm = dspy.LM("openai/fake", engine="litellm", model_type=model_type, cache=True, num_retries=0)
+
+    class Program(dspy.Module):
+        def forward(self, question):
+            return dspy.Prediction(answer=lm(question)[0])
+
+        async def aforward(self, question):
+            return dspy.Prediction(answer=(await lm.acall(question))[0])
+
+    program = dspy.streamify(Program(), is_async_program=asynchronous)
+    for _ in range(2):
+        values = [value async for value in program(question="Capital of France?")]
+        assert len(values) == 1 and isinstance(values[0], dspy.Prediction)
+        assert values[0].answer == ("Paris" if model_type == "text" else {"text": "Paris"})
+    assert len(calls) == 1
     assert lm.history[0]["usage"]["total_tokens"] == 13
     assert lm.history[1]["usage"] == {}

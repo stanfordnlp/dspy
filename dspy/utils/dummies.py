@@ -76,7 +76,10 @@ class DummyLM(BaseLM):
         reasoning: bool = False,
         adapter=None,
     ):
-        super().__init__("dummy", "chat", 0.0, 1000, True)
+        from dspy.clients.engines.dummy_engine import AsyncDummyEngine, DummyEngine
+
+        engine = DummyEngine(self)
+        super().__init__("dummy", "chat", 0.0, 1000, True, engine=engine, async_engine=AsyncDummyEngine(engine))
         self.answers = answers
         if isinstance(answers, list):
             self.answers = iter(answers)
@@ -88,11 +91,6 @@ class DummyLM(BaseLM):
             from dspy.adapters.chat_adapter import ChatAdapter
             adapter = ChatAdapter()
         self.adapter = adapter
-
-        from dspy.clients.engines.dummy_engine import AsyncDummyEngine, DummyEngine
-
-        self._engine_spec = DummyEngine(self)
-        self._async_engine_spec = AsyncDummyEngine(self._engine_spec)
         # DummyLM has always consumed scripted answers even for repeated calls.
         self._cache_responses = False
 
@@ -128,15 +126,6 @@ class DummyLM(BaseLM):
         except TypeError:
             # Fallback for adapters that don't support role parameter (like ChatAdapter)
             return adapter.format_field_with_value(fields_with_values)
-
-    def forward(self, prompt=None, messages=None, **kwargs):
-        from dspy.clients.execution import execute, prepare
-
-        return execute(self, prepare(self, prompt, messages, kwargs, direct=True)).provider_response()
-
-    async def aforward(self, prompt=None, messages=None, **kwargs):
-        # Preserve the historical subclass extension point on async calls.
-        return self.forward(prompt=prompt, messages=messages, **kwargs)
 
     def copy(self, **kwargs):
         from dspy.clients.engines.dummy_engine import AsyncDummyEngine, DummyEngine

@@ -7,12 +7,10 @@ from dataclasses import replace
 from dspy._vendor.lm15.result import apply_client_side_stop
 from dspy._vendor.lm15.sse import SSEEvent
 from dspy.clients._litellm import get_litellm
-from dspy.clients.call_context import completed_legacy
 from dspy.clients.engines.base import validate_request
 from dspy.clients.engines.lifecycle import aclosing_stream, closing_stream
 from dspy.clients.engines.litellm_errors import litellm_errors
-from dspy.clients.legacy_outputs import plain
-from dspy.clients.lm15_boundary import request_kwargs, response_value
+from dspy.clients.lm15_boundary import plain, request_kwargs, response_value
 from dspy.lm15 import (
     Adaptation,
     ConfigurationError,
@@ -201,7 +199,18 @@ class _LiteLLMConfig:
         return data
 
     def _response(self, raw, request):
-        response = response_value(raw, self.model_type, request)
+        try:
+            response = response_value(raw, self.model_type, request)
+        except ProviderError as exc:
+            # HTTP completed, but malformed output must not erase its bill.
+            # Reuse the dialect's usage reader without trying to salvage output.
+            try:
+                body = plain(raw)
+                if body.get("usage"):
+                    exc.partial = response_value({"usage": body["usage"]}, self.model_type, request)
+            except Exception:
+                pass  # Usage salvage must never replace the conversion error.
+            raise
         if self.model_type == "responses" and request.config.top_k is not None:
             note = Adaptation(
                 field="config.top_k", action="dropped", asked=request.config.top_k,
@@ -225,21 +234,6 @@ class _LiteLLMConfig:
 
 class LiteLLMEngine(_LiteLLMConfig):
     """One synchronous attempt. LiteLLM's process-global clients are borrowed."""
-
-    def complete_legacy(self, lm, request, **context):
-        """Carry ordinary provider-specific inputs without a lossy typed conversion."""
-        from dspy.clients import lm as lm_module
-        from dspy.clients.call_result import CallResult
-
-        fn = {"chat": lm_module.litellm_completion, "text": lm_module.litellm_text_completion,
-              "responses": lm_module.litellm_responses_completion}[self.model_type]
-        if self.wire_model is not None:
-            request = {**request, "model": self.wire_model, **self.client_options}
-        with litellm_errors(model=lm.model):
-            raw = fn(request=request, num_retries=0)
-        completed_legacy(raw)
-        lm._check_truncation(raw)
-        return CallResult.legacy(lm, raw, kwargs=request)
 
     def complete(self, request: Request):
         data = self._arguments(request)
@@ -272,20 +266,6 @@ class LiteLLMEngine(_LiteLLMConfig):
 
 class AsyncLiteLLMEngine(_LiteLLMConfig):
     """Async equivalent; cancellation propagates without retrying."""
-
-    async def complete_legacy(self, lm, request, **context):
-        from dspy.clients import lm as lm_module
-        from dspy.clients.call_result import CallResult
-
-        fn = {"chat": lm_module.alitellm_completion, "text": lm_module.alitellm_text_completion,
-              "responses": lm_module.alitellm_responses_completion}[self.model_type]
-        if self.wire_model is not None:
-            request = {**request, "model": self.wire_model, **self.client_options}
-        with litellm_errors(model=lm.model):
-            raw = await fn(request=request, num_retries=0)
-        completed_legacy(raw)
-        lm._check_truncation(raw)
-        return CallResult.legacy(lm, raw, kwargs=request)
 
     async def complete(self, request: Request):
         data = self._arguments(request)

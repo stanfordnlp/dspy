@@ -261,6 +261,53 @@ async def test_unnamed_tool_call_preserves_partial_usage(asynchronous):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("model_type", ["chat", "responses"])
+async def test_compatibility_conversion_failure_keeps_billed_usage(model_type, asynchronous, monkeypatch):
+    import litellm
+
+    calls = []
+    usage = {"prompt_tokens": 15, "completion_tokens": 7, "total_tokens": 22}
+    raw = {
+        "model": "fake",
+        "choices": [{"message": {"role": "assistant", "tool_calls": [
+            {"id": "call-1", "type": "function", "function": {"arguments": "{}"}},
+        ]}, "finish_reason": "tool_calls"}],
+        "usage": usage,
+    }
+    if model_type == "responses":
+        raw = {
+            "model": "fake", "status": "completed",
+            "output": [{"type": "function_call", "call_id": "call-1", "arguments": "{}"}],
+            "usage": {"input_tokens": 15, "output_tokens": 7, "total_tokens": 22},
+        }
+
+    def complete(**kwargs):
+        calls.append(kwargs)
+        return raw
+
+    async def acomplete(**kwargs):
+        return complete(**kwargs)
+
+    monkeypatch.setattr(litellm, "completion" if model_type == "chat" else "responses", complete)
+    monkeypatch.setattr(litellm, "acompletion" if model_type == "chat" else "aresponses", acomplete)
+    lm = dspy.LM("openai/fake", engine="litellm", model_type=model_type, cache=True, num_retries=2)
+    with track_usage() as tracker:
+        for count in range(1, 3):
+            with pytest.raises(dspy.LMProviderError) as caught:
+                await invoke(lm, asynchronous, "hello")
+            assert type(caught.value.__cause__) is lm15.ProviderError
+            assert "name" in str(caught.value)
+            assert tracker.get_total_tokens()[lm.model] == {
+                **{key: value * count for key, value in usage.items()},
+                "prompt_tokens_details": None, "completion_tokens_details": None,
+            }
+            assert len(calls) == count  # neither retries nor cached malformed replies
+    assert not lm.history
+    assert not dspy.cache.memory_cache
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
 async def test_parser_bug_is_not_hidden_by_adapter_fallback(asynchronous):
     class Broken(dspy.ChatAdapter):
         def parse(self, signature, completion):
@@ -387,27 +434,49 @@ async def test_compatibility_stream_keeps_usage_if_sdk_close_fails(asynchronous,
         def __init__(self):
             self.sent = False
 
+        def _chunk(self):
+            if self.sent:
+                return None
+            self.sent = True
+            return {"choices": [{"delta": {"content": "ok"}, "finish_reason": "stop"}]}
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            chunk = self._chunk()
+            if chunk is None:
+                raise StopIteration
+            return chunk
+
         def __aiter__(self):
             return self
 
         async def __anext__(self):
-            if self.sent:
+            chunk = self._chunk()
+            if chunk is None:
                 raise StopAsyncIteration
-            self.sent = True
-            return {"choices": [{"delta": {"content": "ok"}, "finish_reason": "stop"}]}
+            return chunk
+
+        def close(self):
+            raise lm15.TransportError("cleanup failed")
 
         async def aclose(self):
             raise lm15.TransportError("cleanup failed")
 
     calls = []
 
-    async def complete(**kwargs):
+    def complete(**kwargs):
         calls.append(kwargs)
         return Source()
 
+    async def acomplete(**kwargs):
+        return complete(**kwargs)
+
     raw = litellm.ModelResponse(model="fake", choices=[{"message": {"role": "assistant", "content": "ok"}}],
                                usage={"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3})
-    monkeypatch.setattr(litellm, "acompletion", complete)
+    monkeypatch.setattr(litellm, "completion", complete)
+    monkeypatch.setattr(litellm, "acompletion", acomplete)
     monkeypatch.setattr(litellm, "stream_chunk_builder", lambda chunks: raw)
     lm = dspy.LM("openai/fake", engine="litellm", cache=True, num_retries=2)
     with dspy.context(send_stream=Sink()), track_usage() as tracker, pytest.raises(dspy.LMTransportError):

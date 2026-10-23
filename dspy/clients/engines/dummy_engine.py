@@ -22,25 +22,6 @@ class DummyEngine:
         messages.extend({"role": m.role, "content": _text(m.parts)} for m in request.messages)
         return self._complete_messages(messages)
 
-    def complete_legacy(self, lm, request, *, prompt=None, messages=None, **context):
-        """Scripted answers do not require provider-compatible input blocks.
-
-        Keep the original messages (including filenames and opaque blocks).
-        The dummy generates canonical responses, but does not send inputs to a
-        provider or pretend those inputs round-trip through a narrower schema.
-        """
-        from dspy.clients.call_result import CallResult, combine
-
-        if messages is None and isinstance(prompt, (list, tuple)) and all(
-            isinstance(message, dict) and "role" in message for message in prompt
-        ):
-            messages = prompt
-        else:
-            messages = request["messages"]
-        count = request.get("n") or 1
-        results = [CallResult.native(self._complete_messages(messages)) for _ in range(count)]
-        return results[0] if count == 1 else combine(results, model_type="chat")
-
     def _complete_messages(self, messages):
         owner = self.owner
         if owner.follow_examples:
@@ -69,9 +50,6 @@ class AsyncDummyEngine:
 
     async def complete(self, request):
         return self.sync.complete(request)
-
-    async def complete_legacy(self, lm, request, **context):
-        return self.sync.complete_legacy(lm, request, **context)
 
     async def stream(self, request):
         for event in self.sync.stream(request):
