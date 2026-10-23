@@ -6,7 +6,6 @@ import pytest
 
 import dspy
 from dspy._vendor.lm15.testing import FakeResponse, FakeTransport
-from dspy.clients.engines import LiteLLMEngine
 from dspy.lm15 import Config, Message, Request, Response, RouterConfig
 from dspy.utils.callback import BaseCallback
 from dspy.utils.usage_tracker import track_usage
@@ -47,7 +46,7 @@ def native_transport(monkeypatch, responses):
 
     transport = FakeTransport(responses)
     monkeypatch.setattr(execution, "RouterConfig", lambda **kwargs: RouterConfig(
-        **{**kwargs, "api_keys": {"openai-chat": "fake"}, "transport": transport},
+        **{**kwargs, "api_keys": {"openai-chat": "fake", **(kwargs.get("api_keys") or {})}, "transport": transport},
     ))
     return transport
 
@@ -123,14 +122,10 @@ def test_native_retries_without_backend_fallback(monkeypatch):
 
 
 def test_provider_auth_error_does_not_switch_backend(monkeypatch):
-    native_transport(monkeypatch, [wire(status=401)])
-
-    def forbidden(*args, **kwargs):
-        pytest.fail("An authentication failure must not invoke LiteLLM")
-
-    monkeypatch.setattr(LiteLLMEngine, "complete", forbidden)
+    transport = native_transport(monkeypatch, [wire(status=401)])
     with pytest.raises(dspy.LMAuthError):
         dspy.LM("openai/gpt-4o-mini", cache=False)("hello")
+    assert len(transport.requests) == 1
 
 
 @pytest.mark.parametrize("options", [
@@ -138,25 +133,11 @@ def test_provider_auth_error_does_not_switch_backend(monkeypatch):
     {"questions": {"flag": {"type": "noul", "instructions": "Is this correct?"}}},
 ])
 @pytest.mark.parametrize("engine", ["auto", "lm15"])
-def test_unrepresentable_ordinary_options_choose_compatibility_before_io(monkeypatch, options, engine):
+def test_unrepresentable_ordinary_options_refuse_before_io(monkeypatch, options, engine):
     transport = native_transport(monkeypatch, [])
-    from dspy.lm15 import Message, Response, Usage
-
-    calls = []
-
-    def complete(engine, request):
-        calls.append(request)
-        return Response(None, request.model, Message.assistant("compatible"), "stop", Usage())
-
-    monkeypatch.setattr(LiteLLMEngine, "complete", complete)
     lm = dspy.LM("openai/gpt-4o-mini", engine=engine, cache=False)
-    if engine == "lm15":
-        with pytest.raises(dspy.LMUnsupportedFeatureError, match="provider options"):
-            lm("hello", **options)
-        assert not calls
-    else:
-        assert lm("hello", **options) == ["compatible"]
-        assert calls[0].config.extensions == options
+    with pytest.raises(dspy.LMUnsupportedFeatureError, match="provider options"):
+        lm("hello", **options)
     assert not transport.requests
 
 

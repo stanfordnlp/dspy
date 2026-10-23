@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from functools import wraps
 
 from dspy.clients.backend_selection import select_backend
-from dspy.clients.engines.litellm_errors import litellm_errors
 from dspy.clients.errors import error_boundary
 from dspy.clients.model_metadata import model_info
 from dspy.lm15 import UnsupportedFeatureError
@@ -80,10 +79,9 @@ def with_capability_planning(fn):
 
 
 async def prepare_async(lm):
-    """Resolve built-in capability hints off-loop, including LiteLLM lookup.
+    """Resolve built-in capability hints off-loop, including catalog loading.
 
-    Native calls still never import LiteLLM. Custom engines declare their own
-    capabilities and are not moved to worker threads.
+    Custom engines declare their own capabilities and are not moved to worker threads.
     """
     scope = _planning.get()
     if scope is not None and scope.lm is lm and scope.value is not None:
@@ -102,22 +100,6 @@ def capabilities(lm):
         return _capabilities(lm)
 
 
-def _litellm_capabilities(lm, selection):
-    from dspy.clients._litellm import get_litellm
-
-    litellm = get_litellm(feature="dspy.LM")
-    provider = selection.clients.get("custom_llm_provider")
-    kwargs = {"custom_llm_provider": provider} if provider is not None else {}
-    with litellm_errors(model=lm.model, provider=provider or lm._provider_name):
-        params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider or lm._provider_name)
-        return Capabilities(
-            bool(litellm.supports_function_calling(model=lm.model, **kwargs)),
-            bool(litellm.supports_reasoning(lm.model, **kwargs)),
-            bool(litellm.supports_response_schema(model=lm.model, custom_llm_provider=provider or lm._provider_name)),
-            frozenset(params or ()),
-        )
-
-
 def _capabilities(lm, options=None):
     spec = lm._capability_engine
     if not isinstance(spec, str):
@@ -131,10 +113,6 @@ def _capabilities(lm, options=None):
         )
     selection = select_backend(lm, options)
     route = selection.resolution
-    if not selection.native and not (route is not None and route.declared):
-        return _litellm_capabilities(lm, selection)
-    # A declared provider is described by its declaration on either route:
-    # the LiteLLM fallback reaches the same server through the generic door.
     from dspy._vendor.lm15.compat import (
         AnthropicCompat,
         OpenAIChatCompat,

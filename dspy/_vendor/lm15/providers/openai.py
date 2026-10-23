@@ -126,6 +126,7 @@ from .common import (
     path_id,
     tool_description,
     unnamed_tool_call_error,
+    with_partial_usage,
     parts_to_text,
 )
 
@@ -454,6 +455,21 @@ def _is_codex(lm: BaseProviderLM) -> bool:
     # A function, not a method: OpenAIChatLM borrows normalize_error.
     return lm.access.backend == CODEX_BACKEND
 MODEL_LIST_HINT = "List the models your subscription accepts: call .list_models() on this client."
+
+
+def _usage_from_response(usage_data: dict[str, Any]) -> Usage:
+    input_details = usage_data.get("input_tokens_details") or {}
+    output_details = usage_data.get("output_tokens_details") or {}
+    return Usage(
+        input_tokens=usage_data.get("input_tokens"),
+        output_tokens=usage_data.get("output_tokens"),
+        total_tokens=usage_data.get("total_tokens"),
+        reasoning_tokens=output_details.get("reasoning_tokens"),
+        cache_read_tokens=input_details.get("cached_tokens"),
+        cache_write_tokens=input_details.get("cache_write_tokens"),
+        input_audio_tokens=input_details.get("audio_tokens"),
+        output_audio_tokens=output_details.get("audio_tokens"),
+    )
 
 
 def _live_usage_from_response(response: dict[str, Any]) -> Usage | None:
@@ -1122,9 +1138,12 @@ class OpenAILM(BaseProviderLM):
 
         resp_error = data.get("error") if isinstance(data, dict) else None
         if isinstance(resp_error, dict):
-            raise self._response_error(
-                str(resp_error.get("code") or ""),
-                str(resp_error.get("message") or resp_error),
+            raise with_partial_usage(
+                self._response_error(
+                    str(resp_error.get("code") or ""),
+                    str(resp_error.get("message") or resp_error),
+                ),
+                data, model=request.model, parse_usage=_usage_from_response,
             )
 
         parts: list[Any] = []
@@ -1169,7 +1188,10 @@ class OpenAILM(BaseProviderLM):
                         _record_unmapped(unmapped, f"output[{item_index}].content[{content_index}]", ctype)
             elif item_type == "function_call":
                 if not item.get("name"):
-                    raise unnamed_tool_call_error(self.provider, f"output[{item_index}]")
+                    raise with_partial_usage(
+                        unnamed_tool_call_error(self.provider, f"output[{item_index}]"),
+                        data, model=request.model, parse_usage=_usage_from_response,
+                    )
                 parts.append(
                     ToolCallPart(
                         id=str(item.get("call_id") or item.get("id") or f"call_{len(parts)}"),
@@ -1204,19 +1226,7 @@ class OpenAILM(BaseProviderLM):
         if not parts:
             parts = [TextPart(text=str(data.get("output_text") or ""))]
 
-        usage_data = data.get("usage", {}) or {}
-        input_details = usage_data.get("input_tokens_details") or {}
-        output_details = usage_data.get("output_tokens_details") or {}
-        usage = Usage(
-            input_tokens=usage_data.get("input_tokens"),
-            output_tokens=usage_data.get("output_tokens"),
-            total_tokens=usage_data.get("total_tokens"),
-            reasoning_tokens=output_details.get("reasoning_tokens"),
-            cache_read_tokens=input_details.get("cached_tokens"),
-            cache_write_tokens=input_details.get("cache_write_tokens"),
-            input_audio_tokens=input_details.get("audio_tokens"),
-            output_audio_tokens=output_details.get("audio_tokens"),
-        )
+        usage = _usage_from_response(data.get("usage", {}) or {})
 
         has_tool = any(isinstance(part, ToolCallPart) for part in parts)
         # D8 (2026-09-06): Response.id carries the response id; no

@@ -42,51 +42,35 @@ dspy.configure(lm=lm)
         ```
 
     === "Vertex AI (GCP)"
-        For Google Cloud's Vertex AI, authenticate with a service account JSON key or Application Default Credentials. You can pass credentials directly in code or set environment variables.
-
-        ```python linenums="1"
-        import dspy
-        import json
-
-        # Load the service account JSON and convert to a string
-        with open("service_account.json") as f:
-            credentials = json.dumps(json.load(f))
-
-        lm = dspy.LM(
-            "vertex_ai/gemini-2.0-flash",
-            vertex_credentials=credentials,
-            vertex_project="your-gcp-project-id",
-            vertex_location="us-central1",
-        )
-        dspy.configure(lm=lm)
-        ```
-
-        Alternatively, set environment variables and skip the kwargs:
+        Use the explicit native `vertex:` route for Gemini on Google Cloud. It uses the native Application Default Credentials chain, including a service-account file:
 
         ```bash
         export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service_account.json"
-        export VERTEXAI_PROJECT="your-gcp-project-id"
-        export VERTEXAI_LOCATION="us-central1"
+        export GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
+        export GOOGLE_CLOUD_LOCATION="us-central1"
         ```
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM("vertex_ai/gemini-2.0-flash")
+        lm = dspy.LM("vertex:gemini-2.0-flash")
         dspy.configure(lm=lm)
         ```
 
-        !!! warning "Common pitfalls"
-            - Use the `vertex_ai/` model prefix, not `gemini/`. The `gemini/` prefix routes to the Gemini API which requires an API key instead of GCP credentials.
-            - Use `vertex_project` and `vertex_location`, not `project` or `location`. Parameters without the `vertex_` prefix are silently ignored and LiteLLM falls back to defaults, which may cause requests to land in an unintended region.
+        The former LiteLLM `vertex_ai/` prefix and `vertex_credentials`, `vertex_project`, and `vertex_location` kwargs are not supported. Set the native environment variables above; location defaults to `global` when omitted, so choose it explicitly for residency requirements. `gemini/` uses Google AI Studio credentials instead, and Claude on Vertex has a separate native `vertex-anthropic:` route.
+
+    === "Azure OpenAI"
+        Native Azure uses the v1 endpoint and deployment name. Set `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_ENDPOINT` (the resource root shown by Azure):
+
+        ```python linenums="1"
+        import dspy
+        lm = dspy.LM("azure/your-deployment-name")
+        dspy.configure(lm=lm)
+        ```
+
+        Use `model_type="responses"` for a deployment supporting Responses. The old `AZURE_API_KEY`, `AZURE_API_BASE`, and `api_version` recipe is not the native configuration.
 
     === "Databricks"
-        If you're on the Databricks platform, authentication is automatic via their SDK. If not, you can set the env variables `DATABRICKS_API_KEY` and `DATABRICKS_API_BASE`, or pass `api_key` and `api_base` below.
-
-        ```python linenums="1"
-        import dspy
-        lm = dspy.LM('databricks/databricks-meta-llama-3-1-70b-instruct')
-        dspy.configure(lm=lm)
-        ```
+        DSPy no longer provides automatic Databricks SDK authentication through a compatibility backend. For a serving endpoint with a supported HTTP dialect, [register its provider](../../tutorials/custom_lm_engines/index.md#declaring-a-provider-instead-of-writing-an-engine), address and authentication policy. Use a custom engine when SDK-managed authentication or a different protocol is required.
 
     === "Local LMs on a GPU server"
           First, install [SGLang](https://docs.sglang.ai/docs/get-started/install) and launch its server with your LM.
@@ -103,7 +87,7 @@ dspy.configure(lm=lm)
           ```python linenums="1"
           lm = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct",
                            api_base="http://localhost:7501/v1",  # ensure this points to your port
-                           api_key="", model_type='chat')
+                           api_key="EMPTY", model_type='chat')
           dspy.configure(lm=lm)
           ```
 
@@ -119,31 +103,21 @@ dspy.configure(lm=lm)
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM('ollama_chat/llama3.2', api_base='http://localhost:11434', api_key='')
+        lm = dspy.LM('ollama_chat/llama3.2:1b')  # native local-server address and placeholder key
         dspy.configure(lm=lm)
         ```
 
     === "Other providers"
-        In DSPy, you can use any of the dozens of [LLM providers supported by LiteLLM](https://docs.litellm.ai/docs/providers). Simply follow their instructions for which `{PROVIDER}_API_KEY` to set and how to write pass the `{provider_name}/{model_name}` to the constructor. 
+        DSPy uses its bundled native lm15 provider registry, not every provider prefix recognized by older DSPy releases. An unlisted provider with a supported wire dialect can be [registered explicitly](../../tutorials/custom_lm_engines/index.md#declaring-a-provider-instead-of-writing-an-engine); other protocols or authentication flows require a custom engine.
 
-        Some examples:
-
-        - `anyscale/mistralai/Mistral-7B-Instruct-v0.1`, with `ANYSCALE_API_KEY`
-        - `together_ai/togethercomputer/llama-2-70b-chat`, with `TOGETHERAI_API_KEY`
-        - `sagemaker/<your-endpoint-name>`, with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION_NAME`
-        - `azure/<your_deployment_name>`, with `AZURE_API_KEY`, `AZURE_API_BASE`, `AZURE_API_VERSION`, and the optional `AZURE_AD_TOKEN` and `AZURE_API_TYPE` as environment variables. If you are initiating external models without setting environment variables, use the following:
-        `lm = dspy.LM('azure/<your_deployment_name>', api_key = 'AZURE_API_KEY' , api_base = 'AZURE_API_BASE', api_version = 'AZURE_API_VERSION')`
-
-
-        
-        If your provider offers an OpenAI-compatible endpoint, just add an `openai/` prefix to your full model name.
+        For an OpenAI-compatible Chat Completions endpoint using bearer authentication, you can use an `openai/` prefix with an explicit API base and key:
 
         ```python linenums="1"
         import dspy
         lm = dspy.LM('openai/your-model-name', api_key='PROVIDER_API_KEY', api_base='YOUR_PROVIDER_URL')
         dspy.configure(lm=lm)
         ```
-If you run into errors, please refer to the [LiteLLM Docs](https://docs.litellm.ai/docs/providers) to verify if you are using the same variable names/following the right procedure.
+`engine="auto"` (the default) and `engine="lm15"` both select native lm15, with no fallback backend. Unsupported routes and settings raise instead of being silently forwarded. `model_type="text"` is unsupported; use chat, Responses, or a custom engine. See the [migration guide](../../community/normalized-lm-api-migration.md#migrating-from-litellm-backed-dspy) for removed provider options and APIs.
 
 ## Calling the LM directly.
 
@@ -252,7 +226,7 @@ dict_keys(['prompt', 'messages', 'kwargs', 'response', 'outputs', 'usage', 'cost
 
 ## Handling LM errors
 
-DSPy's built-in `dspy.LM` wraps provider and LiteLLM failures in structured DSPy exceptions. Catch `dspy.LMError` to handle any LM failure, or catch a more specific subclass for targeted behavior.
+DSPy's built-in `dspy.LM` wraps provider and engine failures in structured DSPy exceptions. Catch `dspy.LMError` to handle any LM failure, or catch a more specific subclass for targeted behavior.
 
 ```python linenums="1"
 try:
@@ -270,7 +244,7 @@ All DSPy LM errors expose a stable `code` and may include `model`, `provider`, p
 
 ## Using the Responses API
 
-By default, DSPy calls language models (LMs) using LiteLLM's [Chat Completions API](https://docs.litellm.ai/docs/completion), which is suitable for most standard models and tasks. However, some advanced models, such as OpenAI's reasoning models (e.g., `gpt-5` or other future models), may offer improved quality or additional features when accessed via the [Responses API](https://docs.litellm.ai/docs/response_api), which is supported in DSPy.
+By default, DSPy uses `model_type="chat"`, which native lm15 translates to the selected provider's chat protocol. OpenAI models can also use the [Responses API](https://platform.openai.com/docs/api-reference/responses), which offers additional reasoning and multimodal features.
 
 **When should you use the Responses API?**
 
@@ -295,7 +269,7 @@ dspy.configure(
 )
 ```
 
-Please note that not all models or providers support the Responses API, check [LiteLLM's documentation](https://docs.litellm.ai/docs/response_api) for more details.
+Not all models or providers support the Responses API. Check the provider's endpoint documentation; a model appearing in DSPy's metadata catalog does not guarantee a native Responses route.
 
 
 ## Advanced: Building custom LMs and writing your own Adapters.

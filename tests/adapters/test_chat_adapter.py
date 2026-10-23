@@ -4,14 +4,13 @@ from unittest import mock
 
 import pydantic
 import pytest
-from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Message, ModelResponse
 
 import dspy
 from dspy.experimental import Citations, Document
 from dspy.lm15 import AudioPart, DocumentPart, ImagePart, TextPart
 from dspy.lm15 import Message as LMMessage
 from tests.adapters.conftest import format_messages_and_lm_kwargs, format_request
-from tests.test_utils.engines import litellm_response, make_response
+from tests.test_utils.engines import make_response
 
 
 @pytest.mark.parametrize(
@@ -74,15 +73,14 @@ def test_chat_adapter_quotes_literals_as_expected(
 
     program = dspy.Predict(TestSignature)
 
-    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
 
-    reply = litellm_response(f"[[ ## output_text ## ]]\n{output_literal.__args__[0]}\n\n[[ ## completed ## ]]")
-    with mock.patch("litellm.completion", return_value=reply) as mock_completion:
+    reply = make_response(f"[[ ## output_text ## ]]\n{output_literal.__args__[0]}\n\n[[ ## completed ## ]]")
+    with mock.patch("dspy.clients.engines.LM15Engine.complete", return_value=reply) as mock_completion:
         program(input_text=input_value)
 
     mock_completion.assert_called_once()
-    _, call_kwargs = mock_completion.call_args
-    content = call_kwargs["messages"][0]["content"]
+    content = mock_completion.call_args.args[0].system
 
     assert expected_input_str in content
     assert expected_output_str in content
@@ -2033,21 +2031,21 @@ def test_chat_adapter_with_pydantic_models():
         question: str = dspy.InputField()
         output: Answer = dspy.OutputField()
 
-    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
     program = dspy.Predict(TestSignature)
 
-    reply = litellm_response('[[ ## output ## ]]\n{"result": "3", "analysis": "5 pets, 2 dogs"}\n\n[[ ## completed ## ]]')
-    with mock.patch("litellm.completion", return_value=reply) as mock_completion:
+    reply = make_response('[[ ## output ## ]]\n{"result": "3", "analysis": "5 pets, 2 dogs"}\n\n[[ ## completed ## ]]')
+    with mock.patch("dspy.clients.engines.LM15Engine.complete", return_value=reply) as mock_completion:
         program(
             owner=PetOwner(name="John", num_pets=5, dogs=DogClass(dog_breeds=["labrador", "chihuahua"], num_dogs=2)),
             question="How many non-dog pets does John have?",
         )
 
     mock_completion.assert_called_once()
-    _, call_kwargs = mock_completion.call_args
+    request = mock_completion.call_args.args[0]
 
-    system_content = call_kwargs["messages"][0]["content"]
-    user_content = call_kwargs["messages"][1]["content"]
+    system_content = request.system
+    user_content = request.messages[0].text
     assert "1. `owner` (PetOwner)" in system_content
     assert "2. `question` (str)" in system_content
     assert "1. `output` (Answer)" in system_content
@@ -2070,22 +2068,22 @@ def test_chat_adapter_signature_information():
         input2: int = dspy.InputField(desc="Integer Input")
         output: str = dspy.OutputField(desc="String Output")
 
-    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
     program = dspy.Predict(TestSignature)
 
-    reply = litellm_response("[[ ## output ## ]]\nok\n\n[[ ## completed ## ]]")
-    with mock.patch("litellm.completion", return_value=reply) as mock_completion:
+    reply = make_response("[[ ## output ## ]]\nok\n\n[[ ## completed ## ]]")
+    with mock.patch("dspy.clients.engines.LM15Engine.complete", return_value=reply) as mock_completion:
         program(input1="Test", input2=11)
 
     mock_completion.assert_called_once()
-    _, call_kwargs = mock_completion.call_args
+    request = mock_completion.call_args.args[0]
 
-    assert len(call_kwargs["messages"]) == 2
-    assert call_kwargs["messages"][0]["role"] == "system"
-    assert call_kwargs["messages"][1]["role"] == "user"
+    assert request.system
+    assert len(request.messages) == 1
+    assert request.messages[0].role == "user"
 
-    system_content = call_kwargs["messages"][0]["content"]
-    user_content = call_kwargs["messages"][1]["content"]
+    system_content = request.system
+    user_content = request.messages[0].text
 
     assert "1. `input1` (str)" in system_content
     assert "2. `input2` (int)" in system_content
@@ -2293,13 +2291,13 @@ def test_chat_adapter_with_code():
         code: dspy.Code = dspy.OutputField()
 
     adapter = dspy.ChatAdapter()
-    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content='[[ ## code ## ]]\nprint("Hello, world!")'))],
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            '[[ ## code ## ]]\nprint("Hello, world!")',
             model="openai/gpt-4o-mini",
         )
         result = adapter(
-            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(model="openai/gpt-4o-mini", cache=False),
             {},
             CodeGeneration,
             [],
@@ -2387,14 +2385,14 @@ def test_chat_adapter_fallback_to_json_adapter_on_exception():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.ChatAdapter()
 
-    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
         # Mock returning a response compatible with JSONAdapter but not ChatAdapter
-        mock_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content="{'answer': 'Paris'}"))],
+        mock_completion.return_value = make_response(
+            "{'answer': 'Paris'}",
             model="openai/gpt-4o-mini",
         )
 
-        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
 
         with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__") as mock_json_adapter_call:
             adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
@@ -2414,12 +2412,12 @@ def test_chat_adapter_fallback_preserves_native_function_calling_flag():
         seen["use_native_function_calling"] = self.use_native_function_calling
         return [{"answer": "Paris"}]
 
-    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content="nonsense"))],
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            "nonsense",
             model="openai/gpt-4o-mini",
         )
-        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
 
         with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__", new=fake_json_adapter_call):
             result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
@@ -2432,13 +2430,13 @@ def test_chat_adapter_respects_use_json_adapter_fallback_flag():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.ChatAdapter(use_json_adapter_fallback=False)
 
-    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content="nonsense"))],
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            "nonsense",
             model="openai/gpt-4o-mini",
         )
 
-        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
 
         with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__") as mock_json_adapter_call:
             with pytest.raises(dspy.utils.exceptions.AdapterParseError):
@@ -2451,14 +2449,14 @@ async def test_chat_adapter_fallback_to_json_adapter_on_exception_async():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.ChatAdapter()
 
-    with mock.patch("litellm.acompletion") as mock_completion:
+    with mock.patch("dspy.clients.engines.AsyncLM15Engine.complete") as mock_completion:
         # Mock returning a response compatible with JSONAdapter but not ChatAdapter
-        mock_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content="{'answer': 'Paris'}"))],
+        mock_completion.return_value = make_response(
+            "{'answer': 'Paris'}",
             model="openai/gpt-4o-mini",
         )
 
-        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
 
         with mock.patch("dspy.adapters.json_adapter.JSONAdapter.acall") as mock_json_adapter_acall:
             await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
@@ -2479,12 +2477,12 @@ async def test_chat_adapter_async_fallback_preserves_native_function_calling_fla
         seen["use_native_function_calling"] = self.use_native_function_calling
         return [{"answer": "Paris"}]
 
-    with mock.patch("litellm.acompletion") as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content="nonsense"))],
+    with mock.patch("dspy.clients.engines.AsyncLM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            "nonsense",
             model="openai/gpt-4o-mini",
         )
-        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
 
         with mock.patch("dspy.adapters.json_adapter.JSONAdapter.acall", new=fake_json_adapter_acall):
             result = await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
@@ -2508,29 +2506,13 @@ def test_chat_adapter_toolcalls_native_function_calling():
     adapter = dspy.JSONAdapter(use_native_function_calling=True)
 
     # Case 1: Tool calls are present in the response, while content is None.
-    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[
-                Choices(
-                    finish_reason="tool_calls",
-                    index=0,
-                    message=Message(
-                        content=None,
-                        role="assistant",
-                        tool_calls=[
-                            ChatCompletionMessageToolCall(
-                                function=Function(arguments='{"city":"Paris"}', name="get_weather"),
-                                id="call_pQm8ajtSMxgA0nrzK2ivFmxG",
-                                type="function",
-                            )
-                        ],
-                    ),
-                ),
-            ],
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            tool_calls=[("call_pQm8ajtSMxgA0nrzK2ivFmxG", "get_weather", {"city": "Paris"})],
             model="openai/gpt-4o-mini",
         )
         result = adapter(
-            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(model="openai/gpt-4o-mini", cache=False),
             {},
             MySignature,
             [],
@@ -2550,13 +2532,13 @@ def test_chat_adapter_toolcalls_native_function_calling():
         assert result[0]["answer"] is None
 
     # Case 2: Tool calls are not present in the response, while content is present.
-    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content="{'answer': 'Paris'}"))],
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            "{'answer': 'Paris'}",
             model="openai/gpt-4o-mini",
         )
         result = adapter(
-            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(model="openai/gpt-4o-mini", cache=False),
             {},
             MySignature,
             [],
@@ -2579,20 +2561,14 @@ def test_chat_adapter_toolcalls_vague_match():
 
     adapter = dspy.ChatAdapter()
 
-    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
         # Case 1: tool_calls field is a list of dicts
-        mock_completion.return_value = ModelResponse(
-            choices=[
-                Choices(
-                    message=Message(
-                        content="[[ ## tool_calls ## ]]\n[{'name': 'get_weather', 'args': {'city': 'Paris'}]"
-                    )
-                )
-            ],
+        mock_completion.return_value = make_response(
+            "[[ ## tool_calls ## ]]\n[{'name': 'get_weather', 'args': {'city': 'Paris'}]",
             model="openai/gpt-4o-mini",
         )
         result = adapter(
-            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(model="openai/gpt-4o-mini", cache=False),
             {},
             MySignature,
             [],
@@ -2602,20 +2578,14 @@ def test_chat_adapter_toolcalls_vague_match():
             tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
         )
 
-    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
         # Case 2: tool_calls field is a single dict with "name" and "args" keys
-        mock_completion.return_value = ModelResponse(
-            choices=[
-                Choices(
-                    message=Message(
-                        content="[[ ## tool_calls ## ]]\n{'name': 'get_weather', 'args': {'city': 'Paris'}}"
-                    )
-                )
-            ],
+        mock_completion.return_value = make_response(
+            "[[ ## tool_calls ## ]]\n{'name': 'get_weather', 'args': {'city': 'Paris'}}",
             model="openai/gpt-4o-mini",
         )
         result = adapter(
-            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(model="openai/gpt-4o-mini", cache=False),
             {},
             MySignature,
             [],
@@ -2626,7 +2596,7 @@ def test_chat_adapter_toolcalls_vague_match():
         )
 
 
-@mock.patch("litellm.supports_reasoning", return_value=True)
+@mock.patch.object(dspy.LM, "supports_reasoning", new_callable=mock.PropertyMock, return_value=True)
 def test_chat_adapter_native_reasoning(_supports_reasoning):
     class MySignature(dspy.Signature):
         question: str = dspy.InputField()
@@ -2635,20 +2605,14 @@ def test_chat_adapter_native_reasoning(_supports_reasoning):
 
     adapter = dspy.ChatAdapter()
 
-    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[
-                Choices(
-                    message=Message(
-                        content="[[ ## answer ## ]]\nParis\n[[ ## completion ## ]]",
-                        reasoning_content="Step-by-step thinking about the capital of France",
-                    ),
-                )
-            ],
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            "[[ ## answer ## ]]\nParis\n[[ ## completion ## ]]",
+            thinking="Step-by-step thinking about the capital of France",
             model="anthropic/claude-3-7-sonnet-20250219",
         )
         modified_signature = adapter._call_preprocess(
-            dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
+            dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
             {},
             MySignature,
             {"question": "What is the capital of France?"},
@@ -2656,7 +2620,7 @@ def test_chat_adapter_native_reasoning(_supports_reasoning):
         assert "reasoning" not in modified_signature.output_fields
 
         result = adapter(
-            dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
+            dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
             {},
             MySignature,
             [],
@@ -2681,15 +2645,13 @@ def test_chat_adapter_parses_float_with_underscores():
     adapter = dspy.ChatAdapter()
 
     # Simulate a response with a float number containing underscores
-    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[
-                Choices(message=Message(content="[[ ## score ## ]]\n{'score': 123_456.789}\n[[ ## completed ## ]]"))
-            ],
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            "[[ ## score ## ]]\n{'score': 123_456.789}\n[[ ## completed ## ]]",
             model="openai/gpt-4o-mini",
         )
 
-        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
         result = adapter(lm, {}, MySignature, [], {"question": "What is the score?"})
 
         # The underscore-separated float should be parsed as a normal float
@@ -2731,16 +2693,17 @@ In adhering to this structure, your objective is:\x20
 def test_null_content_raises_adapter_parse_error():
     """When the LM returns content=None with no tool calls (e.g. content filter),
     the adapter should raise AdapterParseError instead of silently returning None fields."""
+    from dspy.lm15 import response_from_openai_chat
     from dspy.utils.exceptions import AdapterParseError
 
-    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
-    response = ModelResponse(
-        choices=[Choices(message=Message(content=None))],
-        model="openai/gpt-4o-mini",
-    )
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+    response = response_from_openai_chat({
+        "model": lm.model,
+        "choices": [{"message": {"role": "assistant", "content": None}, "finish_reason": "content_filter"}],
+    })
 
     with dspy.context(lm=lm):
-        with mock.patch("litellm.completion", return_value=response):
+        with mock.patch("dspy.clients.engines.LM15Engine.complete", return_value=response):
             cot = dspy.ChainOfThought("question -> answer")
             with pytest.raises(AdapterParseError):
                 cot(question="test")
@@ -2750,14 +2713,11 @@ def test_empty_string_content_raises_adapter_parse_error():
     """Same as above but with empty string content."""
     from dspy.utils.exceptions import AdapterParseError
 
-    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
-    response = ModelResponse(
-        choices=[Choices(message=Message(content=""))],
-        model="openai/gpt-4o-mini",
-    )
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+    response = make_response("", model=lm.model)
 
     with dspy.context(lm=lm):
-        with mock.patch("litellm.completion", return_value=response):
+        with mock.patch("dspy.clients.engines.LM15Engine.complete", return_value=response):
             cot = dspy.ChainOfThought("question -> answer")
             with pytest.raises(AdapterParseError):
                 cot(question="test")
@@ -2777,7 +2737,7 @@ def test_tool_call_with_no_text_does_not_raise():
 
 
 def test_responses_model_native_tool_calling_round_trips_tool_only_output():
-    from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
+    from dspy.lm15 import FunctionTool
 
     class MySignature(dspy.Signature):
         question: str = dspy.InputField()
@@ -2787,58 +2747,24 @@ def test_responses_model_native_tool_calling_round_trips_tool_only_output():
     def search(query: str) -> str:
         return query
 
-    api_response = ResponsesAPIResponse(
-        id="resp_1",
-        created_at=0.0,
-        error=None,
-        incomplete_details=None,
-        instructions=None,
-        model="openai/dspy-test-model",
-        object="response",
-        output=[
-            {
-                "type": "function_call",
-                "name": "search",
-                "arguments": json.dumps({"query": "cats"}),
-                "call_id": "call_1",
-                "status": "completed",
-                "id": "fc_1",
-            }
-        ],
-        metadata={},
-        parallel_tool_calls=False,
-        temperature=1.0,
-        tool_choice="auto",
-        tools=[],
-        top_p=1.0,
-        max_output_tokens=None,
-        previous_response_id=None,
-        reasoning=None,
-        status="completed",
-        text=None,
-        truncation="disabled",
-        usage=ResponseAPIUsage(input_tokens=1, output_tokens=1, total_tokens=2),
-        user=None,
-    )
+    api_response = make_response(tool_calls=[("call_1", "search", {"query": "cats"})])
 
     adapter = dspy.ChatAdapter(use_native_function_calling=True)
-    lm = dspy.LM("openai/dspy-test-model", engine="litellm", model_type="responses", cache=False)
+    lm = dspy.LM("openai/gpt-4o", model_type="responses", cache=False)
 
-    with mock.patch("litellm.supports_function_calling", return_value=True), mock.patch(
-        "litellm.responses", return_value=api_response
+    with mock.patch(
+        "dspy.clients.engines.LM15Engine.complete", return_value=api_response
     ) as responses:
         result = adapter(lm, {}, MySignature, [], {"question": "find cats", "tools": [dspy.Tool(search)]})
 
     assert result == [
         {"tool_calls": dspy.ToolCalls(tool_calls=[dspy.ToolCalls.ToolCall(id="call_1", name="search", args={"query": "cats"})])}
     ]
-    assert responses.call_args.kwargs["tools"] == [
-        {
-            "type": "function",
-            "name": "search",
-            "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
-        }
-    ]
+    assert responses.call_args.args[0].tools == (
+        FunctionTool(name="search", parameters={
+            "type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"],
+        }),
+    )
 
 
 def test_tool_call_with_unstructured_content_does_not_raise():

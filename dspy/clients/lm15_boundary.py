@@ -1,7 +1,7 @@
 """Conversions at the edge of the Request/Response contract, with lm15's own code.
 
-Engines that speak an OpenAI-shaped SDK (LiteLLM) serialize Requests and read
-responses here; fine-tuning files and history displays reuse the same writers.
+OpenAI-shaped exports serialize Requests and read responses here;
+fine-tuning files and history displays reuse the same writers.
 No credentials are resolved and no network I/O happens here.
 """
 
@@ -227,10 +227,6 @@ def _raw_tool_arguments(body):
 def response_value(response, model_type: str, request: Request):
     """Read an OpenAI-shaped SDK response (Chat, Responses or text) as a Response."""
     body = plain(response)
-    hidden = getattr(response, "_hidden_params", None) or {}
-    if hidden.get("response_cost") is not None:
-        # Carry the reported price, not the SDK's other private client data.
-        body = {**body, "_hidden_params": {"response_cost": hidden["response_cost"]}}
     if model_type == "responses":
         dialect = OpenAILM(api_key="conversion-only", transport=_NoTransport())
         return repair_tool_arguments(dialect.parse_response(request, HttpResponse(

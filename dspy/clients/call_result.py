@@ -68,7 +68,7 @@ def convenience_output(response: Response, *, logprobs=False):
 def usage_dict(response: Response, provider=None):
     u = response.usage
     inputs, outputs = u.input_tokens, u.output_tokens
-    # LiteLLM's public prompt/completion counters include cached Anthropic
+    # DSPy's public prompt/completion counters include cached Anthropic
     # input and Gemini thinking output. lm15's counters are provider-verbatim.
     if provider and "anthropic" in provider and inputs is not None:
         inputs += (u.cache_read_tokens or 0) + (u.cache_write_tokens or 0)

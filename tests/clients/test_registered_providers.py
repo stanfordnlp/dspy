@@ -4,7 +4,7 @@ the LM's client settings honored — the alternative to writing a custom
 engine for it (cmpnd-ai/breaka-your-lm gauntlet/fireworks.py, 2026-09-16).
 
 The rules pinned here came out of review of the first design (dspy#10441):
-one binding per LM, a fallback that keeps the declared destination and
+one binding per LM, a native route that keeps the declared destination and
 credential, and aliases that grant nothing but a spelling.
 """
 
@@ -95,8 +95,7 @@ def clean_registry(monkeypatch):
     for name in ("PRIVATE_FIREWORKS_API_KEY", "PRIVATE_FIREWORKS_API_BASE", "PRIVATE_FIREWORKS_BASE_URL", "OPENAI_API_KEY"):
         monkeypatch.delenv(name, raising=False)
     # Capabilities and prices come from the bundled metadata snapshot, not
-    # from whatever the live LiteLLM map says today (or whichever a sibling
-    # test loaded first).
+    # from the remote metadata map (or whichever a sibling test loaded first).
     monkeypatch.setenv("LITELLM_LOCAL_MODEL_COST_MAP", "True")
     monkeypatch.setattr(metadata, "_data", None)
     monkeypatch.setattr(metadata, "_source", {})
@@ -105,30 +104,6 @@ def clean_registry(monkeypatch):
     for binding in registered_providers():
         if binding.id not in before:
             unregister_provider(binding.id)
-
-
-@pytest.fixture
-def litellm_stub(monkeypatch):
-    """LiteLLM as the fallback would call it: records the arguments, answers."""
-    import litellm
-
-    calls = []
-
-    def completion(**kwargs):
-        calls.append(kwargs)
-        return litellm.ModelResponse(**{
-            "id": "x", "object": "chat.completion", "model": kwargs["model"],
-            "choices": [{"index": 0, "message": {"role": "assistant", "content": "[[ ## answer ## ]]\nParis\n\n[[ ## completed ## ]]"},
-                         "finish_reason": "stop"}],
-            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-        })
-
-    async def acompletion(**kwargs):
-        return completion(**kwargs)
-
-    monkeypatch.setattr(litellm, "completion", completion)
-    monkeypatch.setattr(litellm, "acompletion", acompletion)
-    return calls
 
 
 # ─── the registry ─────────────────────────────────────────────────────
@@ -164,7 +139,7 @@ def test_arguments_are_type_checked():
         ModelSupport(function_calling="yes")
 
 
-def test_spellings_lm15_or_litellm_already_use_are_refused():
+def test_spellings_lm15_already_uses_are_refused():
     for taken in ("groq", "ollama-chat", "fireworks"):
         with pytest.raises(Exception, match="already names"):
             register_provider(_definition("https://x.test/v1", provider="new-door", aliases=(taken,)))
@@ -181,8 +156,9 @@ def test_an_lm_binds_the_registrations_present_at_construction(server):
     before = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False)
     register_provider(_definition(base))
     after = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
-    assert not select_backend(before).native  # bound nothing; stays as it was
-    assert select_backend(after).native
+    with pytest.raises(dspy.LMConfigurationError):
+        before("hi")  # bound nothing; stays as it was
+    assert select_backend(after).resolution.declared
     assert after("hi") == ["Paris"]
     assert after.copy(temperature=0.5)._providers is after._providers  # copies share the binding
     after.close()
@@ -259,7 +235,7 @@ def test_registered_provider_routes_natively_with_the_lm_key(server, prefix):
     register_provider(_definition(base))
     lm = dspy.LM(f"{prefix}/{MODEL}", api_key="lm-key", cache=False, num_retries=0)
     selection = select_backend(lm)
-    assert selection.native and selection.resolution.provider == "private-fireworks" and selection.resolution.declared
+    assert selection.resolution.provider == "private-fireworks" and selection.resolution.declared
     assert lm("capital of France?") == ["Paris"]
     assert seen[-1]["auth"] == "Bearer lm-key"
     assert seen[-1]["path"] == "/v1/chat/completions"
@@ -272,7 +248,7 @@ def test_env_key_and_client_settings_are_honored(server, monkeypatch):
     register_provider(_definition(base))
     monkeypatch.setenv("PRIVATE_FIREWORKS_API_KEY", "env-key")
     lm = dspy.LM(f"private-fireworks/{MODEL}", cache=False, num_retries=0, max_tokens=9, timeout=5)
-    assert select_backend(lm).native
+    assert select_backend(lm).resolution.declared
     assert lm("hi") == ["Paris"]
     assert seen[-1]["auth"] == "Bearer env-key"
     assert seen[-1]["body"]["max_tokens"] == 9  # the declared compat's spelling
@@ -286,13 +262,12 @@ def test_env_key_and_client_settings_are_honored(server, monkeypatch):
 
 
 def test_a_declaration_beats_the_ambient_gateway_variable(server, monkeypatch):
-    # {PREFIX}_API_BASE redirects engine="auto" to LiteLLM for registry
-    # providers (legacy gateways). A declaration states its address itself.
+    # A declaration states its address itself; ambient gateways cannot replace it.
     base, seen = server
     register_provider(_definition(base))
     monkeypatch.setenv("PRIVATE_FIREWORKS_API_BASE", "http://127.0.0.1:9/v1")
     lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
-    assert select_backend(lm).native
+    assert select_backend(lm).resolution.declared
     assert lm("hi") == ["Paris"] and seen[-1]["path"] == "/v1/chat/completions"
     lm.close()
 
@@ -309,122 +284,59 @@ async def test_async_path(server):
 
 def test_unregistered_prefix_is_not_native():
     lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False)
-    assert not select_backend(lm).native
+    with pytest.raises(dspy.LMConfigurationError):
+        lm("hi")
 
 
-# ─── the fallback keeps the declared connection ───────────────────────
+# ─── native routing keeps the declared connection ─────────────────────
 
 
 @pytest.mark.parametrize("prefix", ["private-fireworks", "private_fireworks_ai"])
-def test_fallback_reaches_the_declared_address_with_the_declared_credential(litellm_stub, prefix, monkeypatch):
-    # extra_headers is a client setting only LiteLLM carries. The route it
-    # takes is LiteLLM's generic OpenAI-compatible door at the DECLARED
-    # address, not LiteLLM's own idea of the private provider.
-    register_provider(_definition("https://private-gateway.test/v1", headers=(("X-Gateway", "tenant-1"),)))
-    lm = dspy.LM(f"{prefix}/{MODEL}", api_key="private-key", extra_headers={"X-Test": "1"}, cache=False, num_retries=0)
+def test_declared_headers_and_credentials_reach_declared_endpoint(server, prefix):
+    base, seen = server
+    register_provider(_definition(base, headers=(("X-Gateway", "tenant-1"),)))
+    lm = dspy.LM(f"{prefix}/{MODEL}", api_key="private-key", cache=False, num_retries=0)
     selection = select_backend(lm)
-    assert not selection.native and selection.resolution.declared
-    assert lm("hi")[0].endswith("Paris\n\n[[ ## completed ## ]]")
-    sent = litellm_stub[-1]
-    assert sent["model"] == f"openai/{MODEL}"
-    assert sent["api_base"] == "https://private-gateway.test/v1"
-    assert sent["api_key"] == "private-key"
-    assert sent["extra_headers"] == {"X-Gateway": "tenant-1", "X-Test": "1"}
+    assert selection.resolution.declared
+    assert lm("hi") == ["Paris"]
+    sent = seen[-1]
+    assert sent["body"]["model"] == MODEL
+    assert sent["auth"] == "Bearer private-key"
+    assert sent["headers"]["X-Gateway"] == "tenant-1"
     assert lm.history[-1]["model"] == f"{prefix}/{MODEL}"  # the LM's string, not the wire one
+    lm.close()
 
 
-def test_fallback_reads_the_declared_key_variable_and_never_an_ambient_openai_key(litellm_stub, monkeypatch):
-    register_provider(_definition("https://private-gateway.test/v1"))
+def test_declared_key_never_uses_an_ambient_openai_key(server, monkeypatch):
+    base, seen = server
+    register_provider(_definition(base))
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-must-not-leak")
-    lm = dspy.LM(f"private-fireworks/{MODEL}", extra_headers={"X-Test": "1"}, cache=False, num_retries=0)
+    lm = dspy.LM(f"private-fireworks/{MODEL}", cache=False, num_retries=0)
     with pytest.raises(dspy.LMError, match="PRIVATE_FIREWORKS_API_KEY") as info:
         lm("hi")
-    assert not litellm_stub and "sk-openai" not in str(info.value)
+    assert not seen and "sk-openai" not in str(info.value)
     monkeypatch.setenv("PRIVATE_FIREWORKS_API_KEY", "env-key")
     assert "Paris" in lm("hi")[0]
-    assert litellm_stub[-1]["api_key"] == "env-key"
+    assert seen[-1]["auth"] == "Bearer env-key"
+    lm.close()
 
 
-def test_fallback_under_engine_litellm_takes_the_same_route(litellm_stub):
-    register_provider(_definition("https://private-gateway.test/v1"))
-    lm = dspy.LM(f"private_fireworks_ai/{MODEL}", engine="litellm", api_key="k", cache=False, num_retries=0)
-    assert "Paris" in lm("hi")[0]
-    assert litellm_stub[-1]["model"] == f"openai/{MODEL}"
-    assert litellm_stub[-1]["api_base"] == "https://private-gateway.test/v1"
-
-
-@pytest.mark.asyncio
-async def test_async_fallback_keeps_the_connection_too(litellm_stub):
-    register_provider(_definition("https://private-gateway.test/v1"))
-    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", extra_headers={"X": "1"}, cache=False, num_retries=0)
-    assert "Paris" in (await lm.acall("hi"))[0]
-    assert litellm_stub[-1]["api_base"] == "https://private-gateway.test/v1"
-
-
-def test_capabilities_on_the_fallback_route_come_from_the_declaration(litellm_stub):
-    # An adapter asks the LM what it supports before every call; on the
-    # fallback route that must not be LiteLLM's reading of a prefix it
-    # does not know. The whole program runs.
-    register_provider(_definition("https://private-gateway.test/v1"),
-                      supports=ModelSupport(function_calling=True, response_schema=True))
-    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", extra_headers={"X": "1"}, cache=False, num_retries=0)
-    assert not select_backend(lm).native
-    assert lm.supports_function_calling and lm.supports_response_schema and "tools" in lm.supported_params
-    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False)):
-        prediction = dspy.Predict("question -> answer")(question="capital of France?")
-    assert litellm_stub[-1]["api_base"] == "https://private-gateway.test/v1"
-    assert prediction.answer == "Paris"
-
-
-def test_fallback_sends_the_credential_only_under_the_declared_scheme(litellm_stub):
-    # LiteLLM's openai/ door renders the key as a bearer header; its
-    # anthropic/ door as x-api-key. A declaration whose scheme the door
-    # cannot send gets no fallback — never its secret in an undeclared
-    # header (greptile on dspy#10442).
-    from dspy.lm15 import AnthropicCompat
-
-    register_provider(_definition("https://private-gateway.test/v1", provider="hdr", aliases=(), auth_scheme=("x-api-key",)))
-    lm = dspy.LM(f"hdr/{MODEL}", api_key="secret", extra_headers={"X": "1"}, cache=False, num_retries=0)
-    with pytest.raises(dspy.LMUnsupportedFeatureError, match=r"authenticates with 'x-api-key'.*openai/ door cannot send"):
-        lm("hi")
-    assert not litellm_stub
-    register_provider(ProviderDefinition.anthropic(
-        AccessPolicy(provider="claude-gw", auth_modes=("x-api-key",), auth_scheme=("x-api-key",),
-                     env_keys=("CLAUDE_GW_KEY",), base_url="https://claude-gateway.test"),
-        compat=AnthropicCompat()))
-    lm = dspy.LM("claude-gw/claude-x", api_key="secret", extra_headers={"X": "1"}, cache=False, num_retries=0)
-    assert "Paris" in lm("hi")[0]
-    assert litellm_stub[-1]["model"] == "anthropic/claude-x"
-    assert litellm_stub[-1]["api_base"] == "https://claude-gateway.test"
-    assert litellm_stub[-1]["api_key"] == "secret"
-    register_provider(ProviderDefinition.anthropic(
-        AccessPolicy(provider="claude-bearer", auth_modes=("bearer",), auth_scheme=("bearer",),
-                     env_keys=("CLAUDE_GW_KEY",), base_url="https://claude-gateway.test"),
-        compat=AnthropicCompat()))
-    lm = dspy.LM("claude-bearer/claude-x", api_key="secret", extra_headers={"X": "1"}, cache=False, num_retries=0)
-    with pytest.raises(dspy.LMUnsupportedFeatureError, match=r"authenticates with 'bearer'.*anthropic/ door cannot send"):
-        lm("hi")
-
-
-def test_fallback_resolves_a_callable_credential_per_call(litellm_stub):
-    # lm15 credentials may be zero-argument callables (rotating tokens). The
-    # fallback invokes them like the native path, on each call, and hands
-    # LiteLLM the string (greptile on dspy#10442).
-    register_provider(_definition("https://private-gateway.test/v1"))
+def test_native_resolves_a_callable_credential_per_call(server):
+    base, seen = server
+    register_provider(_definition(base))
     tokens = iter(["token-1", "token-2"])
-    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key=lambda: next(tokens), extra_headers={"X": "1"}, cache=False, num_retries=0)
+    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key=lambda: next(tokens), cache=False, num_retries=0)
     lm("hi")
     lm("hi again")
-    assert [call["api_key"] for call in litellm_stub[-2:]] == ["token-1", "token-2"]
+    assert [call["auth"] for call in seen[-2:]] == ["Bearer token-1", "Bearer token-2"]
+    lm.close()
 
 
 @pytest.mark.asyncio
-async def test_fallback_is_still_the_declared_provider_for_pricing(litellm_stub):
-    # The fallback reaches the same server; pricing comes from the
-    # declaration's namespaces on every path, never from LiteLLM's reading
-    # of the generic door's model string (greptile on dspy#10442).
-    register_provider(_definition("https://private-gateway.test/v1"), metadata_namespaces=("fireworks_ai",))
-    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", extra_headers={"X": "1"}, cache=False, num_retries=0)
+async def test_native_uses_the_declared_provider_for_pricing(server):
+    base, _ = server
+    register_provider(_definition(base), metadata_namespaces=("fireworks_ai",))
+    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
     lm("hi")  # legacy body path
     lm(dspy.lm15.Request(model=lm.model, messages=(dspy.lm15.Message.user("hi"),)))  # canonical path
     await lm.acall("hi")  # async legacy path
@@ -434,24 +346,25 @@ async def test_fallback_is_still_the_declared_provider_for_pricing(litellm_stub)
         assert entry["cost_details"]["provider"] == "private-fireworks"
         assert entry["cost_details"]["metadata"]["namespaces"] == ["fireworks_ai"]
     # A colliding name on a gateway with no namespace is unknown, not OpenAI's price.
-    register_provider(_definition("https://private-gateway.test/v1", provider="gw", aliases=()))
-    plain = dspy.LM("gw/gpt-4o", api_key="k", extra_headers={"X": "1"}, cache=False, num_retries=0)
+    register_provider(_definition(base, provider="gw", aliases=()))
+    plain = dspy.LM("gw/gpt-4o", api_key="k", cache=False, num_retries=0)
     plain("hi")
     assert plain.history[-1]["cost"] is None
     assert "names no metadata namespace" in plain.history[-1]["cost_details"]["reason"]
+    await lm.aclose()
+    plain.close()
 
 
 @pytest.mark.parametrize("reasoning", [
     {"reasoning_effort": "low"}, {"reasoning": {"effort": "low"}}, {"reasoning": {"enabled": False}},
 ])
-def test_a_declared_refusal_is_final_under_auto(litellm_stub, server, reasoning):
+def test_a_declared_refusal_is_final_under_auto(server, reasoning):
     from dspy.clients.requests import build_request
 
     # thinking_format="none" says the wire has no reasoning field. A
-    # reasoning dial on it is a refusal (lm15 MAP-7); sending it through
-    # LiteLLM anyway would drop the dial silently, so engine="auto" refuses
-    # too. (A setting lm15 adapts and records, e.g. json_schema="reject",
-    # is not a refusal and never leaves the native route.)
+    # reasoning dial on it is a refusal (lm15 MAP-7), including under auto.
+    # A setting lm15 adapts and records, e.g. json_schema="reject", is not
+    # a refusal and stays on the declared native route.
     base, seen = server
     register_provider(_definition(base, thinking_format="none", json_schema="reject"))
     lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
@@ -459,7 +372,6 @@ def test_a_declared_refusal_is_final_under_auto(litellm_stub, server, reasoning)
         build_request(lm, "hi", reasoning)
     with pytest.raises(dspy.LMUnsupportedFeatureError):
         lm("hi", **reasoning)
-    assert not litellm_stub
     assert not seen
     assert lm("hi", response_format={"type": "json_schema", "json_schema": {"name": "x", "schema": {"type": "object"}}}) == ["Paris"]
     assert "response_format" not in seen[-1]["body"]  # adapted and recorded, natively
@@ -469,7 +381,7 @@ def test_a_declared_refusal_is_final_under_auto(litellm_stub, server, reasoning)
 def test_engine_lm15_refuses_client_settings_it_cannot_carry(server):
     base, _ = server
     register_provider(_definition(base))
-    with pytest.raises(Exception, match="require the LiteLLM"):
+    with pytest.raises(dspy.lm15.UnsupportedFeatureError, match="cannot carry these client settings"):
         select_backend(dspy.LM(f"private-fireworks/{MODEL}", engine="lm15", api_key="k", extra_headers={"X": "1"}))
 
 
@@ -550,7 +462,7 @@ def test_state_is_the_model_string(server):
     json.dumps(state)
     assert "engine" not in state and "api_key" not in state and "_providers" not in state
     loaded = dspy.LM.load_state(state)
-    assert loaded.model == f"private-fireworks/{MODEL}" and select_backend(loaded).native  # bound at load time
+    assert loaded.model == f"private-fireworks/{MODEL}" and select_backend(loaded).resolution.declared
 
 
 def test_pickled_lm_keeps_its_binding(server):
@@ -561,4 +473,4 @@ def test_pickled_lm_keeps_its_binding(server):
     lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False)
     unregister_provider("private-fireworks")
     restored = pickle.loads(pickle.dumps(lm))
-    assert select_backend(restored).native and restored._providers == lm._providers
+    assert select_backend(restored).resolution.declared and restored._providers == lm._providers
