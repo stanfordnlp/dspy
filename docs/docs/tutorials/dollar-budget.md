@@ -1,5 +1,4 @@
 ---
-sidebar_position: 10
 title: Hard Dollar Limit on an Evaluation or Optimization Run
 ---
 
@@ -7,12 +6,12 @@ title: Hard Dollar Limit on an Evaluation or Optimization Run
 
 When you run `dspy.Evaluate` or an optimizer with `num_threads > 1`, concurrent LM calls can spend more than you expect before a post-call total is checked. This short tutorial shows a pattern that refuses a call *before* it reaches the provider if it would exceed a hard dollar budget for that run.
 
-The approach uses an OpenAI-compatible gateway (for example Inferrail) that understands two custom headers:
+The approach uses an OpenAI-compatible gateway (for example [Inferrail](https://github.com/inferrail/inferrail)) that understands two custom headers:
 
 - a run identifier
 - a remaining budget in dollars
 
-Every LM call reserves its worst-case cost before it is sent. If the reservation does not fit, the gateway returns an error that DSPy surfaces as `LMBillingError` and does not retry.
+Every LM call reserves its worst-case cost before it is sent. If the reservation does not fit, the gateway must return an error that DSPy surfaces as a non-retryable billing error (typically `dspy.LMBillingError` or a plain `Exception` depending on configuration). Verify the exact response format against your DSPy version, because rate-limit style errors are often retried.
 
 ## Setup
 
@@ -20,7 +19,8 @@ Every LM call reserves its worst-case cost before it is sent. If the reservation
 import dspy
 from dspy.evaluate import Evaluate
 
-# Point DSPy at a gateway that enforces the budget
+# Point DSPy at a gateway that enforces the budget.
+# The gateway must implement the reservation logic and return a non-retryable error.
 lm = dspy.LM(
     "openai/gpt-4o-mini",
     api_base="http://localhost:8000/v1",  # your gateway
@@ -51,20 +51,42 @@ evaluate = Evaluate(
     devset=devset,
     metric=metric,
     num_threads=4,
-    max_errors=3,  # stop the run after a few refused calls
+    max_errors=3,  # after this many failures, Evaluate raises
 )
 
 try:
     score = evaluate(program)
     print("Score:", score)
-except dspy.LMBillingError as e:
-    print("Budget exhausted:", e)
+except Exception as e:
+    # With max_errors, Evaluate raises a plain Exception after the threshold.
+    # Individual LMBillingError (or equivalent) failures are recorded as failed
+    # examples and scored with failure_score before the threshold is reached.
+    print("Evaluation stopped (budget or other errors):", e)
 ```
 
-With `max_errors` set, a few refused calls cause `Evaluate` to stop instead of continuing to spend. The same `extra_headers` pattern works for optimizer runs when you wrap the compile call in `dspy.context(lm=lm)`.
+Per-example billing refusals are treated as failed examples and scored with the configured `failure_score`. Only after `max_errors` failures does `Evaluate` raise a plain `Exception` that cancels the run. This is different from a single top-level `LMBillingError`.
+
+## Optimizer runs
+
+Binding only the compile call is not sufficient. Optimizers such as MIPROv2 store their own task and prompt models at construction time, and a program may have an attached model that takes precedence over the outer context. To keep every call behind the gateway:
+
+```python
+# Create the optimizer and any programs with the gateway LM
+optimizer = dspy.MIPROv2(metric=metric, auto="light")
+optimizer.task_model = lm
+optimizer.prompt_model = lm
+
+# Or attach the LM to the program before compiling
+program.set_lm(lm)
+
+compiled = optimizer.compile(program, trainset=trainset)
+```
+
+Always verify with a small budget that no calls escape to a direct provider.
 
 ## Notes
 
-- The gateway must implement the reservation logic; DSPy only forwards the headers.
+- The gateway must implement the reservation logic and a verified non-retryable error response; DSPy only forwards the headers.
 - A running total checked *after* a call returns cannot prevent overspend under concurrency.
-- Test with a small budget first to confirm refusals appear as `LMBillingError` and are not retried.
+- Test with a small budget first and confirm the exact exception type raised by your DSPy version.
+- This tutorial is a pattern, not a complete turnkey solution. You must supply and test the gateway.
