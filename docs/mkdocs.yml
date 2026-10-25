@@ -249,7 +249,7 @@ extra_css:
 plugins:
     - search:
         lang: en
-        separator: '[\\s\\-\\.]+'
+        separator: '[\s\-\.]+'
     - minify:
         minify_html: true
     - mkdocstrings:
