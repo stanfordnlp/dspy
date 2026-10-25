@@ -71,6 +71,13 @@ Per-example billing refusals are treated as failed examples and scored with the 
 Binding only the compile call is not sufficient. Optimizers such as MIPROv2 store their own task and prompt models at construction time, and a program may have an attached model that takes precedence over the outer context. To keep every call behind the gateway:
 
 ```python
+# Provide a training set (required by most optimizers)
+trainset = [
+    dspy.Example(question="What is 2+2?", answer="4").with_inputs("question"),
+    dspy.Example(question="What is 3+5?", answer="8").with_inputs("question"),
+    # ... more training examples
+]
+
 # Create the optimizer and any programs with the gateway LM
 optimizer = dspy.MIPROv2(metric=metric, auto="light")
 optimizer.task_model = lm
