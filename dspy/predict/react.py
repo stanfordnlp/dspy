@@ -42,6 +42,17 @@ class ReAct(Module):
         self.max_iters = max_iters
 
         tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
+        names = [tool.name for tool in tools]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise ValueError(
+                f"Tool names must be unique, got more than one tool named {', '.join(f'`{n}`' for n in duplicates)}. "
+                "Use `dspy.Tool(func, name=...)` to rename one of them."
+            )
+        if "finish" in names:
+            raise ValueError(
+                "`finish` is reserved by ReAct as the final tool. Use `dspy.Tool(func, name=...)` to rename yours."
+            )
         tools = {tool.name: tool for tool in tools}
 
         inputs = ", ".join([f"`{k}`" for k in signature.input_fields.keys()])

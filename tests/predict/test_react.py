@@ -534,3 +534,29 @@ async def test_async_error_retry():
     for i in range(2):
         obs = traj[f"observation_{i}"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+
+
+def test_react_rejects_duplicate_tool_names():
+    class Orders:
+        def search(self, query: str) -> str:
+            return "orders"
+
+    class Customers:
+        def search(self, query: str) -> str:
+            return "customers"
+
+    with pytest.raises(ValueError, match="`search`"):
+        dspy.ReAct("question -> answer", tools=[Orders().search, Customers().search])
+
+
+def test_react_rejects_user_tool_named_finish():
+    def finish(answer: str) -> str:
+        return answer
+
+    with pytest.raises(ValueError, match="`finish` is reserved"):
+        dspy.ReAct("question -> answer", tools=[finish])
+
+    # Renaming the tool is the documented way out.
+    react = dspy.ReAct("question -> answer", tools=[dspy.Tool(finish, name="save_answer")])
+    assert react.tools["save_answer"].func is finish
+    assert list(react.tools) == ["save_answer", "finish"]
