@@ -1073,6 +1073,7 @@ def test_input_field_default_value():
 
     class SignatureWithDefault(dspy.Signature):
         context: str = dspy.InputField(default="DEFAULT_CONTEXT")
+        dynamic_context: str = dspy.InputField(default_factory=lambda: "DYNAMIC_CONTEXT")
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
 
@@ -1083,6 +1084,7 @@ def test_input_field_default_value():
 
     user_message = lm.calls[0]["messages"][-1]["content"]
     assert "DEFAULT_CONTEXT" in user_message
+    assert "DYNAMIC_CONTEXT" in user_message
 
 def log_test_helper():
     lm = DummyLM([{"answer": "test output"}])
