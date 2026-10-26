@@ -125,15 +125,15 @@ This is especially beneficial when:
 
 ## Restricting Pickle Deserialization
 
-By default, DSPy's on-disk cache uses Python's `pickle` for serialization. While this handles arbitrary Python objects, `pickle.load` can execute arbitrary code -- meaning a corrupted or malicious cache file could be dangerous.
+DSPy's on-disk cache uses Python's `pickle` for serialization. Unrestricted pickle loading can execute arbitrary code, so DSPy enables `restrict_pickle=True` by default to restrict which types the cache is allowed to deserialize.
 
-DSPy provides an opt-in `restrict_pickle` mode that restricts which types the cache is allowed to deserialize:
+To opt out, only when you trust the cache directory and its contents:
 
 ```python
-dspy.configure_cache(restrict_pickle=True)
+dspy.configure_cache(restrict_pickle=False)
 ```
 
-When enabled, the cache only allows:
+With the default restriction, the cache only allows:
 
 - **LiteLLM and OpenAI response types** (`litellm.types.*`, `openai.types.*`) -- the pydantic data models that DSPy caches for LM calls, embeddings, and the Responses API.
 - **NumPy array reconstruction helpers** -- the specific internal functions needed to deserialize `numpy.ndarray` (used by embedding caches).
@@ -149,7 +149,7 @@ class MyResult:
     score: float
     label: str
 
-dspy.configure_cache(restrict_pickle=True, safe_types=[MyResult])
+dspy.configure_cache(safe_types=[MyResult])
 ```
 
 If a type is missing from the allowlist, the cache treats it as a miss and returns `None`. The log message will name the exact type that was rejected:
@@ -163,7 +163,7 @@ WARNING dspy.clients.cache: Failed to deserialize disk cache entry <key>
 If your registered type contains nested custom types, you must register all of them. For example, if `MyResult` contains a `Metadata` field, register both:
 
 ```python
-dspy.configure_cache(restrict_pickle=True, safe_types=[MyResult, Metadata])
+dspy.configure_cache(safe_types=[MyResult, Metadata])
 ```
 
 The error message will tell you exactly which nested type is missing.
