@@ -323,7 +323,7 @@ class TestRLMInitialization:
 
         tools = RLM("context -> answer", sub_lm=DummyLM([{"answer": "legacy answer"}]))._make_llm_tools()
 
-        assert tools["llm_query"]("test prompt") == "[[ ## answer ## ]]\nlegacy answer"
+        assert tools["llm_query"]("test prompt") == "<answer>\nlegacy answer\n</answer>"
 
     def test_llm_query_returns_typed_response_text(self):
         import dspy
@@ -334,7 +334,7 @@ class TestRLMInitialization:
         with dspy.context(experimental=True):
             result = tools["llm_query"]("test prompt")
 
-        assert result == "[[ ## answer ## ]]\ntyped answer"
+        assert result == "<answer>\ntyped answer\n</answer>"
 
     def test_llm_query_rejects_unsupported_response_shape(self):
         from unittest.mock import MagicMock

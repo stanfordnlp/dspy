@@ -19,7 +19,7 @@ def _lm():
 def test_generation_parameters_pass_and_the_wrapped_lm_does_the_work():
     lm = _lm()
     outputs = SandboxLM(lm)(messages=[{"role": "user", "content": "hi"}], temperature=0.3, max_tokens=5)
-    assert outputs == ["[[ ## answer ## ]]\na"]
+    assert outputs == ["<answer>\na\n</answer>"]
     assert len(lm.history) == 1
 
 
@@ -44,7 +44,7 @@ async def test_acall_applies_the_same_allowlist():
     with pytest.raises(TypeError, match=r"may not set LM option\(s\) \['api_key'\]"):
         await SandboxLM(lm).acall("prompt", api_key="sk-x")
     assert lm.history == []
-    assert await SandboxLM(lm).acall("prompt", temperature=0.2) == ["[[ ## answer ## ]]\na"]
+    assert await SandboxLM(lm).acall("prompt", temperature=0.2) == ["<answer>\na\n</answer>"]
 
 
 def test_reserve_meters_admitted_calls_only():

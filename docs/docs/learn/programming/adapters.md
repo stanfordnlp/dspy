@@ -19,7 +19,7 @@ The adapter system is responsible for:
 You can use `dspy.configure(adapter=...)` to choose the adapter for the entire Python process, or
 `with dspy.context(adapter=...):` to only affect a certain namespace.
 
-If no adapter is specified in the DSPy workflow, each `dspy.Predict.__call__` defaults to using the `dspy.ChatAdapter`. Thus, the two code snippets below are equivalent:
+If no adapter is specified, each `dspy.Predict.__call__` uses `dspy.XMLAdapter(use_native_function_calling=True)`. It uses native tool calling when the LM supports it, and text otherwise. The two code snippets below are equivalent:
 
 ```python
 import dspy
@@ -35,7 +35,7 @@ import dspy
 
 dspy.configure(
     lm=dspy.LM("openai/gpt-4o-mini"),
-    adapter=dspy.ChatAdapter(),  # This is the default value
+    adapter=dspy.XMLAdapter(use_native_function_calling=True),  # The implicit default
 )
 
 predict = dspy.Predict("question -> answer")
@@ -53,7 +53,7 @@ The flow works as follows:
 5. **Adapter.parse()** converts the LM response into structured DSPy outputs, as specified in the signature.
 6. The caller of `dspy.Predict` receives the parsed outputs.
 
-You can explicitly call `Adapter.format()` to view the messages sent to the LM.
+You can explicitly call `Adapter.format()` to view the messages sent to the LM. This example chooses `ChatAdapter` to show its marker format.
 
 ```python
 # Simplified flow example
@@ -106,9 +106,21 @@ In adhering to this structure, your objective is:
 
 DSPy offers several adapter types, each tailored for specific use cases:
 
+### XMLAdapter
+
+**XMLAdapter** is the implicit default, with native tool calling enabled. It delimits fields with `<field_name>...</field_name>` tags and uses nested tags for objects and `<item>` for lists. DSPy parses and validates the response; XML formatting does not provide provider-enforced structured output.
+
+For example, a text response to `question -> answer` looks like:
+
+```xml
+<answer>
+Paris
+</answer>
+```
+
 ### ChatAdapter
 
-**ChatAdapter** is the default adapter and works with all language models. It uses a field-based format with special markers.
+**ChatAdapter** is an explicit alternative that uses a field-based format with special markers.
 
 #### Format Structure
 
