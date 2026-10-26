@@ -342,7 +342,7 @@ def test_gepa_compile_with_track_usage_no_tuple_error(caplog):
     trainset = [dspy.Example(question="What is 2+2?", answer="4").with_inputs("question")]
 
     task_lm = DummyLM([{"answer": "mock answer 1"}])
-    reflection_lm = DummyLM([{"new_instruction": "Something new."}])
+    reflection_lm = DummyLM([{"new_instruction": "Something new."}], adapter=dspy.JSONAdapter())
 
     compiled_container: dict[str, Any] = {}
     exc_container: dict[str, BaseException] = {}
@@ -410,10 +410,11 @@ def test_component_selector_functionality():
     task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 20)
     reflection_lm = DummyLM(
         [
-            {"improved_instruction": "Improved classifier instruction"},
-            {"improved_instruction": "Improved generator instruction"},
+            {"new_instruction": "Improved classifier instruction"},
+            {"new_instruction": "Improved generator instruction"},
         ]
-        * 10
+        * 10,
+        adapter=dspy.JSONAdapter(),
     )
     trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
 
@@ -439,7 +440,7 @@ def test_component_selector_default_behavior():
 
     # Provide enough responses for all possible LM calls
     task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 15)
-    reflection_lm = DummyLM([{"improved_instruction": "Better instruction"}] * 8)
+    reflection_lm = DummyLM([{"new_instruction": "Better instruction"}] * 8, adapter=dspy.JSONAdapter())
     trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
 
     with dspy.context(lm=task_lm):
@@ -460,7 +461,7 @@ def test_component_selector_string_round_robin():
 
     # Provide enough responses for all possible LM calls
     task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 15)
-    reflection_lm = DummyLM([{"improved_instruction": "Better instruction"}] * 8)
+    reflection_lm = DummyLM([{"new_instruction": "Better instruction"}] * 8, adapter=dspy.JSONAdapter())
     trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
 
     with dspy.context(lm=task_lm):
@@ -498,10 +499,11 @@ def test_component_selector_string_all():
         task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 20)
         reflection_lm = DummyLM(
             [
-                {"improved_instruction": "Updated classifier instruction"},
-                {"improved_instruction": "Updated generator instruction"},
+                {"new_instruction": "Updated classifier instruction"},
+                {"new_instruction": "Updated generator instruction"},
             ]
-            * 10
+            * 10,
+            adapter=dspy.JSONAdapter(),
         )
         trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
 
@@ -552,7 +554,7 @@ def test_component_selector_custom_random():
 
     # Provide enough responses for all possible LM calls
     task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 15)
-    reflection_lm = DummyLM([{"improved_instruction": "Better instruction"}] * 8)
+    reflection_lm = DummyLM([{"new_instruction": "Better instruction"}] * 8, adapter=dspy.JSONAdapter())
     trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
 
     with dspy.context(lm=task_lm):
@@ -603,7 +605,7 @@ def test_alternating_half_component_selector():
 
     # Provide enough responses for multiple iterations
     task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 20)
-    reflection_lm = DummyLM([{"improved_instruction": "Better instruction"}] * 10)
+    reflection_lm = DummyLM([{"new_instruction": "Better instruction"}] * 10, adapter=dspy.JSONAdapter())
     trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
 
     with dspy.context(lm=task_lm):

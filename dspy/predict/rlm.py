@@ -467,11 +467,8 @@ class RLM(Module):
             .append(
                 "iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iters"), type_=str
             )
-            .append(
-                "reasoning",
-                dspy.OutputField(desc="Think step-by-step: what do you know? What remains? Plan your next action."),
-                type_=dspy.Reasoning,
-            )
+            .append("reasoning", dspy.OutputField(desc="A short plan for the next action."), type_=dspy.Reasoning)
+            .with_updated_fields("reasoning", __dspy_reasoning_fallback="plan")
             .append(
                 "code",
                 dspy.OutputField(
@@ -654,8 +651,9 @@ class RLM(Module):
         )
         try:
             invocation.install(repl)
-        except CodeExecutionError as e:
-            # The runtime cannot host the shim (e.g. it runs code in the host's memory): no sub-agents this call.
+        except (CodeExecutionError, SyntaxError) as e:
+            # The runtime cannot host the shim (e.g. a restricted compiler rejects the shim's `_dspy_*` names):
+            # no sub-agents this call.
             for name in (CONSTRUCT_TOOL, CALL_TOOL):
                 repl.tools.pop(name, None)
             logger.warning("RLM sub-agents are unavailable on %s: %s", type(repl).__name__, e)
@@ -817,12 +815,13 @@ class RLM(Module):
             Tuple of REPLEntry, final_results.
             final_results is None if intermediate execution, exception caught, or SUBMIT was called unsuccessfully.
         """
-
+        # Providers may omit a native reasoning summary; trajectories stay string-valued.
+        reasoning = str(pred.reasoning) if pred.reasoning is not None else ""
         # Handle error strings from caught exceptions
         if isinstance(result, str) and result.startswith("[Error]"):
             output = self._format_output(result)
             return REPLEntry(
-                reasoning=pred.reasoning, code=code, output=output, max_output_chars=self.max_output_chars
+                reasoning=reasoning, code=code, output=output, max_output_chars=self.max_output_chars
             ), None
 
         # Handle FINAL output
@@ -831,11 +830,11 @@ class RLM(Module):
 
             if error:
                 return REPLEntry(
-                    reasoning=pred.reasoning, code=code, output=error, max_output_chars=self.max_output_chars
+                    reasoning=reasoning, code=code, output=error, max_output_chars=self.max_output_chars
                 ), None
 
             return REPLEntry(
-                reasoning=pred.reasoning,
+                reasoning=reasoning,
                 code=code,
                 output=f"FINAL: {parsed_outputs}",
                 max_output_chars=self.max_output_chars,
@@ -852,7 +851,7 @@ class RLM(Module):
             logger.info(REPLEntry.format_output(output, self.max_output_chars))
 
         return REPLEntry(
-            reasoning=pred.reasoning, code=code, output=output, max_output_chars=self.max_output_chars
+            reasoning=reasoning, code=code, output=output, max_output_chars=self.max_output_chars
         ), None
 
     def _execute_code(

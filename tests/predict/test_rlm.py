@@ -142,6 +142,39 @@ class TestMockInterpreter:
 # ============================================================================
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_mode", [False, True])
+@pytest.mark.parametrize("mode", ["native", "omitted", "unsupported"])
+async def test_default_reasoning_trajectory(mode, async_mode):
+    class Model(DummyLM):
+        @property
+        def supports_reasoning(self):
+            return mode != "unsupported"
+
+    responses = [{"code": "print(13)"}, {"code": "print(missing)"}, {"code": "SUBMIT(13)"}]
+    if mode == "unsupported":
+        for response in responses:
+            response["plan"] = "Check the value before submitting."
+    lm = Model(responses, reasoning=mode == "native")
+    factory = MockInterpreterFactory(
+        responses=[
+            "13",
+            CodeExecutionError("name 'missing' is not defined"),
+            FinalOutput({"answer": 13}),
+        ]
+    )
+    program = RLM("query -> answer: int", max_iters=3, interpreter_factory=factory)
+    with dspy.context(lm=lm):
+        result = await program.acall(query="Return thirteen") if async_mode else program(query="Return thirteen")
+    expected = "Some reasoning" if mode == "native" else "" if mode == "omitted" else responses[0]["plan"]
+    assert result.answer == 13
+    assert result.final_reasoning == expected
+    assert len(result.repl_trajectory) == 3
+    assert all(
+        entry["reasoning"] == expected and isinstance(entry["reasoning"], str) for entry in result.repl_trajectory
+    )
+
+
 class TestRLMInitialization:
     """Tests for RLM module initialization."""
 
@@ -1617,7 +1650,7 @@ class TestRLMWithDummyLM:
         configured = MockInterpreterFactory()
         with dummy_lm_context(
             [
-                {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
+                {"plan": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
             ]
         ):
             rlm = RLM("query -> answer: int", max_iters=3)
@@ -1634,8 +1667,8 @@ class TestRLMWithDummyLM:
         """Test RLM with multiple turns before SUBMIT."""
         with dummy_lm_context(
             [
-                {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-                {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+                {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
             ]
         ):
             rlm = RLM("query -> answer: int", max_iters=5)
@@ -1661,7 +1694,7 @@ class TestRLMWithDummyLM:
         """Test RLM with input variables passed to sandbox."""
         with dummy_lm_context(
             [
-                {"reasoning": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
+                {"plan": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
             ]
         ):
             rlm = RLM("numbers: list[int] -> total: int", max_iters=3)
@@ -1677,7 +1710,7 @@ class TestRLMWithDummyLM:
 
         with dummy_lm_context(
             [
-                {"reasoning": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
+                {"plan": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
             ]
         ):
             rlm = RLM("fruit -> color: str", max_iters=3, tools=[lookup])
@@ -1720,7 +1753,7 @@ class TestRLMWithDummyLM:
         with dummy_lm_context(
             [
                 {
-                    "reasoning": "Call the tool",
+                    "plan": "Call the tool",
                     "code": 'result = score_payload({"value": 3})\nSUBMIT(result)',
                 },
             ]
@@ -1740,7 +1773,7 @@ class TestRLMWithDummyLM:
         """Test aforward() full pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
         with dummy_lm_context(
             [
-                {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
+                {"plan": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
             ]
         ):
             rlm = RLM("query -> answer: int", max_iters=3)
@@ -1754,8 +1787,8 @@ class TestRLMWithDummyLM:
         """Test aforward() with multiple turns before SUBMIT."""
         with dummy_lm_context(
             [
-                {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-                {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+                {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
             ]
         ):
             rlm = RLM("query -> answer: int", max_iters=5)
@@ -1782,7 +1815,7 @@ class TestRLMWithDummyLM:
         """Test aforward() with input variables passed to sandbox."""
         with dummy_lm_context(
             [
-                {"reasoning": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
+                {"plan": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
             ]
         ):
             rlm = RLM("numbers: list[int] -> total: int", max_iters=3)
@@ -1814,9 +1847,9 @@ class TestRLMHistoryWithDummyLM:
     def test_history_records_inputs_and_outputs_once(self):
         with dummy_lm_context(
             [
-                {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-                {"reasoning": "Compute double 10", "code": "y = x * 2\nprint(y)"},
-                {"reasoning": "Now add five and return", "code": "z = y + 5\nSUBMIT(z)"},
+                {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"plan": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"plan": "Now add five and return", "code": "z = y + 5\nSUBMIT(z)"},
             ]
         ):
             rlm = RLM("query -> answer: int", max_iters=5)
@@ -1844,8 +1877,8 @@ class TestRLMHistoryWithDummyLM:
 
         with dummy_lm_context(
             [
-                {"reasoning": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
-                {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+                {"plan": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
             ]
         ):
             rlm = RLM("query -> answer: int", max_iters=5)
@@ -1874,7 +1907,7 @@ class TestRLMHistoryWithDummyLM:
         seed = {"query": "earlier", "answer": 1}
         history = dspy.History(messages=[dict(seed)])
 
-        with dummy_lm_context([{"reasoning": "r", "code": "SUBMIT(2)"}]):
+        with dummy_lm_context([{"plan": "r", "code": "SUBMIT(2)"}]):
             rlm = RLM("query -> answer: int", max_iters=3)
             result = rlm.forward(query="now", history=history, interpreter_factory=PythonInterpreter)
 
@@ -1894,9 +1927,9 @@ class TestRLMHistoryWithDummyLM:
 
         with dummy_lm_context(
             [
-                {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-                {"reasoning": "Compute double 10", "code": "y = x * 2\nprint(y)"},
-                {"reasoning": "Now add five and return", "code": "z = y + 5\nSUBMIT(z)"},
+                {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"plan": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"plan": "Now add five and return", "code": "z = y + 5\nSUBMIT(z)"},
             ]
         ):
             first_result = rlm.forward(
@@ -1905,8 +1938,8 @@ class TestRLMHistoryWithDummyLM:
 
         with dummy_lm_context(
             [
-                {"reasoning": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
-                {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+                {"plan": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
             ]
         ):
             second_result = rlm.forward(
@@ -1959,8 +1992,8 @@ class TestRLMHistoryWithDummyLM:
         assistant turn followed by its REPL output. Raw outer inputs/outputs are recorded but not rendered."""
         with dummy_lm_context(
             [
-                {"reasoning": "explore", "code": "x = 1\nprint(x)"},
-                {"reasoning": "done", "code": "SUBMIT(7)"},
+                {"plan": "explore", "code": "x = 1\nprint(x)"},
+                {"plan": "done", "code": "SUBMIT(7)"},
             ]
         ):
             rlm = RLM("query -> answer: int", max_iters=3)
@@ -1994,27 +2027,47 @@ class TestRLMHistoryWithDummyLM:
         assert "[[ ## answer ## ]]" not in messages[5]["content"]
         assert "None" not in "".join(m["content"] for m in messages)
 
-    def test_replayed_step_message_matches_the_live_one(self):
-        """A replayed step's user message is byte-identical to the one sent at that step, reminder included."""
+    def test_replayed_actions_use_the_live_reasoning_field_name(self):
+        """Without native reasoning the action LM writes its reasoning as `plan`; replay must not drop or rename it."""
         with dummy_lm_context(
             [
-                {"reasoning": "explore", "code": "x = 1\nprint(x)"},
-                {"reasoning": "done", "code": "SUBMIT(7)"},
+                {"plan": "explore the data", "code": "x = 1\nprint(x)"},
+                {"plan": "done", "code": "SUBMIT(7)"},
+                {"plan": "answer again", "code": "SUBMIT(8)"},
             ]
         ) as lm:
             rlm = RLM("query -> answer: int", max_iters=3)
-            result = rlm(query="What is seven?", interpreter_factory=PythonInterpreter)
-            live_step_messages = [call["messages"][-1]["content"] for call in lm.history]
+            first = rlm(query="What is seven?", interpreter_factory=PythonInterpreter)
+            rlm(query="And eight?", history=first.history, interpreter_factory=PythonInterpreter)
+            next_turn_request = lm.history[-1]["messages"]
 
-        replay = dspy.ChatAdapter().format_conversation_history(
-            rlm.generate_action.signature, "history", {"history": result.history}
+        replayed_actions = [m["content"] for m in next_turn_request if m["role"] == "assistant"]
+        assert replayed_actions[0] == (
+            "[[ ## plan ## ]]\nexplore the data\n\n[[ ## code ## ]]\nx = 1\nprint(x)\n\n[[ ## completed ## ]]\n"
         )
-        replayed_step_messages = [replay[0]["content"], replay[3]["content"]]
-        assert replayed_step_messages == live_step_messages
+        assert all("[[ ## reasoning ## ]]" not in m for m in replayed_actions)
+
+    def test_replayed_step_message_matches_the_live_one(self):
+        """On a later turn, each prior step's user message is sent byte-identical to the one sent live."""
+        with dummy_lm_context(
+            [
+                {"plan": "explore", "code": "x = 1\nprint(x)"},
+                {"plan": "done", "code": "SUBMIT(7)"},
+                {"plan": "answer again", "code": "SUBMIT(8)"},
+            ]
+        ) as lm:
+            rlm = RLM("query -> answer: int", max_iters=3)
+            first = rlm(query="What is seven?", interpreter_factory=PythonInterpreter)
+            live_step_messages = [call["messages"][-1]["content"] for call in lm.history]
+            rlm(query="And eight?", history=first.history, interpreter_factory=PythonInterpreter)
+            next_turn_request = lm.history[-1]["messages"]
+
+        replayed_user_messages = [m["content"] for m in next_turn_request[1:-1] if m["role"] == "user"]
+        assert [m for m in replayed_user_messages if "[[ ## variables_info ## ]]" in m] == live_step_messages
 
     def test_reused_history_ignores_outer_fields_named_like_inner_fields(self):
         """Outer RLM fields named `code`/`reasoning` are never confused with the action signature's own."""
-        with dummy_lm_context([{"reasoning": "inner reasoning", "code": "SUBMIT(reasoning='outer reasoning out')"}]):
+        with dummy_lm_context([{"plan": "inner reasoning", "code": "SUBMIT(reasoning='outer reasoning out')"}]):
             rlm = RLM("code: str -> reasoning: str", max_iters=2)
             result = rlm.forward(code="print('outer code in')", interpreter_factory=PythonInterpreter)
 
@@ -2041,7 +2094,7 @@ class TestRLMHistoryWithDummyLM:
         under both signatures, never as a partial action."""
         with dummy_lm_context(
             [
-                {"reasoning": "inner reasoning", "code": "x = 1\nprint(x)"},
+                {"plan": "inner reasoning", "code": "x = 1\nprint(x)"},
                 {"reasoning": "the extracted answer"},  # extract call fills the outer `reasoning` output
             ]
         ):
@@ -2076,7 +2129,7 @@ class TestRLMHistoryWithDummyLM:
         action signature."""
         with dummy_lm_context(
             [
-                {"reasoning": "explore", "code": "x = 1\nprint(x)"},
+                {"plan": "explore", "code": "x = 1\nprint(x)"},
                 {"answer": "7"},
             ]
         ):
@@ -2106,7 +2159,7 @@ class TestRLMHistoryWithDummyLM:
         """The extract call replays the turn's actions as reasoning/code, not as its own (absent) output fields."""
         with dummy_lm_context(
             [
-                {"reasoning": "explore", "code": "x = 1\nprint(x)"},
+                {"plan": "explore", "code": "x = 1\nprint(x)"},
                 {"answer": "7"},
             ]
         ):
@@ -2125,8 +2178,8 @@ class TestRLMHistoryWithDummyLM:
     def test_history_records_extract_fallback(self):
         with dummy_lm_context(
             [
-                {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-                {"reasoning": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"plan": "Compute double 10", "code": "y = x * 2\nprint(y)"},
                 {"answer": "25"},
             ]
         ):
@@ -2167,9 +2220,9 @@ class TestRLMHistoryWithDummyLM:
     async def test_async_history_records_inputs_and_outputs_once(self):
         with dummy_lm_context(
             [
-                {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-                {"reasoning": "Compute double 10", "code": "y = x * 2\nprint(y)"},
-                {"reasoning": "Now add five and return", "code": "z = y + 5\nSUBMIT(z)"},
+                {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"plan": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"plan": "Now add five and return", "code": "z = y + 5\nSUBMIT(z)"},
             ]
         ):
             rlm = RLM("query -> answer: int", max_iters=5)
@@ -2197,8 +2250,8 @@ class TestRLMHistoryWithDummyLM:
 
         with dummy_lm_context(
             [
-                {"reasoning": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
-                {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+                {"plan": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
             ]
         ):
             rlm = RLM("query -> answer: int", max_iters=5)
@@ -2230,7 +2283,7 @@ class TestRLMHistoryWithDummyLM:
         seed = {"query": "earlier", "answer": 1}
         history = dspy.History(messages=[dict(seed)])
 
-        with dummy_lm_context([{"reasoning": "r", "code": "SUBMIT(2)"}]):
+        with dummy_lm_context([{"plan": "r", "code": "SUBMIT(2)"}]):
             rlm = RLM("query -> answer: int", max_iters=3)
             result = await rlm.aforward(query="now", history=history, interpreter_factory=PythonInterpreter)
 
@@ -2251,9 +2304,9 @@ class TestRLMHistoryWithDummyLM:
 
         with dummy_lm_context(
             [
-                {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-                {"reasoning": "Compute double 10", "code": "y = x * 2\nprint(y)"},
-                {"reasoning": "Now add five and return", "code": "z = y + 5\nSUBMIT(z)"},
+                {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"plan": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"plan": "Now add five and return", "code": "z = y + 5\nSUBMIT(z)"},
             ]
         ):
             first_result = await rlm.aforward(
@@ -2262,8 +2315,8 @@ class TestRLMHistoryWithDummyLM:
 
         with dummy_lm_context(
             [
-                {"reasoning": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
-                {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+                {"plan": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
             ]
         ):
             second_result = await rlm.aforward(
@@ -2315,8 +2368,8 @@ class TestRLMHistoryWithDummyLM:
     async def test_async_history_records_extract_fallback(self):
         with dummy_lm_context(
             [
-                {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-                {"reasoning": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"plan": "Compute double 10", "code": "y = x * 2\nprint(y)"},
                 {"answer": "25"},
             ]
         ):
@@ -2731,8 +2784,8 @@ class TestHistoryProcessorHook:
     @staticmethod
     def _double_twenty_responses() -> list[dict[str, Any]]:
         return [
-            {"reasoning": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
-            {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            {"plan": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+            {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
         ]
 
     def test_per_call_processor_overrides_module_processor(self):
@@ -2830,7 +2883,7 @@ class TestHistoryProcessorHook:
 
         with dummy_lm_context(
             [
-                {"reasoning": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"plan": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
                 {"answer": "40"},
             ]
         ):
@@ -3000,7 +3053,7 @@ class TestHistoryProcessorHook:
 
         with dummy_lm_context(
             [
-                {"reasoning": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"plan": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
                 {"answer": "40"},
             ]
         ):
@@ -3141,17 +3194,37 @@ class TestRLMSubAgents:
         invocation.construct("RLM", "q -> a", "nested")
         assert invocation._predictors["nested"]._interpreter_factory is override
 
-    def test_interpreter_in_the_host_memory_runs_without_sub_agents(self, caplog):
-        # The shim refuses it rather than replace the host's `dspy` module; RLM carries on without sub-agents.
+    def test_interpreter_in_the_host_memory_hosts_the_facade(self, caplog):
+        # The shim binds `dspy` in the interpreter's namespace instead of replacing the host's module.
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessInterpreter)
+        rlm.generate_action, seen = _recording_predictor('import dspy\nSUBMIT(dspy.Predict("q -> a")(q="x").a)')
+
+        with caplog.at_level("WARNING", logger="dspy.predict.rlm"), dspy.context(lm=DummyLM([{"a": "42"}])):
+            assert rlm(query="q").answer == "42"
+
+        assert sys.modules["dspy"] is dspy
+        assert "Sub-agents (dspy)" in seen[0].instructions
+        assert "unavailable" not in caplog.text
+
+    def test_interpreter_that_rejects_the_shim_as_syntax_error_runs_without_sub_agents(self, caplog):
+        # Restricted compilers (e.g. RestrictedPython) reject the shim's `_dspy_*` names at compile time.
+        from dspy.primitives import facade
+
+        def execute(code, variables):
+            if code == facade.SHIM_SETUP:
+                raise SyntaxError('"_dspy_sys" is an invalid variable name because it starts with "_"')
+            return FinalOutput({"answer": "42"})
+
+        factory = MockInterpreterFactory(execute_fn=execute)
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
         rlm.generate_action, seen = _recording_predictor('SUBMIT("42")')
 
         with caplog.at_level("WARNING", logger="dspy.predict.rlm"):
             assert rlm(query="q").answer == "42"
 
-        assert sys.modules["dspy"] is dspy
         assert "Sub-agents (dspy)" not in seen[0].instructions
-        assert "host's memory" in caplog.text
+        assert not {facade.CONSTRUCT_TOOL, facade.CALL_TOOL} & factory.instances[0].tools.keys()
+        assert "sub-agents are unavailable on MockInterpreter" in caplog.text
 
     def test_facade_reserves_sandbox_names(self):
         with pytest.raises(ValueError, match="conflict"):

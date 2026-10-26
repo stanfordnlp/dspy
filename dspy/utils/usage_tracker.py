@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 from contextlib import contextmanager
-from typing import Any, Generator
+from typing import Any, Generator, TypeGuard
 
 from pydantic import BaseModel
 
@@ -12,7 +12,7 @@ from dspy.dsp.utils.settings import settings
 class UsageTracker:
     """Tracks LM usage data within a context."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Map of LM name to list of usage entries. For example:
         # {
         #     "openai/gpt-4o-mini": [
@@ -20,10 +20,11 @@ class UsageTracker:
         #         {"prompt_tokens": 300, "completion_tokens": 400},
         #     ],
         # }
-        self.usage_data = defaultdict(list)
+        # Providers can include arbitrary extra fields, not just token counts.
+        self.usage_data: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
 
     def _flatten_usage_entry(self, usage_entry: dict[str, Any]) -> dict[str, Any]:
-        result = {}
+        result: dict[str, Any] = {}
         for key, value in usage_entry.items():
             if isinstance(value, BaseModel):
                 # Convert Pydantic models to dicts, like `PromptTokensDetailsWrapper` from litellm.
@@ -33,7 +34,7 @@ class UsageTracker:
         return result
 
     @staticmethod
-    def _is_summable(value: Any) -> bool:
+    def _is_summable(value: object) -> TypeGuard[int | float]:
         """Whether a usage value is a count that can be added across entries.
 
         `bool` is excluded even though it is an `int` subclass: providers report flags
@@ -72,9 +73,9 @@ class UsageTracker:
 
     def get_total_tokens(self) -> dict[str, dict[str, Any]]:
         """Calculate total tokens from all tracked usage."""
-        total_usage_by_lm = {}
+        total_usage_by_lm: dict[str, dict[str, Any]] = {}
         for lm, usage_entries in self.usage_data.items():
-            total_usage = {}
+            total_usage: dict[str, Any] = {}
             for usage_entry in usage_entries:
                 total_usage = self._merge_usage_entries(total_usage, usage_entry)
             total_usage_by_lm[lm] = total_usage
@@ -90,7 +91,7 @@ def track_usage() -> Generator[UsageTracker, None, None]:
     """
     tracker = UsageTracker()
 
-    parent = settings.usage_tracker
+    parent: UsageTracker | None = settings.usage_tracker
     with settings.context(usage_tracker=tracker):
         try:
             yield tracker

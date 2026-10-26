@@ -131,11 +131,18 @@ class REPLEntry(pydantic.BaseModel):
             output = output[:head_chars] + f"\n\n... ({omitted:,} characters omitted) ...\n\n" + output[-tail_chars:]
         return output
 
-    def format(self, index: int) -> str:
-        """Format this entry for inclusion in prompts."""
+    def format(self, index: int, max_output_chars: int | None = None) -> str:
+        """Format this entry for inclusion in prompts.
+
+        `max_output_chars` overrides the entry's own limit; `REPLHistory.format` passes its limit so that a
+        history-level setting (e.g. GEPA's trace compaction) governs every entry it formats.
+        """
+        limit = self.max_output_chars if max_output_chars is None else max_output_chars
         reasoning_line = f"Reasoning: {self.reasoning}\n" if self.reasoning else ""
         code_block = f"```python\n{self.code}\n```"
-        return f"=== Step {index + 1} ===\n{reasoning_line}Code:\n{code_block}\n{self.format_output(self.output, self.max_output_chars)}"
+        return (
+            f"=== Step {index + 1} ===\n{reasoning_line}Code:\n{code_block}\n{self.format_output(self.output, limit)}"
+        )
 
 
 REPL_ENTRY_KEY = "repl_entry"
@@ -217,7 +224,9 @@ class REPLHistory(pydantic.BaseModel):
     def format(self) -> str:
         if not self.entries:
             return "You have not interacted with the REPL environment yet."
-        return "\n".join(entry.format(index=i) for i, entry in enumerate(self.entries))
+        return "\n".join(
+            entry.format(index=i, max_output_chars=self.max_output_chars) for i, entry in enumerate(self.entries)
+        )
 
     @pydantic.model_serializer()
     def serialize_model(self) -> str:
