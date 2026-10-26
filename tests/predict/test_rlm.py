@@ -275,12 +275,14 @@ class TestRLMInitialization:
         with pytest.raises(ValueError, match="Input fields conflict with user tools: \\['lookup'\\]"):
             RLM("lookup -> answer", tools=[lookup])
 
-    @pytest.mark.parametrize("output_name", ["history", "final_reasoning", "repl_trajectory", REPL_ENTRY_KEY])
+    @pytest.mark.parametrize(
+        "output_name", ["history", "final_reasoning", "repl_trajectory", REPL_ENTRY_KEY, "variables_info", "iteration"]
+    )
     def test_output_names_cannot_shadow_result_metadata(self, output_name):
         with pytest.raises(ValueError, match=f"Output fields conflict with RLM result metadata: \\['{output_name}'\\]"):
             RLM(f"context -> {output_name}")
 
-    @pytest.mark.parametrize("input_name", ["history", REPL_ENTRY_KEY])
+    @pytest.mark.parametrize("input_name", ["history", REPL_ENTRY_KEY, "variables_info", "iteration"])
     def test_input_names_cannot_shadow_reserved_inputs(self, input_name):
         # Single input
         with pytest.raises(ValueError, match=f"Input fields conflict with reserved names: \\['{input_name}'\\]"):
@@ -646,9 +648,10 @@ class TestRLMInterpreterLifecycle:
         with pytest.raises(TypeError):
             await rlm.acall(query="async", interpreter_factory=factory)
 
-    def test_interpreter_factory_is_reserved_as_signature_input(self):
-        with pytest.raises(ValueError, match="'interpreter_factory' is reserved"):
-            RLM("interpreter_factory -> answer")
+    @pytest.mark.parametrize("name", ["interpreter_factory", "history_processor"])
+    def test_runtime_options_are_reserved_as_signature_inputs(self, name):
+        with pytest.raises(ValueError, match=f"'{name}' is reserved"):
+            RLM(f"{name} -> answer")
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("phase", ["setup", "prediction", "extraction", "cancellation"])

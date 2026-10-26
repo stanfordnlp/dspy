@@ -271,11 +271,16 @@ class RLM(Module):
 
     # Names owned by RLM rather than the user-provided signature or tools.
     _RESERVED_SANDBOX_NAMES = frozenset({"llm_query", "llm_query_batched", "SUBMIT", "print"})
+    # Keys RLM writes onto each conversation-history event; an outer input or output with one of these names would
+    # overwrite (or be overwritten by) the step metadata that replay reads.
+    _HISTORY_EVENT_KEYS = frozenset({REPL_ENTRY_KEY, "variables_info", "iteration"})
     # Names that would collide with keys RLM writes onto conversation-history events or the returned Prediction.
-    _RESERVED_INPUT_NAMES = frozenset({"history", REPL_ENTRY_KEY})
-    _RESERVED_RESULT_NAMES = frozenset({"history", "final_reasoning", "repl_trajectory", REPL_ENTRY_KEY})
+    _RESERVED_INPUT_NAMES = frozenset({"history", *_HISTORY_EVENT_KEYS})
+    _RESERVED_RESULT_NAMES = frozenset({"history", "final_reasoning", "repl_trajectory", *_HISTORY_EVENT_KEYS})
     # Call-time arguments accepted in addition to the signature's input fields.
     _CALL_TIME_ARGS = frozenset({"history"})
+    # Keyword-only options of forward/aforward; a signature input with one of these names could never be passed.
+    _RUNTIME_OPTION_NAMES = ("interpreter_factory", "history_processor")
 
     def _normalize_tools(self, tools: list[Callable] | None) -> dict[str, Tool]:
         """Normalize tools list to a dict of Tool objects keyed by name."""
@@ -317,8 +322,9 @@ class RLM(Module):
                 raise ValueError(f"Tool name '{name}' conflicts with built-in sandbox function")
 
         input_names = set(self.signature.input_fields)
-        if "interpreter_factory" in input_names:
-            raise ValueError("'interpreter_factory' is reserved for RLM runtime configuration, not a signature input.")
+        for name in self._RUNTIME_OPTION_NAMES:
+            if name in input_names:
+                raise ValueError(f"'{name}' is reserved for RLM runtime configuration, not a signature input.")
 
         reserved_sandbox_inputs = sorted(name for name in input_names if is_reserved(name))
         if reserved_sandbox_inputs:
