@@ -46,6 +46,7 @@ from dspy.primitives.repl_types import (
     EXTRACT_FALLBACK,
     REPL_ENTRY_KEY,
     REPLEntry,
+    REPLHistory,
     REPLVariable,
     build_repl_event,
     restore_repl_events,
@@ -497,6 +498,11 @@ class RLM(Module):
             {**self.signature.output_fields},
             full_extract_instructions,
         )
+        # The current turn's steps are also given as text (as on main), next to the request for the final outputs,
+        # in addition to their replay as conversation turns in `history`.
+        extract_sig = extract_sig.prepend(
+            "repl_history", dspy.InputField(desc="Your REPL interactions so far"), type_=REPLHistory
+        )
         extract_sig = extract_sig.prepend(
             "variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str
         )
@@ -739,6 +745,7 @@ class RLM(Module):
         extract_pred = self.extract(
             history=history,
             variables_info=variables_info,
+            repl_history=REPLHistory(entries=list(turn_entries), max_output_chars=self.max_output_chars),
         )
 
         final_outputs = {name: getattr(extract_pred, name) for name in output_field_names}
@@ -1013,6 +1020,7 @@ class RLM(Module):
         extract_pred = await self.extract.acall(
             history=history,
             variables_info=variables_info,
+            repl_history=REPLHistory(entries=list(turn_entries), max_output_chars=self.max_output_chars),
         )
 
         final_outputs = {name: getattr(extract_pred, name) for name in output_field_names}

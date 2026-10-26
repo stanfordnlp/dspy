@@ -1171,7 +1171,7 @@ class TestRLMDynamicSignature:
         extract_sig = rlm.extract.signature
         assert "history" in extract_sig.input_fields
         assert "variables_info" in extract_sig.input_fields
-        assert "repl_history" not in extract_sig.input_fields
+        assert "repl_history" in extract_sig.input_fields  # the current turn as text, as on main
         assert "summary" in extract_sig.output_fields
         assert "key_facts" in extract_sig.output_fields
         assert "confidence" in extract_sig.output_fields
@@ -2227,6 +2227,31 @@ class TestRLMHistoryWithDummyLM:
         assert "[[ ## answer ## ]]" not in extract_request[2]["content"]
         assert "[[ ## repl_output ## ]]\n1" in extract_request[3]["content"]
         assert "None" not in "".join(m["content"] for m in extract_request)
+
+    def test_extract_request_gives_the_current_turn_as_text(self):
+        """Beside the replayed turns, extract gets this turn's steps as `repl_history` text with the output request."""
+        with dummy_lm_context(
+            [
+                {"plan": "earlier turn", "code": "SUBMIT(1)"},
+                {"plan": "explore", "code": "x = 7\nprint(x)"},
+                {"answer": "7"},
+            ]
+        ) as lm:
+            rlm = RLM("query -> answer: int", max_iters=1)
+            first = rlm(query="What is one?", interpreter_factory=PythonInterpreter)
+            rlm(query="What is seven?", history=first.history, interpreter_factory=PythonInterpreter)
+            extract_request = lm.history[-1]["messages"]
+
+        current = extract_request[-1]
+        assert current["role"] == "user"
+        assert (
+            "[[ ## repl_history ## ]]\n=== Step 1 ===\nReasoning: explore\nCode:\n```python\nx = 7\nprint(x)\n```\n7"
+            in (current["content"])
+        )
+        assert current["content"].rstrip().endswith("`[[ ## completed ## ]]`.")
+        # Only this turn's steps: the earlier turn reaches extract through `history` alone
+        assert "earlier turn" not in current["content"]
+        assert any("earlier turn" in m["content"] for m in extract_request[1:-1] if m["role"] == "assistant")
 
     def test_history_records_extract_fallback(self):
         with dummy_lm_context(
