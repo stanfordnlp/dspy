@@ -145,6 +145,7 @@ filterwarnings = [
 # Expand this list as internal modules are migrated. Dynamic Signature-derived
 # inputs/outputs are not part of this initial type-checking contract.
 include = [
+    "dspy/utils/annotation.py",
     "dspy/utils/asyncify.py",
     "dspy/utils/callback.py",
     "dspy/utils/callback_context.py",
