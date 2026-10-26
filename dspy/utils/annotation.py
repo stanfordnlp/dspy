@@ -9,11 +9,11 @@ T = TypeVar("T")
 
 
 @overload
-def experimental(f: T, version: str | None = None) -> T: ...
+def experimental(f: None = None, version: str | None = None) -> Callable[[T], T]: ...
 
 
 @overload
-def experimental(f: None = None, version: str | None = None) -> Callable[[T], T]: ...
+def experimental(f: T, version: str | None = None) -> T: ...
 
 
 def experimental(

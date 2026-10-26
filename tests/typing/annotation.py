@@ -77,10 +77,16 @@ def check_experimental_contracts() -> None:
     wrapped_versioned = experimental(raw_helper, version="4.0.0")
     assert_type(wrapped_versioned(False), list[int])
 
-    # 6. Invalid version argument types are rejected
+    # 6. Explicit None call resolves to decorator creator
+    explicit_none_dec = experimental(None, version="1.0.0")
+    assert_type(explicit_none_dec(raw_helper)(True), list[int])
+    explicit_none_dec(raw_helper)("invalid")  # ty: ignore[invalid-argument-type]
+
+    # 7. Invalid version argument types are rejected
     experimental(version=123)  # ty: ignore[invalid-argument-type]
     experimental(raw_helper, version=123)  # ty: ignore[no-matching-overload]
 
-    # 7. Property decoration preserves property return type
+    # 8. Property decoration preserves property descriptor on class and return type on instance
+    assert_type(Container.capacity, property)
     container = Container()
     assert_type(container.capacity, int)
