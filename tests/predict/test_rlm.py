@@ -36,6 +36,7 @@ from dspy.primitives.repl_types import (
     REPLVariable,
     build_repl_event,
     is_repl_event,
+    restore_repl_events,
     split_repl_event,
 )
 from dspy.primitives.sandbox_serializable import SandboxSerializable
@@ -2027,6 +2028,46 @@ class TestRLMHistoryWithDummyLM:
         assert "[[ ## answer ## ]]" not in messages[5]["content"]
         assert "None" not in "".join(m["content"] for m in messages)
 
+    @pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter(), dspy.XMLAdapter()], ids=type)
+    @pytest.mark.parametrize("max_iters", [1, 2], ids=["extract-fallback", "submit"])
+    def test_json_restored_history_replays_like_the_original(self, adapter, max_iters):
+        responses = [{"plan": "explore", "code": "x = 1\nprint(x)"}, {"plan": "done", "code": "SUBMIT(7)"}]
+        with dummy_lm_context(responses[:max_iters] + [{"answer": "7"}]):
+            rlm = RLM("query -> answer: int", max_iters=max_iters)
+            result = rlm(query="What is seven?", interpreter_factory=PythonInterpreter)
+        restored = dspy.History.model_validate_json(result.history.model_dump_json())
+
+        for signature in (rlm.generate_action.signature, rlm.extract.signature):
+            inputs = dict.fromkeys(signature.input_fields, "probe")
+            original = adapter.format(signature, [], {**inputs, "history": result.history})
+            replayed = adapter.format(signature, [], {**inputs, "history": restored})
+            assert replayed == original
+            assert any("x = 1" in str(m["content"]) for m in original)
+
+    def test_rlm_accepts_a_json_restored_history(self):
+        with dummy_lm_context([{"plan": "done", "code": "SUBMIT(7)"}, {"plan": "again", "code": "SUBMIT(8)"}]):
+            rlm = RLM("query -> answer: int", max_iters=2)
+            first = rlm(query="What is seven?", interpreter_factory=PythonInterpreter)
+            restored = dspy.History.model_validate_json(first.history.model_dump_json())
+            second = rlm(query="And eight?", history=restored, interpreter_factory=PythonInterpreter)
+
+        assert second.answer == 8
+        assert all(isinstance(m["repl_entry"], REPLEntry) for m in second.history.messages)
+        assert second.history.messages[0]["repl_entry"] == first.history.messages[0]["repl_entry"]
+
+    def test_in_place_processor_edit_is_adopted_without_leaking(self):
+        caller = dspy.History(messages=[])
+
+        def edit_private_copy(history):
+            history.messages.append({"note": "private-marker"})
+
+        with dummy_lm_context([{"plan": "done", "code": "SUBMIT(7)"}]):
+            rlm = RLM("query -> answer: int", max_iters=1, history_processor=edit_private_copy)
+            result = rlm(query="What is seven?", history=caller, interpreter_factory=PythonInterpreter)
+
+        assert caller.messages == []
+        assert result.history.messages[0] == {"note": "private-marker"}
+
     def test_external_history_returned_by_processor_is_not_mutated(self):
         """A processor that returns an object its caller holds must not have RLM's events appended to it."""
         external = dspy.History(messages=[])
@@ -2698,6 +2739,45 @@ class TestREPLEventContract:
         assert inputs == {}
         assert isinstance(repl_entry, ExtractFallbackMarker)
         assert outputs == {"answer": 7}
+
+    @pytest.mark.parametrize("dump", ["json", "python"])
+    def test_events_survive_a_serialization_round_trip(self, dump):
+        entry = self._entry()
+        history = dspy.History(
+            messages=[
+                build_repl_event({"query": "q"}, entry, {"answer": 7}),
+                build_repl_event(None, EXTRACT_FALLBACK, {"answer": 8}),
+            ]
+        )
+        if dump == "json":
+            restored = dspy.History.model_validate_json(history.model_dump_json())
+        else:
+            restored = dspy.History.model_validate(history.model_dump())
+
+        assert all(is_repl_event(m) for m in restored.messages)
+        assert split_repl_event(restored.messages[0]) == ({"query": "q"}, entry, {"answer": 7})
+        assert split_repl_event(restored.messages[1]) == ({}, EXTRACT_FALLBACK, {"answer": 8})
+
+    def test_restore_repl_events_types_restored_values_and_leaves_others(self):
+        entry = self._entry()
+        application = {"question": "q", "repl_entry": {"code": "application data"}}
+        restored = dspy.History.model_validate_json(
+            dspy.History(messages=[build_repl_event({"query": "q"}, entry), application]).model_dump_json()
+        )
+
+        messages = restore_repl_events(restored.messages)
+
+        assert messages[0] == {"query": "q", "repl_entry": entry}
+        assert list(messages[0]) == ["query", "repl_entry"]
+        assert messages[1] == application
+
+    def test_trajectory_dict_has_no_serialization_tag(self):
+        assert self._entry().to_trajectory_dict() == {
+            "reasoning": "r",
+            "code": "x = 1",
+            "output": "1",
+            "max_output_chars": 100,
+        }
 
     @pytest.mark.parametrize(
         "message",

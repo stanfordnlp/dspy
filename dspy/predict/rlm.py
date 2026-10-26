@@ -48,6 +48,7 @@ from dspy.primitives.repl_types import (
     REPLEntry,
     REPLVariable,
     build_repl_event,
+    restore_repl_events,
 )
 from dspy.primitives.sandbox_serializable import SandboxSerializable, build_repl_variable
 from dspy.signatures.signature import ensure_signature
@@ -748,7 +749,7 @@ class RLM(Module):
         return Prediction(
             history=history,
             final_reasoning="Extract forced final output",
-            repl_trajectory=[e.model_dump() for e in turn_entries],
+            repl_trajectory=[e.to_trajectory_dict() for e in turn_entries],
             **final_outputs,
         )
 
@@ -983,7 +984,7 @@ class RLM(Module):
                         **final_outputs,
                         history=history,
                         final_reasoning=repl_entry.reasoning,
-                        repl_trajectory=[e.model_dump() for e in turn_entries],
+                        repl_trajectory=[e.to_trajectory_dict() for e in turn_entries],
                     )
 
             # Max iterations reached - use extract fallback
@@ -1022,7 +1023,7 @@ class RLM(Module):
         return Prediction(
             history=history,
             final_reasoning="Extract forced final output",
-            repl_trajectory=[e.model_dump() for e in turn_entries],
+            repl_trajectory=[e.to_trajectory_dict() for e in turn_entries],
             **final_outputs,
         )
 
@@ -1137,7 +1138,7 @@ class RLM(Module):
                         **final_outputs,
                         history=history,
                         final_reasoning=repl_entry.reasoning,
-                        repl_trajectory=[e.model_dump() for e in turn_entries],
+                        repl_trajectory=[e.to_trajectory_dict() for e in turn_entries],
                     )
 
             # Max iterations reached - use extract fallback
@@ -1198,6 +1199,9 @@ def _apply_history_processor(
 def _coerce_history(history: Any) -> dspy.History:
     if history is None:
         return dspy.History(messages=[])
-    if isinstance(history, dspy.History):
-        return history
-    return dspy.History.model_validate(history)
+    if not isinstance(history, dspy.History):
+        history = dspy.History.model_validate(history)
+    # A history saved and loaded through JSON holds its REPL entries as tagged dicts; type them again.
+    messages = restore_repl_events(history.messages)
+    unchanged = all(new is old for new, old in zip(messages, history.messages, strict=True))
+    return history if unchanged else dspy.History(messages=messages)

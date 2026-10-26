@@ -100,6 +100,11 @@ class REPLVariable(pydantic.BaseModel):
         return self.format()
 
 
+# Serialized RLM history values carry this tag so they can be recognized after a JSON round trip, where they come
+# back as plain dicts. Untagged dicts stay ordinary application data (see `is_repl_event`).
+REPL_TYPE_KEY = "__dspy_repl__"
+
+
 class REPLEntry(pydantic.BaseModel):
     """A single REPL interaction entry containing reasoning, code, and output."""
 
@@ -110,6 +115,21 @@ class REPLEntry(pydantic.BaseModel):
     max_output_chars: int
 
     model_config = pydantic.ConfigDict(frozen=True)
+
+    @pydantic.model_serializer(mode="wrap")
+    def _serialize_with_type_tag(self, handler: pydantic.SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return {REPL_TYPE_KEY: "entry", **handler(self)}
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def _drop_type_tag(cls, data: Any) -> Any:
+        if isinstance(data, dict) and REPL_TYPE_KEY in data:
+            return {key: value for key, value in data.items() if key != REPL_TYPE_KEY}
+        return data
+
+    def to_trajectory_dict(self) -> dict[str, Any]:
+        """The entry's fields without the serialization tag, as reported in `repl_trajectory`."""
+        return {key: value for key, value in self.model_dump().items() if key != REPL_TYPE_KEY}
 
     @pydantic.field_validator("reasoning", mode="before")
     @classmethod
@@ -155,8 +175,25 @@ class ExtractFallbackMarker(pydantic.BaseModel):
 
     model_config = pydantic.ConfigDict(frozen=True)
 
+    @pydantic.model_serializer()
+    def _serialize_with_type_tag(self) -> dict[str, Any]:
+        return {REPL_TYPE_KEY: "extract_fallback"}
+
 
 EXTRACT_FALLBACK = ExtractFallbackMarker()
+
+
+def _as_repl_value(value: Any) -> REPLEntry | ExtractFallbackMarker | None:
+    """The RLM history value `value` holds, live or JSON-restored; None if it is not one."""
+    if isinstance(value, (REPLEntry, ExtractFallbackMarker)):
+        return value
+    if isinstance(value, dict):
+        kind = value.get(REPL_TYPE_KEY)
+        if kind == "entry":
+            return REPLEntry.model_validate(value)
+        if kind == "extract_fallback":
+            return EXTRACT_FALLBACK
+    return None
 
 
 def build_repl_event(
@@ -180,12 +217,12 @@ def build_repl_event(
 
 
 def is_repl_event(message: dict[str, Any]) -> bool:
-    """Whether `message` was built by `build_repl_event`.
+    """Whether `message` was built by `build_repl_event`, either live or restored from JSON.
 
-    Checks the value type, not just the key, so an ordinary history message that stores application data under
-    `REPL_ENTRY_KEY` is not mistaken for an RLM event.
+    Checks the value, not just the key, so an ordinary history message that stores application data under
+    `REPL_ENTRY_KEY` is not mistaken for an RLM event: a dict counts only if it carries `REPL_TYPE_KEY`.
     """
-    return isinstance(message.get(REPL_ENTRY_KEY), (REPLEntry, ExtractFallbackMarker))
+    return _as_repl_value(message.get(REPL_ENTRY_KEY)) is not None
 
 
 def split_repl_event(
@@ -193,12 +230,14 @@ def split_repl_event(
 ) -> tuple[dict[str, Any], REPLEntry | ExtractFallbackMarker, dict[str, Any]]:
     """Split a conversation-history event built by `build_repl_event` into (inputs, repl_entry, outputs).
 
-    Keys before `REPL_ENTRY_KEY` are inputs and keys after it are outputs.
+    Keys before `REPL_ENTRY_KEY` are inputs and keys after it are outputs. A JSON-restored entry is returned as a
+    `REPLEntry` (or `EXTRACT_FALLBACK`) again.
 
     Raises:
         ValueError: If `message` is not an RLM event (check with `is_repl_event` first).
     """
-    if not is_repl_event(message):
+    repl_value = _as_repl_value(message.get(REPL_ENTRY_KEY))
+    if repl_value is None:
         raise ValueError(
             f"Not an RLM history event: `{REPL_ENTRY_KEY}` missing or not a REPLEntry. Keys: {list(message)}"
         )
@@ -207,7 +246,21 @@ def split_repl_event(
 
     inputs = {name: message[name] for name in names[:entry_index]}
     outputs = {name: message[name] for name in names[entry_index + 1 :]}
-    return inputs, message[REPL_ENTRY_KEY], outputs
+    return inputs, repl_value, outputs
+
+
+def restore_repl_events(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`messages` with JSON-restored RLM history values turned back into `REPLEntry` / `EXTRACT_FALLBACK`.
+
+    Other messages, and the key order of every message, are unchanged.
+    """
+    restored = []
+    for message in messages:
+        repl_value = _as_repl_value(message.get(REPL_ENTRY_KEY))
+        if repl_value is not None and repl_value is not message[REPL_ENTRY_KEY]:
+            message = {**message, REPL_ENTRY_KEY: repl_value}
+        restored.append(message)
+    return restored
 
 
 class REPLHistory(pydantic.BaseModel):
