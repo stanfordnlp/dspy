@@ -498,15 +498,14 @@ class RLM(Module):
             {**self.signature.output_fields},
             full_extract_instructions,
         )
-        # The current turn's steps are also given as text (as on main), next to the request for the final outputs,
-        # in addition to their replay as conversation turns in `history`.
+        # Extract reads the current turn as `repl_history` text, not `history`: replayed reasoning/code turns led
+        # models to answer with another action instead of the final outputs.
         extract_sig = extract_sig.prepend(
             "repl_history", dspy.InputField(desc="Your REPL interactions so far"), type_=REPLHistory
         )
         extract_sig = extract_sig.prepend(
             "variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str
         )
-        extract_sig = extract_sig.prepend("history", dspy.InputField(), type_=dspy.History)
 
         return action_sig, extract_sig
 
@@ -734,16 +733,12 @@ class RLM(Module):
         history: dspy.History,
         turn_entries: list[REPLEntry],
         output_field_names: list[str],
-        history_processor: Callable[[dspy.History], dspy.History | None] | None = None,
     ) -> Prediction:
         """Use extract module to get final output when max iterations reached."""
         logger.warning("RLM reached max iterations, using extract to get final output")
 
-        history = _apply_history_processor(history_processor, history)
-
         variables_info = [variable.format() for variable in variables]
         extract_pred = self.extract(
-            history=history,
             variables_info=variables_info,
             repl_history=REPLHistory(entries=list(turn_entries), max_output_chars=self.max_output_chars),
         )
@@ -1000,7 +995,6 @@ class RLM(Module):
                 history,
                 turn_entries,
                 output_field_names,
-                history_processor,
             )
 
     async def _aextract_fallback(
@@ -1009,16 +1003,12 @@ class RLM(Module):
         history: dspy.History,
         turn_entries: list[REPLEntry],
         output_field_names: list[str],
-        history_processor: Callable[[dspy.History], dspy.History | None] | None = None,
     ) -> Prediction:
         """Async version: Use extract module when max iterations reached."""
         logger.warning("RLM reached max iterations, using extract to get final output")
 
-        history = _apply_history_processor(history_processor, history)
-
         variables_info = [variable.format() for variable in variables]
         extract_pred = await self.extract.acall(
-            history=history,
             variables_info=variables_info,
             repl_history=REPLHistory(entries=list(turn_entries), max_output_chars=self.max_output_chars),
         )
@@ -1150,9 +1140,7 @@ class RLM(Module):
                     )
 
             # Max iterations reached - use extract fallback
-            return await self._aextract_fallback(
-                variables, history, turn_entries, output_field_names, history_processor
-            )
+            return await self._aextract_fallback(variables, history, turn_entries, output_field_names)
 
     def _repl_entry_event(
         self, *, inputs: dict[str, Any], variables_info: list[str], iteration: int, repl_entry: REPLEntry

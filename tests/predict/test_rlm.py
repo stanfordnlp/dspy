@@ -1169,7 +1169,7 @@ class TestRLMDynamicSignature:
         """Test extract signature has required fields for all outputs."""
         rlm = RLM("document, question -> summary, key_facts, confidence")
         extract_sig = rlm.extract.signature
-        assert "history" in extract_sig.input_fields
+        assert "history" not in extract_sig.input_fields
         assert "variables_info" in extract_sig.input_fields
         assert "repl_history" in extract_sig.input_fields  # the current turn as text, as on main
         assert "summary" in extract_sig.output_fields
@@ -2037,12 +2037,12 @@ class TestRLMHistoryWithDummyLM:
             result = rlm(query="What is seven?", interpreter_factory=PythonInterpreter)
         restored = dspy.History.model_validate_json(result.history.model_dump_json())
 
-        for signature in (rlm.generate_action.signature, rlm.extract.signature):
-            inputs = dict.fromkeys(signature.input_fields, "probe")
-            original = adapter.format(signature, [], {**inputs, "history": result.history})
-            replayed = adapter.format(signature, [], {**inputs, "history": restored})
-            assert replayed == original
-            assert any("x = 1" in str(m["content"]) for m in original)
+        signature = rlm.generate_action.signature
+        inputs = dict.fromkeys(signature.input_fields, "probe")
+        original = adapter.format(signature, [], {**inputs, "history": result.history})
+        replayed = adapter.format(signature, [], {**inputs, "history": restored})
+        assert replayed == original
+        assert any("x = 1" in str(m["content"]) for m in original)
 
     def test_rlm_accepts_a_json_restored_history(self):
         with dummy_lm_context([{"plan": "done", "code": "SUBMIT(7)"}, {"plan": "again", "code": "SUBMIT(8)"}]):
@@ -2143,8 +2143,8 @@ class TestRLMHistoryWithDummyLM:
         assert "FINAL: {'reasoning': 'outer reasoning out'}" in messages[2]["content"]
 
     def test_reused_history_extract_fallback_with_outer_field_named_reasoning(self):
-        """A fallback event whose outer output is named like an inner action field replays from its own fields
-        under both signatures, never as a partial action."""
+        """A fallback event whose outer output is named like an inner action field replays from its own fields,
+        never as a partial action."""
         with dummy_lm_context(
             [
                 {"plan": "inner reasoning", "code": "x = 1\nprint(x)"},
@@ -2168,18 +2168,8 @@ class TestRLMHistoryWithDummyLM:
         assert "code" not in action_messages[3]["content"]
         assert "None" not in "".join(m["content"] for m in action_messages)
 
-        # Extract signature's outputs are exactly the outer outputs -> full typed assistant turn
-        extract_messages = adapter.format_conversation_history(
-            rlm.extract.signature, "history", {"history": result.history}
-        )
-        assert [m["role"] for m in extract_messages] == ["user", "assistant", "user", "assistant"]
-        assert (
-            extract_messages[3]["content"] == "[[ ## reasoning ## ]]\nthe extracted answer\n\n[[ ## completed ## ]]\n"
-        )
-
     def test_reused_history_renders_extract_fallback_answer(self):
-        """The extract-fallback event replays its outputs as an assistant turn under both the extract and the
-        action signature."""
+        """The extract-fallback event replays its outputs as an assistant turn under the action signature."""
         with dummy_lm_context(
             [
                 {"plan": "explore", "code": "x = 1\nprint(x)"},
@@ -2191,16 +2181,8 @@ class TestRLMHistoryWithDummyLM:
 
         adapter = dspy.ChatAdapter()
 
-        # Under the extract signature, `answer` is a declared output field -> typed assistant turn
-        extract_messages = adapter.format_conversation_history(
-            rlm.extract.signature, "history", {"history": result.history}
-        )
-        assert [m["role"] for m in extract_messages] == ["user", "assistant", "user", "assistant"]
-        assert "[[ ## variables_info ## ]]" in extract_messages[0]["content"]
-        assert extract_messages[3]["content"] == "[[ ## answer ## ]]\n7\n\n[[ ## completed ## ]]\n"
-
-        # Under the action signature the same assistant turn is shown (rendered from the event's own output
-        # fields), so a continuation still sees how the prior turn concluded
+        # The assistant turn is rendered from the event's own output fields, so a continuation still sees how
+        # the prior turn concluded
         action_messages = adapter.format_conversation_history(
             rlm.generate_action.signature, "history", {"history": result.history}
         )
@@ -2208,28 +2190,8 @@ class TestRLMHistoryWithDummyLM:
         assert action_messages[3]["content"] == "[[ ## answer ## ]]\n7\n\n[[ ## completed ## ]]\n"
         assert "None" not in "".join(m["content"] for m in action_messages)
 
-    def test_extract_request_sees_trajectory_actions(self):
-        """The extract call replays the turn's actions as reasoning/code, not as its own (absent) output fields."""
-        with dummy_lm_context(
-            [
-                {"plan": "explore", "code": "x = 1\nprint(x)"},
-                {"answer": "7"},
-            ]
-        ):
-            rlm = RLM("query -> answer: int", max_iters=1)
-            rlm.forward(query="What is seven?", interpreter_factory=PythonInterpreter)
-            extract_request = dspy.settings.lm.history[-1]["messages"]
-
-        roles = [m["role"] for m in extract_request]
-        assert roles == ["system", "user", "assistant", "user", "user"]
-        assert "[[ ## reasoning ## ]]\nexplore" in extract_request[2]["content"]
-        assert "[[ ## code ## ]]\nx = 1\nprint(x)" in extract_request[2]["content"]
-        assert "[[ ## answer ## ]]" not in extract_request[2]["content"]
-        assert "[[ ## repl_output ## ]]\n1" in extract_request[3]["content"]
-        assert "None" not in "".join(m["content"] for m in extract_request)
-
     def test_extract_request_gives_the_current_turn_as_text(self):
-        """Beside the replayed turns, extract gets this turn's steps as `repl_history` text with the output request."""
+        """Extract gets this turn's steps as `repl_history` text in a single request, with no replayed turns."""
         with dummy_lm_context(
             [
                 {"plan": "earlier turn", "code": "SUBMIT(1)"},
@@ -2242,16 +2204,15 @@ class TestRLMHistoryWithDummyLM:
             rlm(query="What is seven?", history=first.history, interpreter_factory=PythonInterpreter)
             extract_request = lm.history[-1]["messages"]
 
+        assert [m["role"] for m in extract_request] == ["system", "user"]
         current = extract_request[-1]
-        assert current["role"] == "user"
         assert (
             "[[ ## repl_history ## ]]\n=== Step 1 ===\nReasoning: explore\nCode:\n```python\nx = 7\nprint(x)\n```\n7"
             in (current["content"])
         )
         assert current["content"].rstrip().endswith("`[[ ## completed ## ]]`.")
-        # Only this turn's steps: the earlier turn reaches extract through `history` alone
-        assert "earlier turn" not in current["content"]
-        assert any("earlier turn" in m["content"] for m in extract_request[1:-1] if m["role"] == "assistant")
+        # Only this turn's steps: earlier turns are not shown to extract
+        assert "earlier turn" not in "".join(m["content"] for m in extract_request)
 
     def test_history_records_extract_fallback(self):
         with dummy_lm_context(
@@ -3020,7 +2981,7 @@ class TestHistoryProcessorHook:
         assert result.history is not returned[1]
         assert len(result.history.messages) == 2
 
-    def test_history_processor_runs_before_extract_fallback(self):
+    def test_history_processor_skips_extract_fallback(self):
         calls = []
 
         def process(history):
@@ -3039,9 +3000,8 @@ class TestHistoryProcessorHook:
         assert result.answer == 40
         assert result.final_reasoning == "Extract forced final output"
 
-        # Processor called once for loop iteration (empty history) and once for extract fallback
-        # (history holds the single iteration event; the extracted output is appended afterwards)
-        assert calls == [0, 1]
+        # Processor called for the loop iteration only; extract does not read history
+        assert calls == [0]
         assert len(result.history.messages) == 2
 
     def test_raising_history_processor_degrades_to_unprocessed_history(self, caplog):
@@ -3193,7 +3153,7 @@ class TestHistoryProcessorHook:
         assert len(result.history.messages) == 2
 
     @pytest.mark.asyncio
-    async def test_async_history_processor_runs_before_extract_fallback(self):
+    async def test_async_history_processor_skips_extract_fallback(self):
         calls = []
 
         def process(history):
@@ -3212,9 +3172,8 @@ class TestHistoryProcessorHook:
         assert result.answer == 40
         assert result.final_reasoning == "Extract forced final output"
 
-        # Processor called once for loop iteration (empty history) and once for extract fallback
-        # (history holds the single iteration event; the extracted output is appended afterwards)
-        assert calls == [0, 1]
+        # Processor called for the loop iteration only; extract does not read history
+        assert calls == [0]
         assert len(result.history.messages) == 2
 
 
