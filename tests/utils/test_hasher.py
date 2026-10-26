@@ -45,6 +45,11 @@ def test_hasher_update_and_hexdigest():
     h3.update(456)
     assert h3.hexdigest() != digest1
 
+    # Verify that earlier updates are not dropped or overwritten
+    h4 = Hasher()
+    h4.update(123)
+    assert h4.hexdigest() != digest1
+
 
 def test_hasher_dispatch_dict():
     assert isinstance(Hasher.dispatch, dict)
