@@ -36,10 +36,10 @@ class WeaviateRM(dspy.Retrieve):
         llm = dspy.LM("cohere/command-r-plus", api_key=api_key)
         with weaviate.connect_to_local() as weaviate_client:
             retriever_model = WeaviateRM("my_collection_name", weaviate_client=weaviate_client)
-            dspy.configure(lm=llm, rm=retriever_model)
+            with dspy.context(lm=llm, rm=retriever_model):
+                retrieve = dspy.Retrieve(k=1)
+                topK_passages = retrieve("what are the stages in planning, sanctioning and execution of public works").passages
 
-            retrieve = dspy.Retrieve(k=1)
-            topK_passages = retrieve("what are the stages in planning, sanctioning and execution of public works").passages
         ```
 
         Below is a code snippet that shows how to use Weaviate in the forward() function of a module
