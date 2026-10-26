@@ -34,6 +34,7 @@ def cache_config(tmp_path):
         "disk_cache_dir": str(tmp_path),
         "disk_size_limit_bytes": 1024 * 1024,  # 1MB
         "memory_max_entries": 100,
+        "safe_types": [DummyResponse],
     }
 
 
@@ -496,6 +497,7 @@ def test_restricted_and_unrestricted_share_wire_format(tmp_path):
     unrestricted = Cache(
         enable_disk_cache=True, enable_memory_cache=False,
         disk_cache_dir=shared_dir, disk_size_limit_bytes=1024 * 1024,
+        restrict_pickle=False,
     )
     unrestricted.put(request, {"value": "hello"})
     unrestricted.disk_cache.close()
@@ -513,17 +515,28 @@ class _UnlistedDataclass:
     value: int
 
 
-def test_unlisted_type_rejected_on_read(restricted_cache):
+@pytest.mark.parametrize("configure", [False, True], ids=["Cache", "configure_cache"])
+@pytest.mark.parametrize("options", [{}, {"restrict_pickle": False}], ids=["default", "opt_out"])
+def test_unlisted_type_disk_cache_defaults(cache_config, configure, options):
+    if configure:
+        dspy.configure_cache(**cache_config, **options)
+        cache = dspy.cache
+    else:
+        cache = Cache(**cache_config, **options)
     request = {"model": "test", "prompt": "dataclass"}
+    response = _UnlistedDataclass(value=1)
 
-    restricted_cache.put(request, _UnlistedDataclass(value=1))
+    try:
+        cache.put(request, response)
 
-    # Memory cache still works
-    assert restricted_cache.get(request) == _UnlistedDataclass(value=1)
+        # Memory cache still works regardless of pickle restrictions.
+        assert cache.get(request) == response
 
-    # After clearing memory, restricted unpickler rejects the unlisted type
-    restricted_cache.reset_memory_cache()
-    assert restricted_cache.get(request) is None
+        cache.reset_memory_cache()
+        expected = None if options.get("restrict_pickle", True) else response
+        assert cache.get(request) == expected
+    finally:
+        cache.disk_cache.close()
 
 
 def test_safe_types_rejects_non_types(tmp_path):
