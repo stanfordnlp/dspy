@@ -27,17 +27,19 @@ class WeaviateRM(dspy.Retrieve):
         tenant_id (str, optional): The tenant to retrieve objects from.
 
     Examples:
-        Below is a code snippet that shows how to use Weaviate as the default retriever:
+        With a running local Weaviate instance and a populated collection, use Weaviate as the default retriever:
         ```python
+        import dspy
         import weaviate
+        from dspy.retrievers.weaviate_rm import WeaviateRM
 
-        llm = dspy.Cohere(model="command-r-plus", api_key=api_key)
-        weaviate_client = weaviate.connect_to_[local, wcs, custom, embedded]("your-path-here")
-        retriever_model = WeaviateRM("my_collection_name", weaviate_client=weaviate_client)
-        dspy.configure(lm=llm, rm=retriever_model)
+        llm = dspy.LM("cohere/command-r-plus", api_key=api_key)
+        with weaviate.connect_to_local() as weaviate_client:
+            retriever_model = WeaviateRM("my_collection_name", weaviate_client=weaviate_client)
+            dspy.configure(lm=llm, rm=retriever_model)
 
-        retrieve = dspy.Retrieve(k=1)
-        topK_passages = retrieve("what are the stages in planning, sanctioning and execution of public works").passages
+            retrieve = dspy.Retrieve(k=1)
+            topK_passages = retrieve("what are the stages in planning, sanctioning and execution of public works").passages
         ```
 
         Below is a code snippet that shows how to use Weaviate in the forward() function of a module
