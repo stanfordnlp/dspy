@@ -434,7 +434,8 @@ Consider implementing custom component selection when you need:
 Custom component selectors must implement the [`ReflectionComponentSelector`](https://github.com/gepa-ai/gepa/blob/main/src/gepa/proposer/reflective_mutation/base.py) protocol by defining a callable class or function. GEPA will call your selector during optimization:
 
 ```python
-from dspy.teleprompt.gepa.gepa_utils import GEPAState, Trajectory
+from gepa.core.adapter import Trajectory
+from gepa.core.state import GEPAState
 
 class CustomComponentSelector:
     def __call__(
