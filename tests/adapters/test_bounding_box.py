@@ -62,9 +62,10 @@ async def test_boxes_are_structured_outputs_inputs_and_saved_demos(adapter_class
     assert predict.demos[0]["region"] == {"boxes": [EDGES]}
     answer = {"region": {"boxes": [EDGES]}, "missing": None}
     if adapter_class is dspy.TwoStepAdapter:
-        adapter = adapter_class(extraction_model=DummyLM([answer]))
+        # TwoStepAdapter has no dummy-output formatter; its extraction stage uses ChatAdapter.
+        adapter = adapter_class(extraction_model=DummyLM([answer], adapter=dspy.ChatAdapter()))
         lm = DummyLM([{"answer": "The region contains one box: top 0.13, bottom 0.81, left 0.27, right 0.64. "
-                                  "The missing box is null."}])
+                                  "The missing box is null."}], adapter=dspy.ChatAdapter())
     else:
         adapter = adapter_class()
         lm = DummyLM([answer], adapter=adapter)
