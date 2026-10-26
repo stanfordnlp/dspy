@@ -2027,6 +2027,18 @@ class TestRLMHistoryWithDummyLM:
         assert "[[ ## answer ## ]]" not in messages[5]["content"]
         assert "None" not in "".join(m["content"] for m in messages)
 
+    def test_external_history_returned_by_processor_is_not_mutated(self):
+        """A processor that returns an object its caller holds must not have RLM's events appended to it."""
+        external = dspy.History(messages=[])
+        with dummy_lm_context([{"plan": "done", "code": "SUBMIT(7)"}]):
+            rlm = RLM("query -> answer: int", max_iters=2, history_processor=lambda _: external)
+            result = rlm(query="What is seven?", history=external, interpreter_factory=PythonInterpreter)
+
+        assert result.answer == 7
+        assert external.messages == []
+        assert result.history is not external
+        assert len(result.history.messages) == 1
+
     def test_replayed_actions_use_the_live_reasoning_field_name(self):
         """Without native reasoning the action LM writes its reasoning as `plan`; replay must not drop or rename it."""
         with dummy_lm_context(
@@ -2767,6 +2779,32 @@ class TestApplyHistoryProcessor:
         assert result.messages[0]["code"] == "changed"
         assert history.messages[0]["code"] == "x = 1"
 
+    def test_returned_external_history_is_copied(self):
+        external = dspy.History(messages=[{"query": "kept by caller"}])
+
+        result = _apply_history_processor(lambda h: external, self._history())
+        result.messages.append({"query": "appended by RLM"})
+
+        assert result is not external
+        assert external.messages == [{"query": "kept by caller"}]
+
+    def test_returned_messages_shared_with_caller_are_copied(self):
+        shared = {"query": "shared"}
+
+        result = _apply_history_processor(lambda h: {"messages": [shared]}, self._history())
+        result.messages[0]["query"] = "edited by RLM"
+
+        assert shared == {"query": "shared"}
+
+    def test_returned_private_copy_is_adopted_as_is(self):
+        seen = []
+
+        def keep(h):
+            seen.append(h)
+            return h
+
+        assert _apply_history_processor(keep, self._history()) is seen[0]
+
     def test_non_history_return_is_coerced(self):
         history = self._history()
         result = _apply_history_processor(lambda h: {"messages": h.messages[:1]}, history)
@@ -2867,12 +2905,15 @@ class TestHistoryProcessorHook:
         assert len(received) == 2
         assert received[0].messages == []
 
-        # The second call sees the object the first call returned
-        assert received[1] == returned[0]
+        # Each call builds on the previous call's result: the second sees what the first returned plus that
+        # iteration's event
         assert len(received[1].messages) == 1
 
-        # The resulting history is the one the module appends to and returns
-        assert result.history is returned[1]
+        # RLM appends to its own copy of what the processor returns, never to the processor's objects
+        assert returned[0].messages == []
+        assert len(returned[1].messages) == 1
+        assert result.history is not returned[1]
+        assert len(result.history.messages) == 2
 
     def test_history_processor_runs_before_extract_fallback(self):
         calls = []
@@ -3036,12 +3077,15 @@ class TestHistoryProcessorHook:
         assert len(received) == 2
         assert received[0].messages == []
 
-        # The second call sees the object the first call returned
-        assert received[1] == returned[0]
+        # Each call builds on the previous call's result: the second sees what the first returned plus that
+        # iteration's event
         assert len(received[1].messages) == 1
 
-        # The resulting history is the one the module appends to and returns
-        assert result.history is returned[1]
+        # RLM appends to its own copy of what the processor returns, never to the processor's objects
+        assert returned[0].messages == []
+        assert len(returned[1].messages) == 1
+        assert result.history is not returned[1]
+        assert len(result.history.messages) == 2
 
     @pytest.mark.asyncio
     async def test_async_history_processor_runs_before_extract_fallback(self):

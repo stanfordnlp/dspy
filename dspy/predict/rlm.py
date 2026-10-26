@@ -304,6 +304,7 @@ class RLM(Module):
 
     def _validate_namespace(self, tools: dict[str, Tool]) -> None:
         """Validate names owned by the RLM call, result, sandbox APIs, and the sandbox dspy facade."""
+
         def is_reserved(name: str) -> bool:
             return name in self._RESERVED_SANDBOX_NAMES or is_reserved_sandbox_name(name)
 
@@ -850,9 +851,7 @@ class RLM(Module):
         if self.verbose:
             logger.info(REPLEntry.format_output(output, self.max_output_chars))
 
-        return REPLEntry(
-            reasoning=reasoning, code=code, output=output, max_output_chars=self.max_output_chars
-        ), None
+        return REPLEntry(reasoning=reasoning, code=code, output=output, max_output_chars=self.max_output_chars), None
 
     def _execute_code(
         self,
@@ -1175,6 +1174,9 @@ def _apply_history_processor(
     The processor receives its own deep copy, so an in-place edit followed by a raise cannot leave the caller's
     history partially modified. We treat `None` as meaning the copy was modified in-place;
     exceptions are caught and logged as an error and unprocessed history is returned.
+
+    RLM appends to whatever this returns, so anything other than that private copy is itself deep-copied: a
+    processor may return a `History` (or message dicts) that its caller still holds.
     """
     if processor is None:
         return history
@@ -1182,15 +1184,15 @@ def _apply_history_processor(
     candidate = history.model_copy(deep=True)
     try:
         processed = processor(candidate)
-        if processed is None:
-            return candidate
     except Exception as err:
         logger.error(
             "history_processor raised; continuing with unprocessed history: %s",
             format_error_for_lm(err, traceback_frames=5),
         )
         return history
-    return _coerce_history(processed)
+    if processed is None or processed is candidate:
+        return candidate
+    return _coerce_history(processed).model_copy(deep=True)
 
 
 def _coerce_history(history: Any) -> dspy.History:
