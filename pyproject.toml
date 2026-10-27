@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 name="dspy"
 #replace_package_version_marker
 version="3.4.1"
-description = "DSPy"
+description = "The framework for programming—rather than prompting—language models."
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
 license = {file = "LICENSE"}

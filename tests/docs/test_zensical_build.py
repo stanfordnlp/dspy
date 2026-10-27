@@ -1,5 +1,8 @@
 import gzip
 import json
+import os
+import subprocess
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -7,6 +10,8 @@ import pytest
 from docs.hooks import fetch_stats as stats_hook
 from docs.scripts.zensical_build import (
     add_missing_titles,
+    add_revision_dates,
+    add_sitemap_dates,
     convert_notebooks,
     generate_llms,
     load_config,
@@ -16,6 +21,7 @@ from docs.scripts.zensical_build import (
     redirect_maps,
     remove_redirect_sources,
     social_cards,
+    source_dates,
     validate_output,
     write_page_markdown,
     write_redirects,
@@ -259,3 +265,62 @@ def test_output_validation_covers_native_and_compatibility_features(tmp_path):
     (tmp_path / "search.json").write_text(json.dumps({"items": []}))
     with pytest.raises(RuntimeError, match="search index is empty"):
         validate_output(tmp_path, {"tutorial/index.html"}, {"old.md": "index.md"}, site_url)
+
+
+def test_source_dates_use_the_last_commit_for_each_page(tmp_path):
+    docs = tmp_path / "docs"
+    (docs / "guide").mkdir(parents=True)
+
+    def commit(day: str) -> None:
+        env = {"GIT_AUTHOR_DATE": f"{day}T12:00:00", "GIT_COMMITTER_DATE": f"{day}T12:00:00"}
+        subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+        subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", day],
+            cwd=tmp_path,
+            check=True,
+            env={**os.environ, **env},
+        )
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (docs / "index.md").write_text("# Home")
+    (docs / "guide" / "notebook.ipynb").write_text("{}")
+    commit("2026-01-02")
+    (docs / "index.md").write_text("# Home, updated")
+    commit("2026-03-04")
+
+    assert source_dates(docs) == {"index.md": date(2026, 3, 4), "guide/notebook.md": date(2026, 1, 2)}
+    assert source_dates(tmp_path / "missing") == {}
+
+
+def test_revision_dates_merge_into_front_matter(tmp_path):
+    (tmp_path / "plain.md").write_text("# Plain")
+    (tmp_path / "front.md").write_text("---\ntemplate: home.html\n---\n\nBody")
+
+    add_revision_dates(
+        tmp_path, {"plain.md": date(2026, 3, 4), "front.md": date(2026, 1, 2), "gone.md": date(2026, 1, 2)}
+    )
+
+    assert (tmp_path / "plain.md").read_text() == '---\nrevision_date: "March 4, 2026"\n---\n\n# Plain'
+    assert (tmp_path / "front.md").read_text() == (
+        '---\nrevision_date: "January 2, 2026"\ntemplate: home.html\n---\n\nBody'
+    )
+    assert not (tmp_path / "gone.md").exists()
+
+
+def test_sitemap_dates_match_page_routes(tmp_path):
+    sitemap = tmp_path / "sitemap.xml"
+    sitemap.write_text(
+        "<urlset><url><loc>https://dspy.ai/current/</loc></url>"
+        "<url><loc>https://dspy.ai/current/guide/notebook/</loc></url>"
+        "<url><loc>https://dspy.ai/current/undated/</loc></url></urlset>"
+    )
+
+    add_sitemap_dates(
+        sitemap, "https://dspy.ai/current/", {"index.md": date(2026, 3, 4), "guide/notebook.md": date(2026, 1, 2)}
+    )
+
+    assert sitemap.read_text() == (
+        "<urlset><url><loc>https://dspy.ai/current/</loc><lastmod>2026-03-04</lastmod></url>"
+        "<url><loc>https://dspy.ai/current/guide/notebook/</loc><lastmod>2026-01-02</lastmod></url>"
+        "<url><loc>https://dspy.ai/current/undated/</loc></url></urlset>"
+    )
