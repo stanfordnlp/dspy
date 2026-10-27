@@ -130,7 +130,11 @@ with adapter_fallback_scope() as progress:
         )
 
     def format_field_structure(self, signature: type[Signature]) -> str:
-    """..."""
+    """`ChatAdapter` requires input and output fields to be in their own sections,
+        with section header using markers `[[ ## field_name ## ]]`. An arbitrary
+        field `completed` ([[ ## completed ## ]]) is added to the end of the output
+        fields section to indicate the end of the output fields.
+        """
         def format_signature_fields_for_instructions(fields: dict[str, FieldInfo]):
             return self.format_field_with_value(
                 fields_with_values={
@@ -140,14 +144,14 @@ with adapter_fallback_scope() as progress:
             )
         if not self.field_markers:
             parts = []
-                parts.append(format_signature_fields_for_instructions(signature.input_fields))
-                parts.append(format_signature_fields_for_instructions(signature.output_fields))
+            parts.append(format_signature_fields_for_instructions(signature.input_fields))
+            parts.append(format_signature_fields_for_instructions(signature.output_fields))
             return "\n\n".join(parts).strip()
 
         parts = []
-            parts.append(format_signature_fields_for_instructions(signature.input_fields))
-            parts.append(format_signature_fields_for_instructions(signature.output_fields))
-            parts.append("[[ ## completed ## ]]\n")
+        parts.append(format_signature_fields_for_instructions(signature.input_fields))
+        parts.append(format_signature_fields_for_instructions(signature.output_fields))
+        parts.append("[[ ## completed ## ]]\n")
         return "\n\n".join(parts).strip()
 
     def format_task_description(self, signature: type[Signature]) -> str:
