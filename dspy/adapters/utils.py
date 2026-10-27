@@ -1,5 +1,6 @@
 import ast
 import enum
+import functools
 import inspect
 import json
 import types
@@ -71,6 +72,13 @@ def _annotation_is_subclass(annotation: Any, expected_base: type) -> bool:
         return False
 
 
+@functools.lru_cache(maxsize=256)
+def _type_adapter_for(value_type: type) -> TypeAdapter:
+    # Building a TypeAdapter compiles a pydantic core schema, which costs far more than using it.
+    # Prompt formatting calls this once per field value, so reuse one adapter per type.
+    return TypeAdapter(value_type)
+
+
 def serialize_for_json(value: Any) -> Any:
     """
     Formats the specified value so that it can be serialized as a JSON string.
@@ -84,7 +92,7 @@ def serialize_for_json(value: Any) -> Any:
     # serialize (e.g. a numpy scalar) becomes its string form without affecting its siblings; the
     # whole value falls back to its string form only if pydantic can't handle it at all.
     try:
-        return TypeAdapter(type(value)).dump_python(value, mode="json", fallback=str)
+        return _type_adapter_for(type(value)).dump_python(value, mode="json", fallback=str)
     except Exception:
         return str(value)
 
