@@ -286,6 +286,7 @@ def test_mike_current_is_mutable_and_default(tmp_path):
     assert host_config["buildCommand"] == "true"
     assert host_config["outputDirectory"] == "."
     assert host_config["redirects"] == [
+        {"source": "/", "destination": "/current/", "permanent": True},
         {
             "source": r"/:version(\d+\.\d+(?:\.\d+(?:(?:a|b|rc)\d+)?)?)",
             "destination": "/:version/",
@@ -297,7 +298,13 @@ def test_mike_current_is_mutable_and_default(tmp_path):
             "permanent": True,
         },
     ]
+    assert {
+        "source": r"/:version(\d+\.\d+(?:\.\d+(?:(?:a|b|rc)\d+)?)?)/:path*",
+        "headers": [{"key": "X-Robots-Tag", "value": "noindex"}],
+    } in host_config["headers"]
     assert "trailingSlash" not in host_config
+    robots = branch_file(repository, "versioned-docs", "robots.txt")
+    assert "Sitemap: https://dspy.ai/current/sitemap.xml" in robots
     production_inventory = subprocess.run(
         ["git", "cat-file", "-e", "master:versions.json"], cwd=repository, capture_output=True
     )
