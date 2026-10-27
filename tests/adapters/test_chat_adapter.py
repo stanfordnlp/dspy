@@ -3050,7 +3050,7 @@ def test_optional_type_syntax_missing_required_output_field_still_raises():
     with dspy.context(lm=DummyLM(responses), adapter=dspy.ChatAdapter()):
         with pytest.raises(AdapterParseError):
             dspy.Predict(OptionalSyntaxSignature)(question="anything")
-add-field-markers-opt-out
+            
 def test_field_markers_false_single_output_field():
     """field_markers=False should produce marker-free prompts and parse correctly for single-output signatures."""
     adapter = dspy.ChatAdapter(field_markers=False)
