@@ -136,9 +136,10 @@ with adapter_fallback_scope() as progress:
         output fields section to indicate the end of the output fields.
         """
         if not self.field_markers:
-            return ""
-        parts = []
-        parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
+            parts = []
+            parts.append(format_signature_fields_for_instructions(signature.input_fields))
+            parts.append(format_signature_fields_for_instructions(signature.output_fields))
+            return "\n\n".join(parts).strip()
 
         def format_signature_fields_for_instructions(fields: dict[str, FieldInfo]):
             return self.format_field_with_value(
@@ -148,6 +149,7 @@ with adapter_fallback_scope() as progress:
                 },
             )
 
+        parts = []
         parts.append(format_signature_fields_for_instructions(signature.input_fields))
         parts.append(format_signature_fields_for_instructions(signature.output_fields))
         parts.append("[[ ## completed ## ]]\n")
@@ -209,12 +211,12 @@ with adapter_fallback_scope() as progress:
             else:
                 return ""
 
-        if not self.field_markers:         
-            if not signature.output_fields:
-                return None
+      if not self.field_markers:
+        if not signature.output_fields:
+            return None
             (f, v), = signature.output_fields.items()
-            return f"Respond with the value for `{f}`{type_info(v)}. Do not include any other text."   # <-- also inside type_info(), and dedented one level short
-
+        return f"Respond with the value for `{f}`{type_info(v)}. Do not include any other text."
+          
         message = "Respond with the corresponding output fields, starting with the field "
         message += ", then ".join(f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items())
         message += ", and then ending with the marker for `[[ ## completed ## ]]`."
