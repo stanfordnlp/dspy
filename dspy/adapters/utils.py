@@ -17,7 +17,16 @@ from dspy.adapters.types.reasoning import Reasoning
 from dspy.signatures.utils import get_dspy_field_type
 
 if TYPE_CHECKING:
+    from dspy.adapters.base import Adapter
     from dspy.signatures.signature import Signature
+
+
+def _get_adapter() -> "Adapter":
+    """Resolve the configured adapter, or DSPy's implicit default."""
+    from dspy.adapters.xml_adapter import XMLAdapter
+    from dspy.dsp.utils.settings import settings
+
+    return settings.adapter if settings.adapter is not None else XMLAdapter(use_native_function_calling=True)
 
 
 def annotation_allows_none(annotation: Any) -> bool:
@@ -71,11 +80,11 @@ def serialize_for_json(value: Any) -> Any:
     Returns:
         The formatted value, which is serializable as a JSON string.
     """
-    # Attempt to format the value as a JSON-compatible object using pydantic, falling back to
-    # a string representation of the value if that fails (e.g. if the value contains an object
-    # that pydantic doesn't recognize or can't serialize)
+    # Format the value as a JSON-compatible object using pydantic. A nested value pydantic can't
+    # serialize (e.g. a numpy scalar) becomes its string form without affecting its siblings; the
+    # whole value falls back to its string form only if pydantic can't handle it at all.
     try:
-        return TypeAdapter(type(value)).dump_python(value, mode="json")
+        return TypeAdapter(type(value)).dump_python(value, mode="json", fallback=str)
     except Exception:
         return str(value)
 
@@ -240,6 +249,10 @@ def parse_value(value, annotation):
 def get_annotation_name(annotation):
     origin = get_origin(annotation)
     args = get_args(annotation)
+    if origin is types.UnionType:
+        # Render PEP 604 unions (e.g. `str | None`) the same way as `typing.Union`/`Optional` on Python < 3.14,
+        # matching Python 3.14+ where `get_origin(str | None)` already returns `typing.Union`.
+        origin = Union
     if origin is None:
         if annotation is Reasoning:
             # Keep backward compatibility with the old behavior in `dspy.ChainOfThought`, where reasoning

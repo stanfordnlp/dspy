@@ -21,6 +21,7 @@ from dspy.utils.callback import BaseCallback
 
 EXPECTED = {
     lm15.LM15Error: dspy.LMUnexpectedError,
+    lm15.AuthOperationError: dspy.LMUnexpectedError,
     lm15.TransportError: dspy.LMTransportError,
     lm15.LockTimeoutError: dspy.LMLockTimeoutError,
     lm15.StreamAssemblyError: dspy.LMStreamAssemblyError,
@@ -40,7 +41,6 @@ EXPECTED = {
     lm15.UnsupportedModelError: dspy.LMUnsupportedModelError,
     lm15.TimeoutError: dspy.LMTimeoutError,
     lm15.ServerError: dspy.LMServerError,
-    lm15.ToolDerivationError: dspy.LMConfigurationError,
     CredentialLockTimeout: dspy.LMLockTimeoutError,
     DeviceCodeExpiredError: dspy.LMAuthError,
     MissingCredentialError: dspy.LMNotConfiguredError,
@@ -96,8 +96,9 @@ def test_all_exported_canonical_error_classes_have_an_explicit_policy():
 @pytest.mark.parametrize("streaming", [False, True])
 @pytest.mark.parametrize("source,target", EXPECTED.items(), ids=[cls.__name__ for cls in EXPECTED])
 async def test_public_projection_preserves_metadata_and_cause(source, target, asynchronous, streaming):
+    kwargs = {"reason": "login_required"} if source is lm15.AuthOperationError else {}
     original = source("original failure", provider="fake", provider_code="code", status=429,
-                      request_id="request-1", retry_after=7.0)
+                      request_id="request-1", retry_after=7.0, **kwargs)
     engine = Engine(original)
     errors = []
 
@@ -302,6 +303,11 @@ def test_every_canonical_error_event_uses_the_same_projection(code):
     canonical = error_from_event(event, provider="fake")
     assert canonical.code == code
     assert type(wrap_error(canonical, model="custom")) is EXPECTED[error_class_for_code(code)]
+    if code == "auth_operation":
+        assert isinstance(canonical, lm15.AuthOperationError)
+        assert canonical.reason == "indeterminate"
+        assert canonical.stage == "dispatch"
+        assert canonical.commit_state == "unknown"
 
 
 @pytest.mark.asyncio

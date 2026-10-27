@@ -49,11 +49,10 @@ def test_codeact_code_generation(pooled_interpreter):
     lm = DummyLM(
         [
             {
-                "reasoning": "Reason_A",
                 "generated_code": "```python\nresult = add(1,1)\nprint(result)\n```",
                 "finished": True,
             },
-            {"reasoning": "Reason_B", "answer": "2"},
+            {"plan": "Reason_B", "answer": "2"},
         ]
     )
     dspy.configure(lm=lm)
@@ -81,11 +80,10 @@ def test_codeact_support_multiple_fields(pooled_interpreter):
     lm = DummyLM(
         [
             {
-                "reasoning": "Reason_A",
                 "generated_code": "```python\nresult = extract_maximum_minimum('2, 3, 5, 6')\nprint(result)\n```",
                 "finished": True,
             },
-            {"reasoning": "Reason_B", "maximum": "6", "minimum": "2"},
+            {"plan": "Reason_B", "maximum": "6", "minimum": "2"},
         ]
     )
     dspy.configure(lm=lm)
@@ -103,16 +101,14 @@ def test_codeact_code_parse_failure(pooled_interpreter):
     lm = DummyLM(
         [
             {
-                "reasoning": "Reason_A",
                 "generated_code": "```python\nparse(error\n```",
                 "finished": False,
             },
             {
-                "reasoning": "Reason_A",
                 "generated_code": "```python\nresult = add(1,1)\nprint(result)\n```",
                 "finished": True,
             },
-            {"reasoning": "Reason_B", "answer": "2"},
+            {"plan": "Reason_B", "answer": "2"},
         ]
     )
     dspy.configure(lm=lm)
@@ -131,16 +127,14 @@ def test_codeact_code_execution_failure(pooled_interpreter):
     lm = DummyLM(
         [
             {
-                "reasoning": "Reason_A",
                 "generated_code": "```python\nunknown+1\n```",
                 "finished": False,
             },
             {
-                "reasoning": "Reason_A",
                 "generated_code": "```python\nresult = add(1,1)\nprint(result)\n```",
                 "finished": True,
             },
-            {"reasoning": "Reason_B", "answer": "2"},
+            {"plan": "Reason_B", "answer": "2"},
         ]
     )
     dspy.configure(lm=lm)

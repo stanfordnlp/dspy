@@ -1,6 +1,6 @@
 {
-  "source": "https://files.pythonhosted.org/packages/21/fa/fe602c696b916db036675eb6f8b0ad27a8dd398f0190a8a813596b4c0405/litellm-1.102.1-cp310-abi3-macosx_10_12_x86_64.whl",
-  "version": "1.102.1",
-  "wheel_sha256": "01550e79e052249dc5df53631ed9bdff030ca7c2a22107c5ce482d53ecf5c8d8",
-  "snapshot_sha256": "a33bce9dc5238cd84b2c9b9fa807d7a5fe57ff499d146ebccba8ad2b4b1ae417"
+  "source": "https://files.pythonhosted.org/packages/fd/96/b68c1db86a1caae616d48bbb00299bfb716b58fca02645178e0c9a0ca2ce/litellm-1.106.0-cp310-abi3-macosx_10_12_x86_64.whl",
+  "version": "1.106.0",
+  "wheel_sha256": "79bdfc1acb725e8ce75acfdb4913156a350faba835a39091338d320548e78593",
+  "snapshot_sha256": "fadace20b834db49d02765a505709ee5dc7a37e722f53cc9c393fdb02ace2dea"
 }

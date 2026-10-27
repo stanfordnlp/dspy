@@ -202,7 +202,8 @@ def test_basic_workflow(use_mlflow, mock_mlflow):
     reflection_lm_history = data["reflection_lm"]
 
     lm_main = DictDummyLM(lm_history)
-    dspy.configure(lm=lm_main)
+    # These recorded messages and responses use the historical ChatAdapter format.
+    dspy.configure(lm=lm_main, adapter=dspy.ChatAdapter())
     reflection_lm = DictDummyLM(reflection_lm_history)
 
     optimizer = dspy.GEPA(
@@ -271,7 +272,8 @@ def test_workflow_with_custom_instruction_proposer_and_component_selector():
     lm_main = DictDummyLM(lm_history)
     reflection_lm = DictDummyLM(reflection_lm_history)
 
-    dspy.configure(lm=lm_main)
+    # These recorded messages and responses use the historical ChatAdapter format.
+    dspy.configure(lm=lm_main, adapter=dspy.ChatAdapter())
     optimizer = dspy.GEPA(
         metric=metric,
         reflection_lm=reflection_lm,
@@ -342,7 +344,7 @@ def test_gepa_compile_with_track_usage_no_tuple_error(caplog):
     trainset = [dspy.Example(question="What is 2+2?", answer="4").with_inputs("question")]
 
     task_lm = DummyLM([{"answer": "mock answer 1"}])
-    reflection_lm = DummyLM([{"new_instruction": "Something new."}])
+    reflection_lm = DummyLM([{"new_instruction": "Something new."}], adapter=dspy.JSONAdapter())
 
     compiled_container: dict[str, Any] = {}
     exc_container: dict[str, BaseException] = {}
@@ -407,13 +409,15 @@ def test_component_selector_functionality():
     student = MultiComponentModule()
 
     # Provide enough responses for all possible LM calls during optimization
-    task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 20)
+    task_lm = DummyLM([{"category": "test_category"}] * 40)
+    student.generator.set_lm(DummyLM([{"output": "test_output"}] * 40))
     reflection_lm = DummyLM(
         [
-            {"improved_instruction": "Improved classifier instruction"},
-            {"improved_instruction": "Improved generator instruction"},
+            {"new_instruction": "Improved classifier instruction"},
+            {"new_instruction": "Improved generator instruction"},
         ]
-        * 10
+        * 10,
+        adapter=dspy.JSONAdapter(),
     )
     trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
 
@@ -438,8 +442,9 @@ def test_component_selector_default_behavior():
     student = MultiComponentModule()
 
     # Provide enough responses for all possible LM calls
-    task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 15)
-    reflection_lm = DummyLM([{"improved_instruction": "Better instruction"}] * 8)
+    task_lm = DummyLM([{"category": "test_category"}] * 30)
+    student.generator.set_lm(DummyLM([{"output": "test_output"}] * 30))
+    reflection_lm = DummyLM([{"new_instruction": "Better instruction"}] * 8, adapter=dspy.JSONAdapter())
     trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
 
     with dspy.context(lm=task_lm):
@@ -459,8 +464,9 @@ def test_component_selector_string_round_robin():
     student = MultiComponentModule()
 
     # Provide enough responses for all possible LM calls
-    task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 15)
-    reflection_lm = DummyLM([{"improved_instruction": "Better instruction"}] * 8)
+    task_lm = DummyLM([{"category": "test_category"}] * 30)
+    student.generator.set_lm(DummyLM([{"output": "test_output"}] * 30))
+    reflection_lm = DummyLM([{"new_instruction": "Better instruction"}] * 8, adapter=dspy.JSONAdapter())
     trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
 
     with dspy.context(lm=task_lm):
@@ -495,13 +501,15 @@ def test_component_selector_string_all():
             return dspy.Prediction(score=score, feedback="Improving feedback")
 
         # Provide enough responses for all possible LM calls
-        task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 20)
+        task_lm = DummyLM([{"category": "test_category"}] * 40)
+        student.generator.set_lm(DummyLM([{"output": "test_output"}] * 40))
         reflection_lm = DummyLM(
             [
-                {"improved_instruction": "Updated classifier instruction"},
-                {"improved_instruction": "Updated generator instruction"},
+                {"new_instruction": "Updated classifier instruction"},
+                {"new_instruction": "Updated generator instruction"},
             ]
-            * 10
+            * 10,
+            adapter=dspy.JSONAdapter(),
         )
         trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
 
@@ -551,8 +559,9 @@ def test_component_selector_custom_random():
     student = MultiComponentModule()
 
     # Provide enough responses for all possible LM calls
-    task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 15)
-    reflection_lm = DummyLM([{"improved_instruction": "Better instruction"}] * 8)
+    task_lm = DummyLM([{"category": "test_category"}] * 30)
+    student.generator.set_lm(DummyLM([{"output": "test_output"}] * 30))
+    reflection_lm = DummyLM([{"new_instruction": "Better instruction"}] * 8, adapter=dspy.JSONAdapter())
     trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
 
     with dspy.context(lm=task_lm):
@@ -602,8 +611,9 @@ def test_alternating_half_component_selector():
     student = MultiComponentModule()  # Has "classifier" and "generator" components
 
     # Provide enough responses for multiple iterations
-    task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 20)
-    reflection_lm = DummyLM([{"improved_instruction": "Better instruction"}] * 10)
+    task_lm = DummyLM([{"category": "test_category"}] * 40)
+    student.generator.set_lm(DummyLM([{"output": "test_output"}] * 40))
+    reflection_lm = DummyLM([{"new_instruction": "Better instruction"}] * 10, adapter=dspy.JSONAdapter())
     trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
 
     with dspy.context(lm=task_lm):
@@ -645,7 +655,8 @@ def test_track_stats_result_structure():
     with open("tests/teleprompt/gepa_dummy_lm.json") as f:
         data = json.load(f)
 
-    dspy.configure(lm=DictDummyLM(data["lm"]))
+    # These recorded messages and responses use the historical ChatAdapter format.
+    dspy.configure(lm=DictDummyLM(data["lm"]), adapter=dspy.ChatAdapter())
     optimizer = dspy.GEPA(
         metric=simple_metric,
         reflection_lm=DictDummyLM(data["reflection_lm"]),
@@ -705,7 +716,8 @@ def test_multi_objective_frontier_results():
     with open("tests/teleprompt/gepa_dummy_lm.json") as f:
         data = json.load(f)
 
-    dspy.configure(lm=DictDummyLM(data["lm"]))
+    # These recorded messages and responses use the historical ChatAdapter format.
+    dspy.configure(lm=DictDummyLM(data["lm"]), adapter=dspy.ChatAdapter())
     optimizer = dspy.GEPA(
         metric=multi_objective_metric,
         reflection_lm=DictDummyLM(data["reflection_lm"]),
@@ -750,7 +762,8 @@ def test_track_best_outputs_result_structure():
     with open("tests/teleprompt/gepa_dummy_lm.json") as f:
         data = json.load(f)
 
-    dspy.configure(lm=DictDummyLM(data["lm"]))
+    # These recorded messages and responses use the historical ChatAdapter format.
+    dspy.configure(lm=DictDummyLM(data["lm"]), adapter=dspy.ChatAdapter())
     optimizer = dspy.GEPA(
         metric=simple_metric,
         reflection_lm=DictDummyLM(data["reflection_lm"]),

@@ -220,5 +220,4 @@ def test_flex_lets_a_sub_predictor_resolve_the_configured_factory_itself():
     dspy.configure(interpreter_factory=MockInterpreterFactory())
 
     flex = Flex(Doubler)
-    assert flex._bridge._sub_interpreter_factory() is PythonInterpreter
-    assert flex._bridge._build_predictor("RLM", "query -> answer", {})._interpreter_factory is PythonInterpreter
+    assert flex._bridge.invocation()._build_predictor("RLM", "query -> answer", {})._interpreter_factory is PythonInterpreter

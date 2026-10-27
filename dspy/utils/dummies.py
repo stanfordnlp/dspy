@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import random
-from collections import defaultdict
 from typing import Any
 
-from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern
+from dspy.adapters.chat_adapter import FieldInfoWithName
+from dspy.adapters.utils import _get_adapter
 from dspy.clients.base_lm import BaseLM
 from dspy.dsp.utils.utils import dotdict
 from dspy.signatures.field import OutputField
@@ -30,27 +30,30 @@ class DummyLM(BaseLM):
     dspy.configure(lm=lm)
     predictor("What color is the sky?")
     # Output:
-    # [[## answer ##]]
+    # <answer>
     # red
+    # </answer>
     predictor("What color is the sky?")
     # Output:
-    # [[## answer ##]]
+    # <answer>
     # blue
+    # </answer>
     ```
 
     Mode 2: Dictionary of dictionaries
 
     If a dictionary of dictionaries is provided, the dummy model will return the value
     corresponding to the key which is contained with the final message of the prompt,
-    formatted according to the `format_field_with_value` function from the chat adapter.
+    formatted according to the configured adapter's `format_field_with_value` function.
 
     ```
     lm = DummyLM({"What color is the sky?": {"answer": "blue"}})
     dspy.configure(lm=lm)
     predictor("What color is the sky?")
     # Output:
-    # [[## answer ##]]
+    # <answer>
     # blue
+    # </answer>
     ```
 
     Mode 3: Follow examples
@@ -63,8 +66,9 @@ class DummyLM(BaseLM):
     dspy.configure(lm=lm)
     predictor("What color is the sky?, demos=dspy.Example(input="What color is the sky?", output="blue"))
     # Output:
-    # [[## answer ##]]
+    # <answer>
     # blue
+    # </answer>
     ```
 
     """
@@ -83,10 +87,7 @@ class DummyLM(BaseLM):
         self.follow_examples = follow_examples
         self.reasoning = reasoning
 
-        # Set adapter, defaulting to ChatAdapter
-        if adapter is None:
-            from dspy.adapters.chat_adapter import ChatAdapter
-            adapter = ChatAdapter()
+        # Without an explicit override, follow the adapter active at call time.
         self.adapter = adapter
 
         from dspy.clients.engines.dummy_engine import AsyncDummyEngine, DummyEngine
@@ -97,20 +98,10 @@ class DummyLM(BaseLM):
         self._cache_responses = False
 
     def _use_example(self, messages):
-        # find all field names
-        fields = defaultdict(int)
-        for message in messages:
-            if "content" in message:
-                if ma := field_header_pattern.match(message["content"]):
-                    fields[message["content"][ma.start() : ma.end()]] += 1
-        # find the fields which are missing from the final turns
-        max_count = max(fields.values())
-        output_fields = [field for field, count in fields.items() if count != max_count]
-
-        # get the output from the last turn that has the output fields as headers
+        # Replay the most recent matching user/assistant example.
         final_input = messages[-1]["content"].split("\n\n")[0]
         for input, output in zip(reversed(messages[:-1]), reversed(messages), strict=False):
-            if any(field in output["content"] for field in output_fields) and final_input in input["content"]:
+            if input["role"] == "user" and output["role"] == "assistant" and final_input in input["content"]:
                 return output["content"]
 
     def _format_answer_fields(self, field_names_and_values: dict[str, Any]):
@@ -120,7 +111,7 @@ class DummyLM(BaseLM):
         }
         # The reason why DummyLM needs an adapter is because it needs to know which output format to mimic.
         # Normally LMs should not have any knowledge of an adapter, because the output format is defined in the prompt.
-        adapter = self.adapter
+        adapter = self.adapter if self.adapter is not None else _get_adapter()
 
         # Try to use role="assistant" if the adapter supports it (like JSONAdapter)
         try:

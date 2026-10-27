@@ -88,7 +88,7 @@ def test_chat_adapter_quotes_literals_as_expected(
 def test_chat_adapter_sync_call():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.ChatAdapter()
-    lm = dspy.utils.DummyLM([{"answer": "Paris"}])
+    lm = dspy.utils.DummyLM([{"answer": "Paris"}], adapter=adapter)
     result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
     assert result == [{"answer": "Paris"}]
 
@@ -97,7 +97,7 @@ def test_chat_adapter_sync_call():
 async def test_chat_adapter_async_call():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.ChatAdapter()
-    lm = dspy.utils.DummyLM([{"answer": "Paris"}])
+    lm = dspy.utils.DummyLM([{"answer": "Paris"}], adapter=adapter)
     result = await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
     assert result == [{"answer": "Paris"}]
 
@@ -370,9 +370,13 @@ def test_chat_adapter_format_exact_messages_with_history():
                  "[[ ## completed ## ]]\n"
                  "In adhering to this structure, your objective is: \n"
                  "        Given the fields `history`, `question`, produce the fields `answer`."},
-     {"role": "user", "content": "[[ ## question ## ]]\nWhat is 1+1?"},
+     {"role": "user", "content": "[[ ## question ## ]]\nWhat is 1+1?\n\n"
+      "Respond with the corresponding output fields, starting with the field `[[ ## answer ## ]]`, "
+      "and then ending with the marker for `[[ ## completed ## ]]`."},
      {"role": "assistant", "content": "[[ ## answer ## ]]\n2\n\n[[ ## completed ## ]]\n"},
-     {"role": "user", "content": "[[ ## question ## ]]\nWhat is 2+2?"},
+     {"role": "user", "content": "[[ ## question ## ]]\nWhat is 2+2?\n\n"
+      "Respond with the corresponding output fields, starting with the field `[[ ## answer ## ]]`, "
+      "and then ending with the marker for `[[ ## completed ## ]]`."},
      {"role": "assistant", "content": "[[ ## answer ## ]]\n4\n\n[[ ## completed ## ]]\n"},
      {"role": "user",
       "content": "[[ ## question ## ]]\n"
@@ -669,7 +673,10 @@ def test_chat_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
                  '["math", "machines"]}\n'
                  '\n'
                  '[[ ## question ## ]]\n'
-                 'Who is Ada?'},
+                 'Who is Ada?\n\n'
+                 'Respond with the corresponding output fields, starting with the field `[[ ## answer ## ]]` '
+                 '(must be formatted as a valid Python AnswerCard), and then ending with the marker '
+                 'for `[[ ## completed ## ]]`.'},
      {"role": "assistant",
       "content": '[[ ## answer ## ]]\n'
                  '{"answer": "Ada is a mathematician.", "sources": ["memory"]}\n'
@@ -1589,7 +1596,10 @@ def test_chat_adapter_format_exact_messages_with_non_native_tool_history():
             "        Given the fields `question`, `history`, `tools`, produce the fields `next_thought`, "
             "`tool_calls`.",
         },
-        {"role": "user", "content": "[[ ## question ## ]]\nQ1"},
+        {"role": "user", "content": "[[ ## question ## ]]\nQ1\n\n"
+         "Respond with the corresponding output fields, starting with the field `[[ ## next_thought ## ]]`, then "
+         '`[[ ## tool_calls ## ]]` (must be a JSON object like {"tool_calls": [{"name": "...", "args": {...}}]}), '
+         "and then ending with the marker for `[[ ## completed ## ]]`."},
         {
             "role": "assistant",
             "content": "[[ ## next_thought ## ]]\n"
@@ -1994,7 +2004,12 @@ def test_chat_adapter_format_exact_messages_kitchen_sink():
                  '[2] «older note»\n'
                  '\n'
                  '[[ ## question ## ]]\n'
-                 'Who is Ada?'},
+                 'Who is Ada?\n\n'
+                 'Respond with the corresponding output fields, starting with the field `[[ ## answer ## ]]` '
+                 '(must be formatted as a valid Python AnswerCard), then `[[ ## verdict ## ]]` '
+                 "(must be formatted as a valid Python Literal['yes', 'no']), then `[[ ## confidence ## ]]` "
+                 '(must be formatted as a valid Python float), and then ending with the marker '
+                 'for `[[ ## completed ## ]]`.'},
      {"role": "assistant",
       "content": '[[ ## answer ## ]]\n'
                  '{"answer": "Ada is a mathematician.", "sources": ["memory"]}\n'
@@ -2380,6 +2395,23 @@ def test_citations_output_field_keeps_json_schema_in_prompt():
     assert "Type description of Citations" in system_content
 
 
+@pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter(), dspy.XMLAdapter()])
+def test_history_replay_preserves_previous_request_prefix(adapter):
+    class Conversation(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    history = dspy.History(messages=[])
+    previous = None
+    for question, answer in [("What is 3+4?", "7"), ("Double that?", "14"), ("Subtract five?", "9")]:
+        messages = adapter.format(Conversation, [], {"question": question, "history": history})
+        if previous is not None:
+            assert messages[:len(previous)] == previous
+        history.messages.append({"question": question, "answer": answer})
+        previous = messages
+
+
 def test_chat_adapter_formats_conversation_history():
     class MySignature(dspy.Signature):
         question: str = dspy.InputField()
@@ -2397,9 +2429,13 @@ def test_chat_adapter_formats_conversation_history():
     messages = adapter.format(MySignature, [], {"question": "What is the capital of France?", "history": history})
 
     assert len(messages) == 6
-    assert messages[1]["content"] == "[[ ## question ## ]]\nWhat is the capital of France?"
+    reminder = (
+        "\n\nRespond with the corresponding output fields, starting with the field `[[ ## answer ## ]]`, "
+        "and then ending with the marker for `[[ ## completed ## ]]`."
+    )
+    assert messages[1]["content"] == "[[ ## question ## ]]\nWhat is the capital of France?" + reminder
     assert messages[2]["content"] == "[[ ## answer ## ]]\nParis\n\n[[ ## completed ## ]]\n"
-    assert messages[3]["content"] == "[[ ## question ## ]]\nWhat is the capital of Germany?"
+    assert messages[3]["content"] == "[[ ## question ## ]]\nWhat is the capital of Germany?" + reminder
     assert messages[4]["content"] == "[[ ## answer ## ]]\nBerlin\n\n[[ ## completed ## ]]\n"
 
 
@@ -3014,7 +3050,7 @@ def test_optional_type_syntax_missing_required_output_field_still_raises():
     with dspy.context(lm=DummyLM(responses), adapter=dspy.ChatAdapter()):
         with pytest.raises(AdapterParseError):
             dspy.Predict(OptionalSyntaxSignature)(question="anything")
-
+add-field-markers-opt-out
 def test_field_markers_false_single_output_field():
     """field_markers=False should produce marker-free prompts and parse correctly for single-output signatures."""
     adapter = dspy.ChatAdapter(field_markers=False)
@@ -3040,6 +3076,16 @@ def test_field_markers_false_multi_output_field_raises():
         answer: str = dspy.OutputField()
         confidence: float = dspy.OutputField()
 
-    with pytest.raises(ValueError, match="single output field"):
-        adapter._validate_field_markers(MultiOutputSignature)
-        
+            with pytest.raises(ValueError, match="single output field"):
+            adapter._validate_field_markers(MultiOutputSignature)
+
+def test_chat_adapter_formats_pep604_union_like_typing_union():
+    class QA(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: int | None = dspy.OutputField()
+
+    messages = dspy.ChatAdapter().format(QA, [], {"question": "How many?"})
+
+    assert "1. `answer` (Union[int, NoneType])" in messages[0]["content"]
+    assert "must be formatted as a valid Python Union[int, NoneType]" in messages[-1]["content"]
+    assert "UnionType" not in messages[0]["content"] + messages[-1]["content"]

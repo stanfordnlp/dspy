@@ -34,7 +34,7 @@ The reflection model authors code, and code can be wrong. A candidate that doesn
 
 ### 7. Generated code always runs through an interpreter
 
-`Flex` takes its interpreter from `interpreter_factory`, else from `dspy.settings.interpreter_factory`, else from `dspy.PythonInterpreter` (Deno/Pyodide). Each of those must be a *zero-argument factory* — a bare instance or `None` is rejected. With the default, everything stays in the sandbox except provided-tool calls, predictor construction, and predictor calls, which bridge back to the host. Custom factories define their own trust boundary: `LocalInterpreter` separates process memory and stdout but retains the host user's filesystem, environment, credentials, network, and process authority. The factory creates a fresh interpreter for each session; a forward owns an outer session and nested code-executing modules may request separate sessions. Source portability between custom interpreters is not guaranteed. `max_predictor_calls` caps how many predictor calls the generated code can make in one `forward`.
+`Flex` takes its interpreter from `interpreter_factory`, else from `dspy.settings.interpreter_factory`, else from `dspy.PythonInterpreter` (Deno/Pyodide). Each of those must be a *zero-argument factory* — a bare instance or `None` is rejected. With the default, everything stays in the sandbox except provided-tool calls, predictor construction, and predictor calls, which bridge back to the host. Custom factories define their own trust boundary: `LocalInterpreter` separates process memory and stdout but retains the host user's filesystem, environment, credentials, network, and process authority. An in-process interpreter (one that runs code with `exec()` in the host, such as `dspy_interpreters.InProcessInterpreter`) works but isolates nothing: generated code shares the host's memory, so `max_predictor_calls` and the bridged LM-option allowlist bind only well-behaved code. Use one only for code you trust. The facade binds `dspy` in that interpreter's namespace and leaves the host's `dspy` module in place. The factory creates a fresh interpreter for each session; a forward owns an outer session and nested code-executing modules may request separate sessions. Source portability between custom interpreters is not guaranteed. `max_predictor_calls` caps how many predictor calls the generated code can make in one `forward`.
 
 ### 8. The declared output types are enforced at the sandbox boundary
 
@@ -90,7 +90,7 @@ The optimizer-authored code does not run against the real `dspy` package. Inside
 **Available**
 
 - `dspy.Module` — the base class the generated source subclasses. `__init__` assigns predictors; `forward` runs in the sandbox.
-- `dspy.Predict`, `dspy.ChainOfThought`, `dspy.ReAct`, `dspy.ReActV2`, `dspy.RLM` — constructed in the sandbox but *built on the host*, where the real LM calls happen. Constructor kwargs cross as JSON.
+- `dspy.Predict`, `dspy.ChainOfThought`, `dspy.ReAct`, `dspy.ReActV2`, `dspy.RLM` — constructed in the sandbox but *built on the host*, where the real LM calls happen. Constructor kwargs cross as JSON; generation parameters (`temperature`, `max_tokens`, `n`, …) apply to the bridged calls, while LM routing and credential options (`api_base`, `api_key`, headers, `model`) are rejected by the host.
 - `dspy.Signature("inputs -> outputs", "instructions")` — the string form only, used to give an inner predictor its instructions. It is a marker the host turns back into a real `Signature`, not the class: it has no methods, no `with_instructions()`, and no `dspy.InputField` / `dspy.OutputField` class form.
 - `dspy.Prediction(**fields)` — the return value of `forward`. Holds fields; it is not the host `Prediction` type.
 - `dspy.Tool(func)` — a pass-through wrapper. Only tools you passed to `dspy.Flex(tools=...)` can be handed to a bridged sub-predictor; they are already in scope by name, so wrapping is optional.
@@ -104,7 +104,7 @@ The optimizer-authored code does not run against the real `dspy` package. Inside
 - Class-based signatures and typed field declarations.
 - Host objects generally: values cross as JSON, so a tool you define inside `forward` cannot be passed to a bridged sub-predictor, and a predictor field that isn't JSON-serializable raises rather than silently degrading.
 
-Anything outside this surface fails when the candidate runs, and GEPA scores it at the failure score — a missing name costs a search step rather than crashing the run. The shim lives in `dspy/predict/flex/_sandbox_shim.py` and the proposer-facing version of this list is `dspy/predict/flex/primitives_doc.py`.
+Anything outside this surface fails when the candidate runs, and GEPA scores it at the failure score — a missing name costs a search step rather than crashing the run. The shim lives in `dspy/primitives/_facade_shim.py` and the proposer-facing version of this list is `dspy/predict/flex/primitives_doc.py`.
 
 ### Saving and loading
 

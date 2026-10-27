@@ -6,6 +6,10 @@ model_list:
     litellm_params:
       model: "dspy-test-provider/dspy-test-model"
 
+general_settings:
+  # The test fixture binds only to 127.0.0.1 and uses a fake provider without credentials.
+  dangerously_permit_weak_or_unset_master_key: true
+
 litellm_settings:
   num_retries: 0
   custom_provider_map:

@@ -54,9 +54,7 @@ def test_ordinary_annotated_fields_keep_existing_parsing_and_schema(adapter):
 
 
 def test_decision_apis_are_experimental_only():
-    from dspy.experimental import TypeSafe
-
-    for api in (Choice, Noul, Score, TypeSafe):
+    for api in (Choice, Noul, Score):
         assert getattr(dspy.experimental, api.__name__) is api
         assert not hasattr(dspy, api.__name__)
         assert "Experimental:" in api.__doc__
@@ -123,7 +121,7 @@ def test_predict_outputs_and_generated_schema(adapter, rich):
         else:
             assert result[name] == value
             assert type(result[name]) is type(value)
-    prepared = resolve_adapter(None, adapter, signature, {})._prepare(signature, [], {"ticket": "Payment failed."}, {})
+    prepared = resolve_adapter(None, adapter, signature, {})._prepare(None, signature, [], {"ticket": "Payment failed."}, {})
     rendered = prepared["signature"]
     messages = adapter.format(rendered, [], prepared["inputs"])
     assert "Minor" in messages[0]["content"]
@@ -257,6 +255,13 @@ def test_structured_descriptions_reject_non_json(kind, description):
             kind[True, description]
 
 
+def test_score_rejects_null_level_descriptions():
+    with pytest.raises(ValueError, match="null"):
+        Score[None, "fair", "great"]
+    module = dspy.Predict(dspy.Signature({"rating": (Score["bad", "fair", "great"], dspy.OutputField(desc="Rate."))}))
+    with pytest.raises(ValueError, match="rating"):
+        module.set_criteria("rating", [None, "fair", "great"])
+
 @pytest.mark.parametrize("rich", [False, True])
 @pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter()])
 def test_structured_criteria_reach_both_backends_and_survive_save_load(adapter, rich, tmp_path):
@@ -265,7 +270,7 @@ def test_structured_criteria_reach_both_backends_and_survive_save_load(adapter, 
     technical = {"what": "Product bug", "not_for": "Billing"}
     urgent = Noul[(True, yes), (False, no)]
     category = Choice[("billing", {}), ("technical", technical)]
-    severity = Score[None, ["Disruptive"], {"what": "Blocking"}]
+    severity = Score["", ["Disruptive"], {"what": "Blocking"}]
     sig = dspy.Signature(
         {
             "ticket": (str, dspy.InputField()),
@@ -281,7 +286,7 @@ def test_structured_criteria_reach_both_backends_and_survive_save_load(adapter, 
     expected = {
         "urgent": {"true": yes, "false": no},
         "category": {"billing": {}, "technical": technical},
-        "severity": [None, ["Disruptive"], {"what": "Blocking"}],
+        "severity": ["", ["Disruptive"], {"what": "Blocking"}],
     }
     evidence = {
         "urgent": {"noul": 0.8},
@@ -299,7 +304,7 @@ def test_structured_criteria_reach_both_backends_and_survive_save_load(adapter, 
     assert (chat.urgent.value if rich else chat.urgent) is True
     assert (chat.category.value if rich else chat.category) == "technical"
     assert chat.severity.value == pytest.approx(1.6)
-    translated = resolve_adapter(lm, adapter, sig, module.fields)._prepare(sig, [], {"ticket": "Login fails"}, {})
+    translated = resolve_adapter(lm, adapter, sig, module.fields)._prepare(lm, sig, [], {"ticket": "Login fails"}, {})
     for name, criteria in expected.items():
         assert json.loads(translated["signature"].output_fields[name].json_schema_extra["desc"])["criteria"] == criteria
     module.save(tmp_path / "defaults.json")

@@ -29,7 +29,7 @@ class FieldInfoWithName(NamedTuple):
 
 
 class ChatAdapter(Adapter):
-    """Default Adapter for most language models.
+    """Formats and parses fields using `[[ ## field_name ## ]]` markers.
 
     The ChatAdapter formats DSPy signatures into a format compatible with most language models.
     It uses delimiter patterns like `[[ ## field_name ## ]]` to clearly separate input and output fields in

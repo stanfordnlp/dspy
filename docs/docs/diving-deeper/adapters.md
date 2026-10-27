@@ -12,17 +12,17 @@ Read this when you want to know what the prompt looks like on the wire, why a ty
 
 Same Signature, different prompt shape, no Signature changes. LMs vary a lot in what they prefer to read and produce: a model trained on instruction-following with markers loves ChatAdapter’s `[[ ## field ## ]]` format; a model with native structured-output mode does best with JSONAdapter; a reasoning model that formats unreliably wants TwoStepAdapter. Putting this decision behind one interface means Signatures, modules, and optimizers don’t have to know which family of LM they’re running against.
 
-### 2. ChatAdapter is the default
+### 2. XMLAdapter is the default
 
-Text-only, model-agnostic, uses `[[ ## field ## ]]` markers. It needs no special LM features — no JSON mode, no function calling, no native structured outputs. That breadth is why it’s the default. It also includes a safety net: when its regex parser fails, it falls back to JSONAdapter automatically (toggle with `use_json_adapter_fallback=False`).
+When no adapter is configured, DSPy uses `XMLAdapter(use_native_function_calling=True)`: XML-style field tags for text, native tool calling when the LM supports it, and text otherwise. DSPy parses and validates XML outputs; the provider does not enforce their structure.
 
 ### 3. Every adapter follows a fixed lifecycle
 
-preprocess → format → LM call → postprocess → parse. You can debug any adapter by walking these five steps. Preprocess adapts the signature for native LM features (function calling, reasoning). Format builds the messages. The LM call returns raw outputs. Postprocess pulls out tool calls and native-typed responses (Reasoning, Citations). Parse runs `parse_value` on each declared output field.
+preprocess → format → LM call → postprocess → parse. You can debug any adapter by walking these five steps. Preprocess adapts the signature for native LM features (function calling, reasoning). Format builds the messages. The LM call returns raw outputs. Postprocess pulls out tool calls and native-typed responses (Reasoning, Citations). Parse converts declared output fields to typed values.
 
 ### 4. Type coercion is centralized
 
-`dspy/adapters/utils.py::parse_value` is the single function every adapter delegates to. Adapters differ in how they *find* a field’s value in the LM’s output (regex marker, JSON key, XML tag), but once they have the raw string they all call the same `parse_value(value, annotation)`. That keeps coercion rules consistent across adapter swaps and gives you one place to look when a typed field misbehaves.
+Adapters use `dspy/adapters/utils.py::parse_value` for text. XML containers use Pydantic validation by field name with `strict=False`, since their scalar values arrive as text.
 
 ### 5. Custom types own their own serialization
 
@@ -59,13 +59,15 @@ Grouped by what you’re trying to do.
 ### The adapters
 
 **`dspy.ChatAdapter(callbacks=None, use_native_function_calling=False, native_response_types=None, use_json_adapter_fallback=True)`**  
-The default. Builds a chat-style prompt with field markers, parses the response with a regex over the same markers, and (by default) falls back to JSONAdapter if the regex misses. Set `use_json_adapter_fallback=False` when you want a hard error in tests.
+An explicit alternative to be deprecated in a future release; prefer `XMLAdapter`. Builds a chat-style prompt with field markers, parses the response with a regex over the same markers, and (by default) falls back to JSONAdapter if the regex misses. Set `use_json_adapter_fallback=False` when you want a hard error in tests.
 
 **`dspy.JSONAdapter(callbacks=None, use_native_function_calling=True)`**  
 Outputs structured JSON. Internally extends ChatAdapter — formatting is similar, but the output instruction asks for JSON and parsing uses `json_repair`. The constructor’s `use_native_function_calling=True` default flips when tool calling is wired in.
 
-**`dspy.XMLAdapter(callbacks=None)`**  
-`<field_name>value</field_name>` tags. Lists use repeated `<item>` tags.
+**`dspy.XMLAdapter(callbacks=None, use_native_function_calling=False, ...)`**  
+The implicit default passes `use_native_function_calling=True`; explicit construction leaves it disabled unless requested. Uses `<field_name>...</field_name>` tags, with nested fields for objects and `<item>` for lists. Supports streaming and leading reasoning blocks. Use `<field/>` for null, `<field></field>` for an empty string. Untyped (`Any`) values still require user validation.
+
+Container-closing tag sequences are reserved inside strings. Undeclared object fields are rejected unless the schema allows extras.
 
 **`dspy.TwoStepAdapter(extraction_model: BaseLM, **kwargs)`**  
 Two LM calls per inference. Use it when the main LM is a reasoning model that’s bad at formatting — the extractor is usually a cheap general-purpose LM with ChatAdapter. Doesn’t support finetuning yet.
@@ -176,7 +178,7 @@ Safe in-memory inputs such as data URIs, bytes, PIL images, audio arrays, and st
 
 - **`dspy.configure(adapter=dspy.JSONAdapter())`** — process-wide default.
 - **`with dspy.context(adapter=dspy.XMLAdapter()): ...`** — scoped override.
-- **No automatic LM-based selection.** ChatAdapter is the default and stays the default until you set otherwise. Some teleprompts (e.g., `BootstrapFinetune`) accept an `adapter` dict keyed by LM, so different LMs in a finetuning loop can use different adapters.
+- **No automatic LM-based adapter selection.** Without an override, DSPy uses `XMLAdapter(use_native_function_calling=True)`. Native tool use depends on LM support, not a change of adapter. Some teleprompts (e.g., `BootstrapFinetune`) accept an `adapter` dict keyed by LM, so different LMs in a finetuning loop can use different adapters.
 
 ## Cross-links
 
