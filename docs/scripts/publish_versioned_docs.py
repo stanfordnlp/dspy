@@ -45,7 +45,7 @@ HOST_CONFIG = (
                 },
                 # Keep release snapshots out of search indexes so they do not compete with Current.
                 {
-                    "source": VERSION_PATH + "/:path*",
+                    "source": VERSION_PATH + "/(.*)",
                     "headers": [{"key": "X-Robots-Tag", "value": "noindex"}],
                 },
             ],

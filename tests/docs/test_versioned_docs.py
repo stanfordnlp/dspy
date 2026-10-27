@@ -299,7 +299,7 @@ def test_mike_current_is_mutable_and_default(tmp_path):
         },
     ]
     assert {
-        "source": r"/:version(\d+\.\d+(?:\.\d+(?:(?:a|b|rc)\d+)?)?)/:path*",
+        "source": r"/:version(\d+\.\d+(?:\.\d+(?:(?:a|b|rc)\d+)?)?)/(.*)",
         "headers": [{"key": "X-Robots-Tag", "value": "noindex"}],
     } in host_config["headers"]
     assert "trailingSlash" not in host_config
