@@ -117,7 +117,10 @@ def write_redirects(site: Path, redirects: dict[str, str]) -> None:
 
 
 def source_dates(docs: Path) -> dict[str, date]:
-    """Map each page source, keyed by its Markdown path, to the date of its last commit."""
+    """Map each current page source, keyed by its Markdown path, to the date of its last commit.
+
+    Deleted sources are skipped, so an old page cannot supply the date for a new page at the same route.
+    """
     try:
         log = subprocess.run(
             ["git", "-c", "core.quotePath=false", "log", "--format=%x00%cs", "--name-only", "--relative", "--", "."],
@@ -133,7 +136,7 @@ def source_dates(docs: Path) -> dict[str, date]:
         day, *names = entry.strip().splitlines()
         for name in names:
             source = Path(name)
-            if source.suffix in (".md", ".ipynb", ".py"):
+            if source.suffix in (".md", ".ipynb", ".py") and (docs / source).is_file():
                 dates.setdefault(source.with_suffix(".md").as_posix(), date.fromisoformat(day))
     return dates
 

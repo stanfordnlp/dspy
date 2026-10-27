@@ -284,11 +284,20 @@ def test_source_dates_use_the_last_commit_for_each_page(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     (docs / "index.md").write_text("# Home")
     (docs / "guide" / "notebook.ipynb").write_text("{}")
+    (docs / "rag.md").write_text("# Old RAG")
     commit("2026-01-02")
     (docs / "index.md").write_text("# Home, updated")
+    (docs / "rag.md").unlink()
+    (docs / "rag").mkdir()
+    (docs / "rag" / "index.md").write_text("# New RAG")
     commit("2026-03-04")
 
-    assert source_dates(docs) == {"index.md": date(2026, 3, 4), "guide/notebook.md": date(2026, 1, 2)}
+    # The deleted rag.md shares /rag/ with its replacement and must not supply a date.
+    assert source_dates(docs) == {
+        "index.md": date(2026, 3, 4),
+        "guide/notebook.md": date(2026, 1, 2),
+        "rag/index.md": date(2026, 3, 4),
+    }
     assert source_dates(tmp_path / "missing") == {}
 
 
