@@ -49,7 +49,7 @@ def test_removed_engine_is_refused_with_migration_message(entry):
     state = {**lm.dump_state(), "engine": "litellm"}
     lm._engine_spec = "litellm"  # Emulate an old trusted pickle; not a supported mutation.
     saved = pickle.dumps(lm)
-    with pytest.raises(ValueError, match="(?i)litellm") as caught:
+    with pytest.raises(ValueError, match=r"(?i)litellm") as caught:
         if entry == "constructor":
             dspy.LM("openai/gpt-4o-mini", engine="litellm")
         elif entry == "json":
@@ -167,3 +167,31 @@ def test_xai_api_key_alias_is_used_natively(engine, monkeypatch):
         assert transport.requests[0].url.startswith("https://api.x.ai/")
     finally:
         lm.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_openrouter_model_fallback_survives_native_predict(asynchronous, monkeypatch):
+    transport = native_transport(monkeypatch, [wire("<answer>Paris</answer>")])
+    models = ["openai/gpt-4.1-mini", "anthropic/claude-haiku-4.5"]
+    lm = dspy.LM("openrouter/openai/gpt-4.1-mini", api_key="fake", cache=False, num_retries=0,
+                 models=models, route="fallback")
+    try:
+        with dspy.context(lm=lm):
+            program = dspy.Predict("question -> answer")
+            result = await program.acall(question="Capital of France?") if asynchronous else program(question="Capital of France?")
+        assert result.answer == "Paris"
+        body = json.loads(transport.requests[0].body)
+        assert body["models"] == models
+        assert body["route"] == "fallback"
+        assert body["model"] == "openai/gpt-4.1-mini"
+    finally:
+        await lm.aclose()
+
+
+def test_openrouter_fallback_options_are_not_sent_to_other_providers(monkeypatch):
+    transport = native_transport(monkeypatch, [])
+    lm = dspy.LM("openai/gpt-4.1-mini", api_key="fake", cache=False, models=["other/model"], route="fallback")
+    with pytest.raises(dspy.LMUnsupportedFeatureError, match=r"models.*route"):
+        lm("Hello")
+    assert not transport.requests

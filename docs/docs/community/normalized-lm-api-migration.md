@@ -52,6 +52,25 @@ remain unchanged.
   callable; their old LiteLLM model prefixes no longer route automatically.
   See [Embedder](../api/models/Embedder.md).
 
+For OpenRouter cross-model fallback, move `models` and `route` out of the SDK's
+`extra_body` wrapper into generation options:
+
+```python
+lm = dspy.LM(
+    "openrouter/openai/gpt-4.1-mini",
+    models=["openai/gpt-4.1-mini", "anthropic/claude-haiku-4.5"],
+    route="fallback",
+)
+```
+
+DSPy sends this policy to OpenRouter; it does not implement the fallback itself.
+An invalid model ID can still be rejected by OpenRouter before fallback applies.
+These options are accepted only for the OpenRouter route. For OpenRouter privacy
+and provider restrictions, use predictor configuration, such as
+`dspy.Predict("question -> answer", provider={"data_collection": "deny"})`.
+The LM constructor's `provider=` argument selects a training/launch provider,
+not OpenRouter's inference routing policy.
+
 DSPy still uses **LiteLLM-derived model metadata** for capability and pricing
 hints, without importing the LiteLLM library. On first use it attempts to fetch
 the upstream catalog, falling back to the bundled snapshot. Set

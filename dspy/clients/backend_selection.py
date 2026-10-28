@@ -49,6 +49,10 @@ def select_backend(lm, options=None, request=None):
         if resolution.provider == "typesafe":
             # System One natively accepts structured instructions and criteria.
             extra -= {"questions"}
+        if resolution.provider == "openrouter":
+            # The Chat writer carries OpenRouter's ordered cross-model fallback
+            # policy verbatim. These fields have no meaning on other providers.
+            extra -= {"models", "route"}
         if resolution.adapter == "AnthropicLM":
             # Messages owns the provider-shaped thinking object, including
             # budget and disable controls carried unchanged by the builder.
