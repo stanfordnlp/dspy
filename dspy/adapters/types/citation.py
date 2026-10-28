@@ -41,7 +41,7 @@ class Citations(Type):
             Document(
                 data="Water boils at 100°C at standard atmospheric pressure.",
                 title="Physics Fundamentals",
-                metadata={"author": "Dr. Smith", "year": 2023}
+                context="Author: Dr. Smith; year: 2023"
             )
         ]
 

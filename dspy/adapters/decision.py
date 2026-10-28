@@ -7,11 +7,15 @@ import warnings
 from contextlib import contextmanager
 from functools import lru_cache
 
-from pydantic import BaseModel, ConfigDict, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
 from dspy.adapters.decision_state import DecisionState
+from dspy.adapters.types.base_type import split_message_content_for_custom_types
+from dspy.adapters.types.bounding_box import BoundingBox
 from dspy.adapters.types.decision import Choice, Noul, Probability, Score
 from dspy.dsp.utils.settings import settings
+from dspy.lm15 import Config, DataPart, Message, Request, bounding_box, choice, request_from_openai_chat, score, yes_no
+from dspy.utils.exceptions import AdapterParseError
 
 
 @contextmanager
@@ -62,7 +66,7 @@ def resolve_adapter(lm, adapter, signature, fields, declared_signature=None):
                 UserWarning,
                 stacklevel=2,
             )
-    return DecisionAdapter(adapter, state, system_one) if state.types else adapter
+    return DecisionAdapter(adapter, state, system_one) if system_one or state.types else adapter
 
 
 class DecisionAdapter:
@@ -73,8 +77,8 @@ class DecisionAdapter:
         self.state = state
         self.system_one = system_one
 
-    def _prepare(self, signature, demos, inputs, lm_kwargs):
-        from dspy.adapters.utils import get_field_description_string
+    def _prepare(self, lm, signature, demos, inputs, lm_kwargs):
+        from dspy.adapters.utils import get_field_description_string, serialize_for_json
         from dspy.predict.predict import serialize_object
 
         if settings.send_stream is not None:
@@ -89,13 +93,45 @@ class DecisionAdapter:
             state = {
                 "instructions": signature.instructions,
                 "input_fields": get_field_description_string(signature.input_fields),
-                "inputs": serialize_object({k: v for k, v in inputs.items() if k in signature.input_fields}),
+                "inputs": {k: v for k, v in inputs.items() if k in signature.input_fields},
             }
             if demos:
-                state["demos"] = [
-                    serialize_object({k: v for k, v in demo.items() if k in signature.fields}) for demo in demos
-                ]
-            return {"state": state, "questions": questions}
+                state["demos"] = [{k: v for k, v in demo.items() if k in signature.fields} for demo in demos]
+            state = serialize_for_json(state)
+            properties = {}
+            for name, kind in types.items():
+                if issubclass(kind, Noul):
+                    properties[name] = yes_no(name)
+                elif issubclass(kind, Score):
+                    properties[name] = score(name, [str(i) for i in range(len(kind.criteria()))])
+                else:
+                    criteria = questions[name]["criteria"]
+                    if "" in criteria:
+                        raise ValueError(
+                            f"Jev output {name!r} cannot contain an empty choice label; "
+                            "use a nonempty label such as 'no_match'."
+                        )
+                    properties[name] = choice(name, list(criteria))
+            for name, field in signature.output_fields.items():
+                if field.annotation is BoundingBox:
+                    desc = field.json_schema_extra.get("desc", "")
+                    instructions = name if desc == f"${{{name}}}" else desc or name
+                    properties[name] = bounding_box(instructions)
+                    questions[name] = {"type": "box", "instructions": instructions}
+            # Keep text-only state structured. For media, reuse DSPy's marker
+            # expansion and lm15's conversion rather than encoding images here.
+            messages = split_message_content_for_custom_types([
+                {"role": "user", "content": json.dumps(state, ensure_ascii=False)}
+            ])
+            message = Message.user(DataPart(value=state))
+            if isinstance(messages[0]["content"], list):
+                message = request_from_openai_chat({"model": lm.model, "messages": messages}).messages[0]
+            # The schema declares answer spaces; native questions retain structured instructions and criteria.
+            response_format = {"type": "json_schema", "schema": {"type": "object", "properties": properties}}
+            return Request(
+                model=lm.model, messages=(message,),
+                config=Config(response_format=response_format, extensions={"questions": questions}),
+            )
         for name, kind in types.items():
             signature = signature.with_updated_fields(
                 name, type_=evidence_type(kind), desc="\n" + json.dumps(questions[name], ensure_ascii=False, indent=2)
@@ -114,6 +150,18 @@ class DecisionAdapter:
         results = []
         for completion in completions:
             answers = {}
+            boxes = {}
+            if self.system_one:
+                for name, field in self.state.signature.output_fields.items():
+                    if field.annotation is BoundingBox:
+                        answers[name] = copy.deepcopy(completion[name])
+                        try:
+                            boxes[name] = BoundingBox.model_validate(answers[name]["box"])
+                        except ValidationError as error:
+                            raise AdapterParseError(
+                                adapter_name="DecisionAdapter", signature=self.state.signature,
+                                lm_response=json.dumps(completion), message=str(error),
+                            ) from error
             for name, kind in types.items():
                 answer = completion[name]
                 if isinstance(answer, BaseModel):
@@ -132,15 +180,17 @@ class DecisionAdapter:
                 caller = (settings.caller_modules or [None])[-1]
                 with lock:
                     log.extend((caller, name, copy.deepcopy(answer)) for name, answer in answers.items())
-            results.append({**completion, **self.state._decode(answers)})
+            results.append({**completion, **boxes, **self.state._decode(answers)})
         return results
 
     def __call__(self, lm, lm_kwargs, signature, demos, inputs):
-        request = self._prepare(signature, demos, inputs, lm_kwargs)
-        completions = [lm(**request)] if self.system_one else self.adapter(lm, **request)
+        request = self._prepare(lm, signature, demos, inputs, lm_kwargs)
+        completions = ([lm(request).provider_data["typesafe"]["answers"]] if self.system_one
+                       else self.adapter(lm, **request))
         return self._decode(completions)
 
     async def acall(self, lm, lm_kwargs, signature, demos, inputs):
-        request = self._prepare(signature, demos, inputs, lm_kwargs)
-        completions = [await lm.acall(**request)] if self.system_one else await self.adapter.acall(lm, **request)
+        request = self._prepare(lm, signature, demos, inputs, lm_kwargs)
+        completions = ([(await lm.acall(request)).provider_data["typesafe"]["answers"]] if self.system_one
+                       else await self.adapter.acall(lm, **request))
         return self._decode(completions)

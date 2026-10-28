@@ -14,12 +14,15 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+from datetime import date
 from html import escape
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import yaml
+
+HOME_TITLE = "DSPy: Program, don't prompt, your LLMs"
 
 
 def load_config(path: Path) -> dict[str, object]:
@@ -111,6 +114,57 @@ def write_redirects(site: Path, redirects: dict[str, str]) -> None:
         elif not relative.endswith("/"):
             relative += "/"
         destination.write_text(redirect_document(relative))
+
+
+def source_dates(docs: Path) -> dict[str, date]:
+    """Map each current page source, keyed by its Markdown path, to the date of its last commit.
+
+    Deleted sources are skipped, so an old page cannot supply the date for a new page at the same route.
+    """
+    try:
+        log = subprocess.run(
+            ["git", "-c", "core.quotePath=false", "log", "--format=%x00%cs", "--name-only", "--relative", "--", "."],
+            cwd=docs,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return {}
+    dates: dict[str, date] = {}
+    for entry in log.split("\0")[1:]:
+        day, *names = entry.strip().splitlines()
+        for name in names:
+            source = Path(name)
+            if source.suffix in (".md", ".ipynb", ".py") and (docs / source).is_file():
+                dates.setdefault(source.with_suffix(".md").as_posix(), date.fromisoformat(day))
+    return dates
+
+
+def add_revision_dates(docs: Path, dates: dict[str, date]) -> None:
+    """Add a `revision_date` that the theme shows as the page's last update."""
+    for source, day in dates.items():
+        path = docs / source
+        if not path.is_file():
+            continue
+        text = path.read_text()
+        line = f'revision_date: "{day:%B} {day.day}, {day.year}"\n'
+        if text.startswith("---\n"):
+            if not re.search(r"(?m)^revision_date:", text.split("\n---", 1)[0]):
+                path.write_text(f"---\n{line}{text[4:]}")
+        else:
+            path.write_text(f"---\n{line}---\n\n{text}")
+
+
+def add_sitemap_dates(sitemap: Path, site_url: str, dates: dict[str, date]) -> None:
+    """Zensical's sitemap template has no `lastmod`, so add it from the page dates."""
+    by_url = {urljoin(site_url, route_for_source(source).lstrip("/")): day for source, day in dates.items()}
+
+    def replace(match: re.Match[str]) -> str:
+        day = by_url.get(match.group(1))
+        return f"{match.group(0)}<lastmod>{day.isoformat()}</lastmod>" if day else match.group(0)
+
+    sitemap.write_text(re.sub(r"<loc>([^<]+)</loc>", replace, sitemap.read_text()))
 
 
 NOTEBOOK_LINK = re.compile(r"\]\((?P<target>[^)\s#]+)\.ipynb(?P<suffix>#[^)\s]*)?\)")
@@ -452,6 +506,8 @@ def build_zensical_site(
         remove_redirect_sources(prepared_docs, prepared)
         notebook_routes = convert_notebooks(prepared_docs)
         add_missing_titles(prepared_docs, nav_entries(prepared.get("nav", [])))
+        dates = source_dates(source_docs)
+        add_revision_dates(prepared_docs, dates)
 
         subprocess.run(
             [str(python), "-m", "zensical", "build", "--clean", "--config-file", prepared_config],
@@ -471,10 +527,11 @@ def build_zensical_site(
         write_page_markdown(output, str(source_config["site_url"]), redirect_maps(prepared))
         social_cards(output, str(source_config["site_url"]), titles, project / "docs" / "static" / "img" / "logo.png")
         sitemap = output / "sitemap.xml"
+        add_sitemap_dates(sitemap, str(source_config["site_url"]), dates)
         with gzip.open(output / "sitemap.xml.gz", "wb") as compressed:
             compressed.write(sitemap.read_bytes())
         home = output / "index.html"
-        home.write_text(re.sub(r"<title>Index\s+-\s+DSPy</title>", "<title>DSPy</title>", home.read_text(), count=1))
+        home.write_text(re.sub(r"<title>[^<]*</title>", f"<title>{HOME_TITLE}</title>", home.read_text(), count=1))
         validate_output(output, notebook_routes, redirect_maps(prepared), str(source_config["site_url"]))
         return notebook_routes
     finally:

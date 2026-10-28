@@ -1,23 +1,29 @@
+from __future__ import annotations
+
 import functools
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, ParamSpec, TypeVar, cast
 
 from dspy.utils.lazy_import import require
 
-anyio = require("anyio")
-
 if TYPE_CHECKING:
-    from dspy.primitives.module import Module
+    import anyio.to_thread
+else:
+    anyio = require("anyio")
 
-_limiter = None
+P = ParamSpec("P")
+T = TypeVar("T")
+
+_limiter: anyio.CapacityLimiter | None = None
 
 
-def get_async_max_workers():
-    import dspy
+def get_async_max_workers() -> int:
+    from dspy.dsp.utils.settings import settings
 
-    return dspy.settings.async_max_workers
+    # Settings is an open mapping; narrow this known setting at its consumer.
+    return cast(int, settings.async_max_workers)
 
 
-def get_limiter():
+def get_limiter() -> anyio.CapacityLimiter:
     async_max_workers = get_async_max_workers()
 
     global _limiter
@@ -29,7 +35,7 @@ def get_limiter():
     return _limiter
 
 
-def asyncify(program: "Module") -> Callable[[Any, Any], Awaitable[Any]]:
+def asyncify(program: Callable[P, T]) -> Callable[P, Coroutine[Any, Any, T]]:
     """
     Wraps a DSPy program so that it can be called asynchronously. This is useful for running a
     program in parallel with another task (e.g., another DSPy program).
@@ -44,13 +50,13 @@ def asyncify(program: "Module") -> Callable[[Any, Any], Awaitable[Any]]:
             The current thread's configuration context is inherited for each call.
     """
 
-    async def async_program(*args, **kwargs) -> Any:
+    async def async_program(*args: P.args, **kwargs: P.kwargs) -> T:
         # Capture the current overrides at call-time.
         from dspy.dsp.utils.settings import thread_local_overrides
 
         parent_overrides = thread_local_overrides.get().copy()
 
-        def wrapped_program(*a, **kw):
+        def wrapped_program(*a: P.args, **kw: P.kwargs) -> T:
             from dspy.dsp.utils.settings import thread_local_overrides
 
             original_overrides = thread_local_overrides.get()

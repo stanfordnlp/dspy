@@ -129,6 +129,33 @@ class TestMockInterpreter:
 # ============================================================================
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_mode", [False, True])
+@pytest.mark.parametrize("mode", ["native", "omitted", "unsupported"])
+async def test_default_reasoning_trajectory(mode, async_mode):
+    class Model(DummyLM):
+        @property
+        def supports_reasoning(self):
+            return mode != "unsupported"
+
+    responses = [{"code": "print(13)"}, {"code": "print(missing)"}, {"code": "SUBMIT(13)"}]
+    if mode == "unsupported":
+        for response in responses:
+            response["plan"] = "Check the value before submitting."
+    lm = Model(responses, reasoning=mode == "native")
+    factory = MockInterpreterFactory(responses=[
+        "13", CodeExecutionError("name 'missing' is not defined"), FinalOutput({"answer": 13}),
+    ])
+    program = RLM("query -> answer: int", max_iters=3, interpreter_factory=factory)
+    with dspy.context(lm=lm):
+        result = await program.acall(query="Return thirteen") if async_mode else program(query="Return thirteen")
+    expected = "Some reasoning" if mode == "native" else "" if mode == "omitted" else responses[0]["plan"]
+    assert result.answer == 13
+    assert result.final_reasoning == expected
+    assert len(result.trajectory) == 3
+    assert all(entry["reasoning"] == expected and isinstance(entry["reasoning"], str) for entry in result.trajectory)
+
+
 class TestRLMInitialization:
     """Tests for RLM module initialization."""
 
@@ -296,7 +323,7 @@ class TestRLMInitialization:
 
         tools = RLM("context -> answer", sub_lm=DummyLM([{"answer": "legacy answer"}]))._make_llm_tools()
 
-        assert tools["llm_query"]("test prompt") == "[[ ## answer ## ]]\nlegacy answer"
+        assert tools["llm_query"]("test prompt") == "<answer>\nlegacy answer\n</answer>"
 
     def test_llm_query_returns_typed_response_text(self):
         import dspy
@@ -307,7 +334,7 @@ class TestRLMInitialization:
         with dspy.context(experimental=True):
             result = tools["llm_query"]("test prompt")
 
-        assert result == "[[ ## answer ## ]]\ntyped answer"
+        assert result == "<answer>\ntyped answer\n</answer>"
 
     def test_llm_query_rejects_unsupported_response_shape(self):
         from unittest.mock import MagicMock
@@ -1488,7 +1515,7 @@ class TestRLMWithDummyLM:
         """Test full RLM pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
         configured = MockInterpreterFactory()
         with dummy_lm_context([
-            {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
+            {"plan": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
         ]):
             rlm = RLM("query -> answer: int", max_iters=3)
             with dspy.context(interpreter_factory=configured):
@@ -1501,8 +1528,8 @@ class TestRLMWithDummyLM:
     def test_multi_turn_computation_e2e(self):
         """Test RLM with multiple turns before SUBMIT."""
         with dummy_lm_context([
-            {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-            {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+            {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
         ]):
             rlm = RLM("query -> answer: int", max_iters=5)
             result = rlm.forward(query="Double ten", interpreter_factory=PythonInterpreter)
@@ -1513,7 +1540,7 @@ class TestRLMWithDummyLM:
     def test_with_input_variables_e2e(self):
         """Test RLM with input variables passed to sandbox."""
         with dummy_lm_context([
-            {"reasoning": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
+            {"plan": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
         ]):
             rlm = RLM("numbers: list[int] -> total: int", max_iters=3)
             result = rlm.forward(numbers=[1, 2, 3, 4, 5], interpreter_factory=PythonInterpreter)
@@ -1526,7 +1553,7 @@ class TestRLMWithDummyLM:
             return {"apple": "red", "banana": "yellow"}.get(key, "unknown")
 
         with dummy_lm_context([
-            {"reasoning": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
+            {"plan": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
         ]):
             rlm = RLM("fruit -> color: str", max_iters=3, tools=[lookup])
             result = rlm.forward(fruit="apple", interpreter_factory=PythonInterpreter)
@@ -1567,7 +1594,7 @@ class TestRLMWithDummyLM:
 
         with dummy_lm_context([
             {
-                "reasoning": "Call the tool",
+                "plan": "Call the tool",
                 "code": 'result = score_payload({"value": 3})\nSUBMIT(result)',
             },
         ]):
@@ -1585,7 +1612,7 @@ class TestRLMWithDummyLM:
     async def test_aforward_simple_computation_e2e(self):
         """Test aforward() full pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
         with dummy_lm_context([
-            {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
+            {"plan": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
         ]):
             rlm = RLM("query -> answer: int", max_iters=3)
             result = await rlm.aforward(query="What is 2 + 3?")
@@ -1597,8 +1624,8 @@ class TestRLMWithDummyLM:
     async def test_aforward_multi_turn_e2e(self):
         """Test aforward() with multiple turns before SUBMIT."""
         with dummy_lm_context([
-            {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-            {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+            {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
         ]):
             rlm = RLM("query -> answer: int", max_iters=5)
             result = await rlm.aforward(query="Double ten")
@@ -1610,7 +1637,7 @@ class TestRLMWithDummyLM:
     async def test_aforward_with_input_variables_e2e(self):
         """Test aforward() with input variables passed to sandbox."""
         with dummy_lm_context([
-            {"reasoning": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
+            {"plan": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
         ]):
             rlm = RLM("numbers: list[int] -> total: int", max_iters=3)
             result = await rlm.aforward(numbers=[1, 2, 3, 4, 5])
@@ -1977,17 +2004,37 @@ class TestRLMSubAgents:
         invocation.construct("RLM", "q -> a", "nested")
         assert invocation._predictors["nested"]._interpreter_factory is override
 
-    def test_interpreter_in_the_host_memory_runs_without_sub_agents(self, caplog):
-        # The shim refuses it rather than replace the host's `dspy` module; RLM carries on without sub-agents.
+    def test_interpreter_in_the_host_memory_hosts_the_facade(self, caplog):
+        # The shim binds `dspy` in the interpreter's namespace instead of replacing the host's module.
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessInterpreter)
+        rlm.generate_action, seen = _recording_predictor('import dspy\nSUBMIT(dspy.Predict("q -> a")(q="x").a)')
+
+        with caplog.at_level("WARNING", logger="dspy.predict.rlm"), dspy.context(lm=DummyLM([{"a": "42"}])):
+            assert rlm(query="q").answer == "42"
+
+        assert sys.modules["dspy"] is dspy
+        assert "Sub-agents (dspy)" in seen[0].instructions
+        assert "unavailable" not in caplog.text
+
+    def test_interpreter_that_rejects_the_shim_as_syntax_error_runs_without_sub_agents(self, caplog):
+        # Restricted compilers (e.g. RestrictedPython) reject the shim's `_dspy_*` names at compile time.
+        from dspy.primitives import facade
+
+        def execute(code, variables):
+            if code == facade.SHIM_SETUP:
+                raise SyntaxError('"_dspy_sys" is an invalid variable name because it starts with "_"')
+            return FinalOutput({"answer": "42"})
+
+        factory = MockInterpreterFactory(execute_fn=execute)
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
         rlm.generate_action, seen = _recording_predictor('SUBMIT("42")')
 
         with caplog.at_level("WARNING", logger="dspy.predict.rlm"):
             assert rlm(query="q").answer == "42"
 
-        assert sys.modules["dspy"] is dspy
         assert "Sub-agents (dspy)" not in seen[0].instructions
-        assert "host's memory" in caplog.text
+        assert not {facade.CONSTRUCT_TOOL, facade.CALL_TOOL} & factory.instances[0].tools.keys()
+        assert "sub-agents are unavailable on MockInterpreter" in caplog.text
 
     def test_facade_reserves_sandbox_names(self):
         with pytest.raises(ValueError, match="conflict"):

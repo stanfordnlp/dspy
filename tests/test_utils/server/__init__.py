@@ -27,8 +27,8 @@ def _litellm_test_server() -> Iterator[tuple[str, str]]:
     Start one LiteLLM test server per pytest worker and tear it down when the
     session completes.
     """
-    if sys.version_info[:2] == (3, 14):
-        pytest.skip("Litellm proxy server is not supported on Python 3.14.")
+    if sys.version_info[:2] >= (3, 14):
+        pytest.skip("Litellm proxy server is not supported on Python 3.14+.")
     with tempfile.TemporaryDirectory() as server_log_dir_path:
         # Create a server log file used to store request logs
         server_log_file_path = os.path.join(server_log_dir_path, "request_logs.jsonl")

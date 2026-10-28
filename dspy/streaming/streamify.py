@@ -10,7 +10,7 @@ import orjson
 
 from dspy.dsp.utils.settings import settings
 from dspy.primitives.prediction import Prediction
-from dspy.streaming.messages import StatusMessage, StatusMessageProvider, StatusStreamingCallback
+from dspy.streaming.messages import StatusMessage, StatusMessageProvider, StatusStreamingCallback, _StreamSignature
 from dspy.streaming.streaming_listener import StreamListener, find_predictor_for_stream_listeners
 from dspy.utils.asyncify import asyncify
 from dspy.utils.lazy_import import require
@@ -219,7 +219,15 @@ def streamify(
             tg.start_soon(generator, args, kwargs, send_stream)
 
             async for value in receive_stream:
-                if _is_litellm_model_response_stream(value):
+                if isinstance(value, _StreamSignature):
+                    for listener in predict_id_to_listener.get(value.predict_id, []):
+                        # A new predictor call also ends the previous one when the provider omitted its stop chunk.
+                        if listener.allow_reuse:
+                            if final_chunk := listener.finalize():
+                                yield final_chunk
+                            listener._reset()
+                        listener._set_signature(value.signature)
+                elif _is_litellm_model_response_stream(value):
                     if len(predict_id_to_listener) == 0:
                         # No listeners are configured, yield the chunk directly for backwards compatibility.
                         yield value

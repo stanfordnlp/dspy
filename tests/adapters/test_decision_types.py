@@ -54,9 +54,7 @@ def test_ordinary_annotated_fields_keep_existing_parsing_and_schema(adapter):
 
 
 def test_decision_apis_are_experimental_only():
-    from dspy.experimental import TypeSafe
-
-    for api in (Choice, Noul, Score, TypeSafe):
+    for api in (Choice, Noul, Score):
         assert getattr(dspy.experimental, api.__name__) is api
         assert not hasattr(dspy, api.__name__)
         assert "Experimental:" in api.__doc__
@@ -123,7 +121,7 @@ def test_predict_outputs_and_generated_schema(adapter, rich):
         else:
             assert result[name] == value
             assert type(result[name]) is type(value)
-    prepared = resolve_adapter(None, adapter, signature, {})._prepare(signature, [], {"ticket": "Payment failed."}, {})
+    prepared = resolve_adapter(None, adapter, signature, {})._prepare(None, signature, [], {"ticket": "Payment failed."}, {})
     rendered = prepared["signature"]
     messages = adapter.format(rendered, [], prepared["inputs"])
     assert "Minor" in messages[0]["content"]
@@ -306,7 +304,7 @@ def test_structured_criteria_reach_both_backends_and_survive_save_load(adapter, 
     assert (chat.urgent.value if rich else chat.urgent) is True
     assert (chat.category.value if rich else chat.category) == "technical"
     assert chat.severity.value == pytest.approx(1.6)
-    translated = resolve_adapter(lm, adapter, sig, module.fields)._prepare(sig, [], {"ticket": "Login fails"}, {})
+    translated = resolve_adapter(lm, adapter, sig, module.fields)._prepare(lm, sig, [], {"ticket": "Login fails"}, {})
     for name, criteria in expected.items():
         assert json.loads(translated["signature"].output_fields[name].json_schema_extra["desc"])["criteria"] == criteria
     module.save(tmp_path / "defaults.json")

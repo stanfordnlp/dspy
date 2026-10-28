@@ -36,8 +36,8 @@ async def test_dummy_override_can_delegate_to_super_without_recursion():
             return super().forward(*args, **kwargs)
 
     lm = RecordingLM([{"answer": "first"}, {"answer": "second"}])
-    assert lm("hello") == ["[[ ## answer ## ]]\nfirst"]
-    assert await lm.acall("hello") == ["[[ ## answer ## ]]\nsecond"]
+    assert lm("hello") == ["<answer>\nfirst\n</answer>"]
+    assert await lm.acall("hello") == ["<answer>\nsecond\n</answer>"]
     assert lm.calls == 2
     assert len(lm.history) == 2
 
@@ -65,8 +65,8 @@ async def test_dummy_accepts_opaque_blocks_and_positional_message_lists():
     ]}]
     first = lm(messages)
     second = await lm.acall(messages=messages)
-    assert first[0]["text"] == "[[ ## answer ## ]]\nfirst"
-    assert second[0]["text"] == "[[ ## answer ## ]]\nsecond"
+    assert first[0]["text"] == "<answer>\nfirst\n</answer>"
+    assert second[0]["text"] == "<answer>\nsecond\n</answer>"
     assert first[0]["reasoning_content"] == "Some reasoning"
     assert messages[0]["content"][0]["file"]["filename"] == "report.txt"
     assert lm.history[-1]["messages"] == messages

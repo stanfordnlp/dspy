@@ -45,7 +45,7 @@ class Cache:
         disk_cache_dir: str | None,
         disk_size_limit_bytes: int | None = 1024 * 1024 * 10,
         memory_max_entries: int = 1000000,
-        restrict_pickle: bool = False,
+        restrict_pickle: bool = True,
         safe_types: list[type[Any]] | None = None,
     ):
         """
@@ -55,8 +55,8 @@ class Cache:
             disk_cache_dir: The directory where the disk cache is stored.
             disk_size_limit_bytes: The maximum size of the disk cache (in bytes).
             memory_max_entries: The maximum size of the in-memory cache (in number of items).
-            restrict_pickle: When True, restrict pickle deserialization to a known-safe
-                set of types. When False (default), use unrestricted pickle.
+            restrict_pickle: When True (default), restrict pickle deserialization to a known-safe
+                set of types. When False, use unrestricted pickle.
             safe_types: Additional types to allow when restrict_pickle is True.
         """
 
