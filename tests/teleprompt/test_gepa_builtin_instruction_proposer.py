@@ -539,7 +539,8 @@ def test_gepa_truncate_history_outputs_on_a_react_program_and_custom_proposers_s
 
     program, task_lm = react_program_and_lm()
     with dspy.context(lm=task_lm, adapter=dspy.ChatAdapter()):
-        dspy.GEPA(metric=react_metric, instruction_proposer=custom_proposer, max_metric_calls=4).compile(
+        # The shared scripted LM requires consecutive lookup/submit calls for each example.
+        dspy.GEPA(metric=react_metric, instruction_proposer=custom_proposer, max_metric_calls=4, num_threads=1).compile(
             program, trainset=trainset, valset=trainset
         )
 
