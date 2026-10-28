@@ -32,15 +32,17 @@ result = rlm(
 print(result.answer)
 ```
 
-## Deno Installation
+## Interpreter Installation
 
-RLM relies on [Deno](https://deno.land/) and [Pyodide](https://pyodide.org/) to create a local WASM sandbox for secure Python execution.
+RLM defaults to MXC-confined CPython through [`LocalInterpreter`](../tools/LocalInterpreter.md).
+Its pinned runtime wheel supplies the launcher; the host must permit the corresponding OS sandbox facilities.
+Install Python libraries in the DSPy environment before execution. See that guide for installation gates and
+platform-specific limitations; this default-switch draft is not yet a published runtime release.
 
-Install DSPy's managed Deno runtime with `pip install "dspy[deno]"`. See the
+To retain Deno/Pyodide, install `pip install "dspy[deno]"` and pass
+`interpreter_factory=dspy.PythonInterpreter`. See the
 [`PythonInterpreter` installation guide](../tools/PythonInterpreter.md#deno-installation) for supported platforms,
 system-Deno fallback instructions, and dependency-isolation details.
-
-Then you can run `dspy.RLM`.
 
 You can also work with an external sandbox provider. We are still working on creating an example of using external sandbox providers.
 
@@ -52,7 +54,7 @@ RLM operates in an iterative REPL loop:
 1. The LLM receives **metadata** about the context (type, length, preview) but not the full context
 2. The LLM writes **Python code** to explore the data (print samples, search, filter)
 3. Code executes in a **sandboxed interpreter**, and the LLM sees the output
-4. The LLM can call `llm_query(prompt)` to run **sub-LLM calls** for semantic analysis on snippets
+4. The LLM can call `llm_query(prompt, images=None)` or `llm_query_batched(prompts, images=None)` to run **sub-LLM calls** over text and optional images
 5. When done, the LLM calls `SUBMIT(output)` to return the final answer
 
 #### What the LLM sees (step-by-step trace):
@@ -111,7 +113,7 @@ $20,000,000
 | `verbose` | `bool` | `False` | Log detailed execution info |
 | `tools` | `list[Union[Callable, dspy.Tool]]` | `None` | Additional tool functions callable from interpreter code |
 | `sub_lm` | `dspy.LM` | `None` | LM for sub-queries. Defaults to `dspy.settings.lm`. Use a cheaper model here. |
-| `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Creates one interpreter per invocation. RLM shuts down each returned interpreter. `dspy.configure(interpreter_factory=...)` replaces the default. A factory passed to the constructor wins, unless it is `PythonInterpreter`. May expose an optional `execution_instructions` string for the action prompt. |
+| `interpreter_factory` | `Callable[[], CodeInterpreter] \| None` | `None` | Creates one interpreter per invocation. Resolves explicit factory, then active setting, then MXC-confined `LocalInterpreter`. RLM shuts down each returned interpreter. Explicit `PythonInterpreter` always selects Deno. May expose `execution_instructions` for the action prompt. |
 
 ## Built-in Tools
 
@@ -119,8 +121,8 @@ Inside the REPL, the LLM has access to:
 
 | Tool | Description |
 |------|-------------|
-| `llm_query(prompt)` | Query a sub-LLM for semantic analysis (~500K char capacity) |
-| `llm_query_batched(prompts)` | Query multiple prompts concurrently (faster for batch operations) |
+| `llm_query(prompt, images=None)` | Query a sub-LLM with text and an optional image or image list |
+| `llm_query_batched(prompts, images=None)` | Query prompts concurrently, optionally with one image entry per prompt |
 | `print()` | Print output (required to see results) |
 | `SUBMIT(...)` | Submit final output and end execution |
 | Standard library | `re`, `json`, `collections`, `math`, etc. |
@@ -225,10 +227,13 @@ that executes the generated code.
 
 ### Custom Sandbox-Serializable Inputs
 
-For inputs that should be loaded into the sandbox differently from normal Python values, subclass `dspy.SandboxSerializable`. RLM detects these inputs, sends their serialized payload into the interpreter, runs their setup code, and exposes the reconstructed value under the original input name.
+For inputs that should be loaded into the sandbox differently from normal Python values, subclass `dspy.SandboxSerializable`. RLM detects these inputs, lets interpreters with dynamic provisioning preload packages declared by `sandbox_packages()`, sends the serialized payload into the interpreter, runs its setup code, and exposes the reconstructed value under the original input name. Package provisioning is an optional interpreter capability; `sandbox_setup()` is the portable contract and must import required dependencies so missing packages fail during input injection.
 
 ```python
 class DataFrame(dspy.SandboxSerializable):
+    def sandbox_packages(self) -> list[str]:
+        return ["pandas", "pyarrow"]
+
     def sandbox_setup(self) -> str:
         return "import pandas as pd\nimport base64\nimport io"
 
@@ -286,10 +291,10 @@ RLM returns a `Prediction` with:
     Constructor and call-time factories may be called concurrently and must return a fresh interpreter each time. RLM retains that interpreter throughout one invocation and shuts it down afterward. `PythonInterpreter` must stay on the thread where it was first used.
 
 !!! note "Interpreter Requirements"
-    RLM defaults to `PythonInterpreter`, which requires [Deno](https://deno.land/) to be installed for the Pyodide WASM sandbox.
-    `LocalInterpreter` requires no additional runtime and provides a separate CPython process, but it is not a
-    security sandbox: generated code retains the host user's files, environment, credentials, network, and process
-    authority.
+    RLM defaults to `LocalInterpreter` with MXC process confinement. Native packages must already be installed.
+    Startup fails if the runtime or OS containment is unavailable; no unconfined fallback occurs. Host tools retain
+    host authority, aggregate resource quotas are not provided, and detached macOS children may survive teardown.
+    Select `PythonInterpreter` explicitly for the existing Deno/Pyodide sandbox.
 
 ## API Reference
 

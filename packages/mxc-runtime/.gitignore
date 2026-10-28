@@ -1,0 +1,10 @@
+/build/
+/dist/
+/*.egg-info/
+/.pytest_cache/
+/**/__pycache__/
+/dspy_mxc_runtime/bin/
+/dspy_mxc_runtime/payload.json
+/dspy_mxc_runtime/sources/
+/dspy_mxc_runtime/licenses/
+/assets/

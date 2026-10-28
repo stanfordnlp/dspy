@@ -11,6 +11,7 @@ import pydantic
 import requests
 
 from dspy.adapters.types.base_type import Type
+from dspy.primitives.sandbox_serializable import SandboxSerializable
 
 try:
     from PIL import Image as PILImage
@@ -24,7 +25,7 @@ except ImportError:
 _UNSET = object()
 
 
-class Image(Type):
+class Image(Type, SandboxSerializable):
     url: str
 
     model_config = pydantic.ConfigDict(
@@ -33,6 +34,13 @@ class Image(Type):
         validate_assignment=True,
         extra="forbid",
     )
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def _validate_source(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return {"url": encode_image(value)}
+        return value
 
     def __init__(self, source: Any = None, /, *, download: Any = _UNSET, verify: Any = _UNSET, **data):
         """Create an Image.
@@ -161,6 +169,81 @@ class Image(Type):
             image_type = self.url.split(";")[0].split("/")[-1]
             return f"Image(url=data:image/{image_type};base64,<IMAGE_BASE_64_ENCODED({len_base64!s})>)"
         return f"Image(url='{self.url}')"
+
+    def to_pil(self):
+        """Decode an embedded image without fetching remote URLs."""
+        if not PIL_AVAILABLE:
+            raise ImportError("Pillow is required; install it with `pip install pillow`.")
+        if not self.url.startswith("data:"):
+            raise ValueError("Image conversion requires an embedded image; use Image.from_url() first")
+        image = PILImage.open(io.BytesIO(base64.b64decode(self.url.split(",", 1)[1])))
+        image.load()
+        return image
+
+    def sandbox_setup(self) -> str:
+        return """\
+import base64
+import io
+import dspy
+from PIL import Image as PILImage
+import cv2
+import numpy as np
+
+# Native Python uses the installed type. Pyodide exposes the same image-editing
+# interface with a lightweight, JSON-compatible value, not a second user API.
+if not hasattr(dspy, "Image"):
+    class _Image(str):
+        def __new__(cls, source):
+            if isinstance(source, PILImage.Image):
+                buffer = io.BytesIO()
+                source.save(buffer, format="PNG")
+                source = buffer.getvalue()
+            if isinstance(source, bytes):
+                with PILImage.open(io.BytesIO(source)) as image:
+                    mime_type = PILImage.MIME[image.format]
+                source = f"data:{mime_type};base64," + base64.b64encode(source).decode("ascii")
+            if isinstance(source, dict):
+                source = source["url"]
+            if not isinstance(source, str):
+                raise TypeError("Image requires a PIL image, encoded bytes, URL or data URI")
+            return super().__new__(cls, source)
+
+        @property
+        def url(self):
+            return str(self)
+
+        def to_pil(self):
+            if not self.startswith("data:"):
+                raise ValueError("Image conversion requires an embedded image; download it on the host first")
+            image = PILImage.open(io.BytesIO(base64.b64decode(self.split(",", 1)[1])))
+            image.load()
+            return image
+
+    dspy.Image = _Image
+"""
+
+    def sandbox_packages(self) -> list[str]:
+        return ["Pillow", "opencv-python"]
+
+    def to_sandbox(self) -> bytes:
+        return self.url.encode("utf-8")
+
+    def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
+        return f"{var_name} = dspy.Image({data_expr})"
+
+    def rlm_preview(self, max_chars: int = 500) -> str:
+        if self.url.startswith("data:"):
+            media_type = self.url.partition(";")[0].removeprefix("data:")
+            source = f"embedded {media_type} image ({len(self.url):,} encoded characters)"
+        else:
+            source = f"image URL: {self.url}"
+        preview = (
+            f"{source}. Use image.to_pil() to decode embedded pixels. "
+            "Pass it to llm_query(..., images=[image]). Pillow, OpenCV (`cv2`), and NumPy (`np`) are available; "
+            "wrap edited PIL images or encoded bytes with dspy.Image(...). "
+            "For OpenCV, encode with cv2.imencode and pass the resulting bytes to dspy.Image(...)."
+        )
+        return preview[:max_chars]
 
 
 def is_url(string: str) -> bool:

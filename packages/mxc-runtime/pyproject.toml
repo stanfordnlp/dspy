@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dspy-mxc-runtime"
+version = "0.1.0a1"
+description = "Pinned native MXC executors for DSPy (or diagnostic-only payload)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+
+[tool.setuptools]
+packages = ["dspy_mxc_runtime"]
+include-package-data = false
+
+[tool.setuptools.package-data]
+dspy_mxc_runtime = ["payload.json", "bin/*", "licenses/*", "sources/*"]

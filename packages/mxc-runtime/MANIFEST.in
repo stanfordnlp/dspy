@@ -1,0 +1,7 @@
+include manifest.json prepare_assets.py README.md LICENSE
+recursive-include tools *.sh *.py *.txt
+recursive-include tests *.py
+recursive-include dspy_mxc_runtime *.json
+recursive-include dspy_mxc_runtime/bin *
+recursive-include dspy_mxc_runtime/licenses *
+recursive-include dspy_mxc_runtime/sources *

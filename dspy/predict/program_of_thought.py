@@ -15,7 +15,6 @@ from dspy.primitives.code_interpreter import (
     _validate_interpreter_factory,
 )
 from dspy.primitives.module import Module
-from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
 from dspy.utils.exceptions import format_error_for_lm
 
@@ -28,7 +27,8 @@ class ProgramOfThought(Module):
         ProgramOfThought is deprecated. RLM is the preferred replacement.
 
     A DSPy module that runs Python programs to solve a problem.
-    This module requires Deno. Install DSPy's managed runtime with ``pip install "dspy[deno]"``.
+    Uses MXC-confined LocalInterpreter by default. Pass ``interpreter_factory=dspy.PythonInterpreter``
+    to use Deno/Pyodide instead (install with ``pip install "dspy[deno]"``).
 
     Examples:
     ```
@@ -45,15 +45,16 @@ class ProgramOfThought(Module):
         self,
         signature: str | type[Signature],
         max_iters: int = 3,
-        interpreter_factory: Callable[[], CodeInterpreter] = PythonInterpreter,
+        interpreter_factory: Callable[[], CodeInterpreter] | None = None,
     ):
         """
         Args:
             signature: The signature of the module.
             max_iters: The maximum number of iterations to retry code generation and execution.
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
-                callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. Defaults to
-                ``dspy.PythonInterpreter``. ``dspy.configure(interpreter_factory=...)`` replaces this default.
+                callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. When omitted,
+                uses the active ``dspy.settings.interpreter_factory`` or MXC-confined ``dspy.LocalInterpreter``.
+                Pass ``dspy.PythonInterpreter`` explicitly to use Deno/Pyodide.
         """
         super().__init__()
         warnings.warn(
@@ -61,7 +62,8 @@ class ProgramOfThought(Module):
             DeprecationWarning,
             stacklevel=2,
         )
-        _validate_interpreter_factory(interpreter_factory)
+        if interpreter_factory is not None:
+            _validate_interpreter_factory(interpreter_factory)
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
 
