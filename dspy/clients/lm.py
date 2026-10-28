@@ -314,6 +314,12 @@ class LM(BaseLM):
 
         return set(capabilities(self).params)
 
+    @property
+    def supported_tool_result_media(self) -> set[str]:
+        from dspy.clients.capabilities import capabilities
+
+        return set(capabilities(self).tool_result_media)
+
     def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
         if not self._warned_zero_temp_rollout and rollout_id is not None and temperature == 0:
             warnings.warn(

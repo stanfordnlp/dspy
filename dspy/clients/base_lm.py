@@ -170,6 +170,14 @@ class BaseLM:
         """Set of supported OpenAI-style generation option names for the model."""
         return set(getattr(self._capability_engine, "supported_params", ()) or ())
 
+    @property
+    def supported_tool_result_media(self) -> set[str]:
+        """lm15 part types (e.g. ``"image"``) the model's API carries inside a tool result.
+
+        Adapters move other media from tool results into a user message after them.
+        """
+        return set(getattr(self._capability_engine, "supported_tool_result_media", ()) or ())
+
     @with_callbacks
     def __call__(
         self,

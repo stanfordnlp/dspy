@@ -392,8 +392,9 @@ and any permitted compatibility fallback keeps the declared address and credenti
 [custom-engine tutorial](../tutorials/custom_lm_engines/index.md).
 
 An engine may declare `supports_function_calling`, `supports_reasoning`,
-`supports_response_schema` and `supported_params`; adapters read those to decide
-whether to use native tool calling, native reasoning, or structured outputs.
+`supports_response_schema`, `supported_params` and `supported_tool_result_media`;
+adapters read those to decide whether to use native tool calling, native reasoning,
+or structured outputs, and which media (e.g. `{"image"}`) can stay inside a tool result.
 The sync engine supplies these hints when present; otherwise the async engine
 does. Hints are not combined across engines, so a pair should support the
 features declared by its sync engine. Missing hints mean unsupported.
