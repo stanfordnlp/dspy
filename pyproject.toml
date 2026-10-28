@@ -149,6 +149,7 @@ include = [
     "dspy/utils/callback.py",
     "dspy/utils/callback_context.py",
     "dspy/utils/parallelizer.py",
+    "dspy/utils/saving.py",
     "dspy/utils/usage_tracker.py",
     "tests/typing",
 ]
