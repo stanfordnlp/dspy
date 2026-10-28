@@ -4,16 +4,17 @@ from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from typing import Any, get_origin
 
-from dspy._vendor.lm15.types import tool_result
+from dspy._vendor.lm15.providers.common import MEDIA_KINDS
+from dspy._vendor.lm15.types import Part, ToolResultPart, tool_result
 from dspy.adapters.types import History, Type
-from dspy.adapters.types.base_type import parts_from_text
+from dspy.adapters.types.base_type import CUSTOM_TYPE_START_IDENTIFIER, parts_from_text
 from dspy.adapters.types.citation import Citations
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls
 from dspy.adapters.utils import apply_output_field_defaults, serialize_for_json
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.call_result import response_text
-from dspy.clients.capabilities import with_capability_planning
+from dspy.clients.capabilities import tool_result_media, with_capability_planning
 from dspy.clients.requests import build_request
 from dspy.dsp.utils.settings import settings
 from dspy.lm15 import Message, Request, Response, TextPart, ToolCallPart
@@ -281,7 +282,7 @@ class Adapter:
         """
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         prompt = self.format(processed_signature, demos, inputs)
-        request = build_request(lm, prompt, lm_kwargs)
+        request = _place_tool_result_media(build_request(lm, prompt, lm_kwargs), lm, lm_kwargs)
         if settings.send_stream and settings.stream_listeners:
             from dspy.streaming.messages import _StreamSignature, sync_send_to_stream
 
@@ -300,7 +301,7 @@ class Adapter:
     ) -> list[dict[str, Any]]:
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         prompt = self.format(processed_signature, demos, inputs)
-        request = build_request(lm, prompt, lm_kwargs)
+        request = _place_tool_result_media(build_request(lm, prompt, lm_kwargs), lm, lm_kwargs)
         if settings.send_stream and settings.stream_listeners:
             from dspy.streaming.messages import _StreamSignature
 
@@ -701,8 +702,50 @@ def _tool_calls_from_message(message: dict[str, Any]) -> tuple[str | None, ToolC
     return None, None
 
 
-def _tool_result_content(value: Any) -> str:
-    if isinstance(value, str):
-        return value
+def _place_tool_result_media(request: Request, lm: BaseLM, lm_kwargs: dict[str, Any]) -> Request:
+    """Move tool-result media the backend running ``request`` cannot carry into a user message after the results.
 
-    return json.dumps(serialize_for_json(value), ensure_ascii=False)
+    Chat Completions tool rows, for example, take text only. Each moved part leaves a placeholder in its tool
+    result, and the user message labels the parts with their tool call.
+    """
+    tool_results = [part for message in request.messages if message.role == "tool" for part in message.parts]
+    if not any(item.type in MEDIA_KINDS for part in tool_results for item in getattr(part, "content", ())):
+        return request
+    unsupported = MEDIA_KINDS - tool_result_media(lm, lm_kwargs, request)
+    messages = []
+    for message in request.messages:
+        results, attachments = [], []
+        for part in message.parts if message.role == "tool" else ():
+            moved = [item for item in part.content if item.type in unsupported] if isinstance(part, ToolResultPart) else []
+            if not moved:
+                results.append(part)
+                continue
+            content = tuple(
+                TextPart(f"[{item.type} attached in the next message]") if item.type in unsupported else item
+                for item in part.content
+            )
+            results.append(replace(part, content=content))
+            label = f"Attachments from tool call {part.id}" + (f" ({part.name})" if part.name else "") + ":"
+            attachments.extend([TextPart(label), *moved])
+        if attachments:
+            messages.extend([replace(message, parts=tuple(results)), Message.user(tuple(attachments))])
+        else:
+            messages.append(message)
+    return replace(request, messages=tuple(messages)) if len(messages) != len(request.messages) else request
+
+
+def _tool_result_content(value: Any) -> str | tuple[Part, ...]:
+    if isinstance(value, str):
+        content = value
+    else:
+        serialized = serialize_for_json(value)
+        # A bare custom type that formats to text renders as that text, as in `format_field_value`, not as a
+        # JSON string; one that serializes to structured data (e.g. `Score`) is JSON-encoded like any value.
+        is_text = isinstance(value, Type) and isinstance(serialized, str)
+        content = serialized if is_text else json.dumps(serialized, ensure_ascii=False)
+
+    if CUSTOM_TYPE_START_IDENTIFIER not in content:
+        return content
+    # Custom types such as `dspy.Image` serialize to marker-wrapped content parts; send the parts so the
+    # provider receives the image itself rather than its encoding as text.
+    return parts_from_text(content)

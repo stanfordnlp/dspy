@@ -70,6 +70,10 @@ class CapturingLM(dspy.BaseLM):
     def supported_params(self):
         return self.source_lm.supported_params
 
+    @property
+    def supported_tool_result_media(self):
+        return self.source_lm.supported_tool_result_media
+
 
 def format_request(adapter, signature, demos, inputs, lm_kwargs=None, lm=None) -> Request:
     capturing_lm = CapturingLM(lm)
