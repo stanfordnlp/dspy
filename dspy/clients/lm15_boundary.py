@@ -8,13 +8,14 @@ No credentials are resolved and no network I/O happens here.
 import json
 import mimetypes
 from dataclasses import replace
+from typing import Any
 
 from dspy._vendor.lm15.providers.base import HttpResponse
 from dspy._vendor.lm15.providers.common import media_base64, media_data_uri
 from dspy._vendor.lm15.providers.openai_chat import _chat_content_parts
 from dspy._vendor.lm15.serde import part_to_dict
-from dspy.clients.legacy_outputs import plain
 from dspy.lm15 import (
+    CitationPart,
     Message,
     OpenAIChatLM,
     OpenAILM,
@@ -75,10 +76,21 @@ class _SDKChatLM(OpenAIChatLM):
         return rows
 
 
+def plain(obj: Any):
+    """Read SDK fields without invoking deferred Pydantic serializers."""
+    from pydantic import BaseModel
+
+    if isinstance(obj, BaseModel):
+        obj = dict(obj)
+    if isinstance(obj, dict):
+        return {key: plain(item) for key, item in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [plain(item) for item in obj]
+    return obj
+
+
 def request_kwargs(request: Request, model_type: str) -> dict:
     """Serialize a Request as the keyword arguments of an OpenAI-shaped SDK call."""
-    if "n" in (request.config.extensions or {}):
-        raise ValueError("A typed Request produces one Response; do not put n in Config.extensions.")
     if model_type not in {"chat", "responses", "text"}:
         raise ValueError(f"Unsupported model_type: {model_type!r}")
     # Private dialect mapping is confined here because lm15 does not expose a
@@ -215,6 +227,10 @@ def _raw_tool_arguments(body):
 def response_value(response, model_type: str, request: Request):
     """Read an OpenAI-shaped SDK response (Chat, Responses or text) as a Response."""
     body = plain(response)
+    hidden = getattr(response, "_hidden_params", None) or {}
+    if hidden.get("response_cost") is not None:
+        # Carry the reported price, not the SDK's other private client data.
+        body = {**body, "_hidden_params": {"response_cost": hidden["response_cost"]}}
     if model_type == "responses":
         dialect = OpenAILM(api_key="conversion-only", transport=_NoTransport())
         return repair_tool_arguments(dialect.parse_response(request, HttpResponse(
@@ -241,4 +257,16 @@ def response_value(response, model_type: str, request: Request):
                 )) for token, probability, top in zip(tokens, probabilities, alternatives, strict=True)
                 if probability is not None
             ), logprobs_complete=all(probability is not None for probability in probabilities))
+    citations = []
+    for choice in body.get("choices", []):
+        fields = (choice.get("message") or {}).get("provider_specific_fields") or {}
+        for group in fields.get("citations") or []:
+            for citation in group if isinstance(group, list) else [group]:
+                citations.append(CitationPart(
+                    text=citation.get("cited_text") or citation.get("text") or citation.get("supported_text"),
+                    title=citation.get("document_title") or citation.get("title"),
+                    url=citation.get("url"),
+                ))
+    if citations:
+        parsed = replace(parsed, message=replace(parsed.message, parts=(*parsed.message.parts, *citations)))
     return repair_tool_arguments(parsed)

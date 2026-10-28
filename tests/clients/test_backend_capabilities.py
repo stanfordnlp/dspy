@@ -33,7 +33,7 @@ def conflicting_metadata(monkeypatch):
         supports_response_schema=capability("schema", False),
         get_supported_openai_params=capability("params", []),
     )
-    monkeypatch.setattr("dspy.clients.lm._get_litellm", lambda: litellm)
+    monkeypatch.setattr("dspy.clients._litellm.get_litellm", lambda **kwargs: litellm)
     monkeypatch.setattr(hints, "model_info", lambda *args: {
         "supports_function_calling": True, "supports_reasoning": True, "supports_response_schema": True,
     })
@@ -52,7 +52,7 @@ def conflicting_metadata(monkeypatch):
 ])
 def test_auto_compatibility_settings_use_litellm_capabilities(model, options, conflicting_metadata):
     lm = dspy.LM(model, cache=False, **options)
-    backend, _, _ = _engine(lm, prepare(lm, "hello", None, {}), False)
+    backend, _ = _engine(lm, prepare(lm, "hello", {}), False)
     try:
         assert isinstance(backend, LiteLLMEngine)
         assert not lm.supports_function_calling
@@ -70,7 +70,7 @@ def test_auto_compatibility_settings_use_litellm_capabilities(model, options, co
 def test_environment_gateway_uses_same_backend_for_capabilities(variable, conflicting_metadata, monkeypatch):
     monkeypatch.setenv(variable, "https://gateway.invalid")
     lm = dspy.LM("openai/gpt-4o", cache=False)
-    assert isinstance(_engine(lm, prepare(lm, "hello", None, {}), False)[0], LiteLLMEngine)
+    assert isinstance(_engine(lm, prepare(lm, "hello", {}), False)[0], LiteLLMEngine)
     assert not lm.supports_function_calling
     assert not lm.supports_response_schema
     assert conflicting_metadata
@@ -79,7 +79,7 @@ def test_environment_gateway_uses_same_backend_for_capabilities(variable, confli
 def test_native_compatible_settings_do_not_consult_litellm(conflicting_metadata):
     lm = dspy.LM("openai/gpt-4o", api_key="fake", api_base="https://example.invalid", cache=False)
     try:
-        assert isinstance(_engine(lm, prepare(lm, "hello", None, {}), False)[0], LM15Engine)
+        assert isinstance(_engine(lm, prepare(lm, "hello", {}), False)[0], LM15Engine)
         assert lm.supports_function_calling
         assert lm.supports_reasoning
         assert lm.supports_response_schema
@@ -99,7 +99,7 @@ def test_copy_recomputes_effective_backend(conflicting_metadata):
 def test_forced_native_configuration_error_matches_execution(conflicting_metadata):
     lm = dspy.LM("openai/gpt-4o", engine="lm15", headers={"x-test": "yes"})
     with pytest.raises(dspy.LMUnsupportedFeatureError):
-        _engine(lm, prepare(lm, "hello", None, {}), False)
+        _engine(lm, prepare(lm, "hello", {}), False)
     with pytest.raises(dspy.LMUnsupportedFeatureError):
         _ = lm.supports_response_schema
     assert not conflicting_metadata

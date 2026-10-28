@@ -23,7 +23,6 @@ import pydantic
 
 from dspy._vendor.lm15.providers import openai_chat as _openai_chat
 from dspy.clients.backend_selection import CLIENT_KEYS, select_backend
-from dspy.clients.legacy_requests import _resolve_ref
 from dspy.lm15 import (
     BuiltinTool,
     CacheConfig,
@@ -85,6 +84,17 @@ def close_object_schemas(schema: Any, *, root: dict | None = None) -> Any:
         if isinstance(resolved, dict):
             closed = {**close_object_schemas(resolved, root=root), **{k: v for k, v in closed.items() if k != "$ref"}}
     return closed
+
+
+def _resolve_ref(root: dict, ref: str) -> Any:
+    if not ref.startswith("#/"):
+        raise ValueError(f"Unexpected $ref format {ref!r}; only internal references are supported")
+    node: Any = root
+    for part in ref[2:].split("/"):
+        node = node.get(part) if isinstance(node, dict) else None
+        if node is None:
+            raise ValueError(f"Could not resolve $ref {ref!r}")
+    return node
 
 
 def generation_options(lm, options: dict | None = None) -> dict[str, Any]:
