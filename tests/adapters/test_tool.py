@@ -598,6 +598,37 @@ def test_tool_call_results_history_serialization_round_trip():
     assert restored.messages == dumped["messages"]
 
 
+def test_tool_call_results_serialize_values_pydantic_cannot_encode():
+    """The result contract of serialize_for_json (#10634) holds inside a trace too.
+
+    A tool returns whatever it returns; one value pydantic cannot encode must become its string
+    form, not make the whole ToolCalls value — call names, arguments, sibling results — unserializable.
+    """
+
+    class Record:
+        def __str__(self):
+            return "record #7"
+
+    tool_call = ToolCalls.ToolCall(id="call_1", name="lookup", args={"id": 7})
+    results = ToolCallResults.from_tool_calls_and_values([tool_call], [{"amount": 1200, "record": Record()}])
+    tool_calls = ToolCalls(tool_calls=[tool_call], tool_call_results=results)
+
+    try:
+        dumped = tool_calls.model_dump(mode="json")
+    except Exception as exc:  # the base aborts the whole value here
+        dumped = f"{type(exc).__name__}: {exc}"
+
+    assert isinstance(dumped, dict), f"one unencodable value made the whole trace unserializable: {dumped}"
+    assert dumped["tool_call_results"] == {
+        "tool_call_results": [
+            {"call_id": "call_1", "name": "lookup", "value": {"amount": 1200, "record": "record #7"}, "is_error": False}
+        ]
+    }
+    assert dumped["tool_calls"] == [{"name": "lookup", "args": {"id": 7}}]
+    history = dspy.History(messages=[{"tool_calls": tool_calls}])
+    assert history.model_dump(mode="json")["messages"][0]["tool_calls"] == dumped
+
+
 def test_tool_call_results_can_round_trip_as_native_tool_result_message():
     tool_call = ToolCalls.ToolCall(id="call_1", name="search", args={"query": "cats"})
     results = ToolCallResults.from_tool_calls_and_values([tool_call], ['{"items": ["cat"]}'])
