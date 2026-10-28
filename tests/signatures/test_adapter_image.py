@@ -40,7 +40,8 @@ def sample_dspy_image_no_download():
 
 
 def count_messages_with_image_url_pattern(messages):
-    pattern = {"type": "image_url", "image_url": {"url": lambda x: isinstance(x, str)}}
+    """Count lm15 image parts (as recorded in LM history) addressed by a URL or inline data."""
+    pattern = {"type": "image", "media_type": lambda x: isinstance(x, str)}
 
     try:
 
@@ -211,7 +212,7 @@ def test_save_load_complex_default_types():
 
     result = loaded_predictor(**examples[0].inputs())
     assert result.caption == "A list of images"
-    assert str(lm.history[-1]["messages"]).count("'url'") == 4
+    assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 4
     assert "<DSPY_IMAGE_START>" not in str(lm.history[-1]["messages"])
 
 
@@ -453,16 +454,16 @@ def test_image_repr():
     url_image = dspy.Image("https://example.com/dog.jpg")
     assert str(url_image) == (
         "<<CUSTOM-TYPE-START-IDENTIFIER>>"
-        '[{"type": "image_url", "image_url": {"url": "https://example.com/dog.jpg"}}]'
+        '[{"type": "image", "media_type": "image/jpeg", "url": "https://example.com/dog.jpg"}]'
         "<<CUSTOM-TYPE-END-IDENTIFIER>>"
     )
     assert repr(url_image) == "Image(url='https://example.com/dog.jpg')"
 
     sample_pil = PILImage.new("RGB", (60, 30), color="red")
     pil_image = dspy.Image(sample_pil)
-    assert str(pil_image).startswith('<<CUSTOM-TYPE-START-IDENTIFIER>>[{"type": "image_url",')
+    assert str(pil_image).startswith('<<CUSTOM-TYPE-START-IDENTIFIER>>[{"type": "image", "media_type": "image/png", "data": "')
     assert str(pil_image).endswith("<<CUSTOM-TYPE-END-IDENTIFIER>>")
-    assert "base64" in str(pil_image)
+    assert '"data": "' in str(pil_image)
 
 
 def test_image_constructor_supports_positional_source_and_url_keyword():

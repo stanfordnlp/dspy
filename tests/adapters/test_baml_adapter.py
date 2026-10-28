@@ -9,6 +9,7 @@ from litellm.files.main import ModelResponse
 import dspy
 from dspy.adapters.baml_adapter import COMMENT_SYMBOL, INDENTATION, BAMLAdapter
 from tests.adapters.conftest import format_messages_and_lm_kwargs
+from tests.test_utils.engines import litellm_response
 
 
 # Test fixtures - Pydantic models for testing
@@ -286,7 +287,7 @@ def test_baml_adapter_formats_pydantic_inputs_as_clean_json():
     messages = adapter.format(TestSignature, [], {"patient": patient, "question": "What is the diagnosis?"})
 
     # Should have clean, indented JSON for Pydantic input
-    user_message = messages[-1]["content"]
+    user_message = messages.messages[-1].text
     assert '"name": "John Doe"' in user_message
     assert '"age": 45' in user_message
     assert '"street": "123 Main St"' in user_message
@@ -307,7 +308,7 @@ def test_baml_adapter_handles_mixed_input_types():
 
     messages = adapter.format(TestSignature, [], {"patient": patient, "priority": 1, "notes": "Urgent case"})
 
-    user_message = messages[-1]["content"]
+    user_message = messages.messages[-1].text
     # Pydantic should be JSON formatted
     assert '"name": "Jane Doe"' in user_message
     # Primitives should be formatted normally
@@ -391,15 +392,15 @@ def test_baml_adapter_with_images():
 
     messages = adapter.format(TestSignature, [], {"image_data": image_wrapper})
 
-    # Should contain image URLs in the message content
-    user_message = messages[-1]["content"]
-    image_contents = [
-        content for content in user_message if isinstance(content, dict) and content.get("type") == "image_url"
-    ]
+    # Should contain image parts in the user message
+    from dspy.lm15 import ImagePart
 
-    assert len(image_contents) == 2
-    assert {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}} in user_message
-    assert {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}} in user_message
+    parts = messages.messages[-1].parts
+    image_parts = [part for part in parts if isinstance(part, ImagePart)]
+
+    assert len(image_parts) == 2
+    assert ImagePart(url="https://example.com/image1.jpg", media_type="image/jpeg") in parts
+    assert ImagePart(url="https://example.com/image2.jpg", media_type="image/jpeg") in parts
 
 
 def test_baml_adapter_with_tools():
@@ -423,7 +424,7 @@ def test_baml_adapter_with_tools():
     adapter = BAMLAdapter()
     messages = adapter.format(TestSignature, [], {"question": "Schedule an appointment for John", "tools": tools})
 
-    user_message = messages[-1]["content"]
+    user_message = messages.messages[-1].text
     assert "get_patient_info" in user_message
     assert "schedule_appointment" in user_message
     assert "Get patient information by ID" in user_message
@@ -441,7 +442,7 @@ def test_baml_adapter_with_code():
     adapter = BAMLAdapter()
     messages = adapter.format(CodeAnalysisSignature, [], {"code": "def hello():\n    print('Hello, world!')"})
 
-    user_message = messages[-1]["content"]
+    user_message = messages.messages[-1].text
     assert "def hello():" in user_message
     assert "print('Hello, world!')" in user_message
 
@@ -450,7 +451,7 @@ def test_baml_adapter_with_code():
         task: str = dspy.InputField()
         code: dspy.Code = dspy.OutputField()
 
-    with mock.patch("litellm.completion") as mock_completion:
+    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[Choices(message=Message(content='{"code": "print(\\"Generated code\\")"}'))],
             model="openai/gpt-4o-mini",
@@ -486,11 +487,12 @@ def test_baml_adapter_with_conversation_history():
     messages = adapter.format(TestSignature, [], {"history": history, "question": "What medications should we avoid?"})
 
     # Should format history as separate messages
-    assert len(messages) == 6  # system + 2 history pairs + user
-    assert "What is the patient's age?" in messages[1]["content"]
-    assert '"answer": "45 years old"' in messages[2]["content"]
-    assert "Any allergies?" in messages[3]["content"]
-    assert '"answer": "Penicillin allergy"' in messages[4]["content"]
+    messages = messages.messages
+    assert len(messages) == 5  # 2 history pairs + user
+    assert "What is the patient's age?" in messages[0].text
+    assert '"answer": "45 years old"' in messages[1].text
+    assert "Any allergies?" in messages[2].text
+    assert '"answer": "Penicillin allergy"' in messages[3].text
 
 
 # Comparison tests with JSONAdapter
@@ -650,7 +652,7 @@ def test_baml_adapter_multiple_pydantic_input_fields():
 
     messages = adapter.format(TestSignature, [], {"input_1": user_profile, "input_2": system_config})
 
-    user_message = messages[-1]["content"]
+    user_message = messages.messages[-1].text
 
     # Verify both inputs are rendered with the correct bracket notation
     assert "[[ ## input_1 ## ]]" in user_message

@@ -10,6 +10,7 @@ import dspy
 from dspy.adapters.chat_adapter import FieldInfoWithName
 from dspy.adapters.xml_adapter import XMLAdapter
 from tests.adapters.conftest import format_messages_and_lm_kwargs
+from tests.test_utils.engines import litellm_response
 
 
 def test_xml_adapter_format_and_parse_basic():
@@ -340,17 +341,17 @@ def test_xml_adapter_nullable_text_round_trip_distinguishes_empty_from_null(valu
     formatted = adapter.format_assistant_message_content(Result, {"text": value})
     assert adapter.parse(Result, formatted) == {"text": value}
     assert adapter.parse(Result, "<text>\n\n</text>") == {"text": ""}
-    messages = adapter.format(Result, [], {})
-    assert messages[0]["content"].split("Output format (replace placeholders):\n")[1].startswith(
+    prompt = adapter.format(Result, [], {})
+    assert prompt.system.split("Output format (replace placeholders):\n")[1].startswith(
         "<text>\n{text}\n</text>\n"
     )
-    assert messages[-1]["content"] == (
+    assert prompt.messages[-1].text == (
         "Output format (replace placeholders):\n<text>\n{text}\n</text>\n\n"
         "Use this format for text outputs. Put field tags on separate lines. "
         "Write string values literally, without XML or JSON escaping."
         " Use <field/> for null and <field></field> for an empty string."
     )
-    assert "JSON" not in messages[0]["content"]
+    assert "JSON" not in prompt.system
 
 
 @pytest.mark.parametrize("values", [None, [], ["", None, "R&B"]])
@@ -385,16 +386,16 @@ def test_xml_adapter_concise_prompt_preserves_type_guidance_and_dictionary_keys(
         pair: tuple[str, int] = dspy.OutputField()
         metadata: dict[str, Any] = dspy.OutputField()
 
-    messages = XMLAdapter().format(Result, [], {"question": "Choose"})
-    structure = messages[0]["content"].split("Output format (replace placeholders):\n")[1]
+    prompt = XMLAdapter().format(Result, [], {"question": "Choose"})
+    structure = prompt.system.split("Output format (replace placeholders):\n")[1]
     assert "<question>" not in structure
     assert "<scalar>\n{scalar}\n</scalar>" in structure
     assert "{choice}        # note: the value you produce must be one of: yes; no" in structure
     assert "{pair}        # note: the value you produce must adhere to the JSON schema:" in structure
     assert "<metadata>\n...\n</metadata>" in structure
-    assert "Output format (replace placeholders):\n" in messages[-1]["content"]
-    assert "<metadata>\n...\n</metadata>" in messages[-1]["content"]
-    assert messages[-1]["content"].endswith(
+    assert "Output format (replace placeholders):\n" in prompt.messages[-1].text
+    assert "<metadata>\n...\n</metadata>" in prompt.messages[-1].text
+    assert prompt.messages[-1].text.endswith(
         "Use this format for text outputs. Put field tags on separate lines. "
         "Write string values literally, without XML or JSON escaping."
         ' Dictionary keys: <entry key="...">; escape key attributes only.'
@@ -738,20 +739,19 @@ def test_xml_adapter_formats_nested_images():
 
     image_wrapper_2 = ImageWrapper(images=[dspy.Image(url="https://example.com/image4.jpg")], tag=["test", "example"])
     adapter = dspy.XMLAdapter()
-    messages = adapter.format(MySignature, demos, {"image": image_wrapper_2})
+    messages = adapter.format(MySignature, demos, {"image": image_wrapper_2}).messages
 
-    assert len(messages) == 4
+    assert len(messages) == 3
 
     # Image information in the few-shot example's user message
-    expected_image1_content = {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}}
-    expected_image2_content = {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}}
-    expected_image3_content = {"type": "image_url", "image_url": {"url": "https://example.com/image3.jpg"}}
-    assert expected_image1_content in messages[1]["content"]
-    assert expected_image2_content in messages[1]["content"]
-    assert expected_image3_content in messages[1]["content"]
+    from dspy.lm15 import ImagePart
+
+    assert ImagePart(url="https://example.com/image1.jpg", media_type="image/jpeg") in messages[0].parts
+    assert ImagePart(url="https://example.com/image2.jpg", media_type="image/jpeg") in messages[0].parts
+    assert ImagePart(url="https://example.com/image3.jpg", media_type="image/jpeg") in messages[0].parts
 
     # The query image is formatted in the last user message
-    assert {"type": "image_url", "image_url": {"url": "https://example.com/image4.jpg"}} in messages[-1]["content"]
+    assert ImagePart(url="https://example.com/image4.jpg", media_type="image/jpeg") in messages[-1].parts
 
 
 def test_xml_adapter_with_code():
@@ -763,15 +763,15 @@ def test_xml_adapter_with_code():
         result: str = dspy.OutputField()
 
     adapter = dspy.XMLAdapter()
-    messages = adapter.format(CodeAnalysis, [], {"code": "print('Hello, world!')"})
+    prompt = adapter.format(CodeAnalysis, [], {"code": "print('Hello, world!')"})
 
-    assert len(messages) == 2
+    assert len(prompt.messages) == 1
 
     # The output field type description should be included in the system message even if the output field is nested
-    assert dspy.Code.description() in messages[0]["content"]
+    assert dspy.Code.description() in prompt.system
 
     # The user message should include the question and the tools
-    assert "print('Hello, world!')" in messages[1]["content"]
+    assert "print('Hello, world!')" in prompt.messages[0].text
 
     # Test with code as output field
     class CodeGeneration(dspy.Signature):
@@ -781,7 +781,7 @@ def test_xml_adapter_with_code():
         code: dspy.Code = dspy.OutputField()
 
     adapter = dspy.XMLAdapter()
-    with mock.patch("litellm.completion") as mock_completion:
+    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[Choices(message=Message(content='<code>print("Hello, world!")</code>'))],
             model="openai/gpt-4o-mini",
@@ -803,11 +803,10 @@ def test_xml_adapter_full_prompt():
         answer: str = dspy.OutputField()
 
     adapter = dspy.XMLAdapter()
-    messages = adapter.format(QA, [], {"query": "when was Marie Curie born"})
+    prompt = adapter.format(QA, [], {"query": "when was Marie Curie born"})
 
-    assert len(messages) == 2
-    assert messages[0]["role"] == "system"
-    assert messages[1]["role"] == "user"
+    assert len(prompt.messages) == 1
+    assert prompt.messages[0].role == "user"
 
     union_type_repr = "Union[str, NoneType]"
 
@@ -830,8 +829,8 @@ def test_xml_adapter_full_prompt():
         "Write string values literally, without XML or JSON escaping."
     )
 
-    assert messages[0]["content"] == expected_system
-    assert messages[1]["content"] == expected_user
+    assert prompt.system == expected_system
+    assert prompt.messages[0].text == expected_user
 
 
 def test_xml_adapter_native_only_outputs_do_not_request_text_fields():

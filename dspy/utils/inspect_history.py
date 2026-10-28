@@ -47,6 +47,24 @@ def pretty_print_history(history: list[dict[str, Any]], n: int = 1, file: TextIO
             with suppress(json.JSONDecodeError):
                 arguments = json.loads(arguments) if isinstance(arguments, str) else arguments
             print(_green(f"{function.get('name') or tool_call.get('name', '<unknown>')}: {json.dumps(arguments, ensure_ascii=False) if isinstance(arguments, (dict, list)) else str(arguments)}", use_colors=use_colors), file=out)
+
+    def _render_part(part, use_colors):
+        kind = part.get("type")
+        if kind == "text":
+            return part.get("text", "").strip()
+        if kind in ("image", "audio", "video", "document", "binary"):
+            if part.get("data") is not None:
+                where = f"base64 ({len(part['data'])} chars)"
+            else:
+                where = part.get("url") or part.get("file_id") or part.get("path") or ""
+            return _blue(f"<{kind} {part.get('media_type', '')}: {where}>", use_colors=use_colors)
+        if kind == "tool_call":
+            return _green(f"{part.get('name')}: {json.dumps(part.get('input', {}), ensure_ascii=False)}", use_colors=use_colors)
+        if kind == "tool_result":
+            body = " ".join(_render_part(c, use_colors) for c in part.get("content", []))
+            return _green(f"tool result {part.get('id')}: {body}", use_colors=use_colors)
+        return _blue(f"<{kind}>", use_colors=use_colors)
+
     for item in history[-n:]:
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
@@ -87,6 +105,8 @@ def pretty_print_history(history: list[dict[str, Any]], n: int = 1, file: TextIO
                             file_data = file_info.get("file_data", "")
                             file_str = f"<file: name:{filename}, id:{file_id}, data_length:{len(file_data)}>"
                             print(_blue(file_str.strip(), use_colors=use_colors), file=out)
+                        else:
+                            print(_render_part(c, use_colors), file=out)
             print_tool_calls(msg.get("tool_calls"))
             print("\n", file=out)
 

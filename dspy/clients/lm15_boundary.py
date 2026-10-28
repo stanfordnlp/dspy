@@ -158,14 +158,68 @@ def history_messages(request: Request) -> list[dict]:
     return messages
 
 
+def repair_tool_arguments(response, raw_arguments=None):
+    """Restore DSPy's JSON repair at the wire boundary, with raw provenance.
+
+    ``partial_json`` is also a legitimate tool parameter. Only a malformed
+    original argument string proves that lm15's input is a parser fallback.
+    Streaming callers supply (id, name, raw) from their accumulator instead.
+    """
+    import json_repair
+
+    from dspy.lm15 import ToolCallPart
+
+    if not response.tool_calls:
+        return response
+    if raw_arguments is None:
+        raw_arguments = _raw_tool_arguments(response.provider_data or {})
+    wire_arguments = {
+        (call_id, name, raw)
+        for call_id, name, raw in raw_arguments
+        if isinstance(call_id, str) and isinstance(name, str) and isinstance(raw, str)
+    }
+    parts = list(response.message.parts)
+    for index, part in enumerate(parts):
+        if not isinstance(part, ToolCallPart) or set(part.input) != {"partial_json"}:
+            continue
+        raw = part.input["partial_json"]
+        if not isinstance(raw, str) or (part.id, part.name, raw) not in wire_arguments:
+            continue
+        try:
+            json.loads(raw)
+        except json.JSONDecodeError:
+            value = json_repair.loads(raw)
+            if isinstance(value, dict):
+                parts[index] = replace(part, input=value)
+    if tuple(parts) == response.message.parts:
+        return response
+    return replace(response, message=replace(response.message, parts=tuple(parts)))
+
+
+def _raw_tool_arguments(body):
+    """Read only Chat/Responses function argument fields, correlated by call id."""
+    for choice in body.get("choices", []) or []:
+        message = choice.get("message") if isinstance(choice, dict) else None
+        if not isinstance(message, dict):
+            continue
+        for call in message.get("tool_calls", []) or []:
+            if isinstance(call, dict) and call.get("type", "function") == "function":
+                function = call.get("function")
+                if isinstance(function, dict):
+                    yield call.get("id"), function.get("name"), function.get("arguments")
+    for item in body.get("output", []) or []:
+        if isinstance(item, dict) and item.get("type") == "function_call":
+            yield item.get("call_id") or item.get("id"), item.get("name"), item.get("arguments")
+
+
 def response_value(response, model_type: str, request: Request):
     """Read an OpenAI-shaped SDK response (Chat, Responses or text) as a Response."""
     body = plain(response)
     if model_type == "responses":
         dialect = OpenAILM(api_key="conversion-only", transport=_NoTransport())
-        return dialect.parse_response(request, HttpResponse(
+        return repair_tool_arguments(dialect.parse_response(request, HttpResponse(
             status=200, reason="OK", headers=[], body=json.dumps(body).encode(),
-        ))
+        )))
     if model_type == "text":
         body = dict(body)
         body["choices"] = [
@@ -187,4 +241,4 @@ def response_value(response, model_type: str, request: Request):
                 )) for token, probability, top in zip(tokens, probabilities, alternatives, strict=True)
                 if probability is not None
             ), logprobs_complete=all(probability is not None for probability in probabilities))
-    return parsed
+    return repair_tool_arguments(parsed)

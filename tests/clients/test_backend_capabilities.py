@@ -8,10 +8,13 @@ import pytest
 
 import dspy
 from dspy.clients import capabilities as hints
-from dspy.clients.call_result import CallResult
 from dspy.clients.engines import AsyncLiteLLMEngine, AsyncLM15Engine, LiteLLMEngine, LM15Engine
 from dspy.clients.execution import _engine, prepare
 from dspy.lm15 import Message, Response, Usage
+
+
+def response(request, text):
+    return Response(None, request.model, Message.assistant(text), "stop", Usage())
 
 
 @pytest.fixture
@@ -107,18 +110,18 @@ def test_forced_native_configuration_error_matches_execution(conflicting_metadat
 async def test_json_adapter_honours_call_time_backend(asynchronous, conflicting_metadata, monkeypatch):
     requests = []
 
-    def complete(self, lm, request, **context):
+    def complete(self, request):
         requests.append(request)
-        assert request["custom_llm_provider"] == "alternate"
-        assert "response_format" not in request
-        return CallResult(outputs=['{"answer":"compatible"}'], response_model=lm.model)
+        assert self.client_options["custom_llm_provider"] == "alternate"
+        assert request.config.response_format is None
+        return response(request, '{"answer":"compatible"}')
 
-    async def acomplete(self, lm, request, **context):
+    async def acomplete(self, request):
         await asyncio.sleep(0)
-        return complete(self, lm, request, **context)
+        return complete(self, request)
 
-    monkeypatch.setattr(LiteLLMEngine, "complete_legacy", complete)
-    monkeypatch.setattr(AsyncLiteLLMEngine, "complete_legacy", acomplete)
+    monkeypatch.setattr(LiteLLMEngine, "complete", complete)
+    monkeypatch.setattr(AsyncLiteLLMEngine, "complete", acomplete)
     lm = dspy.LM("openai/gpt-4o", cache=False)
     signature = dspy.Signature("question -> answer")
     kwargs = {"custom_llm_provider": "alternate"}
@@ -143,12 +146,12 @@ def test_chat_adapter_does_not_enable_unsupported_tools(conflicting_metadata, mo
         "calls": (dspy.ToolCalls, dspy.OutputField()),
     })
 
-    def complete(self, lm, request, **context):
-        assert "tools" not in request
-        assert "tool_choice" not in request
-        return CallResult(outputs=['[[ ## calls ## ]]\n{"tool_calls": []}'], response_model=lm.model)
+    def complete(self, request):
+        assert request.tools == ()
+        assert request.config.tool_choice is None
+        return response(request, '[[ ## calls ## ]]\n{"tool_calls": []}')
 
-    monkeypatch.setattr(LiteLLMEngine, "complete_legacy", complete)
+    monkeypatch.setattr(LiteLLMEngine, "complete", complete)
     lm = dspy.LM("openai/gpt-4o", cache=False)
     result = dspy.ChatAdapter(use_native_function_calling=True, use_json_adapter_fallback=False)(
         lm, {"custom_llm_provider": "alternate"}, signature, [], {"tools": [dspy.Tool(lookup)]},
@@ -163,13 +166,13 @@ async def test_concurrent_planning_scopes_are_isolated(conflicting_metadata, mon
         assert request.config.response_format is not None
         return Response(None, request.model, Message.assistant('{"answer":"native"}'), "stop", Usage())
 
-    async def compatibility(self, lm, request, **context):
+    async def compatibility(self, request):
         await asyncio.sleep(0)
-        assert "response_format" not in request
-        return CallResult(outputs=['{"answer":"compatible"}'], response_model=lm.model)
+        assert request.config.response_format is None
+        return response(request, '{"answer":"compatible"}')
 
     monkeypatch.setattr(AsyncLM15Engine, "complete", native)
-    monkeypatch.setattr(AsyncLiteLLMEngine, "complete_legacy", compatibility)
+    monkeypatch.setattr(AsyncLiteLLMEngine, "complete", compatibility)
     lm = dspy.LM("openai/gpt-4o", cache=False)
     adapter = dspy.JSONAdapter()
     signature = dspy.Signature("question -> answer")
