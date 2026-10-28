@@ -24,9 +24,10 @@ classes, not DSPy wrappers or subclasses.
 In 3.5, DSPy's adapters build lm15 requests and consume lm15 responses directly,
 not the list-returning convenience path. Provider wire formats belong to engines.
 DSPy's built-in LM engines now use
-native lm15 only; the LiteLLM compatibility engines and optional dependency are
-removed. The `Request`/`Response` contract and one-call-per-candidate execution
-remain unchanged.
+native lm15 only; the LiteLLM compatibility engines and required dependency are
+removed. The optional `dspy[litellm]` extra installs LiteLLM for application-owned
+integrations; it does not restore the removed engines or automatic fallback.
+The `Request`/`Response` contract and one-call-per-candidate execution remain unchanged.
 
 ### Migrating from LiteLLM-backed DSPy
 
@@ -44,9 +45,9 @@ remain unchanged.
   Other provider-shaped options need a native equivalent or an engine that
   explicitly handles them; they are not silently forwarded.
 - Remove calls to `dspy.enable_litellm_logging()` and
-  `dspy.disable_litellm_logging()`. These helpers and the `dspy[litellm]` extra
-  no longer exist. `dspy.enable_logging()` / `disable_logging()` still control
-  DSPy's own logging.
+  `dspy.disable_litellm_logging()`. These helpers no longer exist, including when
+  `dspy[litellm]` is installed. `dspy.enable_logging()` / `disable_logging()` still
+  control DSPy's own logging.
 - Hosted `dspy.Embedder` calls now use the OpenAI SDK against OpenAI, Azure
   OpenAI, or an OpenAI-compatible embeddings endpoint. Other providers require a
   callable; their old LiteLLM model prefixes no longer route automatically.

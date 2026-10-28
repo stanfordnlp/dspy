@@ -33,10 +33,10 @@ Native Bedrock Nova/Converse is not supported by this DSPy release. The followin
 recipe is a bounded, application-owned exception, **not restored native support
 or an accepted migration-gate exception**. It uses the public
 [`complete(Request) -> Response` engine contract](../../tutorials/custom_lm_engines/index.md#what-a-custom-engine-owns)
-and a separately installed LiteLLM:
+and LiteLLM installed through DSPy's optional extra, pinned to the version tested here:
 
 ```shell
-pip install "litellm==1.96.0"
+pip install "dspy[litellm]" "litellm==1.96.0"
 ```
 
 This example targets **`amazon.nova-lite-v1:0` in `us-east-1`**, using AWS

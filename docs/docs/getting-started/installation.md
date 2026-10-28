@@ -2,6 +2,12 @@
 
 Install DSPy with `pip install dspy` or run `uv add dspy` to add DSPy to a virtual environment. DSPy works in Python 3.10+ environments.
 
+For application-owned integrations that use LiteLLM, install `pip install "dspy[litellm]"`
+or run `uv add "dspy[litellm]"`. This optional extra installs LiteLLM; it does not
+restore DSPy's removed LiteLLM engine or automatic fallback. The default installation
+does not require LiteLLM. See the [text-only Bedrock Nova recipe](../api/models/LM.md#application-owned-exception-text-only-bedrock-nova)
+for a bounded custom-engine example.
+
 ## Connecting to a language model
 
 DSPy connects to language models with the `dspy.LM` class. To set up a language model, we provide a `"provider/model"` format string and an API key:

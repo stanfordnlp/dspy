@@ -47,6 +47,10 @@ deno = ["deno>=2.4.5,<3.0.0"]
 langchain = ["langchain_core>=0.3.0"]
 optuna = ["optuna>=3.4.0"]
 numpy = ["numpy>=1.26.0"]
+litellm = [
+    "litellm>=1.65.8",
+    "tenacity>=8.2.3",  # LiteLLM's retry helpers use this undeclared dependency.
+]
 dev = [
     "pytest>=6.2.5",
     "pytest-mock>=3.12.0",

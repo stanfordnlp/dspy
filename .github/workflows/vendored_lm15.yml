@@ -33,7 +33,15 @@ jobs:
         run: |
           uv venv --python 3.12 "$RUNNER_TEMP/lm15-wheel-venv"
           uv pip install --python "$RUNNER_TEMP/lm15-wheel-venv/bin/python" dist/*.whl pytest
+          "$RUNNER_TEMP/lm15-wheel-venv/bin/python" -I -c 'import importlib.util; assert importlib.util.find_spec("litellm") is None'
           mkdir "$RUNNER_TEMP/lm15-wheel-tests"
           cp tests/test_vendored_lm15.py "$RUNNER_TEMP/lm15-wheel-tests/"
           cd "$RUNNER_TEMP/lm15-wheel-tests"
           "$RUNNER_TEMP/lm15-wheel-venv/bin/python" -I -m pytest -q test_vendored_lm15.py
+      - name: Test optional LiteLLM installation
+        env:
+          LITELLM_LOCAL_MODEL_COST_MAP: "True"
+        run: |
+          wheel=(dist/*.whl)
+          uv pip install --python "$RUNNER_TEMP/lm15-wheel-venv/bin/python" "${wheel[0]}[litellm]"
+          "$RUNNER_TEMP/lm15-wheel-venv/bin/python" -I -c 'import sys; import dspy; assert "litellm" not in sys.modules; import litellm, tenacity; assert callable(litellm.completion)'
