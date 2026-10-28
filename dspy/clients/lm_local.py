@@ -339,7 +339,8 @@ def wait_for_server(base_url: str, timeout: int | None = None, process: subproce
 
     Args:
         base_url: The base URL of the server (e.g. http://localhost:1234)
-        timeout: Maximum time to wait in seconds. None means wait forever.
+        timeout: Maximum time to wait in seconds. None means wait forever, and 0
+            gives up as soon as the first poll fails.
         process: Server process, when one was started. An exit before the server
             accepts connections raises TimeoutError instead of waiting out the deadline.
     """

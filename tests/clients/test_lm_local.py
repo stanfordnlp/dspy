@@ -148,10 +148,12 @@ def test_launch_raises_when_server_process_has_exited(mock_popen, mock_thread):
     lm.kwargs = {}
 
     def launch():
-        with mock.patch.dict("sys.modules", {"sglang": mock.Mock()}):
-            LocalProvider.launch(lm, launch_kwargs={"timeout": 30})
+        LocalProvider.launch(lm, launch_kwargs={"timeout": 30})
 
-    outcome = _outcome_within(6, launch)
+    # Keep the module patch in this frame: a worker that outlives the watchdog
+    # must not leave a fake sglang behind for later tests.
+    with mock.patch.dict("sys.modules", {"sglang": mock.Mock()}):
+        outcome = _outcome_within(6, launch)
 
     assert not outcome["alive"]
     assert outcome["result"] == "timeout"
@@ -174,10 +176,11 @@ def test_launch_kills_server_when_port_never_accepts(mock_popen, mock_thread):
     lm.kwargs = {}
 
     def launch():
-        with mock.patch.dict("sys.modules", {"sglang": mock.Mock()}):
-            LocalProvider.launch(lm, launch_kwargs={"timeout": 1})
+        LocalProvider.launch(lm, launch_kwargs={"timeout": 1})
 
-    outcome = _outcome_within(6, launch)
+    # Same reason as above: the patch must outlive the watchdog, not the worker.
+    with mock.patch.dict("sys.modules", {"sglang": mock.Mock()}):
+        outcome = _outcome_within(6, launch)
 
     assert not outcome["alive"]
     assert outcome["result"] == "timeout"
