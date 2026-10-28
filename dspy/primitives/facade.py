@@ -106,7 +106,7 @@ def prediction_to_fields(pred: Any) -> dict[str, Any]:
             raise CodeInterpreterError(
                 f"A bridged predictor must return a dspy.Prediction; got {type(pred).__name__}"
             )
-    fields = {k: _jsonable(v) for k, v in dict(store).items()}
+    fields = {k: _jsonable(to_sandbox_value(v)) for k, v in dict(store).items()}
     try:
         json.dumps(fields)
     except TypeError as e:
@@ -363,7 +363,9 @@ class FacadeInvocation:
         predictor = self._predictors.get(handle)
         if predictor is None:
             raise CodeInterpreterError(f"Unknown predictor handle: {handle!r}")
-        restored = {k: restore_custom_types(v, self._originals) for k, v in (inputs or {}).items()}
+        restored = {
+            k: from_sandbox_value(restore_custom_types(v, self._originals)) for k, v in (inputs or {}).items()
+        }
         try:
             with self._lm_scope():
                 return prediction_to_fields(predictor(**restored))

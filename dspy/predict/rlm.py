@@ -15,6 +15,7 @@ import base64
 import contextvars
 import functools
 import inspect
+import json
 import keyword
 import logging
 import textwrap
@@ -27,10 +28,14 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator
 import pydantic
 
 import dspy
-from dspy.adapters.types.base_type import Type
+from dspy._vendor.lm15.types import Part
+from dspy.adapters.base import Prompt
+from dspy.adapters.types.base_type import Type, parts_from_text
 from dspy.adapters.types.decision import Choice, Noul, Score
 from dspy.adapters.types.tool import Tool
-from dspy.adapters.utils import parse_value, translate_field_type
+from dspy.adapters.utils import parse_value, serialize_for_json, translate_field_type
+from dspy.clients.requests import build_request
+from dspy.lm15 import Message
 from dspy.primitives.code_interpreter import (
     SIMPLE_TYPES,
     CodeExecutionError,
@@ -74,7 +79,7 @@ You have access to a Python REPL environment. Write Python code and it will be e
 {interpreter_rules}
 Available:
 - Variables: {inputs} (your input data)
-- `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis
+- `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis. `prompt` is a string, or a list of strings and DSPy values such as images to show them to the sub-LLM
 - `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries)
 - `print()` - ALWAYS print to see results
 - `SUBMIT({final_output_names})` - submit final output when done
@@ -157,6 +162,24 @@ def _strip_code_fences(code: str) -> str:
         return remainder.strip()
 
     return remainder[:block_end].strip()
+
+
+def _llm_query_content(prompt: Any) -> str | list[Part]:
+    """An ``llm_query`` prompt as text, or a list of text and ``dspy.Type`` values as lm15 content parts."""
+    if isinstance(prompt, str):
+        if not prompt:
+            raise ValueError("prompt cannot be empty")
+        return prompt
+    if not isinstance(prompt, list) or not prompt:
+        raise ValueError("prompt must be a non-empty string or a non-empty list of strings and DSPy values")
+    content = []
+    for part in from_sandbox_value(prompt):
+        if not isinstance(part, str):
+            # Render values as adapters render input fields; custom types such as dspy.Image become content parts.
+            serialized = serialize_for_json(part)
+            part = serialized if isinstance(serialized, str) else json.dumps(serialized, ensure_ascii=False)
+        content.extend(parts_from_text(part))
+    return content
 
 
 def _sandbox_preview(value: Any, limit: int = 100) -> Any:
@@ -368,13 +391,17 @@ class RLM(Module):
         budget = budget if budget is not None else _LLMCallBudget(self.max_llm_calls)
         lm = self.sub_lm
 
-        def _query_lm(prompt: str) -> str:
+        def _query_lm(prompt: str | list[Part]) -> str:
             target_lm = lm if lm is not None else dspy.settings.lm
             if target_lm is None:
                 raise dspy.LMNotConfiguredError(
                     "No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM."
                 )
-            response = target_lm(prompt)
+            if isinstance(prompt, list):
+                # build_request applies the LM's generation defaults, as a string prompt gets them.
+                response = target_lm(build_request(target_lm, Prompt(messages=(Message.user(tuple(prompt)),))))
+            else:
+                response = target_lm(prompt)
             if isinstance(response, dspy.lm15.Response):
                 text = response.text
             elif isinstance(response, list) and response:
@@ -390,17 +417,17 @@ class RLM(Module):
                 raise TypeError(f"Sub-LM response must contain text, got {type(text).__name__}.")
             return text
 
-        def llm_query(prompt: str) -> str:
-            """Query the LLM with a prompt string."""
-            if not prompt:
-                raise ValueError("prompt cannot be empty")
+        def llm_query(prompt: str | list) -> str:
+            """Query the LLM with a prompt string, or a list of strings and DSPy values such as images."""
+            content = _llm_query_content(prompt)
             budget.reserve(1)
-            return _query_lm(prompt)
+            return _query_lm(content)
 
-        def llm_query_batched(prompts: list[str]) -> list[str]:
+        def llm_query_batched(prompts: list[str | list]) -> list[str]:
             """Query prompts concurrently, isolating LM failures while propagating contract errors."""
             if not prompts:
                 return []
+            prompts = [_llm_query_content(prompt) for prompt in prompts]
             budget.reserve(len(prompts))
 
             results: dict[int, str] = {}
