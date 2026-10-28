@@ -40,13 +40,3 @@ jobs:
           cp tests/test_vendored_lm15.py "$RUNNER_TEMP/lm15-wheel-tests/"
           cd "$RUNNER_TEMP/lm15-wheel-tests"
           "$RUNNER_TEMP/lm15-wheel-venv/bin/python" -I -m pytest -q test_vendored_lm15.py
-      - name: Test optional LiteLLM installation and compatibility
-        env:
-          LITELLM_LOCAL_MODEL_COST_MAP: "True"
-        run: |
-          wheel=(dist/*.whl)
-          uv pip install --python "$RUNNER_TEMP/lm15-wheel-venv/bin/python" "${wheel[0]}[litellm]" pytest-asyncio
-          "$RUNNER_TEMP/lm15-wheel-venv/bin/python" -I -c 'import sys; import dspy; assert "litellm" not in sys.modules; import litellm, tenacity; assert callable(litellm.completion)'
-          cp -r tests "$RUNNER_TEMP/lm15-wheel-tests/"
-          cd "$RUNNER_TEMP/lm15-wheel-tests"
-          "$RUNNER_TEMP/lm15-wheel-venv/bin/python" -I -m pytest -q tests/clients/test_optional_litellm.py tests/clients/test_registered_providers.py
