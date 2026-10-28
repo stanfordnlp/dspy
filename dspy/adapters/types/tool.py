@@ -25,6 +25,30 @@ class _MCPToolClient(Protocol):
     async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any: ...
 
 
+def _json_schema_instance(value: Any) -> Any:
+    """``value`` for JSON-schema validation: models dumped, custom types as their fields (their dump is a prompt)."""
+    if isinstance(value, Type):
+        # Only the fields its JSON schema shows; e.g. Score's provider-evidence fields are hidden from it.
+        shown = type(value).model_json_schema().get("properties")
+        fields = {}
+        for name, info in type(value).model_fields.items():
+            # Key each field by the name its validation schema uses: a validation alias (or one of its choices), else the name.
+            alias = info.validation_alias
+            choices = alias.choices if isinstance(alias, pydantic.AliasChoices) else [alias]
+            keys = [key for key in (*choices, info.alias, name) if isinstance(key, str)]
+            key = next((key for key in keys if shown is None or key in shown), None)
+            if key is not None:
+                fields[key] = _json_schema_instance(getattr(value, name))
+        return fields
+    if isinstance(value, BaseModel):
+        return value.model_dump()
+    if isinstance(value, dict):
+        return {k: _json_schema_instance(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_schema_instance(v) for v in value]
+    return value
+
+
 class Tool(Type):
     """Tool class.
 
@@ -133,7 +157,7 @@ class Tool(Type):
                 else:
                     raise ValueError(f"Arg {k} is not in the tool's args.")
             try:
-                instance = v.model_dump() if hasattr(v, "model_dump") else v
+                instance = _json_schema_instance(v)
                 type_str = self.args[k].get("type")
                 if type_str is not None and type_str != "Any":
                     validate(instance=instance, schema=self.args[k])

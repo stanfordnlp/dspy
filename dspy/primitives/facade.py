@@ -23,17 +23,23 @@ from __future__ import annotations
 import contextlib
 import inspect
 import json
+import logging
 import secrets
+import textwrap
 from pathlib import Path
 from typing import Any, Callable
 
+import pydantic
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 import dspy
+from dspy.adapters.types.base_type import Type
 from dspy.clients.base_lm import BaseLM
 from dspy.primitives.code_interpreter import CodeInterpreterError
 from dspy.signatures.signature import make_signature
 from dspy.utils.exceptions import LMError
+
+logger = logging.getLogger(__name__)
 
 # Tool names the shim uses to call the host; registered by FacadeInvocation.install.
 CONSTRUCT_TOOL = "__dspy_construct__"
@@ -46,11 +52,15 @@ SIGNATURE_MARKER = "__dspy_sig__"
 # The shim passes tools by name (callables can't cross the JSON boundary); the host resolves the name
 # against the host module's tools.
 TOOL_MARKER = "__dspy_tool__"
+# dspy.Type values cross the boundary as JSON objects tagged with their type name (see to_sandbox_value).
+TYPE_MARKER = "__dspy_type__"
 
 # The sandbox-side dspy shim, injected as text into each interpreter.
 SHIM_SETUP = (Path(__file__).parent / "_facade_shim.py").read_text(encoding="utf-8")
 # Shipped to the shim so it can refuse a sandbox that is the host's own memory image (host process or fork).
 HOST_TOKEN_VAR = "__dspy_host_token"
+# Shipped to the shim so it can add each dspy.Type's sandbox_methods to that type's sandbox class.
+TYPE_METHODS_VAR = "__dspy_type_methods"
 _HOST_PROCESS_TOKEN = secrets.token_hex(16)
 
 
@@ -105,6 +115,95 @@ def prediction_to_fields(pred: Any) -> dict[str, Any]:
             f"(must be JSON-serializable): {e}"
         ) from e
     return fields
+
+
+def to_sandbox_value(value: Any) -> Any:
+    """Encode ``dspy.Type`` values, recursively, as JSON objects tagged with ``TYPE_MARKER``.
+
+    The sandbox shim rebuilds them as ``_DspyValue`` dicts (with the type's ``sandbox_methods``), and
+    ``from_sandbox_value`` turns them back into the host type when they cross back.
+    """
+    if isinstance(value, Type):
+        fields = {name: to_sandbox_value(getattr(value, name)) for name in type(value).model_fields}
+        return {TYPE_MARKER: _type_tag(type(value)), **fields}
+    if isinstance(value, tuple) and hasattr(value, "_asdict"):
+        return to_sandbox_value(value._asdict())  # named tuples cross as dicts, as the interpreters serialize them
+    if isinstance(value, dict):
+        return {k: to_sandbox_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [to_sandbox_value(v) for v in value]
+    return value
+
+
+def from_sandbox_value(value: Any) -> Any:
+    """Rebuild ``TYPE_MARKER``-tagged JSON objects from the sandbox as ``dspy.Type`` values, recursively.
+
+    Construction runs the type's own validation; DSPy's media types never read host files or the
+    network while validating.
+    """
+    if isinstance(value, dict):
+        name = value.get(TYPE_MARKER)
+        if not isinstance(name, str):
+            return {k: from_sandbox_value(v) for k, v in value.items()}
+        fields = {k: from_sandbox_value(v) for k, v in value.items() if k != TYPE_MARKER}
+        try:
+            # Fields cross by name (see to_sandbox_value), so accept names as well as aliases.
+            return _sandbox_type(name).model_validate(fields, by_name=True)
+        except pydantic.ValidationError as e:
+            raise CodeInterpreterError(f"Invalid {name} value from the sandbox: {e}") from e
+    if isinstance(value, list):
+        return [from_sandbox_value(v) for v in value]
+    return value
+
+
+def _type_subclasses(cls: type[Type] = Type) -> list[type[Type]]:
+    found = []
+    for sub in cls.__subclasses__():
+        found.append(sub)
+        found.extend(_type_subclasses(sub))
+    return found
+
+
+def _type_tag(cls: type[Type]) -> str:
+    """The ``TYPE_MARKER`` value for ``cls``: its module-qualified name, so same-named types stay distinct."""
+    return f"{cls.__module__}.{cls.__qualname__}"
+
+
+def _sandbox_type(tag: str) -> type[Type]:
+    """The loaded ``dspy.Type`` subclass with this ``TYPE_MARKER`` tag."""
+    matches = [cls for cls in _type_subclasses() if _type_tag(cls) == tag]
+    if not matches:
+        raise CodeInterpreterError(f"No loaded dspy.Type subclass is {tag!r}.")
+    # A class redefined under the same name (e.g. a re-run notebook cell) supersedes the earlier one.
+    return matches[-1]
+
+
+def _sandbox_type_methods() -> dict[str, str]:
+    """The ``sandbox_methods`` source of each loaded ``dspy.Type`` that has any, keyed by ``TYPE_MARKER`` tag."""
+    methods = {}
+    for cls in _type_subclasses():
+        source = textwrap.dedent(cls.sandbox_methods()).strip()
+        if source:
+            methods[_type_tag(cls)] = source
+    return methods
+
+
+def preload_sandbox_packages(interpreter: Any) -> None:
+    """Ask an interpreter that loads packages at startup for the ``sandbox_packages`` of every loaded ``dspy.Type``.
+
+    A value of any type can reach the sandbox (e.g. from a tool without a return annotation, or from a
+    sub-agent), and packages cannot be added once the interpreter has started. An interpreter that cannot
+    add them (a custom ``deno_command``, an already-started process) still runs; type methods that need
+    the packages then fail to import.
+    """
+    preload = getattr(interpreter, "preload_packages", None)
+    packages = list(dict.fromkeys(package for cls in _type_subclasses() for package in cls.sandbox_packages()))
+    if preload is None or not packages:
+        return
+    try:
+        preload(packages)
+    except (ValueError, CodeInterpreterError) as e:
+        logger.debug("Could not preload sandbox packages %s: %s", packages, e)
 
 
 def restore_custom_types(value: Any, originals: dict[str, Any]) -> Any:
@@ -238,7 +337,9 @@ class FacadeInvocation:
     def install(self, interpreter: Any) -> None:
         """Register the tools the shim calls, then install the ``dspy`` facade in the sandbox."""
         interpreter.tools.update({CONSTRUCT_TOOL: self.construct, CALL_TOOL: self.call})
-        interpreter.execute(SHIM_SETUP, variables={HOST_TOKEN_VAR: _HOST_PROCESS_TOKEN})
+        interpreter.execute(
+            SHIM_SETUP, variables={HOST_TOKEN_VAR: _HOST_PROCESS_TOKEN, TYPE_METHODS_VAR: _sandbox_type_methods()}
+        )
 
     def construct(self, kind: str, signature: Any, attr_name: str, kwargs: dict[str, Any] | None = None) -> str:
         self._lm_error = None
