@@ -29,10 +29,6 @@ To build and test the documentation locally:
    pip install -r requirements.txt
    ```
 
-   `requirements.txt` is the documentation dependency source used by CI. The
-   obsolete Pipenv files, which pinned an older DSPy and its LiteLLM dependency,
-   have been removed; install this checkout with `pip install -e ..` as well.
-
 3. In docs/ directory, run the command below to generate the API docs and index them:
    ```bash
    python scripts/generate_api_docs.py

@@ -95,15 +95,14 @@ def test_httpx_timeout_with_a_disabled_component_is_not_native():
 
 
 @pytest.mark.parametrize("value", [None, "unset"])
-@pytest.mark.parametrize("engine", ["auto", "lm15"])
-def test_disabled_timeout_refuses_on_native_engines(value, engine):
+def test_disabled_timeout_refuses_on_strict_native_engine(value):
     httpx = pytest.importorskip("httpx")
     timeout = httpx.Timeout(None) if value is None else httpx.Timeout(connect=5.0, read=None, write=None, pool=None)
     with pytest.raises(lm15.UnsupportedFeatureError, match="disables"):
-        select_backend(dspy.LM("openai/gpt-4o", api_key="k", cache=False, engine=engine, timeout=timeout))
+        select_backend(dspy.LM("openai/gpt-4o", api_key="k", cache=False, engine="lm15", timeout=timeout))
     # Through the public call the refusal is a DSPy error naming the setting.
     with pytest.raises(dspy.LMUnsupportedFeatureError, match="disables") as caught:
-        dspy.LM("openai/gpt-4o", api_key="k", cache=False, engine=engine, timeout=timeout)("hi")
+        dspy.LM("openai/gpt-4o", api_key="k", cache=False, engine="lm15", timeout=timeout)("hi")
     assert caught.value.feature == "timeout"
     assert select_backend(dspy.LM("openai/gpt-4o", api_key="k", timeout=httpx.Timeout(60.0))).resolution.provider == "openai-chat"
 

@@ -153,9 +153,9 @@ def test_spellings_lm15_already_uses_are_refused():
 
 def test_an_lm_binds_the_registrations_present_at_construction(server):
     base, _ = server
-    before = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False)
+    before = dspy.LM(f"private-fireworks/{MODEL}", engine="lm15", api_key="k", cache=False)
     register_provider(_definition(base))
-    after = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False, num_retries=0)
+    after = dspy.LM(f"private-fireworks/{MODEL}", engine="lm15", api_key="k", cache=False, num_retries=0)
     with pytest.raises(dspy.LMConfigurationError):
         before("hi")  # bound nothing; stays as it was
     assert select_backend(after).resolution.declared
@@ -283,7 +283,7 @@ async def test_async_path(server):
 
 
 def test_unregistered_prefix_is_not_native():
-    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k", cache=False)
+    lm = dspy.LM(f"private-fireworks/{MODEL}", engine="lm15", api_key="k", cache=False)
     with pytest.raises(dspy.LMConfigurationError):
         lm("hi")
 
@@ -291,11 +291,15 @@ def test_unregistered_prefix_is_not_native():
 # ─── native routing keeps the declared connection ─────────────────────
 
 
+@pytest.mark.parametrize("engine", ["auto", "lm15", "litellm"])
 @pytest.mark.parametrize("prefix", ["private-fireworks", "private_fireworks_ai"])
-def test_declared_headers_and_credentials_reach_declared_endpoint(server, prefix):
+def test_declared_headers_and_credentials_reach_declared_endpoint(server, prefix, engine):
+    if engine != "lm15":
+        pytest.importorskip("litellm")
     base, seen = server
     register_provider(_definition(base, headers=(("X-Gateway", "tenant-1"),)))
-    lm = dspy.LM(f"{prefix}/{MODEL}", api_key="private-key", cache=False, num_retries=0)
+    options = {"extra_headers": {"X-Call": "compatibility"}} if engine == "auto" else {}
+    lm = dspy.LM(f"{prefix}/{MODEL}", engine=engine, api_key="private-key", cache=False, num_retries=0, **options)
     selection = select_backend(lm)
     assert selection.resolution.declared
     assert lm("hi") == ["Paris"]

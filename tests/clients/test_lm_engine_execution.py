@@ -132,10 +132,9 @@ def test_provider_auth_error_does_not_switch_backend(monkeypatch):
     {"audio": {"voice": "alloy", "format": "wav"}},
     {"questions": {"flag": {"type": "noul", "instructions": "Is this correct?"}}},
 ])
-@pytest.mark.parametrize("engine", ["auto", "lm15"])
-def test_unrepresentable_ordinary_options_refuse_before_io(monkeypatch, options, engine):
+def test_unrepresentable_ordinary_options_refuse_before_io(monkeypatch, options):
     transport = native_transport(monkeypatch, [])
-    lm = dspy.LM("openai/gpt-4o-mini", engine=engine, cache=False)
+    lm = dspy.LM("openai/gpt-4o-mini", engine="lm15", cache=False)
     with pytest.raises(dspy.LMUnsupportedFeatureError, match="provider options"):
         lm("hello", **options)
     assert not transport.requests

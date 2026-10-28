@@ -162,8 +162,8 @@ def test_cost_provenance_survives_cache_record(reported):
         response = replace(response, provider_data={"_hidden_params": {"response_cost": reported}})
     result = CallResult.native(response)
     result.cost, result.cost_details = estimate_cost(response, provider="openai-chat", requested_model=response.model)
-    assert result.cost == pytest.approx(12.5e-6)  # SDK-private fields are not billing evidence.
-    assert result.cost_details["kind"] == "estimate"
+    assert result.cost == (reported if reported is not None else pytest.approx(12.5e-6))
+    assert result.cost_details["kind"] == ("reported" if reported is not None else "estimate")
     cached = CallResult.load(result.dump())
     assert cached.cost == result.cost
     assert cached.cost_details == result.cost_details

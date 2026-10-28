@@ -2,11 +2,11 @@
 
 Install DSPy with `pip install dspy` or run `uv add dspy` to add DSPy to a virtual environment. DSPy works in Python 3.10+ environments.
 
-For application-owned integrations that use LiteLLM, install `pip install "dspy[litellm]"`
-or run `uv add "dspy[litellm]"`. This optional extra installs LiteLLM; it does not
-restore DSPy's removed LiteLLM engine or automatic fallback. The default installation
-does not require LiteLLM. See the [text-only Bedrock Nova recipe](../api/models/LM.md#application-owned-exception-text-only-bedrock-nova)
-for a bounded custom-engine example.
+For the optional LiteLLM compatibility engine, install `pip install "dspy[litellm]"`
+or run `uv add "dspy[litellm]"`. Native imports and calls do not require LiteLLM.
+If a call selects compatibility without the extra installed, DSPy raises an error
+with the installation command. Application-owned integrations can also use this
+extra; see the bounded [text-only Bedrock Nova recipe](../api/models/LM.md#application-owned-exception-text-only-bedrock-nova).
 
 ## Connecting to a language model
 
@@ -21,7 +21,7 @@ lm = dspy.LM("openai/gpt-5-nano", api_key="YOUR_OPENAI_API_KEY")
 dspy.configure(lm=lm)
 ```
 
-Behind the scenes, DSPy uses its bundled native lm15 engines to translate a common request/response contract into provider protocols. No separate lm15 installation is needed. Both `engine="auto"` (the default) and `engine="lm15"` use this native backend, without a compatibility fallback.
+Behind the scenes, DSPy uses its bundled native lm15 engines to translate a common request/response contract into provider protocols. No separate lm15 installation is needed. `engine="auto"` (the default) prefers native and may select optional LiteLLM for unsupported routes, settings or representations **before provider I/O**. `engine="lm15"` requires native; `engine="litellm"` explicitly selects compatibility. Authentication failures, timeouts and other provider failures never switch the backend.
 
 You can replace the model and credentials with a supported native provider such as Anthropic or Gemini. Model features and authentication differ by provider; not every historical provider prefix is supported. See [other native providers](#other-native-providers) below and [custom providers and engines](../tutorials/custom_lm_engines/index.md) for other backends. If you are upgrading, review the [breaking changes](../community/normalized-lm-api-migration.md#migrating-from-litellm-backed-dspy).
 
@@ -59,12 +59,12 @@ For example, after setting `ANTHROPIC_API_KEY`:
 dspy.configure(lm=dspy.LM("anthropic/claude-sonnet-4-5-20250929"))
 ```
 
-Vertex uses its own `vertex:` route, not the old `vertex_ai/` prefix or
+Native Vertex uses its own `vertex:` route, not the LiteLLM `vertex_ai/` prefix or
 `vertex_project` / `vertex_location` kwargs. A service-account file can be selected
 with `GOOGLE_APPLICATION_CREDENTIALS`. Set `GOOGLE_CLOUD_LOCATION` explicitly when
 region matters; its default is `global`. Azure LM calls use the native v1 route,
 not the old `api_version` configuration. Use `model_type="responses"` for a native
-Responses endpoint; `model_type="text"` is unsupported.
+Responses endpoint; `model_type="text"` requires optional LiteLLM compatibility.
 
 For an OpenAI-compatible Chat Completions server using bearer authentication:
 
@@ -78,8 +78,9 @@ lm = dspy.LM(
 
 An unlisted service can be [registered](../tutorials/custom_lm_engines/index.md#declaring-a-provider-instead-of-writing-an-engine)
 when it uses a supported wire dialect. Other protocols or authentication flows
-need a custom engine. Unsupported settings raise instead of invoking another
-backend. Embeddings have a separate [OpenAI SDK or callable interface](../api/models/Embedder.md).
+can use optional LiteLLM compatibility where supported, or a custom engine.
+Compatibility support does not establish native parity. Embeddings have a separate
+[OpenAI SDK or callable interface](../api/models/Embedder.md), with no LiteLLM fallback.
 
 ---
 

@@ -57,6 +57,8 @@ API_MAPPING = {
         dspy.streamify,
         dspy.enable_logging,
         dspy.disable_logging,
+        dspy.enable_litellm_logging,
+        dspy.disable_litellm_logging,
         dspy.configure_cache,
         dspy.streaming.StatusMessageProvider,
         dspy.streaming.StatusMessage,

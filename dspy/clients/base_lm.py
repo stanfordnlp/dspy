@@ -132,11 +132,11 @@ class BaseLM:
         self.num_retries = num_retries
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
-        self._engine_spec: Engine | Literal["auto", "lm15"] | None = engine
+        self._engine_spec: Engine | Literal["auto", "lm15", "litellm"] | None = engine
         self._async_engine_spec = async_engine
 
     @property
-    def engine(self) -> Engine | Literal["auto", "lm15"] | None:
+    def engine(self) -> Engine | Literal["auto", "lm15", "litellm"] | None:
         """The configured engine (an object, or a named selection on `dspy.LM`)."""
         return self._engine_spec
 

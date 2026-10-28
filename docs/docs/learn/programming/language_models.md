@@ -56,7 +56,7 @@ dspy.configure(lm=lm)
         dspy.configure(lm=lm)
         ```
 
-        The former LiteLLM `vertex_ai/` prefix and `vertex_credentials`, `vertex_project`, and `vertex_location` kwargs are not supported. Set the native environment variables above; location defaults to `global` when omitted, so choose it explicitly for residency requirements. `gemini/` uses Google AI Studio credentials instead, and Claude on Vertex has a separate native `vertex-anthropic:` route.
+        The LiteLLM `vertex_ai/` prefix and `vertex_credentials`, `vertex_project`, and `vertex_location` kwargs belong to optional compatibility, not this native route. Set the native environment variables above; location defaults to `global` when omitted, so choose it explicitly for residency requirements. `gemini/` uses Google AI Studio credentials instead, and Claude on Vertex has a separate native `vertex-anthropic:` route.
 
     === "Azure OpenAI"
         Native Azure uses the v1 endpoint and deployment name. Set `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_ENDPOINT` (the resource root shown by Azure):
@@ -70,7 +70,7 @@ dspy.configure(lm=lm)
         Use `model_type="responses"` for a deployment supporting Responses. The old `AZURE_API_KEY`, `AZURE_API_BASE`, and `api_version` recipe is not the native configuration.
 
     === "Databricks"
-        DSPy no longer provides automatic Databricks SDK authentication through a compatibility backend. For a serving endpoint with a supported HTTP dialect, [register its provider](../../tutorials/custom_lm_engines/index.md#declaring-a-provider-instead-of-writing-an-engine), address and authentication policy. Use a custom engine when SDK-managed authentication or a different protocol is required.
+        For LiteLLM's Databricks integration and SDK-managed authentication, install `dspy[litellm]` and use `engine="litellm"`; consult its [provider documentation](https://docs.litellm.ai/docs/providers/databricks) for credentials and SDK requirements. For native access to a serving endpoint with a supported HTTP dialect, [register its provider](../../tutorials/custom_lm_engines/index.md#declaring-a-provider-instead-of-writing-an-engine), address and authentication policy. A custom engine is another option for a different protocol or authentication flow.
 
     === "Local LMs on a GPU server"
           First, install [SGLang](https://docs.sglang.ai/docs/get-started/install) and launch its server with your LM.
@@ -108,7 +108,7 @@ dspy.configure(lm=lm)
         ```
 
     === "Other providers"
-        DSPy uses its bundled native lm15 provider registry, not every provider prefix recognized by older DSPy releases. An unlisted provider with a supported wire dialect can be [registered explicitly](../../tutorials/custom_lm_engines/index.md#declaring-a-provider-instead-of-writing-an-engine); other protocols or authentication flows require a custom engine.
+        DSPy's native lm15 registry does not cover every LiteLLM provider prefix. Install `dspy[litellm]` for optional compatibility routes. An unlisted provider with a supported wire dialect can also be [registered explicitly](../../tutorials/custom_lm_engines/index.md#declaring-a-provider-instead-of-writing-an-engine); a custom engine is another option for other protocols or authentication flows.
 
         For an OpenAI-compatible Chat Completions endpoint using bearer authentication, you can use an `openai/` prefix with an explicit API base and key:
 
@@ -117,7 +117,7 @@ dspy.configure(lm=lm)
         lm = dspy.LM('openai/your-model-name', api_key='PROVIDER_API_KEY', api_base='YOUR_PROVIDER_URL')
         dspy.configure(lm=lm)
         ```
-`engine="auto"` (the default) and `engine="lm15"` both select native lm15, with no fallback backend. Unsupported routes and settings raise instead of being silently forwarded. `model_type="text"` is unsupported; use chat, Responses, or a custom engine. See the [migration guide](../../community/normalized-lm-api-migration.md#migrating-from-litellm-backed-dspy) for removed provider options and APIs.
+`engine="auto"` (the default) prefers native lm15 and may select optional LiteLLM for unsupported routes, settings or representations **before provider I/O**. `engine="lm15"` is strict native; `engine="litellm"` explicitly selects compatibility. Provider failures never cause a backend switch. Native use does not require LiteLLM; compatibility use without it raises an error directing you to `pip install "dspy[litellm]"`. `model_type="text"` uses compatibility, not native lm15. See the [migration guide](../../community/normalized-lm-api-migration.md#migrating-from-litellm-backed-dspy) for the canonical API and remaining native limitations.
 
 ## Calling the LM directly.
 
@@ -317,4 +317,3 @@ Use this only for files you trust. The flag also preserves serialized LM endpoin
 DSPy uses `lm.copy(...)` when it needs the same LM with different request parameters, such as a different `temperature` or `rollout_id`. The default `BaseLM.copy()` implementation makes a shallow runtime copy: provider clients, sessions, and local model handles are shared by reference, while DSPy-owned mutable state (`history`, the `callbacks` list, and `kwargs`) is isolated on the copy. The callback list is copied, but callback objects themselves are shared.
 
 If your custom LM stores additional mutable DSPy-owned state that should not be shared across copies, override `copy()` and isolate that state explicitly. Runtime handles that are expensive or unsafe to duplicate should usually continue to be shared by reference.
-

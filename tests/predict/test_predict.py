@@ -517,12 +517,12 @@ def test_load_blocks_serialized_model_list_unless_opted_in(tmp_path):
 
     opt_in_loaded_predict = dspy.Predict("q->a")
     opt_in_loaded_predict.load(file_path, allow_unsafe_lm_state=True)
-    # Opt-in preserves the state, but the removed router option must never
-    # silently redirect a native request or reach the network.
+    # Opt-in preserves the state; strict native execution still refuses
+    # this compatibility option rather than silently redirecting a request.
     assert opt_in_loaded_predict.lm.kwargs["model_list"] == saved_state["lm"]["model_list"]
     with patch("dspy._vendor.lm15.providers.base.BaseProviderLM._send") as send:
         with pytest.raises(dspy.LMUnsupportedFeatureError, match="model_list"):
-            opt_in_loaded_predict.lm("hello", cache=False)
+            opt_in_loaded_predict.lm.copy(engine="lm15")("hello", cache=False)
     send.assert_not_called()
 
 

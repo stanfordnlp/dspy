@@ -160,14 +160,17 @@ def build_request(lm, prompt, options: dict | None = None) -> Request:
             if provider_controls:
                 raise
     compat = None
-    if selection is not None and selection.resolution.adapter == "OpenAIChatLM":
+    if selection is not None and selection.native and selection.resolution.adapter == "OpenAIChatLM":
         compat = selection.resolution.compat
         if isinstance(compat, str):
             compat = OpenAIChatCompat.preset(compat)
         compat = compat.for_model(lm.model) if compat is not None else None
     native_thinking = None
     if provider_controls and selection is not None:
-        if selection.resolution.adapter == "AnthropicLM" and "thinking" in body:
+        if not selection.native:
+            # LiteLLM owns these provider spellings on the compatibility route.
+            passthrough.update({key: body.pop(key) for key in provider_controls})
+        elif selection.resolution.adapter == "AnthropicLM" and "thinking" in body:
             # The Messages writer already accepts this object via extensions.
             # Keep its budget/disable semantics out of the Chat-only reader.
             native_thinking = passthrough["thinking"] = body.pop("thinking")

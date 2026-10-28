@@ -1,4 +1,4 @@
-"""Native inference has no optional SDK fallback, even when LiteLLM is absent."""
+"""Native inference works without LiteLLM; strict native selection never falls back."""
 
 import json
 import os
@@ -16,6 +16,7 @@ from tests.clients.test_lm_engine_execution import native_transport, wire
 def test_clean_import_and_inference_without_litellm(tmp_path):
     code = """
 import importlib.abc
+import importlib.util
 import sys
 
 class NoLiteLLM(importlib.abc.MetaPathFinder):
@@ -35,29 +36,34 @@ execution.RouterConfig = lambda **kw: RouterConfig(**{**kw, "api_keys": {"openai
 assert dspy.LM("openai/gpt-4o-mini", cache=False)("hello") == ["ok"]
 assert len(transport.requests) == 1
 assert not any(n == "litellm" or n.startswith("litellm.") for n in sys.modules)
+
+find_spec = importlib.util.find_spec
+importlib.util.find_spec = lambda name, *args: None if name == "litellm" else find_spec(name, *args)
+for engine in ("auto", "litellm"):
+    lm = dspy.LM("openai/gpt-4o-mini", engine=engine, extra_headers={"x-test": "yes"}, cache=False)
+    try:
+        lm("hello")
+    except ImportError as error:
+        assert "dspy[litellm]" in str(error), str(error)
+    else:
+        raise AssertionError("Missing optional dependency was not reported")
+assert len(transport.requests) == 1
 """
     result = subprocess.run([sys.executable, "-c", code], env={
         "HOME": str(tmp_path), "PATH": os.environ.get("PATH", ""),
-        "LITELLM_LOCAL_MODEL_COST_MAP": "True",
+        "LITELLM_LOCAL_MODEL_COST_MAP": "True", "PYTHON_DOTENV_DISABLED": "1",
     }, capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("entry", ["constructor", "json", "pickle"])
-def test_removed_engine_is_refused_with_migration_message(entry):
-    lm = dspy.LM("openai/gpt-4o-mini")
-    state = {**lm.dump_state(), "engine": "litellm"}
-    lm._engine_spec = "litellm"  # Emulate an old trusted pickle; not a supported mutation.
-    saved = pickle.dumps(lm)
-    with pytest.raises(ValueError, match=r"(?i)litellm") as caught:
-        if entry == "constructor":
-            dspy.LM("openai/gpt-4o-mini", engine="litellm")
-        elif entry == "json":
-            dspy.LM.load_state(state)
-        else:
-            pickle.loads(saved)
-    assert "lm15" in str(caught.value)
-    assert "migration" in str(caught.value)
+def test_optional_engine_selection_survives_persistence(entry):
+    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm")
+    if entry == "json":
+        lm = dspy.LM.load_state(lm.dump_state())
+    elif entry == "pickle":
+        lm = pickle.loads(pickle.dumps(lm))
+    assert lm.engine == "litellm"
 
 
 @pytest.mark.parametrize("engine", ["auto", "lm15"])
@@ -70,10 +76,9 @@ def test_native_engine_pickle_roundtrip_keeps_selection(engine, monkeypatch):
     lm.close()
 
 
-@pytest.mark.parametrize("engine", ["auto", "lm15"])
-def test_removed_text_mode_is_refused_at_construction(engine):
+def test_strict_native_text_mode_is_refused_before_io():
     with pytest.raises(dspy.LMUnsupportedFeatureError, match="model_type"):
-        dspy.LM("openai/gpt-4o-mini", engine=engine, model_type="text")
+        dspy.LM("openai/gpt-4o-mini", engine="lm15", model_type="text")("hello")
 
 
 @pytest.mark.asyncio
@@ -89,39 +94,36 @@ async def test_known_native_request_works(engine, asynchronous, monkeypatch):
         await lm.aclose()
 
 
-@pytest.mark.parametrize("engine", ["auto", "lm15"])
 @pytest.mark.parametrize("thinking", [None, {"type": "disabled"}])
 @pytest.mark.parametrize("model", ["openai/gpt-4o-mini", "anthropic/claude-sonnet-4"])
 @pytest.mark.parametrize("options", [
     {"headers": {"X-Test": "yes"}}, {"extra_headers": {"X-Test": "yes"}},
     {"api_version": "2025-01-01"}, {"custom_llm_provider": "other"},
 ])
-def test_client_knobs_refuse_actionably_without_io(engine, thinking, model, options, monkeypatch):
+def test_client_knobs_refuse_actionably_without_io(thinking, model, options, monkeypatch):
     transport = native_transport(monkeypatch, [])
     with pytest.raises(dspy.LMUnsupportedFeatureError) as caught:
-        dspy.LM(model, engine=engine, cache=False, **options)("hello", **({"thinking": thinking} if thinking else {}))
+        dspy.LM(model, engine="lm15", cache=False, **options)("hello", **({"thinking": thinking} if thinking else {}))
     assert next(iter(options)) in str(caught.value)
     assert "custom engine" in str(caught.value)
     assert not transport.requests
 
 
-@pytest.mark.parametrize("engine", ["auto", "lm15"])
 @pytest.mark.parametrize("thinking", [None, {"type": "disabled"}])
-def test_unknown_provider_never_falls_back(engine, thinking, monkeypatch):
+def test_strict_native_unknown_provider_never_falls_back(thinking, monkeypatch):
     transport = native_transport(monkeypatch, [])
     with pytest.raises(dspy.LMConfigurationError) as caught:
-        dspy.LM("unregistered-provider/model", engine=engine, cache=False)(
+        dspy.LM("unregistered-provider/model", engine="lm15", cache=False)(
             "hello", **({"thinking": thinking} if thinking else {}))
     assert "provider" in str(caught.value).lower()
     assert not transport.requests
 
 
-@pytest.mark.parametrize("engine", ["auto", "lm15"])
 @pytest.mark.parametrize("on_constructor", [False, True])
-def test_unmapped_provider_options_refuse_without_io(engine, on_constructor, monkeypatch):
+def test_unmapped_provider_options_refuse_without_io(on_constructor, monkeypatch):
     transport = native_transport(monkeypatch, [])
     options = {"audio": {"voice": "alloy", "format": "wav"}}
-    lm = dspy.LM("openai/gpt-4o-mini", engine=engine, cache=False, **(options if on_constructor else {}))
+    lm = dspy.LM("openai/gpt-4o-mini", engine="lm15", cache=False, **(options if on_constructor else {}))
     with pytest.raises(dspy.LMUnsupportedFeatureError, match="audio"):
         lm("hello", **({} if on_constructor else options))
     assert not transport.requests
@@ -191,7 +193,7 @@ async def test_openrouter_model_fallback_survives_native_predict(asynchronous, m
 
 def test_openrouter_fallback_options_are_not_sent_to_other_providers(monkeypatch):
     transport = native_transport(monkeypatch, [])
-    lm = dspy.LM("openai/gpt-4.1-mini", api_key="fake", cache=False, models=["other/model"], route="fallback")
+    lm = dspy.LM("openai/gpt-4.1-mini", engine="lm15", api_key="fake", cache=False, models=["other/model"], route="fallback")
     with pytest.raises(dspy.LMUnsupportedFeatureError, match=r"models.*route"):
         lm("Hello")
     assert not transport.requests

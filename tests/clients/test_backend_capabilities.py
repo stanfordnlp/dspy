@@ -37,9 +37,8 @@ def test_copy_recomputes_capabilities_without_mutating_source(monkeypatch):
     assert lm.supports_response_schema
 
 
-@pytest.mark.parametrize("engine", ["auto", "lm15"])
-def test_configuration_refusal_matches_execution(engine, metadata):
-    lm = dspy.LM("openai/gpt-4o", engine=engine, headers={"x-test": "yes"})
+def test_configuration_refusal_matches_execution(metadata):
+    lm = dspy.LM("openai/gpt-4o", engine="lm15", headers={"x-test": "yes"})
     with pytest.raises(dspy.LMUnsupportedFeatureError):
         lm("hello")
     with pytest.raises(dspy.LMUnsupportedFeatureError):
@@ -49,7 +48,7 @@ def test_configuration_refusal_matches_execution(engine, metadata):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
 async def test_adapter_rejects_unsupported_call_time_client_without_leaking_override(asynchronous, metadata):
-    lm = dspy.LM("openai/gpt-4o", cache=False)
+    lm = dspy.LM("openai/gpt-4o", engine="lm15", cache=False)
     adapter = dspy.JSONAdapter()
     args = (lm, {"custom_llm_provider": "alternate"}, dspy.Signature("question -> answer"), [], {"question": "hi"})
     with pytest.raises(dspy.LMUnsupportedFeatureError):
@@ -86,7 +85,7 @@ async def test_concurrent_planning_scopes_are_isolated(metadata, monkeypatch):
         return Response(None, request.model, Message.assistant('{"answer":"native"}'), "stop", Usage())
 
     monkeypatch.setattr(AsyncLM15Engine, "complete", complete)
-    lm = dspy.LM("openai/gpt-4o", cache=False)
+    lm = dspy.LM("openai/gpt-4o", engine="lm15", cache=False)
     adapter = dspy.JSONAdapter()
     signature = dspy.Signature("question -> answer")
     try:

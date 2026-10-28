@@ -27,11 +27,25 @@
         inherited_members: true
 <!-- END_API_REF -->
 
+## Choosing an engine
+
+`engine="auto"` prefers native lm15 and may select the optional LiteLLM
+compatibility engine for unsupported routes, settings or representations before
+provider I/O. `engine="lm15"` requires native; `engine="litellm"` explicitly
+selects compatibility. Provider failures never trigger a backend switch.
+Native imports and calls do not require LiteLLM. Compatibility use requires
+`pip install "dspy[litellm]"`; without it, an actionable error names that command.
+`model_type="text"` uses compatibility, not native lm15. All engines retain the
+canonical `Request`/`Response` contract. See the
+[migration guide](../../community/normalized-lm-api-migration.md) for limitations.
+
 ## Application-owned exception: text-only Bedrock Nova
 
 Native Bedrock Nova/Converse is not supported by this DSPy release. The following
 recipe is a bounded, application-owned exception, **not restored native support
-or an accepted migration-gate exception**. It uses the public
+or an accepted migration-gate exception**. A custom engine is not the only
+integration mechanism: optional LiteLLM compatibility also remains available.
+This recipe does not verify built-in Nova execution through that engine. It uses the public
 [`complete(Request) -> Response` engine contract](../../tutorials/custom_lm_engines/index.md#what-a-custom-engine-owns)
 and LiteLLM installed through DSPy's optional extra, pinned to the version tested here:
 

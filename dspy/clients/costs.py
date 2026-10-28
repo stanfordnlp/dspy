@@ -1,4 +1,4 @@
-"""Token-cost estimates from lm15 usage and upstream prices.
+"""Reported costs or token-cost estimates from lm15 usage and upstream prices.
 
 Unknown pricing is not zero. Hosted tools and unmodelled billing dimensions
 return no estimate instead of claiming a complete bill from token prices alone.
@@ -10,7 +10,7 @@ from dspy.clients.model_metadata import model_info, rate, source_info
 
 
 def estimate_cost(response, *, provider, requested_model, request=None, namespaces=None):
-    """Return (estimated USD cost, provenance), or (None, reason metadata).
+    """Return (reported or estimated USD cost, provenance), or (None, reason metadata).
 
     Advisory metadata must never turn a completed generation into a failure.
     ``namespaces`` are a declared provider's metadata namespaces; the price
@@ -30,6 +30,15 @@ def _estimate_cost(response, *, provider, requested_model, request=None, namespa
 
     def unknown(reason):
         return None, {"kind": "unknown", "reason": reason}
+
+    # Declared providers use their namespaces alone: LiteLLM's generic
+    # compatibility route may price a different provider, not the gateway.
+    # Ordinary routes may report a bill even without a native pricing provider.
+    # Test for None, not truthiness: a reported zero is still authoritative.
+    reported = (response.provider_data or {}).get("_hidden_params", {}).get("response_cost")
+    if namespaces is None and reported is not None:
+        return reported, {"kind": "reported", "currency": "USD", "source": "litellm",
+                          "field": "_hidden_params.response_cost"}
 
     if provider is None:
         return unknown("custom engine has no pricing provider")

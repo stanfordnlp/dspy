@@ -15,9 +15,9 @@ from tests.test_utils.engines import RecordingEngine, make_response, recording_l
     (dspy.Audio(data="QUJD", audio_format="wav"), {"type": "input_audio", "input_audio": {"data": "QUJD", "format": "wav"}}),
     (dspy.File(file_id="file-123"), {"type": "file", "file": {"file_id": "file-123"}}),
 ])
-async def test_auto_media_predictions_refuse_before_native_execution(media, expected, asynchronous, monkeypatch):
+async def test_strict_native_media_predictions_refuse_before_execution(media, expected, asynchronous, monkeypatch):
     transport = native_transport(monkeypatch, [])
-    lm = dspy.LM("openai/gpt-4o-mini", cache=False, num_retries=0)
+    lm = dspy.LM("openai/gpt-4o-mini", engine="lm15", cache=False, num_retries=0)
     predict = dspy.Predict(f"media: dspy.{type(media).__name__} -> answer")
     with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False)):
         with pytest.raises(dspy.LMUnsupportedFeatureError):

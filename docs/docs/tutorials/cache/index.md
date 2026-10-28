@@ -86,16 +86,31 @@ Adapter authors can put the same object in `lm_kwargs["prompt_cache"]`. DSPy att
 
 - `cache=True/False` still controls DSPy's answer cache. `prompt_cache=None` removes this bridge's hint; it does **not** promise to disable the provider's automatic caching.
 - Explicit typed `Request` calls use only their own `Config.cache`, without inheriting `LM.prompt_cache` defaults or accepting a call-time `prompt_cache` override.
-- The option works with native lm15 and canonical custom engines. Unsupported policies raise rather than being silently dropped or sent to another backend. Do not combine it with provider-shaped options such as `prompt_cache_key`; use `CacheConfig.key` instead.
+- The option works with native lm15 and canonical custom engines. A request that needs LiteLLM raises rather than silently dropping or translating this policy. Do not combine it with provider-shaped options such as `prompt_cache_key`; use `CacheConfig.key` instead.
 - The policy survives `copy()` and JSON LM-state saving/loading. Different policies have distinct DSPy answer-cache keys; calls without a policy retain their existing keys.
 - Cache reads/writes appear in usage/history where the provider reports them. Cache writes and longer retention may cost extra, and cost estimates may be unknown when the pricing metadata is incomplete.
 - No stored cache is created, refreshed, or deleted automatically. `CacheConfig.resource`, if supplied, must identify a resource you already manage yourself.
 
-The former LiteLLM `cache_control_injection_points` option is removed. Migrate
-to `CacheConfig(prefix="stable")` for a reusable system/tool prefix or
-`CacheConfig(prefix="history")` for a growing conversation prefix. These are
-native policies, not a promise to reproduce every provider-specific injection
-rule. See the [migration guide](../../community/normalized-lm-api-migration.md).
+### Optional LiteLLM compatibility engine
+
+Install `dspy[litellm]` and use `engine="litellm"` for LiteLLM's provider-shaped
+options, such as `cache_control_injection_points`, rather than `prompt_cache`.
+See the [LiteLLM prompt caching documentation](https://docs.litellm.ai/docs/tutorials/prompt_caching#configuration)
+for provider-specific support.
+
+```python
+lm = dspy.LM(
+    "anthropic/claude-sonnet-4-5-20250929",
+    engine="litellm",
+    cache_control_injection_points=[{"location": "message", "role": "system"}],
+)
+```
+
+For native calls, migrate to `CacheConfig(prefix="stable")` for a reusable
+system/tool prefix or `CacheConfig(prefix="history")` for a growing conversation
+prefix. These policies do not promise to reproduce every provider-specific
+injection rule. Compatibility support is not proof of native cache or billing
+parity. See the [migration guide](../../community/normalized-lm-api-migration.md).
 
 Provider-side prompt caching is especially beneficial when:
 

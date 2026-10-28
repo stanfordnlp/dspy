@@ -44,7 +44,8 @@ explicit SDK-style base path. Environment defaults are
 configuration is separate from native `dspy.LM`'s Azure v1 route.
 
 This is not a multi-provider routing layer. Other LiteLLM embedding prefixes
-and their provider-specific kwargs are removed. For a provider with another protocol or
+and their provider-specific kwargs are removed. Installing `dspy[litellm]` enables
+LM compatibility, not embedding fallback. For a provider with another protocol or
 authentication flow, pass a callable that accepts a list of strings and returns
 one embedding vector per input, for example `dspy.Embedder(model.encode)` for a
 local embedding model. LM provider registration does not register an embeddings

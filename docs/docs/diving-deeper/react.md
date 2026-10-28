@@ -180,7 +180,7 @@ with dspy.context(lm=lm):
     result = agent(question="What is DSPy?")
 ```
 
-The history policy asks lm15 to mark the reusable conversation prefix as ReActV2 appends history. It does not enable DSPy's answer cache or guarantee a provider cache hit. Anthropic only caches prefixes that meet the model's minimum token count, and its default ephemeral cache has a limited lifetime. See [Using Provider-Side Prompt Caching](../tutorials/cache/index.md#using-provider-side-prompt-caching) for configuration and migration from the removed provider-specific injection options.
+The history policy asks lm15 to mark the reusable conversation prefix as ReActV2 appends history. It does not enable DSPy's answer cache or guarantee a provider cache hit. Anthropic only caches prefixes that meet the model's minimum token count, and its default ephemeral cache has a limited lifetime. See [Using Provider-Side Prompt Caching](../tutorials/cache/index.md#using-provider-side-prompt-caching) for native configuration and the optional LiteLLM engine's provider-specific injection options.
 
 Native tool replay gives the cleanest provider-visible structure, but non-native mode still benefits from stable multi-turn history. Internal testing has seen cost reductions of up to 50% on some tasks. Actual savings depend on the provider's cache policy, model, request shape, and the size of tool results; they are not guaranteed for every workload.
 

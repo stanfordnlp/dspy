@@ -5,6 +5,11 @@ You can supply your own execution engine to `dspy.LM`. Before you do, check whic
 - **An HTTP provider lm15 can already speak to** — an OpenAI-compatible service, a company gateway, a host DSPy's bundled lm15 does not list yet. Do not write an engine: [declare the provider](#declaring-a-provider-instead-of-writing-an-engine) and `dspy.LM("<provider>/<model>")` routes natively, with `api_key`, `api_base`, `timeout`, saving and loading all behaving as for a built-in provider.
 - **Not an HTTP provider at all** — a CLI, an in-process model, an agent harness. Write an engine. It owns its whole connection, so the [rules below](#what-a-custom-engine-owns) apply.
 
+For providers already supported by LiteLLM, installing `dspy[litellm]` also enables
+DSPy's optional compatibility engine. `engine="litellm"` selects it explicitly;
+`engine="auto"` prefers native and may select compatibility before provider I/O.
+Neither selection switches backends after a provider failure.
+
 The minimum synchronous interface is `complete(request: Request) -> Response`.
 The [PiEngine below](#define-the-engine) implements it and saves its configuration.
 
@@ -50,7 +55,7 @@ Do this at import time of your application, before the LMs that use it are const
 After that the provider behaves like a built-in one:
 
 - `dspy.LM(..., api_key=..., api_base=..., timeout=...)` are honored; with no key given, `COMPANY_API_KEY` is read, and a missing key names that variable. A `COMPANY_API_BASE` variable in the environment does not redirect a declared provider (registry providers retain their environment-based overrides): the declaration states its address itself.
-- `engine="auto"` and `engine="lm15"` both plan each request against the declared compat and execute natively, **at the declared address, with the declared credential**. Unsupported client settings (such as `extra_headers` or `organization`) and features the compat cannot represent raise before I/O. There is no compatibility fallback: the declaration remains the authority on the server's protocol and authentication. Errors name the declared provider and pricing comes from its `metadata_namespaces`.
+- `engine="auto"` plans each request against the declared compat. A client setting only LiteLLM carries (`extra_headers`, `organization`, …) may select optional LiteLLM before any I/O — **at the declared address, with the declared credential**, through its generic OpenAI-compatible route (`openai/`, or `anthropic/` for that dialect). This requires `dspy[litellm]`. The credential travels only under the declaration's authentication scheme; a scheme the compatibility route cannot send gets no fallback. Aliases are never handed to LiteLLM as provider prefixes. Errors still name the declared provider and pricing comes from its `metadata_namespaces`. A refusal from the declared compat is final: the declaration is the authority on what that server cannot do. `engine="lm15"` refuses both unsupported client settings and unrepresentable features instead of using compatibility.
 - `dump_state()`/`load_state()` and program `save()`/`load()` need nothing extra — the state is the model string. A registration is an environment fact, like the key variable: it must be in place when the program is loaded.
 
 **Aliases are spellings, nothing more.** Which models a declared provider's endpoint supports, and what they cost, are separate statements:
