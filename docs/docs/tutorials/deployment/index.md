@@ -72,32 +72,19 @@ You can configure the async capacity using the new `async_max_workers` setting.
     asyncify under the hood and inherits the execution semantics.
 
     ```python
+    from fastapi.responses import StreamingResponse
+    from dspy.streaming import streaming_response
+
     dspy_program = dspy.asyncify(dspy.ChainOfThought("question -> answer"))
     streaming_dspy_program = dspy.streamify(dspy_program)
-
-    @app.post("/predict/stream")
-    async def stream(question: Question):
-        async def generate():
-            async for value in streaming_dspy_program(question=question.text):
-                if isinstance(value, dspy.Prediction):
-                    data = {"prediction": value.labels().toDict()}
-                elif isinstance(value, litellm.ModelResponse):
-                    data = {"chunk": value.json()}
-                yield f"data: {orjson.dumps(data).decode()}\n\n"
-            yield "data: [DONE]\n\n"
-
-        return StreamingResponse(generate(), media_type="text/event-stream")
-
-    # Since you're often going to want to stream the result of a DSPy program as server-sent events,
-    # we've included a helper function for that, which is equivalent to the code above.
-
-    from dspy.streaming import streaming_response
 
     @app.post("/predict/stream")
     async def stream(question: Question):
         stream = streaming_dspy_program(question=question.text)
         return StreamingResponse(streaming_response(stream), media_type="text/event-stream")
     ```
+
+    `streaming_response` serializes DSPy's native stream chunks and final prediction as server-sent events, followed by `[DONE]`. Applications do not need to import or inspect a provider SDK's response type.
 
 Write your code to a file, e.g., `fastapi_dspy.py`. Then you can serve the app with:
 

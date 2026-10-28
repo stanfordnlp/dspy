@@ -22,9 +22,66 @@ classes, not DSPy wrappers or subclasses.
 | `Tool.format_as_litellm_function_call()` | OpenAI function-tool dictionary | Renamed `Tool.as_function_tool()`, returns an lm15 `FunctionTool` |
 
 In 3.5, DSPy's adapters build lm15 requests and consume lm15 responses directly,
-not use the list-returning convenience path. Provider-wire dictionaries belong
-inside engines. LiteLLM itself is **not** deprecated: a LiteLLM engine must follow
-that same request/response contract.
+not the list-returning convenience path. Provider wire formats belong to engines.
+DSPy's built-in LM engines prefer native lm15. LiteLLM is no longer a required
+dependency, but its compatibility engine remains available with
+`pip install "dspy[litellm]"`. Native imports and calls do not require LiteLLM;
+attempting to use compatibility without it raises an actionable installation error.
+The `Request`/`Response` contract and one-call-per-candidate execution remain unchanged.
+
+### Migrating from LiteLLM-backed DSPy
+
+- Install `dspy[litellm]` for compatibility routes. `engine="auto"` prefers native
+  lm15 and may select LiteLLM for unsupported routes, settings or representations
+  **before provider I/O**. `engine="lm15"` is strict native;
+  `engine="litellm"` explicitly selects compatibility. Provider failures never
+  trigger a backend switch.
+- `model_type="text"` uses the optional LiteLLM compatibility engine, not native
+  lm15. The public call still uses a string or canonical `Request`, not `messages=`.
+- Provider prefixes, credentials and options supported only by LiteLLM do not
+  become native integrations automatically. Use the optional compatibility engine
+  where supported. For an unlisted compatible HTTP
+  endpoint, [register a provider](../tutorials/custom_lm_engines/index.md#declaring-a-provider-instead-of-writing-an-engine).
+  A custom engine remains an option for other protocols or authentication flows.
+- For native calls, replace `cache_control_injection_points` with the
+  [`prompt_cache` policy](../tutorials/cache/index.md#using-provider-side-prompt-caching).
+  LiteLLM's provider-shaped caching options remain compatibility-engine options;
+  they do not establish native support.
+- `dspy.enable_litellm_logging()` and `dspy.disable_litellm_logging()` remain
+  available for the optional compatibility integration. `dspy.enable_logging()` /
+  `disable_logging()` control DSPy's own logging.
+- Hosted `dspy.Embedder` calls now use the OpenAI SDK against OpenAI, Azure
+  OpenAI, or an OpenAI-compatible embeddings endpoint. Other providers require a
+  callable; their old LiteLLM model prefixes no longer route automatically.
+  Installing `dspy[litellm]` does not restore embedding fallback.
+  See [Embedder](../api/models/Embedder.md).
+
+For OpenRouter cross-model fallback, move `models` and `route` out of the SDK's
+`extra_body` wrapper into generation options:
+
+```python
+lm = dspy.LM(
+    "openrouter/openai/gpt-4.1-mini",
+    models=["openai/gpt-4.1-mini", "anthropic/claude-haiku-4.5"],
+    route="fallback",
+)
+```
+
+DSPy sends this policy to OpenRouter; it does not implement the fallback itself.
+An invalid model ID can still be rejected by OpenRouter before fallback applies.
+These options are accepted only for the OpenRouter route. For OpenRouter privacy
+and provider restrictions, use predictor configuration, such as
+`dspy.Predict("question -> answer", provider={"data_collection": "deny"})`.
+The LM constructor's `provider=` argument selects a training/launch provider,
+not OpenRouter's inference routing policy.
+
+DSPy still uses **LiteLLM-derived model metadata** for capability and pricing
+hints, without importing the LiteLLM library. On first use it attempts to fetch
+the upstream catalog, falling back to the bundled snapshot. Set
+`LITELLM_LOCAL_MODEL_COST_MAP=True` to use only the snapshot;
+`LITELLM_MODEL_COST_MAP_URL` still overrides the catalog URL. These legacy
+environment names remain supported. A catalog entry does not establish a
+supported native route, and missing pricing is unknown, not zero cost.
 
 When preparing an upgrade from 3.4, expose its migration warnings with:
 
@@ -69,20 +126,21 @@ Engine selection:
 
 - `engine="auto"` (default): prefer native lm15 for supported routes and
   representable inputs. Unsupported routes and ordinary provider-specific inputs
-  that cannot be represented faithfully select LiteLLM **before execution**.
-  Unmapped options such as `vertex_project` travel in `Config.extensions`.
+  that cannot be represented faithfully may select optional LiteLLM **before
+  provider I/O**. Unmapped options such as `vertex_project` travel in `Config.extensions`.
 - `engine="lm15"`: require the native backend. Unsupported mappings raise.
-- `engine="litellm"`: explicitly use the compatibility backend.
+- `engine="litellm"`: explicitly use the optional compatibility backend.
 
 Authentication failures, timeouts and provider errors never cause a switch to
-another backend. Text completions and client settings not implemented by the
-native integration remain on LiteLLM. The `timeout` setting, a number of seconds
-or an `httpx.Timeout`, stays native: it bounds the wait for the next byte of the
-reply (headers first, then each streamed chunk), the send, and a free
-connection; the native default is 600 seconds, the same as LiteLLM's. An
+another backend. Compatibility use requires `pip install "dspy[litellm]"`;
+native use does not.
+
+The `timeout` setting, a number of seconds or an `httpx.Timeout`, bounds the wait
+for the next byte of the reply (headers first, then each streamed chunk), the
+send, and a free connection; the native default is 600 seconds. An
 `httpx.Timeout` component set to `None` means "wait forever", which the native
-engine cannot honour: under `engine="auto"` that call uses LiteLLM, and under
-`engine="lm15"` it raises `LMUnsupportedFeatureError` (feature `timeout`)
+engine cannot honour: under `engine="auto"` that call uses optional LiteLLM, and
+under `engine="lm15"` it raises `LMUnsupportedFeatureError` (feature `timeout`)
 rather than silently substituting a default.
 
 Text that no provider can receive (a lone surrogate character) raises a plain
@@ -101,10 +159,11 @@ level the wire lacks becomes `auto`. Each history entry carries the record
 under `"adaptations"` (`field`, `action`, `asked`, `applied`, `reason`); the
 lm15 `Response` in the entry carries the same. Nothing is printed. What lm15
 still refuses is known before any request is sent. Under `engine="auto"`, a
-representational refusal selects LiteLLM before inference, so Chat audio and
-file inputs can use its SDK bridge. Explicit native selection, declared-provider
-refusals and provider prompt-cache requests do not take this fallback; unsupported
-inputs raise `LMUnsupportedFeatureError`. All engines still take `Request`,
+representational refusal may select optional LiteLLM before inference, so Chat
+audio and file inputs can use its SDK bridge. Explicit native selection,
+declared-provider refusals and provider prompt-cache requests do not take this
+fallback; unsupported inputs raise `LMUnsupportedFeatureError`. Compatibility is
+not evidence of native modality parity. All engines still take `Request`,
 including the compatibility engine. DSPy implements
 `n > 1` by making separate requests, not by asking the native engine for `n`.
 
@@ -154,12 +213,12 @@ once a chunk has been sent to the caller. Caching a completed stream does not
 replay fake token timing on a later ordinary cache hit.
 
 `dspy.streamify` keeps its listener-facing chunks (`chunk.choices[0].delta`),
-built from lm15 stream events. Streaming through the LiteLLM engine now uses the
-same event mapping as native streaming, so every chunk has the same shape.
-Predictions and direct calls to LiteLLM text and Responses models inside a
-streamified module complete without token chunks. Other calls in the module
-can still stream. Token streaming on these compatibility endpoints remains
-unsupported; use native lm15 for Responses token streaming.
+built from lm15 stream events. LiteLLM Chat streaming uses the same event mapping
+as native streaming. Predictions and direct calls to LiteLLM text and Responses
+models inside a streamified module complete without token chunks. Other calls
+in the module can still stream. Token streaming on these compatibility endpoints
+remains unsupported; use native lm15 for Responses token streaming. Custom
+engines must implement the canonical streaming interface to produce token chunks.
 
 `streamify` is the **program-level** API: it selects predictor fields, emits tool
 and module status messages, and delivers the final `Prediction`. lm15 events describe
@@ -222,7 +281,7 @@ they do not accept `n` or `num_generations`, or inherit the LM's candidate count
 
 ## Errors and retry ownership
 
-**Engines report failures; DSPy owns retry and fallback policy.** New engines raise
+**Engines report failures; DSPy owns retries.** New engines raise
 specific errors from `dspy.lm15`, the same bundled vocabulary as their requests and
 responses. Use these imports, not a separately installed lm15 package whose Python
 classes have different identities.
@@ -236,7 +295,8 @@ raise RateLimitError("Provider rate limit", provider="my-backend", retry_after=2
 
 Do not return an error dictionary or a fake successful `Response`. LiteLLM engines
 translate their SDK's exception classes and documented provider codes into lm15
-errors. Native engines propagate lm15 errors. Arbitrary custom exceptions are not
+errors. Native engines propagate lm15 errors; custom engines should translate
+their backend's documented failures into those same errors. Arbitrary custom exceptions are not
 classified by words such as "network" or "timeout".
 
 At its owned engine/capability boundaries, DSPy translates canonical errors into its
@@ -328,7 +388,7 @@ An engine is saved by `dump_state()`/`load_state()` of its own, and loading one 
 gated by `allow_unsafe_lm_state=True` like a custom LM class. For an HTTP provider
 lm15 can speak to, declare it with `dspy.lm15.register_provider(...)` instead of
 writing an engine: each `dspy.LM` binds the registrations present at construction,
-and a fallback to LiteLLM keeps the declared address and credential. See the
+and any permitted compatibility fallback keeps the declared address and credential. See the
 [custom-engine tutorial](../tutorials/custom_lm_engines/index.md).
 
 An engine may declare `supports_function_calling`, `supports_reasoning`,
@@ -410,15 +470,15 @@ Chat Completions writer through `dspy.adapters.base.prompt_to_openai_messages`.
   citations carry text, title and URL, but native document indexes and character
   offsets are not preserved, even if the provider reports them. Prompt-parsed
   citations may include these fields; they are model output, not native provenance.
-- **Audio and files on Chat Completions endpoints.** With `engine="litellm"`,
-  DSPy preserves `input_audio` and `file` blocks for `dspy.Audio`, inline
-  `dspy.File` data and uploaded file IDs; training exports use the same
-  conversion. Native lm15 Chat still carries text and images only and raises
+- **Audio and files on Chat Completions endpoints.** The optional LiteLLM engine
+  preserves `input_audio` and `file` blocks for `dspy.Audio`, inline `dspy.File`
+  data and uploaded file IDs. This is compatibility support, not native parity.
+  Native lm15 Chat carries text and images only and, with `engine="lm15"`, raises
   `LMUnsupportedFeatureError` for these inputs. OpenAI Responses supports files,
   **not audio**: switching `gpt-audio-mini` to `model_type="responses"` does not
   fix audio support. Gemini supports native audio and files. Anthropic supports
-  documents but not audio. Text-completion endpoints reject image, audio and
-  file inputs rather than silently dropping them.
+  documents but not audio. Compatibility text-completion endpoints reject image,
+  audio and file inputs rather than silently dropping them.
 - **Strict function tools.** The bundled lm15 `FunctionTool` cannot represent
   per-tool `strict=True`. Both Chat Completions and flat Responses tool
   dictionaries with this setting raise `LMUnsupportedFeatureError` rather than

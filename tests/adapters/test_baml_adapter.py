@@ -3,13 +3,11 @@ from unittest import mock
 
 import pydantic
 import pytest
-from litellm import Choices, Message
-from litellm.files.main import ModelResponse
 
 import dspy
 from dspy.adapters.baml_adapter import COMMENT_SYMBOL, INDENTATION, BAMLAdapter
 from tests.adapters.conftest import format_messages_and_lm_kwargs
-from tests.test_utils.engines import litellm_response
+from tests.test_utils.engines import make_response
 
 
 # Test fixtures - Pydantic models for testing
@@ -451,14 +449,14 @@ def test_baml_adapter_with_code():
         task: str = dspy.InputField()
         code: dspy.Code = dspy.OutputField()
 
-    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content='{"code": "print(\\"Generated code\\")"}'))],
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            '{"code": "print(\\"Generated code\\")"}',
             model="openai/gpt-4o-mini",
         )
 
         result = adapter(
-            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(model="openai/gpt-4o-mini", cache=False),
             {},
             CodeGenSignature,
             [],
@@ -547,15 +545,15 @@ async def test_baml_adapter_async_functionality():
         question: str = dspy.InputField()
         patient: PatientDetails = dspy.OutputField()
 
-    with mock.patch("litellm.acompletion") as mock_acompletion:
-        mock_acompletion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content='{"patient": {"name": "John Doe", "age": 28}}'))],
+    with mock.patch("dspy.clients.engines.AsyncLM15Engine.complete") as mock_acompletion:
+        mock_acompletion.return_value = make_response(
+            '{"patient": {"name": "John Doe", "age": 28}}',
             model="openai/gpt-4o",
         )
 
         adapter = BAMLAdapter()
         result = await adapter.acall(
-            dspy.LM(engine="litellm", model="openai/gpt-4o", cache=False), {}, TestSignature, [], {"question": "Extract patient info"}
+            dspy.LM(model="openai/gpt-4o", cache=False), {}, TestSignature, [], {"question": "Extract patient info"}
         )
 
         assert result[0]["patient"].name == "John Doe"

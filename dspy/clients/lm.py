@@ -177,7 +177,7 @@ class LM(BaseLM):
 
         Args:
             model: The model to use. This should be a string of the form
-                `"llm_provider/llm_name"` supported by LiteLLM. For example,
+                `"provider/model"` supported by lm15, a registered provider, or optional LiteLLM. For example,
                 `"openai/gpt-4o"`.
             model_type: The type of the model, such as `"chat"`, `"text"`, or
                 `"responses"`.
@@ -395,6 +395,7 @@ class LM(BaseLM):
         self.__dict__.update(state)
         self._engine_spec = getattr(self, "_engine_spec", "auto")
         self._async_engine_spec = getattr(self, "_async_engine_spec", None)
+        _check_engines(self._engine_spec, self._async_engine_spec)
         self._providers = getattr(self, "_providers", ())
         self._engine_lock = threading.RLock()
         self._engine_store = {}

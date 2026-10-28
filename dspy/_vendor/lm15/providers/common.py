@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import urllib.parse
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Mapping
 
 from ..models import ModelInfo, ModelOrigin
 from ..transports import TransportRequest
@@ -27,6 +27,8 @@ from ..types import (
     TopLogprob,
     VideoPart,
     Request,
+    Response,
+    Usage,
 )
 
 JsonPayload = dict[str, Any] | list[Any]
@@ -455,6 +457,33 @@ def openai_token_logprobs(entries: Any) -> tuple[TokenLogprob, ...]:
             )
         )
     return tuple(out)
+
+
+def with_partial_usage(
+    error: "ProviderError", data: Mapping[str, Any], *, model: str | None,
+    parse_usage: Callable[[dict[str, Any]], Usage],
+) -> "ProviderError":
+    """Attach accounting from an already decoded reply, without reading its
+    output again. The dialect supplies its normal usage reader. Invalid
+    telemetry must never replace the original provider/parsing failure.
+    This intentionally carries no generated content or successful finish.
+    """
+    usage_data = data.get("usage")
+    resolved_model = data.get("model") or model
+    if error.partial is not None or not isinstance(usage_data, dict) or not resolved_model:
+        return error
+    try:
+        error.partial = Response(
+            id=str(data["id"]) if data.get("id") else None,
+            model=str(resolved_model),
+            message=Message.assistant(""),
+            finish_reason="error",
+            usage=parse_usage(usage_data),
+        )
+    except (AttributeError, TypeError, ValueError):
+        # Bad counters or nested detail objects are not usable accounting.
+        pass
+    return error
 
 
 def unnamed_tool_call_error(provider: str, path: str) -> "ProviderError":

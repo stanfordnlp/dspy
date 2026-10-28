@@ -1,9 +1,11 @@
 """The DSPy 3.5 LM call contract: one string convenience, otherwise lm15 objects."""
 
+
 import pytest
 
 import dspy
 from dspy.lm15 import Config, Message, Request, Response
+from tests.clients.test_lm_engine_execution import native_transport, wire
 from tests.test_utils.engines import RecordingEngine, make_response, recording_lm
 
 
@@ -13,55 +15,27 @@ from tests.test_utils.engines import RecordingEngine, make_response, recording_l
     (dspy.Audio(data="QUJD", audio_format="wav"), {"type": "input_audio", "input_audio": {"data": "QUJD", "format": "wav"}}),
     (dspy.File(file_id="file-123"), {"type": "file", "file": {"file_id": "file-123"}}),
 ])
-async def test_auto_media_predictions_fall_back_before_native_execution(media, expected, asynchronous, monkeypatch):
-    import litellm
-
-    seen = []
-
-    def complete(**kwargs):
-        seen.append(kwargs)
-        return litellm.ModelResponse(choices=[{"message": {
-            "role": "assistant", "content": "[[ ## answer ## ]]\nReceived\n\n[[ ## completed ## ]]"},
-            "finish_reason": "stop"}])
-
-    async def acomplete(**kwargs):
-        return complete(**kwargs)
-
-    monkeypatch.setattr(litellm, "completion", complete)
-    monkeypatch.setattr(litellm, "acompletion", acomplete)
-    lm = dspy.LM("openai/gpt-4o-mini", cache=False, num_retries=0)
+async def test_strict_native_media_predictions_refuse_before_execution(media, expected, asynchronous, monkeypatch):
+    transport = native_transport(monkeypatch, [])
+    lm = dspy.LM("openai/gpt-4o-mini", engine="lm15", cache=False, num_retries=0)
     predict = dspy.Predict(f"media: dspy.{type(media).__name__} -> answer")
     with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False)):
-        output = await predict.acall(media=media) if asynchronous else predict(media=media)
-    assert output.answer == "Received"
-    assert len(seen) == 1
-    assert expected in seen[0]["messages"][-1]["content"]
+        with pytest.raises(dspy.LMUnsupportedFeatureError):
+            await predict.acall(media=media) if asynchronous else predict(media=media)
+    assert not transport.requests
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("typed", [False, True])
-async def test_litellm_citations_survive_canonical_calls_and_cache(asynchronous, typed, monkeypatch):
-    import litellm
+async def test_citations_survive_canonical_calls_and_cache(asynchronous, typed):
+    from dspy.lm15 import CitationPart, TextPart, Usage
 
-    citations = [[{"cited_text": "First source", "document_title": "Report", "document_index": 2}],
-                 {"text": "Second source", "url": "https://example.com/source"}]
-    calls = []
-
-    def complete(**kwargs):
-        calls.append(kwargs)
-        return litellm.ModelResponse(
-            model="anthropic/claude-sonnet-4-5", choices=[{"message": {
-                "role": "assistant", "content": "An answer", "provider_specific_fields": {"citations": citations}},
-                "finish_reason": "stop"}], usage={"prompt_tokens": 9, "completion_tokens": 3, "total_tokens": 12},
-        )
-
-    async def acomplete(**kwargs):
-        return complete(**kwargs)
-
-    monkeypatch.setattr(litellm, "completion", complete)
-    monkeypatch.setattr(litellm, "acompletion", acomplete)
-    lm = dspy.LM("anthropic/claude-sonnet-4-5", engine="litellm")
+    response = Response(None, "test/model", Message.assistant((
+        TextPart("An answer"), CitationPart(text="First source", title="Report"),
+        CitationPart(text="Second source", url="https://example.com/source"),
+    )), "stop", Usage(input_tokens=9, output_tokens=3, total_tokens=12))
+    lm = recording_lm([response], cache=True)
     prompt = Request(model=lm.model, messages=(Message.user("hello"),)) if typed else "hello"
     expected = [{"text": "First source", "title": "Report"},
                 {"text": "Second source", "url": "https://example.com/source"}]
@@ -73,94 +47,51 @@ async def test_litellm_citations_survive_canonical_calls_and_cache(asynchronous,
             ]
         else:
             assert result == [{"text": "An answer", "citations": expected}]
-        raw = lm.history[-1]["response"].provider_data
-        assert raw["choices"][0]["message"]["provider_specific_fields"]["citations"] == citations
-    assert len(calls) == 1
+    assert len(lm.engine.requests) == 1
     assert lm.history[0]["usage"]["total_tokens"] == 12
     assert lm.history[1]["usage"] == {}
 
 
-@pytest.mark.parametrize("setting", ["headers", "extra_query", "custom_llm_provider"])
 @pytest.mark.parametrize("on_constructor", [False, True])
 @pytest.mark.parametrize("via_predict", [False, True])
-def test_call_cache_includes_effective_client_settings(setting, on_constructor, via_predict, monkeypatch):
-    seen = []
+def test_call_cache_includes_effective_timeout(on_constructor, via_predict, monkeypatch):
+    from dspy.clients.engines import LM15Engine
 
-    def complete(**kwargs):
-        value = kwargs[setting]
-        answer = value if isinstance(value, str) else value["route"]
-        seen.append(answer)
-        content = f"<answer>{answer}</answer>" if via_predict else answer
-        return {"model": kwargs["model"], "choices": [{"message": {
-            "role": "assistant", "content": content},
-            "finish_reason": "stop"}]}
+    calls = []
 
-    monkeypatch.setattr("litellm.completion", complete)
-    first = "first" if setting == "custom_llm_provider" else {"route": "first"}
-    second = "second" if setting == "custom_llm_provider" else {"route": "second"}
-    lm = dspy.LM("openai/gpt-4o", engine="litellm", **{setting: first})
-    other = dspy.LM("openai/gpt-4o", engine="litellm", **{setting: second}) if on_constructor else lm
+    def complete(self, request):
+        calls.append(self.config.timeouts.read)
+        answer = {7: "first", 9: "second"}[self.config.timeouts.read]
+        return make_response(f"<answer>{answer}</answer>" if via_predict else answer)
+
+    monkeypatch.setattr(LM15Engine, "complete", complete)
+    # Timeout remains a supported client knob. Credentials and endpoint aliases
+    # are deliberately excluded by DSPy's existing answer-cache contract.
+    lm = dspy.LM("openai/gpt-4o", timeout=7)
+    other = dspy.LM("openai/gpt-4o", timeout=9) if on_constructor else lm
     predictor = dspy.Predict("question -> answer")
     for _ in range(2):
-        options = {} if on_constructor else {setting: second}
+        options = {} if on_constructor else {"timeout": 9}
         if via_predict:
             assert predictor(question="hello", lm=lm).answer == "first"
             assert predictor(question="hello", lm=other, config=options).answer == "second"
         else:
             assert lm("hello") == ["first"]
             assert other("hello", **options) == ["second"]
-    assert seen == ["first", "second"]
+    assert calls == [7, 9]
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
-@pytest.mark.parametrize("setting,default", [
-    ("headers", {"route": "first"}), ("extra_query", {"route": "first"}),
-    ("custom_llm_provider", "first"), ("timeout", 7),
-])
-async def test_predict_can_clear_client_defaults(asynchronous, setting, default, monkeypatch):
-    seen = []
-
-    def complete(**kwargs):
-        seen.append(kwargs)
-        return {"model": kwargs["model"], "choices": [{"message": {
-            "role": "assistant", "content": "<answer>hello</answer>"},
-            "finish_reason": "stop"}]}
-
-    async def acomplete(**kwargs):
-        return complete(**kwargs)
-
-    monkeypatch.setattr("litellm.completion", complete)
-    monkeypatch.setattr("litellm.acompletion", acomplete)
-    lm = dspy.LM("openai/gpt-4o", engine="litellm", cache=False, **{setting: default})
+async def test_predict_can_clear_client_defaults(asynchronous, monkeypatch):
+    transport = native_transport(monkeypatch, [wire("<answer>hello</answer>")])
+    lm = dspy.LM("openai/gpt-4o", cache=False, base_url="https://override.test/v1")
     predictor = dspy.Predict("question -> answer")
-    options = {"question": "hi", "lm": lm, "config": {setting: None}}
+    options = {"question": "hi", "lm": lm, "config": {"base_url": None}}
     result = await predictor.acall(**options) if asynchronous else predictor(**options)
     assert result.answer == "hello"
-    assert "route" not in seen[0][setting] if setting == "headers" else seen[0][setting] is None
-    assert lm.kwargs[setting] == default
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("asynchronous", [False, True])
-async def test_text_predictions_forward_top_k(asynchronous, monkeypatch):
-    seen = []
-
-    def complete(**kwargs):
-        seen.append(kwargs)
-        return {"model": kwargs["model"], "choices": [{
-            "text": "<answer>hello</answer>", "finish_reason": "stop"}]}
-
-    async def acomplete(**kwargs):
-        return complete(**kwargs)
-
-    monkeypatch.setattr("litellm.text_completion", complete)
-    monkeypatch.setattr("litellm.atext_completion", acomplete)
-    lm = dspy.LM("openai/local", model_type="text", engine="litellm", cache=False, top_k=7)
-    predictor = dspy.Predict("question -> answer")
-    result = await predictor.acall(question="hi", lm=lm) if asynchronous else predictor(question="hi", lm=lm)
-    assert result.answer == "hello"
-    assert seen[0]["top_k"] == 7
+    assert transport.requests[0].url == "https://api.openai.com/v1/chat/completions"
+    assert lm.kwargs["base_url"] == "https://override.test/v1"
 
 
 @pytest.mark.asyncio

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import dspy
+import dspy.experimental
 
 API_MAPPING = {
     "models": [

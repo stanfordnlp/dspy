@@ -57,6 +57,9 @@ def select_backend(lm, options=None, request=None):
         if resolution.provider == "typesafe":
             # System One natively accepts structured instructions and criteria.
             extra -= {"questions"}
+        if resolution.provider == "openrouter":
+            # Preserve the native cross-model fallback policy.
+            extra -= {"models", "route"}
         if resolution.adapter == "AnthropicLM":
             # Messages owns the provider-shaped thinking object, including
             # budget and disable controls carried unchanged by the builder.
@@ -70,20 +73,20 @@ def select_backend(lm, options=None, request=None):
             native = False
     if native and resolution is not None:
         try:
-            # Preserve legacy environment-configured gateways. A public native
-            # endpoint must not receive credentials meant for that gateway. A
-            # declared provider states its address explicitly; an explicit
-            # declaration beats an ambient variable.
-            prefix = lm.model.split("/", 1)[0].upper()
-            if spec == "auto" and not resolution.declared and any(
-                os.getenv(name) for name in (f"{prefix}_API_BASE", f"{prefix}_BASE_URL")
-            ):
-                native = False
-            if spec == "auto" and resolution.provider == "xai" and "api_key" not in clients and os.getenv("XAI_API_KEY"):
+            # Gateways supported natively must not require the optional SDK.
+            # Explicit configuration wins over environment defaults.
+            if not resolution.declared and not (clients.get("api_base") or clients.get("base_url")):
+                prefix = (lm.model.split("/", 1)[0].split(":", 1)[0]
+                          if "/" in lm.model or ":" in lm.model else resolution.provider.removesuffix("-chat")).upper()
+                url = os.getenv(f"{prefix}_API_BASE") or os.getenv(f"{prefix}_BASE_URL")
+                if url:
+                    clients["base_url"] = url
+            if resolution.provider == "xai" and "api_key" not in clients and os.getenv("XAI_API_KEY"):
                 clients["api_key"] = os.environ["XAI_API_KEY"]
-            if (set(clients) - NATIVE_CLIENT_KEYS) or (resolution.provider.startswith("azure") and
-                                                       any(key in clients for key in ("api_base", "base_url"))):
+            if any(key not in NATIVE_CLIENT_KEYS and value is not None for key, value in clients.items()):
                 native = False
+            else:
+                clients = {key: value for key, value in clients.items() if key in NATIVE_CLIENT_KEYS}
             # A timeout the native engine cannot honor as written (a disabled
             # httpx component) is a client setting LiteLLM carries; a malformed
             # one stays a local TypeError/ValueError on every engine.
@@ -96,5 +99,9 @@ def select_backend(lm, options=None, request=None):
     if spec == "litellm" and resolution is not None and not resolution.declared:
         resolution = None  # as before: the compatibility engine reads the model string itself
     if spec == "lm15" and not native:
-        raise UnsupportedFeatureError("The requested client settings require the LiteLLM compatibility engine.")
+        unsupported = sorted(key for key, value in clients.items() if key not in NATIVE_CLIENT_KEYS and value is not None)
+        raise UnsupportedFeatureError(
+            f"The native LM cannot carry these client settings: {unsupported}, or model_type={lm.model_type!r}. "
+            "Use engine='auto' with dspy[litellm], or configure a custom engine."
+        )
     return BackendSelection(native, resolution, clients)

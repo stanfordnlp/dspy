@@ -52,7 +52,7 @@ Total usage: {}
 
 In addition to DSPy's built-in caching mechanism, you can leverage provider-side prompt caching offered by LLM providers like Anthropic and OpenAI. This feature is particularly useful when working with modules like `dspy.ReAct()` that send similar prompts repeatedly, as it reduces both latency and costs by caching prompt prefixes on the provider's servers.
 
-### Native lm15 engines (3.4 development API)
+### Native lm15 engines
 
 Pass an actual `dspy.lm15.CacheConfig` as `prompt_cache`. This small bridge is intended for advanced users and adapter authors:
 
@@ -86,38 +86,33 @@ Adapter authors can put the same object in `lm_kwargs["prompt_cache"]`. DSPy att
 
 - `cache=True/False` still controls DSPy's answer cache. `prompt_cache=None` removes this bridge's hint; it does **not** promise to disable the provider's automatic caching.
 - Explicit typed `Request` calls use only their own `Config.cache`, without inheriting `LM.prompt_cache` defaults or accepting a call-time `prompt_cache` override.
-- The option works with native lm15 and canonical custom engines. An ordinary request that needs LiteLLM raises rather than silently dropping or translating the policy. Do not combine it with provider-shaped options such as `prompt_cache_key`; use `CacheConfig.key` instead.
+- The option works with native lm15 and canonical custom engines. A request that needs LiteLLM raises rather than silently dropping or translating this policy. Do not combine it with provider-shaped options such as `prompt_cache_key`; use `CacheConfig.key` instead.
 - The policy survives `copy()` and JSON LM-state saving/loading. Different policies have distinct DSPy answer-cache keys; calls without a policy retain their existing keys.
 - Cache reads/writes appear in usage/history where the provider reports them. Cache writes and longer retention may cost extra, and cost estimates may be unknown when the pricing metadata is incomplete.
 - No stored cache is created, refreshed, or deleted automatically. `CacheConfig.resource`, if supplied, must identify a resource you already manage yourself.
 
-### LiteLLM compatibility engine
+### Optional LiteLLM compatibility engine
 
-With `engine="litellm"`, use LiteLLM's own options, such as `cache_control_injection_points`, rather than `prompt_cache`. See the [LiteLLM prompt caching documentation](https://docs.litellm.ai/docs/tutorials/prompt_caching#configuration) for provider-specific support.
+Install `dspy[litellm]` and use `engine="litellm"` for LiteLLM's provider-shaped
+options, such as `cache_control_injection_points`, rather than `prompt_cache`.
+See the [LiteLLM prompt caching documentation](https://docs.litellm.ai/docs/tutorials/prompt_caching#configuration)
+for provider-specific support.
 
 ```python
-import dspy
-import os
-
-os.environ["ANTHROPIC_API_KEY"] = "{your_anthropic_key}"
 lm = dspy.LM(
     "anthropic/claude-sonnet-4-5-20250929",
     engine="litellm",
-    cache_control_injection_points=[
-        {
-            "location": "message",
-            "role": "system",
-        }
-    ],
+    cache_control_injection_points=[{"location": "message", "role": "system"}],
 )
-dspy.configure(lm=lm)
-
-# Use with any DSPy module
-predict = dspy.Predict("question->answer")
-result = predict(question="What is the capital of France?")
 ```
 
-This is especially beneficial when:
+For native calls, migrate to `CacheConfig(prefix="stable")` for a reusable
+system/tool prefix or `CacheConfig(prefix="history")` for a growing conversation
+prefix. These policies do not promise to reproduce every provider-specific
+injection rule. Compatibility support is not proof of native cache or billing
+parity. See the [migration guide](../../community/normalized-lm-api-migration.md).
+
+Provider-side prompt caching is especially beneficial when:
 
 - Using `dspy.ReAct()` with the same instructions
 - Working with long system prompts that remain constant
@@ -135,7 +130,7 @@ dspy.configure_cache(restrict_pickle=False)
 
 With the default restriction, the cache only allows:
 
-- **LiteLLM and OpenAI response types** (`litellm.types.*`, `openai.types.*`) -- the pydantic data models that DSPy caches for LM calls, embeddings, and the Responses API.
+- **OpenAI response types** (`openai.types.*`) -- SDK data models. Native LM responses use DSPy's serialized lm15 response representation rather than SDK response objects.
 - **NumPy array reconstruction helpers** -- the specific internal functions needed to deserialize `numpy.ndarray` (used by embedding caches).
 - **User-registered types** via `safe_types` -- any additional types you explicitly trust.
 
@@ -200,7 +195,7 @@ Please note that `disk_size_limit_bytes` defines the maximum size in bytes for t
 
 ## Understanding and Customizing the Cache
 
-In specific situations, you might want to implement a custom cache, for example, to gain finer control over how cache keys are generated. By default, the cache key is derived from a hash of all request arguments sent to `litellm`, excluding credentials like `api_key`.
+In specific situations, you might want to implement a custom cache, for example, to gain finer control over how cache keys are generated. LM cache keys include the canonical lm15 request and DSPy's execution identity (such as `rollout_id`), excluding credentials like `api_key`. Each adapter candidate has its own cache entry; sync and async calls have separate entries.
 
 To create a custom cache, you need to subclass `dspy.clients.Cache` and override the relevant methods:
 

@@ -48,7 +48,7 @@ The flow works as follows:
 
 1. The user calls their DSPy agent, typically a `dspy.Module` with inputs.
 2. The inner `dspy.Predict` is invoked to obtain the LM response.
-3. `dspy.Predict` calls **Adapter.format()**, which converts its signature, inputs, and demos into multi-turn messages sent to the `dspy.LM`. `dspy.LM` is a thin wrapper around `litellm`, which communicates with the LM endpoint.
+3. `dspy.Predict` calls **Adapter.format()**, which converts its signature, inputs, and demos into an lm15 `Prompt`. The adapter builds a canonical `Request` for `dspy.LM`, which prefers native engines and can use optional LiteLLM compatibility. Both use the same `Request`/`Response` contract.
 4. The LM receives the messages and generates a response.
 5. **Adapter.parse()** converts the LM response into structured DSPy outputs, as specified in the signature.
 6. The caller of `dspy.Predict` receives the parsed outputs.

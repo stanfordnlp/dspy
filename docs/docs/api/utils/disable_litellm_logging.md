@@ -1,5 +1,9 @@
 # dspy.disable_litellm_logging
 
+Disable logging for the optional LiteLLM compatibility integration installed with
+`pip install "dspy[litellm]"`. This is separate from DSPy's own logging and does
+not disable the compatibility engine.
+
 <!-- START_API_REF -->
 ::: dspy.disable_litellm_logging
     handler: python

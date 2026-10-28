@@ -173,7 +173,7 @@ def test_constructor_and_copy_apply_the_same_async_rule():
         dspy.LM("custom/echo", engine="auto", async_engine=AsyncEcho())
     lm = dspy.LM("custom/echo", engine=Echo(), async_engine=AsyncEcho(), cache=False)
     with pytest.raises(ValueError, match="async_engine is only used with a custom engine"):
-        lm.copy(engine="litellm", async_engine=AsyncEcho())
+        lm.copy(engine="auto", async_engine=AsyncEcho())
 
 
 @pytest.mark.asyncio
@@ -181,8 +181,8 @@ def test_constructor_and_copy_apply_the_same_async_rule():
 async def test_copy_with_a_new_engine_replaces_the_pair(lm_class):
     lm = lm_class("custom/echo", engine=Echo("a"), async_engine=AsyncEcho("a"), cache=False)
     if lm_class is dspy.LM:
-        to_litellm = lm.copy(engine="litellm")
-        assert to_litellm.engine == "litellm" and to_litellm.async_engine is None
+        native = lm.copy(engine="lm15")
+        assert native.engine == "lm15" and native.async_engine is None
     other = lm.copy(engine=Echo("b"))
     assert other.engine.tag == "b" and other.async_engine is None
     assert other("hi") == ["echo:b"]
@@ -438,6 +438,5 @@ def test_serialized_engine_records_are_validated():
 
 def test_built_in_engine_selection_state_is_unchanged():
     assert "engine" not in dspy.LM("openai/gpt-4o").dump_state()
-    assert dspy.LM("openai/gpt-4o", engine="litellm").dump_state()["engine"] == "litellm"
     loaded = dspy.LM.load_state(dspy.LM("openai/gpt-4o", engine="lm15").dump_state())
     assert loaded.engine == "lm15"
