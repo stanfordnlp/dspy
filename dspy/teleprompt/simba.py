@@ -134,7 +134,8 @@ class SIMBA(Teleprompter):
 
             # Unnormalized weights
             scores = [calc_average_score(idx) for idx in program_idxs]
-            exps = [np.exp(s / temperature) for s in scores]
+            max_score = max(scores)
+            exps = [np.exp((s - max_score) / temperature) for s in scores]
             sum_exps = sum(exps)
             if sum_exps <= 0:
                 # Fallback: uniform if all exps are zero
