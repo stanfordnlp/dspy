@@ -58,9 +58,16 @@ print("Tool calls made:", result.trajectory)
 react_agent = dspy.ReAct(
     signature="question -> answer",  # Input/output specification
     tools=[tool1, tool2, tool3],     # List of available tools
-    max_iters=10                     # Maximum number of tool call iterations
+    max_iters=5                     # Maximum number of reasoning-acting iterations (default: 10)
 )
 ```
+
+**`max_iters`**: Controls the maximum number of reasoning and acting cycles the agent can perform. In each iteration, the model:
+1. Reasons about the current state and what to do next
+2. Decides whether to call a tool or provide a final answer
+3. If calling a tool, executes it and observes the result
+
+The agent stops when it either reaches `max_iters` or decides it has enough information to answer. Higher values allow more tool calls but increase latency and cost.
 
 ## Approach 2: Manual Tool Handling
 
