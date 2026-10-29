@@ -18,7 +18,18 @@ buf_stdout, buf_stderr = io.StringIO(), io.StringIO()
 sys.stdout, sys.stderr = buf_stdout, buf_stderr
 
 def last_exception_args():
-    return json.dumps(sys.last_exc.args) if sys.last_exc else None
+    if not sys.last_exc:
+        return None
+    args = sys.last_exc.args
+    try:
+        return json.dumps({"ok": True, "args": args})
+    except TypeError:
+        # SyntaxError(object()) and similar must not kill the interpreter session.
+        # ok=False marks a repr fallback so SUBMIT does not treat it as structured output.
+        try:
+            return json.dumps({"ok": False, "args": [repr(arg) for arg in args]})
+        except Exception:
+            return json.dumps({"ok": False, "args": []})
 
 class _DSPyFinalOutput(BaseException):
     # Control-flow exception to signal completion (like StopIteration)
@@ -355,20 +366,46 @@ while (true) {
       // Handle SUBMIT's control-flow exception as a success result, not an error
       if (errorType === "_DSPyFinalOutput") {
         const last_exception_args = pyodide.globals.get("last_exception_args");
-        const errorArgs = JSON.parse(last_exception_args()) || [];
-        const answer = errorArgs[0] || null;
+        let payload = null;
+        try {
+          payload = JSON.parse(last_exception_args() || "null");
+        } catch (submitParseError) {
+          payload = null;
+        }
+        // A set (or other non-JSON value) cannot be a successful final output.
+        // Report a serialization error instead of stringifying the whole payload,
+        // which RLM then rejects after the interpreter claimed success.
+        if (!payload || payload.ok !== true || !Array.isArray(payload.args)) {
+          const fallback = payload && Array.isArray(payload.args) ? payload.args : [];
+          console.log(jsonrpcError(
+            JSONRPC_APP_ERRORS.TypeError,
+            "SUBMIT output is not JSON-serializable",
+            requestId,
+            { type: "TypeError", args: fallback },
+          ));
+          continue;
+        }
+        const answer = payload.args[0] ?? null;
         console.log(jsonrpcResult({ final: answer }, requestId));
         continue;
       }
 
-      // Get error args for other exception types
+      // Pyodide SyntaxError is a Python exception and its args hold the
+      // message, filename, lineno, and source line. error.message is blank
+      // for that type, so skipping SyntaxError drops the only useful detail.
       let errorArgs = [];
-      if (errorType !== "SyntaxError") {
-        // Only python exceptions have args.
+      try {
         const last_exception_args = pyodide.globals.get("last_exception_args");
         // Regarding https://pyodide.org/en/stable/usage/type-conversions.html#type-translations-errors,
         // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
-        errorArgs = JSON.parse(last_exception_args()) || [];
+        const rawArgs = last_exception_args();
+        const parsed = rawArgs ? JSON.parse(rawArgs) : null;
+        errorArgs = parsed && Array.isArray(parsed.args) ? parsed.args : [];
+        if (!Array.isArray(errorArgs)) errorArgs = [errorArgs];
+      } catch (argsError) {
+        // Serialization failure must not skip the error response. Deno exiting
+        // here leaves the interpreter session unusable for later execute() calls.
+        errorArgs = [];
       }
 
       // Map error type to JSON-RPC error code

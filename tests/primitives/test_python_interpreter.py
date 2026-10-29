@@ -105,8 +105,14 @@ def test_rejects_python_keywords_as_variable_names(pooled_interpreter):
 def test_failure_syntax_error(pooled_interpreter):
     interpreter = pooled_interpreter
     code = "+++"
-    with pytest.raises(SyntaxError, match="Invalid Python syntax"):
+    with pytest.raises(SyntaxError, match=r"Invalid Python syntax. message:.*invalid syntax"):
         interpreter.execute(code)
+
+
+def test_syntax_error_includes_source_line(pooled_interpreter):
+    interpreter = pooled_interpreter
+    with pytest.raises(SyntaxError, match=r"def broken"):
+        interpreter.execute("def broken(:\n    pass")
 
 
 def test_failure_zero_division(pooled_interpreter):
