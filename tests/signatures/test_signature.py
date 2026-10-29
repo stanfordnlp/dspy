@@ -62,6 +62,44 @@ def test_duplicate_input_output_field_names_raise():
         Signature("value -> value")
 
 
+def test_insert_rejects_field_name_from_the_other_section():
+    signature = Signature("question -> answer")
+    with pytest.raises(ValueError, match="distinct names"):
+        signature.append("answer", InputField())
+    with pytest.raises(ValueError, match="distinct names"):
+        signature.prepend("question", OutputField())
+    with pytest.raises(ValueError, match="distinct names"):
+        signature.insert(0, "answer", InputField())
+
+    # ChainOfThought prepends an output named reasoning. An input with that name must not be dropped.
+    with pytest.raises(ValueError, match="distinct names"):
+        Signature("reasoning, question -> answer").prepend("reasoning", OutputField())
+    with pytest.raises(ValueError, match="distinct names"):
+        dspy.ChainOfThought("reasoning, question -> answer")
+
+    assert list(signature.input_fields) == ["question"]
+    assert list(signature.output_fields) == ["answer"]
+
+
+def test_append_replaces_field_with_the_same_name_in_the_same_section():
+    signature = Signature("question, context -> answer, confidence")
+
+    replaced_input = signature.append("question", InputField(desc="replacement"))
+    assert list(replaced_input.input_fields) == ["question", "context"]
+    assert list(replaced_input.output_fields) == ["answer", "confidence"]
+    assert replaced_input.input_fields["question"].json_schema_extra["desc"] == "replacement"
+
+    replaced_output = signature.append("answer", OutputField(desc="replacement"))
+    assert list(replaced_output.input_fields) == ["question", "context"]
+    assert list(replaced_output.output_fields) == ["answer", "confidence"]
+    assert replaced_output.output_fields["answer"].json_schema_extra["desc"] == "replacement"
+
+    # Prepending a same-section name still does not raise.
+    prepended = signature.prepend("question", InputField(desc="replacement"))
+    assert list(prepended.input_fields) == ["question", "context"]
+    assert list(prepended.output_fields) == ["answer", "confidence"]
+
+
 def test_with_signature():
     signature1 = Signature("input1, input2 -> output")
     signature2 = signature1.with_instructions("This is a test")
