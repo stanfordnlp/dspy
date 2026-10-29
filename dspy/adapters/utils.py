@@ -312,9 +312,9 @@ def _format_input_list_field_value(value: list[Any]) -> str:
     if len(value) == 0:
         return "N/A"
     if len(value) == 1:
-        return _format_blob(value[0])
+        return _format_blob(str(value[0]))
 
-    return "\n".join([f"[{idx + 1}] {_format_blob(txt)}" for idx, txt in enumerate(value)])
+    return "\n".join([f"[{idx + 1}] {_format_blob(str(txt))}" for idx, txt in enumerate(value)])
 
 
 def _format_blob(blob: str) -> str:
