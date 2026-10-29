@@ -57,7 +57,7 @@ dev = [
     "pytest-asyncio>=0.26.0",
     "pytest-xdist>=3.5.0",
     "ruff>=0.3.0",
-    "ty==0.0.89",
+    "ty==0.0.90",
     "pre-commit>=3.7.0",
     "virtualenv>=21.14.12",  # seed pre-commit environments with pip>=26.2.2
     "pillow>=10.1.0",
