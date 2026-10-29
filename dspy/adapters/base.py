@@ -378,7 +378,16 @@ class Adapter:
 
         messages = []
         system_message = self.format_system_message(signature)
-        messages.extend(self.format_demos(signature, demos))
+        if history_field_name:
+            # Demos are rendered as multiturn messages that look just like conversation history. Formatting them
+            # with the history field still present would print a `[[ ## history ## ]]` block (e.g. an empty
+            # `{"messages": []}`) inside the demo, which an LLM can easily mistake for real conversation history.
+            # If history was the only input, there is nothing left to show as the user turn of a demo, so skip the
+            # demos rather than emit empty user messages. Output-only signatures (no history) are unaffected.
+            if signature_without_history.input_fields:
+                messages.extend(self.format_demos(signature_without_history, demos))
+        else:
+            messages.extend(self.format_demos(signature, demos))
         content = self.format_user_message_content(
             signature_without_history if history_field_name else signature, inputs_copy, main_request=True
         )
