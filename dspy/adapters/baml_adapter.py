@@ -186,7 +186,7 @@ class BAMLAdapter(JSONAdapter):
     import dspy
     from pydantic import BaseModel, Field
     from typing import Literal
-    from baml_adapter import BAMLAdapter  # Import from your module
+    from dspy.adapters.baml_adapter import BAMLAdapter
 
     # 1. Define your Pydantic models
     class PatientAddress(BaseModel):
@@ -206,7 +206,7 @@ class BAMLAdapter(JSONAdapter):
         patient_info: PatientDetails = dspy.OutputField()
 
     # 3. Configure dspy to use the new adapter
-    llm = dspy.OpenAI(model="gpt-4.1-mini")
+    llm = dspy.LM("openai/gpt-4.1-mini")
     dspy.configure(lm=llm, adapter=BAMLAdapter())
 
     # 4. Run your program

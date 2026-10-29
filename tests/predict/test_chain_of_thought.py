@@ -1,11 +1,12 @@
 from unittest import mock
 
 import pytest
-from litellm.utils import Choices, Message, ModelResponse
 
 import dspy
 from dspy import ChainOfThought
 from dspy.utils import DummyLM
+from dspy.utils.exceptions import AdapterParseError
+from tests.test_utils.engines import make_response
 
 
 def test_initialization_with_string_signature():
@@ -31,23 +32,16 @@ async def test_async_chain_of_thought():
 def test_chain_of_thought_with_native_reasoning():
     """Native-capable models need no explicit reasoning or plan output."""
 
-    lm = dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", cache=False)
+    lm = dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", cache=False)
     dspy.settings.configure(lm=lm)
 
-    # Match the mocked response's capability independently of LiteLLM's bundled model catalog.
     with (
-        mock.patch("litellm.supports_reasoning", return_value=True),
-        mock.patch("litellm.completion") as mock_completion,
+        mock.patch.object(dspy.LM, "supports_reasoning", new_callable=mock.PropertyMock, return_value=True),
+        mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion,
     ):
-        mock_completion.return_value = ModelResponse(
-            choices=[
-                Choices(
-                    message=Message(
-                        content="[[ ## answer ## ]]\nParis\n[[ ## completed ## ]]",
-                        reasoning_content="Paris is the capital of France.",
-                    ),
-                )
-            ],
+        mock_completion.return_value = make_response(
+            "<answer>\nParis\n</answer>",
+            thinking="Paris is the capital of France.",
             model="anthropic/claude-3-7-sonnet-20250219",
         )
 
@@ -57,30 +51,21 @@ def test_chain_of_thought_with_native_reasoning():
         assert isinstance(result.reasoning, dspy.Reasoning)
         assert result.reasoning == "Paris is the capital of France."
 
-        _args, kwargs = mock_completion.call_args
-        assert kwargs["reasoning_effort"] == "low"
-        assert "[[ ## reasoning ## ]]" not in str(kwargs["messages"])
-        assert "[[ ## plan ## ]]" not in str(kwargs["messages"])
+        request = mock_completion.call_args.args[0]
+        assert request.config.reasoning.effort == "low"
+        assert "<reasoning>" not in str(request.messages)
+        assert "<plan>" not in str(request.messages)
 
 
 def test_chain_of_thought_with_manual_reasoning():
     """Test ChainOfThought with manual reasoning where LM doesn't support native reasoning."""
-    lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
+    lm = dspy.LM(model="openai/gpt-4o-mini")
     dspy.settings.configure(lm=lm)
 
-    with mock.patch("litellm.completion") as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[
-                Choices(
-                    reasoning="Step-by-step thinking about the capital of France",
-                    message=Message(
-                        content=(
-                            "[[ ## plan ## ]]\nRecall the capital of France.\n"
-                            "[[ ## answer ## ]]\nParis\n[[ ## completion ## ]]"
-                        )
-                    ),
-                )
-            ],
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            "<plan>\nRecall the capital of France.\n</plan>\n"
+            "<answer>\nParis\n</answer>",
             model="openai/gpt-4o-mini",
         )
 
@@ -130,7 +115,7 @@ async def test_default_reasoning_modes(mode, adapter_type, async_mode):
     assert result.completions.reasoning == [expected, expected]
     assert result.completions.answer == ["17", "29"]
     if adapter_type is dspy.JSONAdapter:
-        schema = lm.history[0]["kwargs"]["response_format"].model_json_schema()
+        schema = lm.history[0]["request"].config.response_format["schema"]
         assert set(schema["properties"]) == ({"answer"} if native else {"plan", "answer"})
         if not native:
             assert schema["properties"]["plan"]["type"] == "string"
@@ -173,3 +158,80 @@ def test_explicit_rationale_is_not_renamed(custom):
         result = program(question="Question")
     assert result.reasoning == "Working"
     assert isinstance(result.reasoning, str)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_mode", [False, True])
+@pytest.mark.parametrize("collision", [False, True])
+@pytest.mark.parametrize("adapter", [
+    dspy.ChatAdapter(use_json_adapter_fallback=False),
+    dspy.JSONAdapter(),
+    dspy.XMLAdapter(use_json_adapter_fallback=False),
+])
+async def test_parse_failure_preserves_predictor_signature(adapter, collision, async_mode):
+    program = ChainOfThought("question -> plan, answer" if collision else "question -> answer")
+    response = {"plan_2": "Working", "plan": "Task plan"} if collision else {"plan": "Working"}
+    lm = DummyLM([response], adapter=adapter)
+
+    with dspy.context(lm=lm, adapter=adapter), pytest.raises(AdapterParseError) as exc_info:
+        if async_mode:
+            await program.acall(question="Question")
+        else:
+            program(question="Question")
+
+    error = exc_info.value
+    assert error.signature is program.predict.signature
+    assert error.parsed_result == ({"reasoning": "Working", "plan": "Task plan"} if collision else {"reasoning": "Working"})
+    assert error.lm_response == lm.history[-1]["outputs"][0]
+    assert error.adapter_name == type(adapter).__name__
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("call_override", [False, True])
+@pytest.mark.parametrize("thinking", [
+    {"type": "disabled"}, {"type": "enabled", "budget_tokens": 2048}, {"type": "adaptive"},
+])
+async def test_chain_of_thought_respects_provider_thinking(thinking, call_override, asynchronous, monkeypatch):
+    import json
+
+    import dspy.clients.execution as execution
+    from dspy._vendor.lm15.testing import FakeTransport
+    from dspy.lm15 import RouterConfig
+    from tests.clients.test_lm_engine_execution import DualResponse
+
+    disabled = thinking["type"] == "disabled"
+    text = "<plan>Recall the capital.</plan>\n" if disabled else ""
+    content = [{"type": "text", "text": text + "<answer>Paris</answer>"}]
+    if not disabled:
+        content.insert(0, {"type": "thinking", "thinking": "Recall the capital.", "signature": "signature"})
+    raw = {"id": "reply", "model": "claude-sonnet-4-5", "role": "assistant", "type": "message",
+           "content": content, "stop_reason": "end_turn", "usage": {"input_tokens": 3, "output_tokens": 5}}
+    transport = FakeTransport([DualResponse(status=200, body=json.dumps(raw).encode())])
+    monkeypatch.setattr(execution, "RouterConfig", lambda **kwargs: RouterConfig(
+        **{**kwargs, "api_keys": {"anthropic": "test"}, "transport": transport},
+    ))
+    default = {"type": "enabled", "budget_tokens": 1024} if disabled else {"type": "disabled"}
+    lm = dspy.LM("anthropic/claude-sonnet-4-5", engine="lm15", cache=False, num_retries=0,
+                 max_tokens=4096, thinking=default if call_override else thinking)
+    program = ChainOfThought("question -> answer")
+    config = {"thinking": thinking} if call_override else {}
+    try:
+        with dspy.context(lm=lm):
+            if asynchronous:
+                result = await program.acall(question="What is the capital of France?", config=config)
+            else:
+                result = program(question="What is the capital of France?", config=config)
+        assert result.answer == "Paris"
+        assert result.reasoning == "Recall the capital."
+        body = json.loads(transport.requests[0].body)
+        assert body["thinking"] == thinking
+        assert lm.history[-1]["request"].config.reasoning is None
+    finally:
+        await lm.aclose()
+
+
+def test_chain_of_thought_rejects_conflicting_explicit_reasoning():
+    lm = dspy.LM("anthropic/claude-sonnet-4-5", engine="lm15", thinking={"type": "disabled"})
+    with dspy.context(lm=lm), pytest.raises(ValueError, match="contradictory"):
+        ChainOfThought("question -> answer", reasoning_effort="high")(question="What is 2 + 2?")

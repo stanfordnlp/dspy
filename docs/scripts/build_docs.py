@@ -221,6 +221,9 @@ def build(
     scope_root_relative_urls(output, identifier)
     if version:
         validate_release_site(output, config, version)
+        # Only Current publishes a sitemap, so search engines index Current.
+        for sitemap in ("sitemap.xml", "sitemap.xml.gz"):
+            (output / sitemap).unlink(missing_ok=True)
     install_shared_header(output)
     optimization = remove_source_maps(output)
     if version:

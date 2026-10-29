@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 name="dspy"
 #replace_package_version_marker
 version="3.4.1"
-description = "DSPy"
+description = "The framework for programming—rather than prompting—language models."
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
 license = {file = "LICENSE"}
@@ -26,18 +26,16 @@ dependencies = [
     "orjson>=3.9.0",
     "tqdm>=4.66.1",
     "requests>=2.31.0",
+    "certifi>=2026.10.19",  # distrust the compromised emSign CA
     "pydantic>=2.11.0",
     "pyyaml>=6.0.1",
-    # litellm and gepa declare requires-python <3.15, so pip cannot install them on 3.15.
-    # The bundled lm15 engine serves LM calls without litellm; `dspy[litellm]` opts back in.
-    "litellm>=1.65.8; python_version < '3.15'",
     "jsonschema>=4.0.0",
     "diskcache>=5.6.0",
     "json-repair>=0.54.2",
-    "tenacity>=8.2.3",  # undeclared runtime dep of litellm, needed for exponential_backoff_retry
     "anyio",
     "cachetools>=5.5.0",
     "cloudpickle>=3.1.2",
+    # gepa declares requires-python <3.15.
     "gepa[dspy]==0.1.4; python_version < '3.15'",
 ]
 
@@ -49,7 +47,10 @@ deno = ["deno>=2.4.5,<3.0.0"]
 langchain = ["langchain_core>=0.3.0"]
 optuna = ["optuna>=3.4.0"]
 numpy = ["numpy>=1.26.0"]
-litellm = ["litellm>=1.65.8"]
+litellm = [
+    "litellm>=1.65.8",
+    "tenacity>=8.2.3",  # LiteLLM's retry helpers use this undeclared dependency.
+]
 dev = [
     "pytest>=6.2.5",
     "pytest-mock>=3.12.0",
@@ -58,18 +59,15 @@ dev = [
     "ruff>=0.3.0",
     "ty==0.0.89",
     "pre-commit>=3.7.0",
+    "virtualenv>=21.14.12",  # seed pre-commit environments with pip>=26.2.2
     "pillow>=10.1.0",
     "datamodel_code_generator>=0.26.3",
     "build>=1.0.3",
     "numpy>=1.26.0",
-    # LiteLLM proxy imports an internal FastAPI helper removed in 0.140.7.
-    "fastapi<0.140.7; sys_platform != 'win32' and python_version < '3.14'",
-    "litellm>=1.65.8; sys_platform == 'win32' or python_version >= '3.14'",
-    "litellm[proxy]>=1.65.8; sys_platform != 'win32' and python_version < '3.14'",  # Remove the 3.14+ condition once uvloop supports it
     "gepa[dspy]==0.1.4",
 ]
 test_extras = [
-    "mcp; python_version >= '3.10'",
+    "mcp>=1.2.0; python_version >= '3.10'",  # FastMCP powers the offline test server.
     "datasets>=2.14.6",
     "pandas>=2.1.1",
     "optuna>=3.4.0",
@@ -81,6 +79,10 @@ test_extras = [
 dev = [
     "dspy-interpreters @ git+https://github.com/cmpnd-ai/dspy-interpreters",
 ]
+
+[tool.uv]
+# Also used by setup-uv when selecting the CI installer.
+required-version = ">=0.13.4"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -127,19 +129,14 @@ exclude_lines = [
     "continue",
 ]
 
-[tool.pytest.ini_options]
-filterwarnings = [
-    # litellm uses deprecated pydantic config classes sometimes.
-    # The issue has been fixed repeatedly, but still keeps showing up.
-    # For examples, see litellm PRs #6903, #7300, #8096, #9372, and #12528.
-    "ignore:.+class-based `config` is deprecated, use ConfigDict:DeprecationWarning",
-]
-
 [tool.ty.src]
 # Expand this list as internal modules are migrated. Dynamic Signature-derived
 # inputs/outputs are not part of this initial type-checking contract.
 include = [
     "dspy/utils/asyncify.py",
+    "dspy/utils/callback.py",
+    "dspy/utils/callback_context.py",
+    "dspy/utils/parallelizer.py",
     "dspy/utils/usage_tracker.py",
     "tests/typing",
 ]

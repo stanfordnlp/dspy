@@ -1,6 +1,6 @@
 import pickle
 from types import UnionType
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 import cloudpickle
 import pydantic
@@ -329,6 +329,12 @@ def test_typed_signatures_unions_and_optionals():
         and int in output_union_annotation.__args__
         and str in output_union_annotation.__args__
     )
+
+
+def test_typed_signatures_literal_with_negative_numbers():
+    sig = Signature("score: Literal[-1, 0, 1] -> delta: Literal[-0.5, +0.5]")
+    assert sig.input_fields["score"].annotation == Literal[-1, 0, 1]
+    assert sig.output_fields["delta"].annotation == Literal[-0.5, 0.5]
 
 
 def test_typed_signatures_any():

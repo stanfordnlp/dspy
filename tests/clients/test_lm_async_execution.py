@@ -46,7 +46,7 @@ def endpoint(monkeypatch):
             time.sleep(state["delay"])
             answer = "A" if "alpha" in json.dumps(data) else "B"
             body = {"model": "fake", "choices": [{"index": 0, "message": {"role": "assistant",
-                    "content": f"[[ ## answer ## ]]\n{answer}\n\n[[ ## completed ## ]]"}, "finish_reason": "stop"}],
+                    "content": f"<answer>{answer}</answer>"}, "finish_reason": "stop"}],
                     "usage": {"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10}}
             if status != 200:
                 body = {"error": {"message": "try later", "type": "rate_limit_error", "code": "rate_limit_exceeded"}}
@@ -54,7 +54,7 @@ def endpoint(monkeypatch):
             streaming = data.get("stream") and status == 200
             if streaming:
                 frames = [{"choices": [{"index": 0, "delta": {"content": t}, "finish_reason": None}]}
-                          for t in ("[[", " ## answer ## ]]\n", answer, "\n\n[[ ## completed ## ]]")]
+                          for t in ("<ans", "wer>", answer, "</answer>")]
                 frames.append({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})
                 frames.append({"choices": [], "usage": body["usage"]})
                 encoded = "".join("data: " + json.dumps(f) + "\n\n" for f in frames).encode() + b"data: [DONE]\n\n"
@@ -97,7 +97,7 @@ async def test_concurrent_programs_and_usage_are_isolated(endpoint):
     program = dspy.Predict("question -> answer")
 
     async def call(question):
-        with dspy.context(lm=lm, track_usage=True, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False)):
+        with dspy.context(lm=lm, track_usage=True):
             return await program.acall(question=question)
 
     try:

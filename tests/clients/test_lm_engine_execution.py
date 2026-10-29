@@ -1,14 +1,11 @@
 """Offline checks for the coordinated LM engine path."""
 
 import json
-import zipfile
-from pathlib import Path
 
 import pytest
 
 import dspy
 from dspy._vendor.lm15.testing import FakeResponse, FakeTransport
-from dspy.clients.engines import LiteLLMEngine
 from dspy.lm15 import Config, Message, Request, Response, RouterConfig
 from dspy.utils.callback import BaseCallback
 from dspy.utils.usage_tracker import track_usage
@@ -49,7 +46,7 @@ def native_transport(monkeypatch, responses):
 
     transport = FakeTransport(responses)
     monkeypatch.setattr(execution, "RouterConfig", lambda **kwargs: RouterConfig(
-        **{**kwargs, "api_keys": {"openai-chat": "fake"}, "transport": transport},
+        **{**kwargs, "api_keys": {"openai-chat": "fake", **(kwargs.get("api_keys") or {})}, "transport": transport},
     ))
     return transport
 
@@ -125,53 +122,22 @@ def test_native_retries_without_backend_fallback(monkeypatch):
 
 
 def test_provider_auth_error_does_not_switch_backend(monkeypatch):
-    native_transport(monkeypatch, [wire(status=401)])
-
-    def forbidden(*args, **kwargs):
-        pytest.fail("An authentication failure must not invoke LiteLLM")
-
-    monkeypatch.setattr(LiteLLMEngine, "complete_legacy", forbidden)
+    transport = native_transport(monkeypatch, [wire(status=401)])
     with pytest.raises(dspy.LMAuthError):
         dspy.LM("openai/gpt-4o-mini", cache=False)("hello")
+    assert len(transport.requests) == 1
 
 
-def test_unrepresentable_ordinary_options_choose_compatibility_before_io(monkeypatch):
+@pytest.mark.parametrize("options", [
+    {"audio": {"voice": "alloy", "format": "wav"}},
+    {"questions": {"flag": {"type": "noul", "instructions": "Is this correct?"}}},
+])
+def test_unrepresentable_ordinary_options_refuse_before_io(monkeypatch, options):
     transport = native_transport(monkeypatch, [])
-    from dspy.clients.call_result import CallResult
-
-    calls = []
-
-    def complete(engine, lm, request, **context):
-        calls.append(request)
-        return CallResult(outputs=["compatible"], response_model=lm.model)
-
-    monkeypatch.setattr(LiteLLMEngine, "complete_legacy", complete)
-    assert dspy.LM("openai/gpt-4o-mini")("hello", audio={"voice": "alloy", "format": "wav"}) == ["compatible"]
-    assert calls[0]["audio"]["voice"] == "alloy"
+    lm = dspy.LM("openai/gpt-4o-mini", engine="lm15", cache=False)
+    with pytest.raises(dspy.LMUnsupportedFeatureError, match="provider options"):
+        lm("hello", **options)
     assert not transport.requests
-
-
-@pytest.mark.asyncio
-async def test_legacy_plugin_sync_async_preserve_forward_inputs():
-    from dspy.dsp.utils.utils import dotdict
-
-    class Plugin(dspy.BaseLM):
-        def forward(self, prompt=None, messages=None, **kwargs):
-            self.received = prompt, messages, kwargs
-            return dotdict(model=self.model, usage={"total_tokens": 1}, choices=[
-                dotdict(message=dotdict(content="ok"), finish_reason="stop")
-            ])
-
-        async def aforward(self, **kwargs):
-            return self.forward(**kwargs)
-
-    plugin = Plugin("custom")
-    with pytest.warns(DeprecationWarning, match="scheduled for removal in 3.5"):
-        assert plugin("hello") == ["ok"]
-    assert plugin.received == ("hello", None, {})
-    with pytest.warns(DeprecationWarning, match="scheduled for removal in 3.5"):
-        assert await plugin.acall("hello") == ["ok"]
-    assert len(plugin.history) == 2
 
 
 def test_new_native_cache_uses_restricted_plain_data(monkeypatch, tmp_path):
@@ -187,34 +153,9 @@ def test_new_native_cache_uses_restricted_plain_data(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("case_index", range(6))
-async def test_old_disk_cache_hits_before_native_routing(case_index, monkeypatch, tmp_path):
-    from tests.clients.test_lm_migration_compatibility import plain
-
-    fixtures = Path(__file__).parent / "fixtures" / "lm_3_3_0"
-    case = json.loads((fixtures / "manifest.json").read_text())["cases"][case_index]
-    with zipfile.ZipFile(fixtures / f"{case['name']}.zip") as archive:
-        archive.extractall(tmp_path)
-    dspy.configure_cache(enable_disk_cache=True, enable_memory_cache=False, disk_cache_dir=tmp_path)
-    import dspy.clients.execution as execution
-
-    def forbidden(*args, **kwargs):
-        pytest.fail("An old disk hit must not even initialize an engine")
-
-    monkeypatch.setattr(execution, "_engine", forbidden)
-    try:
-        lm = dspy.LM(**case["init"])
-        output = lm(**case["call"]) if case["mode"] == "sync" else await lm.acall(**case["call"])
-        assert plain(output) == case["outputs"]
-        assert lm.history[-1]["usage"] == {}
-    finally:
-        dspy.cache.disk_cache.close()
-
-
-@pytest.mark.asyncio
 async def test_native_streaming_reaches_existing_listener(monkeypatch):
     payloads = [{"choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}]}
-                for text in ("[[ ## answer ## ]]\n", "native", "\n\n[[ ## completed ## ]]")]
+                for text in ("<answer>", "native", "</answer>")]
     payloads.append({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
                      "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3}})
     chunks = [f"data: {json.dumps(payload)}\n\n".encode() for payload in payloads]

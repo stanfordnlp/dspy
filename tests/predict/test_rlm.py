@@ -323,7 +323,7 @@ class TestRLMInitialization:
 
         tools = RLM("context -> answer", sub_lm=DummyLM([{"answer": "legacy answer"}]))._make_llm_tools()
 
-        assert tools["llm_query"]("test prompt") == "[[ ## answer ## ]]\nlegacy answer"
+        assert tools["llm_query"]("test prompt") == "<answer>\nlegacy answer\n</answer>"
 
     def test_llm_query_returns_typed_response_text(self):
         import dspy
@@ -334,7 +334,7 @@ class TestRLMInitialization:
         with dspy.context(experimental=True):
             result = tools["llm_query"]("test prompt")
 
-        assert result == "[[ ## answer ## ]]\ntyped answer"
+        assert result == "<answer>\ntyped answer\n</answer>"
 
     def test_llm_query_rejects_unsupported_response_shape(self):
         from unittest.mock import MagicMock
@@ -484,16 +484,16 @@ class TestRLMInterpreterLifecycle:
         class StopLMCall(BaseException):
             pass
 
-        class CapturingLM(dspy.BaseLM):
+        class CapturingEngine:
             def __init__(self):
-                super().__init__("snapshot-model", temperature=0.0, max_tokens=1000, cache=False)
-                self.messages = None
+                self.request = None
 
-            def forward(self, prompt=None, messages=None, **kwargs):
-                self.messages = messages
+            def complete(self, request):
+                self.request = request
                 raise StopLMCall
 
-        lm = CapturingLM()
+        engine = CapturingEngine()
+        lm = dspy.LM("snapshot-model", engine=engine, temperature=0.0, max_tokens=1000, cache=False)
         rlm = RLM("query -> answer", interpreter_factory=PythonInterpreter)
 
         with pytest.raises(StopLMCall), dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
@@ -509,7 +509,10 @@ class TestRLMInterpreterLifecycle:
         recorded = json.loads(snapshot.read_text())
         expected = [{"role": message["role"], "content": "".join(part["text"] for part in message["parts"])}
                     for message in recorded["messages"]]
-        assert lm.messages == expected
+        sent = [{"role": "system", "content": engine.request.system}] + [
+            {"role": message.role, "content": message.text} for message in engine.request.messages
+        ]
+        assert sent == expected
 
     def test_interpreter_remains_available_as_signature_input(self):
         factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "CPython"})])
@@ -2102,11 +2105,15 @@ class TestRLMSubAgents:
 
     def test_facade_n_completions_draw_n_calls(self):
         invocation = _facade_invocation(RLM("query -> answer", max_llm_calls=2))
-        dspy.configure(lm=DummyLM([{"answer": "x"}] * 4))
+        lm = DummyLM([{"answer": "first"}, {"answer": "second"}, {"answer": "third"}])
+        dspy.configure(lm=lm)
 
         handle = invocation.construct("Predict", "question -> answer", "sub", {"n": 3})
-        with pytest.raises(RuntimeError, match=r"LLM call limit exceeded: 0 \+ 3 > 2"):
+        with pytest.raises(RuntimeError, match=r"LLM call limit exceeded: 2 \+ 1 > 2"):
             invocation.call(handle, {"question": "ping"})
+        assert len(lm.history) == 2
+        assert "first" in lm.history[0]["response"].text
+        assert "second" in lm.history[1]["response"].text
 
     def test_facade_resolves_the_lm_per_call_like_llm_query(self):
         # With no sub_lm, the facade serves dspy.settings.lm as it is when the sub-agent runs.

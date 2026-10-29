@@ -8,7 +8,7 @@ import pytest
 
 import dspy
 from dspy.experimental import Choice, Noul, Score
-from tests.adapters.conftest import CapturingLM, StopAdapterCallCapture
+from tests.adapters.conftest import CapturingLM, StopAdapterCallCapture, openai_view
 
 Urgency = Noul[(True, "Service unavailable"), (False, "Workaround available")]
 Category = Choice[("billing", "Payment issue"), ("technical", "Product malfunction")]
@@ -35,7 +35,7 @@ class Triage(dspy.Signature):
 
 def capture_request(adapter):
     # Use real capability metadata, but stop at the LM boundary without a network call.
-    lm = CapturingLM(dspy.LM("openai/gpt-4o", engine="litellm"))
+    lm = CapturingLM(dspy.LM("openai/gpt-4o"))
     program = dspy.Predict(Triage)
     program.set_lm(lm)
     program.fields = {
@@ -55,11 +55,7 @@ def capture_request(adapter):
             previous_severity=Severity(value=1.6, level=2, probabilities={0: 0.1, 1: 0.2, 2: 0.7}, confidence=0.7),
         )
     assert len(lm.calls) == 1
-    call = lm.calls[0]
-    response_format = call["kwargs"].get("response_format")
-    if isinstance(response_format, type):
-        call["kwargs"]["response_format"] = response_format.model_json_schema()
-    return call
+    return lm.calls[0]
 
 
 @pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter()], ids=["chat", "json"])
@@ -69,4 +65,24 @@ def test_exact_decision_adapter_request(adapter):
     # Store complete content as lines for readable diffs, preserving every newline and space.
     for message in expected["messages"]:
         message["content"] = "".join(message["content"])
-    assert capture_request(adapter) == expected
+    request = capture_request(adapter)
+    messages, kwargs = openai_view(request)
+    assert messages == expected["messages"]
+    if "response_format" in expected["kwargs"]:
+        schema = expected["kwargs"]["response_format"]
+        # Strict schemas inline a referenced object when the field also has a
+        # description; retain both the complete object and that description.
+        for evidence in ("ChoiceEvidence", "ScoreEvidence"):
+            probabilities = schema["$defs"][evidence]["properties"]["probabilities"]
+            reference = probabilities.pop("$ref").rsplit("/", 1)[-1]
+            probabilities.update(schema["$defs"][reference])
+        assert request.config.response_format == {
+            "type": "json_schema",
+            "name": "DSPyProgramOutputs",
+            "schema": schema,
+            "strict": True,
+        }
+        kwargs.pop("response_format")
+    else:
+        assert request.config.response_format is None
+    assert kwargs == {}

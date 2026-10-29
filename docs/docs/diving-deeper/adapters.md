@@ -12,25 +12,25 @@ Read this when you want to know what the prompt looks like on the wire, why a ty
 
 Same Signature, different prompt shape, no Signature changes. LMs vary a lot in what they prefer to read and produce: a model trained on instruction-following with markers loves ChatAdapter’s `[[ ## field ## ]]` format; a model with native structured-output mode does best with JSONAdapter; a reasoning model that formats unreliably wants TwoStepAdapter. Putting this decision behind one interface means Signatures, modules, and optimizers don’t have to know which family of LM they’re running against.
 
-### 2. ChatAdapter is the default
+### 2. XMLAdapter is the default
 
-Text-only, model-agnostic, uses `[[ ## field ## ]]` markers. It needs no special LM features — no JSON mode, no function calling, no native structured outputs. That breadth is why it’s the default. It also includes a safety net: when its regex parser fails, it falls back to JSONAdapter automatically (toggle with `use_json_adapter_fallback=False`).
+When no adapter is configured, DSPy uses `XMLAdapter(use_native_function_calling=True)`: XML-style field tags for text, native tool calling when the LM supports it, and text otherwise. DSPy parses and validates XML outputs; the provider does not enforce their structure.
 
 ### 3. Every adapter follows a fixed lifecycle
 
-preprocess → format → LM call → postprocess → parse. You can debug any adapter by walking these five steps. Preprocess adapts the signature for native LM features (function calling, reasoning). Format builds the messages. The LM call returns raw outputs. Postprocess pulls out tool calls and native-typed responses (Reasoning, Citations). Parse runs `parse_value` on each declared output field.
+preprocess → format → LM call → postprocess → parse. You can debug any adapter by walking these five steps. Preprocess adapts the signature for native LM features (function calling, reasoning). Format builds a `Prompt`: the system text plus the conversation as `dspy.lm15` messages. The LM call turns that into one lm15 `Request` and returns lm15 `Response` objects. Postprocess pulls tool calls and native-typed responses (Reasoning, Citations) out of each `Response`. Parse converts declared output fields to typed values.
 
 ### 4. Type coercion is centralized
 
-`dspy/adapters/utils.py::parse_value` is the single function every adapter delegates to. Adapters differ in how they *find* a field’s value in the LM’s output (regex marker, JSON key, XML tag), but once they have the raw string they all call the same `parse_value(value, annotation)`. That keeps coercion rules consistent across adapter swaps and gives you one place to look when a typed field misbehaves.
+Adapters use `dspy/adapters/utils.py::parse_value` for text. XML containers use Pydantic validation by field name with `strict=False`, since their scalar values arrive as text.
 
 ### 5. Custom types own their own serialization
 
-`Image`, `Audio`, `Code`, `Reasoning`, `Tool`, `ToolCalls`, and any user subclass of `dspy.Type` plug in their own `format()` and optional `parse_lm_response()`. The adapter doesn’t special-case images or audio. When the field’s annotation is a `dspy.Type` subclass, the adapter calls `type.format()` to render it into the provider’s content-block format and `type.parse_lm_response()` to read it back. Adding a new modality means writing a new subclass — no adapter changes.
+`Image`, `Audio`, `Code`, `Reasoning`, `Tool`, `ToolCalls`, and any user subclass of `dspy.Type` plug in their own `format()` and optional `parse_lm_response()`. The adapter doesn’t special-case images or audio. When the field’s annotation is a `dspy.Type` subclass, the adapter calls `type.format()` to render it as a string or as `dspy.lm15` content parts (`ImagePart`, `AudioPart`, `DocumentPart`, ...) and `type.parse_lm_response(response)` to read it back from the lm15 `Response`. Adding a new modality means writing a new subclass — no adapter changes, and no provider wire format: each engine writes the parts in its own dialect.
 
 ### 6. Native LM features are surfaced through types
 
-Function calling, structured outputs, and reasoning ride on `adapt_to_native_lm_feature()` and `parse_lm_response()` hooks on the type. A `dspy.Reasoning` output field, for example, tells the adapter “set `reasoning_effort` in `lm_kwargs` and pull the reasoning from `response['reasoning_content']` instead of regex-parsing it.” Model-specific feature integration lives at the type layer, where it’s reusable across adapters.
+Function calling, structured outputs, and reasoning ride on `adapt_to_native_lm_feature()` and `parse_lm_response()` hooks on the type. A `dspy.Reasoning` output field, for example, tells the adapter “set `reasoning_effort` in `lm_kwargs` and read the reasoning from the response’s `ThinkingPart`s instead of regex-parsing it.” Model-specific feature integration lives at the type layer, where it’s reusable across adapters.
 
 ### 7. ChatAdapter falls back to JSONAdapter on parse error
 
@@ -59,13 +59,15 @@ Grouped by what you’re trying to do.
 ### The adapters
 
 **`dspy.ChatAdapter(callbacks=None, use_native_function_calling=False, native_response_types=None, use_json_adapter_fallback=True)`**  
-The default. Builds a chat-style prompt with field markers, parses the response with a regex over the same markers, and (by default) falls back to JSONAdapter if the regex misses. Set `use_json_adapter_fallback=False` when you want a hard error in tests.
+An explicit alternative to be deprecated in a future release; prefer `XMLAdapter`. Builds a chat-style prompt with field markers, parses the response with a regex over the same markers, and (by default) falls back to JSONAdapter if the regex misses. Set `use_json_adapter_fallback=False` when you want a hard error in tests.
 
 **`dspy.JSONAdapter(callbacks=None, use_native_function_calling=True)`**  
 Outputs structured JSON. Internally extends ChatAdapter — formatting is similar, but the output instruction asks for JSON and parsing uses `json_repair`. The constructor’s `use_native_function_calling=True` default flips when tool calling is wired in.
 
-**`dspy.XMLAdapter(callbacks=None)`**  
-`<field_name>value</field_name>` tags. Lists use repeated `<item>` tags.
+**`dspy.XMLAdapter(callbacks=None, use_native_function_calling=False, ...)`**  
+The implicit default passes `use_native_function_calling=True`; explicit construction leaves it disabled unless requested. Uses `<field_name>...</field_name>` tags, with nested fields for objects and `<item>` for lists. Supports streaming and leading reasoning blocks. Use `<field/>` for null, `<field></field>` for an empty string. Untyped (`Any`) values still require user validation.
+
+Container-closing tag sequences are reserved inside strings. Undeclared object fields are rejected unless the schema allows extras.
 
 **`dspy.TwoStepAdapter(extraction_model: BaseLM, **kwargs)`**  
 Two LM calls per inference. Use it when the main LM is a reasoning model that’s bad at formatting — the extractor is usually a cheap general-purpose LM with ChatAdapter. Doesn’t support finetuning yet.
@@ -81,19 +83,19 @@ The base class. Subclass it when you want a new prompt shape — implement `form
 You’ll only override these methods when writing a custom adapter, but reading them helps when debugging a malformed prompt or a parse failure.
 
 **`Adapter.__call__(lm, lm_kwargs, signature, demos, inputs)` / `Adapter.acall(...)`**  
-Public entry. The flow inside is preprocess → format → LM call → postprocess. `lm_kwargs` (temperature, max_tokens, response_format, etc.) is where adapters reach during preprocess to request structured output or function calling.
+Public entry. The flow inside is preprocess → format → LM call → postprocess. `lm_kwargs` (temperature, max_tokens, response_format, etc.) is where adapters reach during preprocess to request structured output or function calling. The rendered `Prompt` and these options become one lm15 `Request` (`dspy.clients.requests.build_request`). Each candidate is a separate `lm(request)` / `await lm.acall(request)` call, with its own rollout identity, callbacks, history and usage accounting.
 
-**`Adapter.format(signature, demos, inputs)` → `list[dict]`**  
-Turns the signature, demos, and inputs into chat messages. The pieces it composes from:
+**`Adapter.format(signature, demos, inputs)` → `dspy.adapters.Prompt`**  
+Turns the signature, demos, and inputs into a `Prompt(system=..., messages=(...))` of lm15 `Message`s. The pieces it composes from:
 
 - `format_system_message(signature)` — the system message: field descriptions + format template + instructions.
 - `format_field_description(signature)` — the per-field list with types and constraints.
 - `format_field_structure(signature)` — the explanation of the marker format.
 - `format_task_description(signature)` — `signature.instructions`.
-- `format_demos(signature, demos)` — each demo becomes a user/assistant pair.
-- `format_user_message_content(signature, inputs)` — the current call’s inputs.
+- `format_demos(signature, demos)` — each demo becomes a user/assistant pair of lm15 messages.
+- `format_user_message_content(signature, inputs)` — the current call’s inputs, as text; custom-type markers in it become content parts.
 - `format_assistant_message_content(signature, outputs)` — used inside demos.
-- `format_conversation_history(signature, history)` — when a field has type `dspy.History`, expand it into turn messages instead of stuffing it into one field’s value.
+- `format_conversation_history(signature, history)` — when a field has type `dspy.History`, expand it into turn messages (including native tool-call and tool-result messages) instead of stuffing it into one field’s value.
 
 **`Adapter.parse(signature, completion)` → `dict`**  
 Extracts typed field values from the LM’s response. ChatAdapter regex-matches the marker pattern, splits by field, and delegates each value to `parse_value`. JSONAdapter parses the JSON object and pulls values by key. XMLAdapter walks tags.
@@ -121,15 +123,15 @@ Other helpers in the same file you’ll see in tracebacks:
 Types adapters know how to render and parse beyond Python’s standard ones. Each implements `format()`; some implement `parse_lm_response()` and `adapt_to_native_lm_feature()` for native LM hooks.
 
 **`dspy.adapters.types.Type`**  
-The base class. Subclass it (it’s a `pydantic.BaseModel`) and implement `format()` to plug in a new type. Adapters wrap the output of `format()` with `<<CUSTOM-TYPE-START-IDENTIFIER>>...<<END-IDENTIFIER>>` so multi-modal content can be inserted into a single message stream and later split out.
+The base class. Subclass it (it’s a `pydantic.BaseModel`) and implement `format()` to plug in a new type, returning a string or a list of `dspy.lm15` content parts. Adapters wrap the parts with `<<CUSTOM-TYPE-START-IDENTIFIER>>...<<END-IDENTIFIER>>` while rendering the field text, then expand the markers back into parts of the user message.
 
 **`dspy.Image(source)`**
 
-URL reference, data URI, bytes, or PIL image. `format()` returns the provider’s image content block (`{"type": "image_url", "image_url": {"url": ...}}`). Ordinary construction and adapter parsing never access the filesystem or network. Use `Image.from_path(path)` to read a local file or `Image.from_url(url)` to download and base64-encode a remote resource. The deprecated direct call `Image(url, download=True)` also downloads for compatibility through 3.3; migrate it to `Image.from_url(url)`.
+URL reference, data URI, bytes, or PIL image. `format()` returns one lm15 `ImagePart` (a URL reference or inline base64 data). Ordinary construction and adapter parsing never access the filesystem or network. Use `Image.from_path(path)` to read a local file or `Image.from_url(url)` to download and base64-encode a remote resource. The deprecated direct call `Image(url, download=True)` also downloads for compatibility through 3.3; migrate it to `Image.from_url(url)`.
 
 **`dspy.Audio(source)`**
 
-A data URI, in-memory bytes, or array data; raw base64 must be passed as `Audio(data=..., audio_format=...)`. Renders as the provider’s audio content block. Use `Audio.from_path(path)` or `Audio.from_url(url)` for resource loading.
+A data URI, in-memory bytes, or array data; raw base64 must be passed as `Audio(data=..., audio_format=...)`. Renders as one lm15 `AudioPart`. Use `Audio.from_path(path)` or `Audio.from_url(url)` for resource loading.
 
 **`dspy.File(file_data=None, file_id=None, filename=None)`**
 
@@ -151,7 +153,7 @@ Wraps a Python callable. Auto-introspects the function signature if you don’t 
 The list of tool calls the LM produced, parsed from native function-calling responses.
 
 **`dspy.adapters.types.Citations`**  
-Declared as a default native response type. When the provider returns citations natively (e.g., Anthropic), adapters extract them through the type’s `parse_lm_response`.
+Declared as a default native response type. The field is always asked for in the prompt and parsed from the answer; when the provider also returns `CitationPart`s in the response, `parse_lm_response` takes those instead.
 
 ### Migrating resource loading in 3.3
 
@@ -176,7 +178,7 @@ Safe in-memory inputs such as data URIs, bytes, PIL images, audio arrays, and st
 
 - **`dspy.configure(adapter=dspy.JSONAdapter())`** — process-wide default.
 - **`with dspy.context(adapter=dspy.XMLAdapter()): ...`** — scoped override.
-- **No automatic LM-based selection.** ChatAdapter is the default and stays the default until you set otherwise. Some teleprompts (e.g., `BootstrapFinetune`) accept an `adapter` dict keyed by LM, so different LMs in a finetuning loop can use different adapters.
+- **No automatic LM-based adapter selection.** Without an override, DSPy uses `XMLAdapter(use_native_function_calling=True)`. Native tool use depends on LM support, not a change of adapter. Some teleprompts (e.g., `BootstrapFinetune`) accept an `adapter` dict keyed by LM, so different LMs in a finetuning loop can use different adapters.
 
 ## Cross-links
 

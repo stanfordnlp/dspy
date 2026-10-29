@@ -1,18 +1,17 @@
 """DSPy execution metadata around unmodified lm15 responses."""
 
+import json
 from dataclasses import dataclass, field
-from typing import Any
 
 from dspy._vendor.lm15.serde import response_from_dict, response_to_dict
-from dspy.clients.legacy_outputs import plain, value
-from dspy.clients.lm15_boundary import response_value
-from dspy.lm15 import DataPart, Request, Response, TextPart, ThinkingPart
+from dspy.clients.lm15_boundary import plain
+from dspy.lm15 import DataPart, Response, TextPart, ThinkingPart
 
 CACHE_FORMAT = "dspy-lm15-result-v1"
 
 
 class AttributeDict(dict):
-    """Legacy output fields remain accessible by key and by attribute."""
+    """Convenience outputs remain accessible by key and by attribute."""
 
     def __getattr__(self, name):
         try:
@@ -32,25 +31,28 @@ def attributes(obj):
     return obj
 
 
-def legacy_output(response: Response, *, logprobs=False):
-    import json
-
-    # Adapters still consume JSON text; typed callers keep the original DataPart.
+def response_text(response: Response) -> str | None:
+    """The visible answer text, even when tool calls or media accompany it."""
     texts = [part.text if isinstance(part, TextPart) else json.dumps(part.value, ensure_ascii=False)
              for part in response.message.parts if isinstance(part, (TextPart, DataPart))]
-    thinking = [part.text for part in response.message.parts if isinstance(part, ThinkingPart)]
-    output = {"text": "".join(texts) if texts else None}
-    if any(thinking):
-        output["reasoning_content"] = "".join(thinking)
-    if response.tool_calls:
+    return "".join(texts) if texts else None
+
+
+def convenience_output(response: Response, *, logprobs=False):
+    """The list-call view of one response: a string, or a dict with extra fields."""
+    thinking = "".join(part.text for part in response.message.parts if isinstance(part, ThinkingPart))
+    output = {"text": response_text(response)}
+    if thinking:
+        output["reasoning_content"] = thinking
+    if tool_calls := response.tool_calls:
         output["tool_calls"] = [attributes({
             "id": call.id, "type": "function",
             "function": {"name": call.name, "arguments": json.dumps(call.input)},
-        }) for call in response.tool_calls]
-    if response.citations:
+        }) for call in tool_calls]
+    if citations := response.citations:
         output["citations"] = [
             {key: val for key, val in {"text": part.text, "title": part.title, "url": part.url}.items() if val is not None}
-            for part in response.citations
+            for part in citations
         ]
     if logprobs:
         output["logprobs"] = attributes({"content": [
@@ -66,7 +68,7 @@ def legacy_output(response: Response, *, logprobs=False):
 def usage_dict(response: Response, provider=None):
     u = response.usage
     inputs, outputs = u.input_tokens, u.output_tokens
-    # LiteLLM's public prompt/completion counters include cached Anthropic
+    # DSPy's public prompt/completion counters include cached Anthropic
     # input and Gemini thinking output. lm15's counters are provider-verbatim.
     if provider and "anthropic" in provider and inputs is not None:
         inputs += (u.cache_read_tokens or 0) + (u.cache_write_tokens or 0)
@@ -96,60 +98,33 @@ class CallResult:
     outputs: list = field(default_factory=list)
     usage: dict = field(default_factory=dict)
     cost: float | None = None
-    raw: Any = None
     response_model: str | None = None
     cache_hit: bool = False
     cost_details: dict = field(default_factory=dict)
 
     @classmethod
     def native(cls, response, *, model_type="chat", logprobs=False, provider=None):
-        output = legacy_output(response, logprobs=logprobs)
+        output = convenience_output(response, logprobs=logprobs)
+        if model_type == "text" and logprobs:
+            choices = (response.provider_data or {}).get("choices") or []
+            if choices and "logprobs" in choices[0]:
+                # Keep text offsets and unknown token scores in the public
+                # SDK-shaped view; canonical scores cannot represent either.
+                output["logprobs"] = attributes(choices[0]["logprobs"])
         outputs = [output] if model_type == "responses" or len(output) > 1 else [output["text"]]
-        return cls((response,), outputs, usage_dict(response, provider), raw=response, response_model=response.model)
-
-    @classmethod
-    def legacy(cls, lm, raw, request=None, *, kwargs=None):
-        kwargs = kwargs or {}
-        outputs = (lm._process_response(raw) if lm.model_type == "responses"
-                   else lm._process_completion(raw, {**lm.kwargs, **kwargs}))
-        return cls(outputs=outputs, usage=plain(dict(value(raw, "usage", {}) or {})),
-                   cost=getattr(raw, "_hidden_params", {}).get("response_cost"), raw=raw,
-                   response_model=value(raw, "model", lm.model))
-
-    def typed(self, request: Request, model_type):
-        if self.responses:
-            if len(self.responses) != 1:
-                raise ValueError("An explicit Request returns exactly one Response")
-            return self.responses[0]
-        return response_value(self.raw, model_type, request)
+        return cls((response,), outputs, usage_dict(response, provider), response_model=response.model)
 
     def dump(self):
         return {"_dspy_format": CACHE_FORMAT,
                 "responses": [response_to_dict(r, include_provider_data=True) for r in self.responses],
                 "outputs": plain(self.outputs), "usage": plain(self.usage), "cost": self.cost,
-                "cost_details": plain(self.cost_details),
-                "raw": None if self.responses else plain(self.raw), "response_model": self.response_model}
+                "cost_details": plain(self.cost_details), "response_model": self.response_model}
 
     @classmethod
     def load(cls, record):
         responses = tuple(response_from_dict(r) for r in record["responses"])
-        return cls(responses, attributes(record["outputs"]), {}, record["cost"],
-                   responses[0] if len(responses) == 1 else attributes(record.get("raw")),
-                   record["response_model"], True, record.get("cost_details", {}))
-
-    def provider_response(self):
-        if self.raw is not None:
-            if not isinstance(self.raw, Response):
-                return self.raw
-        choices = []
-        for index, output in enumerate(self.outputs):
-            output = output if isinstance(output, dict) else {"text": output}
-            choices.append({"index": index, "finish_reason": "stop", "message": {
-                "content": output.get("text"), "tool_calls": output.get("tool_calls"),
-                "reasoning_content": output.get("reasoning_content"),
-            }, "logprobs": output.get("logprobs")})
-        return attributes({"model": self.response_model, "choices": choices, "usage": self.usage,
-                           "cache_hit": self.cache_hit})
+        return cls(responses, attributes(record["outputs"]), {}, record["cost"], record["response_model"], True,
+                   record.get("cost_details", {}))
 
 
 def combine(results, *, model_type):
@@ -165,6 +140,5 @@ def combine(results, *, model_type):
     return CallResult(tuple(r for item in results for r in item.responses), outputs,
                       tracker.get_total_tokens().get("combined", {}),
                       sum(costs) if costs and all(c is not None for c in costs) else None,
-                      raw=results[0].raw if len(results) == 1 else None,
-                      response_model=results[0].response_model if results else None,
+                      response_model=next((r.response_model for r in results if r.responses), None),
                       cost_details={"candidates": [r.cost_details for r in results]} if any(r.cost_details for r in results) else {})

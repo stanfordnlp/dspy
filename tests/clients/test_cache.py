@@ -34,6 +34,7 @@ def cache_config(tmp_path):
         "disk_cache_dir": str(tmp_path),
         "disk_size_limit_bytes": 1024 * 1024,  # 1MB
         "memory_max_entries": 100,
+        "safe_types": [DummyResponse],
     }
 
 
@@ -398,11 +399,11 @@ def test_cache_init_with_disk_disabled_and_none_dir():
 
 
 def test_model_response_roundtrip_in_restricted_mode(restricted_cache):
-    from litellm import ModelResponse
+    from openai.types.chat import ChatCompletion
 
-    response = ModelResponse(
-        id="test-123",
-        choices=[{"message": {"content": "cached response"}, "index": 0, "finish_reason": "stop"}],
+    response = ChatCompletion(
+        id="test-123", model="gpt-4o", created=0, object="chat.completion",
+        choices=[{"message": {"role": "assistant", "content": "cached response"}, "index": 0, "finish_reason": "stop"}],
         usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
     )
     request = {"model": "openai/gpt-5-nano", "prompt": "test"}
@@ -411,7 +412,7 @@ def test_model_response_roundtrip_in_restricted_mode(restricted_cache):
     restricted_cache.reset_memory_cache()
 
     result = restricted_cache.get(request)
-    assert isinstance(result, ModelResponse)
+    assert isinstance(result, ChatCompletion)
     assert result.choices[0].message.content == "cached response"
 
 
@@ -496,6 +497,7 @@ def test_restricted_and_unrestricted_share_wire_format(tmp_path):
     unrestricted = Cache(
         enable_disk_cache=True, enable_memory_cache=False,
         disk_cache_dir=shared_dir, disk_size_limit_bytes=1024 * 1024,
+        restrict_pickle=False,
     )
     unrestricted.put(request, {"value": "hello"})
     unrestricted.disk_cache.close()
@@ -513,17 +515,28 @@ class _UnlistedDataclass:
     value: int
 
 
-def test_unlisted_type_rejected_on_read(restricted_cache):
+@pytest.mark.parametrize("configure", [False, True], ids=["Cache", "configure_cache"])
+@pytest.mark.parametrize("options", [{}, {"restrict_pickle": False}], ids=["default", "opt_out"])
+def test_unlisted_type_disk_cache_defaults(cache_config, configure, options):
+    if configure:
+        dspy.configure_cache(**cache_config, **options)
+        cache = dspy.cache
+    else:
+        cache = Cache(**cache_config, **options)
     request = {"model": "test", "prompt": "dataclass"}
+    response = _UnlistedDataclass(value=1)
 
-    restricted_cache.put(request, _UnlistedDataclass(value=1))
+    try:
+        cache.put(request, response)
 
-    # Memory cache still works
-    assert restricted_cache.get(request) == _UnlistedDataclass(value=1)
+        # Memory cache still works regardless of pickle restrictions.
+        assert cache.get(request) == response
 
-    # After clearing memory, restricted unpickler rejects the unlisted type
-    restricted_cache.reset_memory_cache()
-    assert restricted_cache.get(request) is None
+        cache.reset_memory_cache()
+        expected = None if options.get("restrict_pickle", True) else response
+        assert cache.get(request) == expected
+    finally:
+        cache.disk_cache.close()
 
 
 def test_safe_types_rejects_non_types(tmp_path):
@@ -538,7 +551,7 @@ def test_safe_types_rejects_non_types(tmp_path):
 
 
 class _StrictProviderResponse(pydantic.BaseModel):
-    """Mimics strict provider SDK models (e.g. litellm's ResponsesAPIResponse)."""
+    """Mimics a provider SDK response that forbids undeclared fields."""
 
     model_config = pydantic.ConfigDict(extra="forbid")
 
