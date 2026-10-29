@@ -720,3 +720,144 @@ def test_yaml_description_can_contain_an_indented_separator():
     [skill] = InstructionProposer(skills=[source]).skills
     assert skill.description == "Before.\n---\nAfter.\n"
     assert skill.content == "Skill body."
+
+
+def test_reflective_dataset_identifies_subclass_as_builtin_and_wrapper_as_custom():
+    class SubclassedProposer(InstructionProposer):
+        pass
+
+    subclass_instance = SubclassedProposer()
+    adapter_subclass = DspyAdapter(
+        student_module=dspy.Predict("q -> a"),
+        metric_fn=lambda *args, **kwargs: 0,
+        feedback_map={},
+        custom_instruction_proposer=subclass_instance,
+    )
+    assert adapter_subclass._builtin_instruction_proposer is True
+
+    proposer = InstructionProposer()
+
+    def forwarding_wrapper(candidate, reflective_dataset, components_to_update):
+        return proposer(candidate, reflective_dataset, components_to_update)
+
+    adapter_wrapper = DspyAdapter(
+        student_module=dspy.Predict("q -> a"),
+        metric_fn=lambda *args, **kwargs: 0,
+        feedback_map={},
+        custom_instruction_proposer=forwarding_wrapper,
+    )
+    assert adapter_wrapper._builtin_instruction_proposer is False
+
+
+def test_gepa_subclass_preserves_structured_dataset_while_wrapper_receives_strings(caplog):
+    trainset = [dspy.Example(question="cats?", answer="cats purr loudly").with_inputs("question")]
+
+    class SubclassedProposer(InstructionProposer):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.called = False
+
+        def __call__(self, candidate, reflective_dataset, components_to_update):
+            self.called = True
+            return super().__call__(candidate, reflective_dataset, components_to_update)
+
+    subclass_proposer = SubclassedProposer(truncate_history_outputs=True)
+    program, task_lm = react_program_and_lm()
+    reflection_lm = DummyLM([{"new_instruction": "Search, then answer in detail."}] * 5, adapter=dspy.JSONAdapter())
+    with dspy.context(lm=task_lm, adapter=dspy.ChatAdapter()), caplog.at_level(logging.INFO, logger="dspy"):
+        dspy.GEPA(
+            metric=react_metric,
+            reflection_lm=reflection_lm,
+            instruction_proposer=subclass_proposer,
+            max_metric_calls=4,
+        ).compile(program, trainset=trainset, valset=trainset)
+
+    assert subclass_proposer.called
+    assert no_reflection_errors(caplog)
+    _, user = last_messages(reflection_lm)
+    assert '"Context": {"messages":' in user
+    assert "characters cut]" in user
+    assert LONG_TOOL_OUTPUT not in user
+
+    # A forwarding wrapper causes the adapter to take the custom callable path and stringify histories
+    inner = InstructionProposer(truncate_history_outputs=True)
+    wrapper_seen = []
+
+    def wrapped_proposer(candidate, reflective_dataset, components_to_update):
+        wrapper_seen.extend(reflective_dataset[name][0] for name in components_to_update)
+        return inner(candidate, reflective_dataset, components_to_update)
+
+    program, task_lm = react_program_and_lm()
+    reflection_lm = DummyLM([{"new_instruction": "Search, then answer in detail."}] * 5, adapter=dspy.JSONAdapter())
+    with dspy.context(lm=task_lm, adapter=dspy.ChatAdapter()), caplog.at_level(logging.INFO, logger="dspy"):
+        dspy.GEPA(
+            metric=react_metric,
+            reflection_lm=reflection_lm,
+            instruction_proposer=wrapped_proposer,
+            max_metric_calls=4,
+        ).compile(program, trainset=trainset, valset=trainset)
+
+    [example] = wrapper_seen
+    # Context was stringified by DspyAdapter before wrapped_proposer received it
+    assert isinstance(example["Inputs"]["Context"], str)
+    assert LONG_TOOL_OUTPUT in example["Inputs"]["Context"]
+    assert "characters cut" not in example["Inputs"]["Context"]
+
+    assert no_reflection_errors(caplog)
+    _, user = last_messages(reflection_lm)
+    assert LONG_TOOL_OUTPUT in user
+    assert "characters cut" not in user
+
+
+def test_reflective_dataset_repl_history_key_and_types():
+    from gepa import EvaluationBatch
+
+    repl = REPLHistory().append(code="print(1)", output="1")
+    student = dspy.Predict("repl_history: str -> answer: str")
+    output = dspy.Prediction(answer="done")
+    example = dspy.Example(repl_history=repl).with_inputs("repl_history")
+    batch = EvaluationBatch(
+        outputs=[output],
+        scores=[0],
+        trajectories=[
+            {
+                "trace": [(student, {"repl_history": repl}, output)],
+                "example": example,
+                "prediction": output,
+                "score": 0,
+            }
+        ],
+    )
+
+    class SubclassedProposer(InstructionProposer):
+        pass
+
+    adapter_subclass = DspyAdapter(
+        student_module=student,
+        metric_fn=lambda *args, **kwargs: 0,
+        feedback_map={"self": lambda **kwargs: {"score": 0, "feedback": "retry"}},
+        custom_instruction_proposer=SubclassedProposer(),
+    )
+    [record_subclass] = adapter_subclass.make_reflective_dataset(
+        {"self": student.signature.instructions}, batch, ["self"]
+    )["self"]
+    # Stays under original input key "repl_history" (not "Context") and retains the REPLHistory object:
+    assert record_subclass["Inputs"]["repl_history"] is repl
+    assert "Context" not in record_subclass["Inputs"]
+
+    def custom_proposer(candidate, reflective_dataset, components_to_update):
+        return {}
+
+    adapter_custom = DspyAdapter(
+        student_module=student,
+        metric_fn=lambda *args, **kwargs: 0,
+        feedback_map={"self": lambda **kwargs: {"score": 0, "feedback": "retry"}},
+        custom_instruction_proposer=custom_proposer,
+    )
+    [record_custom] = adapter_custom.make_reflective_dataset({"self": student.signature.instructions}, batch, ["self"])[
+        "self"
+    ]
+    # Stays under original input key "repl_history" (not "Context") and is converted to str:
+    assert isinstance(record_custom["Inputs"]["repl_history"], str)
+    assert record_custom["Inputs"]["repl_history"] == str(repl)
+    assert "Context" not in record_custom["Inputs"]
