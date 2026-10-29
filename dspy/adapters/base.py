@@ -382,7 +382,10 @@ class Adapter:
             # Demos are rendered as multiturn messages that look just like conversation history. Formatting them
             # with the history field still present would print a `[[ ## history ## ]]` block (e.g. an empty
             # `{"messages": []}`) inside the demo, which an LLM can easily mistake for real conversation history.
-            messages.extend(self.format_demos(signature_without_history, demos))
+            # If history was the only input, there is nothing left to show as the user turn of a demo, so skip the
+            # demos rather than emit empty user messages. Output-only signatures (no history) are unaffected.
+            if signature_without_history.input_fields:
+                messages.extend(self.format_demos(signature_without_history, demos))
         else:
             messages.extend(self.format_demos(signature, demos))
         content = self.format_user_message_content(
@@ -527,22 +530,13 @@ class Adapter:
 
         incomplete_demo_prefix = "This is an example of the task, though some input or output fields are not supplied."
         for demo in incomplete_demos:
-            content = self.format_user_message_content(signature, demo, prefix=incomplete_demo_prefix)
-            if not content:
-                # No input fields to show (e.g. the signature's only input was the history field, which is
-                # deliberately excluded here). A demo with no input content is not informative, so skip it
-                # instead of emitting an empty user turn.
-                continue
-            messages.append(user_message(content))
+            messages.append(user_message(self.format_user_message_content(signature, demo, prefix=incomplete_demo_prefix)))
             messages.append(Message.assistant(self.format_assistant_message_content(
                 signature, demo, missing_field_message="Not supplied for this particular example. "
             )))
 
         for demo in complete_demos:
-            content = self.format_user_message_content(signature, demo)
-            if not content:
-                continue
-            messages.append(user_message(content))
+            messages.append(user_message(self.format_user_message_content(signature, demo)))
             messages.append(Message.assistant(self.format_assistant_message_content(
                 signature, demo, missing_field_message="Not supplied for this conversation history message. "
             )))

@@ -2946,3 +2946,14 @@ def test_chat_adapter_formats_pep604_union_like_typing_union():
     assert "1. `answer` (Union[int, NoneType])" in messages.system
     assert "must be formatted as a valid Python Union[int, NoneType]" in messages.messages[-1].text
     assert "UnionType" not in messages.system + messages.messages[-1].text
+
+
+def test_chat_adapter_keeps_demos_for_output_only_signature():
+    class OutputOnlySignature(dspy.Signature):
+        answer: str = dspy.OutputField()
+
+    messages, _ = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(), OutputOnlySignature, [{"answer": "Paris"}], {}
+    )
+
+    assert any("Paris" in m["content"] for m in messages if m["role"] == "assistant")
