@@ -32,13 +32,14 @@ class Type(pydantic.BaseModel):
     Examples:
 
         ```python
-        from dspy.lm15 import image
+        from dspy import Type
+        from dspy.lm15 import ImagePart
 
         class Image(Type):
             url: str
 
             def format(self) -> list:
-                return [image(url=self.url)]
+                return [ImagePart(url=self.url)]
         ```
     """
 
