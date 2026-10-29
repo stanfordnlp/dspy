@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import hashlib
 from pickle import dumps
-from typing import Any
+from typing import Any, ClassVar
 
 """
 The following class was pulled from the `datasets` package from Hugging Face.
@@ -13,12 +15,14 @@ URL: https://github.com/huggingface/datasets/blob/fa73ab472eecf9136a3daf7a0fbff1
 Changes: 2025-08-10 - Ran ruff to format the code to DSPy styles.
          2026-05-07 - Replaced xxhash with hashlib.sha256 to remove C-extension dep.
 """
+
+
 class Hasher:
     """Hasher that accepts python objects as inputs."""
 
-    dispatch: dict = {}
+    dispatch: ClassVar[dict[type, Any]] = {}
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.m = hashlib.sha256()
 
     @classmethod
