@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import warnings
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
 
@@ -25,6 +26,36 @@ class _MCPToolClient(Protocol):
     async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any: ...
 
 
+def _warn_inferred_var_positional(function_name: str, parameter_name: str) -> None:
+    """Warn that an inferred schema omitted *args.
+
+    Walk frames whose module name starts with ``dspy`` so the warning is attributed
+    to the caller that built the tool, whether that call is direct or goes through
+    another dspy module such as ReAct.
+    """
+    message = (
+        f"Tool function {function_name!r} accepts *{parameter_name}, which can't be represented as named "
+        "keyword arguments, so it is left out of the schema and can't be filled by the model. "
+        "Use explicit parameters or pass an explicit args schema."
+    )
+    # stacklevel 1 is this function, the caller of warnings.warn.
+    stacklevel = 1
+    frame = inspect.currentframe()
+    try:
+        while frame is not None:
+            module_name = frame.f_globals.get("__name__")
+            if not (isinstance(module_name, str) and module_name.startswith("dspy")):
+                break
+            parent = frame.f_back
+            if parent is None:
+                break
+            frame = parent
+            stacklevel += 1
+    finally:
+        del frame
+    warnings.warn(message, UserWarning, stacklevel=stacklevel)
+
+
 class Tool(Type):
     """Tool class.
 
@@ -39,6 +70,8 @@ class Tool(Type):
     arg_types: dict[str, Any] | None = None
     arg_desc: dict[str, str] | None = None
     has_kwargs: bool = False
+    # Set when the published schema was inferred from a function that accepts **kwargs.
+    _opens_additional_properties: bool = pydantic.PrivateAttr(default=False)
 
     def __init__(
         self,
@@ -94,6 +127,14 @@ class Tool(Type):
 
         # Use inspect.signature to get all arg names
         sig = inspect.signature(annotations_func)
+        # An explicit args schema is the published contract (MCP tools and ReActV2's
+        # submit tool wrap the call in *args/**kwargs). Only an inferred schema
+        # describes the function's own parameters.
+        schema_inferred = self.args is None
+        if schema_inferred:
+            for param in sig.parameters.values():
+                if param.kind == inspect.Parameter.VAR_POSITIONAL:
+                    _warn_inferred_var_positional(name, param.name)
         # Get available type hints
         available_hints = get_type_hints(annotations_func)
         # Build a dictionary of arg name -> type (defaulting to Any when missing)
@@ -101,10 +142,14 @@ class Tool(Type):
         default_values = {param_name: sig.parameters[param_name].default for param_name in sig.parameters.keys()}
 
         # Process each argument's type to generate its JSON schema.
+        # *args and **kwargs are not named keyword parameters, so they are not properties.
         for k, v in hints.items():
-            arg_types[k] = v
             if k == "return":
                 continue
+            kind = sig.parameters[k].kind
+            if kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                continue
+            arg_types[k] = v
             # Check if the type (or its origin) is a subclass of Pydantic's BaseModel
             origin = get_origin(v) or v
             if isinstance(origin, type) and issubclass(origin, BaseModel):
@@ -123,6 +168,9 @@ class Tool(Type):
         self.args = self.args if self.args is not None else args
         self.arg_types = self.arg_types if self.arg_types is not None else arg_types
         self.has_kwargs = any(param.kind == param.VAR_KEYWORD for param in sig.parameters.values())
+        # Open the schema only for an inferred **kwargs. An explicit schema stays closed
+        # so fields the caller left out are not advertised as accepted.
+        self._opens_additional_properties = schema_inferred and self.has_kwargs
 
     def _validate_and_parse_args(self, **kwargs):
         # Validate the args value comply to the json schema.
@@ -158,14 +206,17 @@ class Tool(Type):
 
     def as_function_tool(self) -> FunctionTool:
         """The lm15 tool declaration sent to models that call tools natively."""
+        parameters = {
+            "type": "object",
+            "properties": self.args,
+            "required": [k for k in self.args if "default" not in self.args[k]],
+        }
+        if self._opens_additional_properties:
+            parameters["additionalProperties"] = True
         return FunctionTool(
             name=self.name,
             description=self.desc,
-            parameters={
-                "type": "object",
-                "properties": self.args,
-                "required": [k for k in self.args if "default" not in self.args[k]],
-            },
+            parameters=parameters,
         )
 
     def _run_async_in_sync(self, coroutine):

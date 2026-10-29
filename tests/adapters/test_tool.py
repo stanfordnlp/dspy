@@ -1,4 +1,6 @@
 import asyncio
+import warnings
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -319,6 +321,160 @@ def test_tool_call_kwarg():
     tool = Tool(fn)
 
     assert tool(x=1, y=2, z=3) == {"y": 2, "z": 3}
+
+
+def test_inferred_var_keyword_is_additional_properties_not_a_parameter():
+    def grab(x: int, **options):
+        return options
+
+    tool = Tool(grab)
+    parameters = tool.as_function_tool().parameters
+
+    assert parameters["properties"].keys() == {"x"}
+    assert parameters["required"] == ["x"]
+    assert parameters["additionalProperties"] is True
+    assert "options" not in tool.args
+    assert "options" not in tool.arg_types
+    assert tool.has_kwargs is True
+    # Extra keywords are passed through, not nested under a required "options" argument.
+    assert tool(x=1, y=2) == {"y": 2}
+
+
+def test_inferred_var_keyword_only():
+    def grab(**kwargs):
+        return kwargs
+
+    tool = Tool(grab)
+    parameters = tool.as_function_tool().parameters
+
+    assert parameters["properties"] == {}
+    assert parameters["required"] == []
+    assert parameters["additionalProperties"] is True
+    assert tool(a=1) == {"a": 1}
+
+
+def test_var_positional_is_skipped_with_warning_when_schema_is_inferred():
+    def star(*args: int):
+        return sum(args)
+
+    with pytest.warns(UserWarning, match=r"Tool function 'star' accepts \*args"):
+        star_tool = Tool(star)
+
+    assert "args" not in star_tool.args
+    assert "args" not in star_tool.arg_types
+    assert "additionalProperties" not in star_tool.as_function_tool().parameters
+
+    def mixed(x: int, *args: int):
+        return x
+
+    with pytest.warns(UserWarning, match=r"Tool function 'mixed' accepts \*args"):
+        mixed_tool = Tool(mixed)
+
+    assert mixed_tool.args.keys() == {"x"}
+    assert "args" not in mixed_tool.args
+    assert "args" not in mixed_tool.arg_types
+    with pytest.warns(UserWarning, match=r"Tool function 'mixed' accepts \*args"):
+        assert Tool(mixed)(x=1) == 1
+
+    class Bucket:
+        def __call__(self, *items: int):
+            return items
+
+    with pytest.warns(UserWarning, match=r"Tool function 'Bucket' accepts \*items"):
+        bucket_tool = Tool(Bucket())
+
+    assert "items" not in bucket_tool.args
+    assert "items" not in bucket_tool.arg_types
+
+
+def test_var_positional_warning_points_at_the_direct_caller():
+    def star(*args: int):
+        return sum(args)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        Tool(star)
+
+    assert len(caught) == 1
+    warning = caught[0]
+    assert issubclass(warning.category, UserWarning)
+    assert Path(warning.filename).resolve() == Path(__file__).resolve()
+    line = Path(__file__).read_text().splitlines()[warning.lineno - 1]
+    assert "Tool(star)" in line
+
+
+def test_var_positional_warning_points_past_dspy_frames():
+    def star(*args: int):
+        return sum(args)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        dspy.ReAct("question -> answer", tools=[star])
+
+    positional = [
+        item for item in caught if issubclass(item.category, UserWarning) and "accepts *args" in str(item.message)
+    ]
+    assert len(positional) == 1
+    warning = positional[0]
+    assert Path(warning.filename).resolve() == Path(__file__).resolve()
+    line = Path(__file__).read_text().splitlines()[warning.lineno - 1]
+    assert "dspy.ReAct(" in line
+    assert "tools=[star]" in line
+
+
+def test_explicit_schema_keeps_varargs_wrapper_and_stays_closed():
+    # MCP conversion and ReActV2's submit tool pass an explicit schema and wrap the
+    # call in *args/**kwargs. That wrapper is not part of the published contract.
+    async def func(*args, **kwargs):
+        return kwargs
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        tool = Tool(
+            func,
+            name="search",
+            args={"query": {"type": "string"}, "limit": {"type": "integer", "default": 10}},
+            arg_types={"query": str, "limit": int},
+        )
+    assert not [item for item in caught if issubclass(item.category, UserWarning) and "accepts *" in str(item.message)]
+    parameters = tool.as_function_tool().parameters
+
+    assert parameters["properties"].keys() == {"query", "limit"}
+    assert parameters["required"] == ["query"]
+    assert "args" not in parameters["properties"]
+    assert "kwargs" not in parameters["properties"]
+    assert "additionalProperties" not in parameters
+    assert tool.has_kwargs is True
+
+    def submit(**kwargs):
+        return kwargs
+
+    submit_tool = Tool(
+        submit,
+        name="submit",
+        args={"answer": {"type": "string"}},
+        arg_types={"answer": str},
+    )
+    submit_parameters = submit_tool.as_function_tool().parameters
+
+    assert submit_parameters["properties"] == {"answer": {"type": "string"}}
+    assert submit_parameters["required"] == ["answer"]
+    assert "kwargs" not in submit_parameters["properties"]
+    assert "additionalProperties" not in submit_parameters
+
+
+def test_keyword_only_separator_is_not_var_positional():
+    def add(x: int, *, y: int = 1) -> int:
+        return x + y
+
+    tool = Tool(add)
+    parameters = tool.as_function_tool().parameters
+
+    assert parameters["properties"].keys() == {"x", "y"}
+    assert parameters["required"] == ["x"]
+    assert parameters["properties"]["y"]["default"] == 1
+    assert "additionalProperties" not in parameters
+    assert tool(x=1) == 2
 
 
 def test_tool_str():
