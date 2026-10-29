@@ -1,3 +1,5 @@
+import math
+
 from dspy.predict.chain_of_thought import ChainOfThought
 from dspy.primitives import Module
 from dspy.primitives.prediction import Prediction
@@ -33,8 +35,14 @@ class DecompositionalSemanticRecallPrecision(Signature):
     precision: float = OutputField(desc="fraction (out of 1.0) of system response covered by the ground truth")
 
 
-def f1_score(precision, recall):
-    """Compute the F1 score from precision and recall, clamping both to [0, 1]."""
+def f1_score(precision: float, recall: float) -> float:
+    """Compute F1 from finite precision and recall, clamping both to [0, 1].
+
+    Raises:
+        ValueError: If either component is NaN or infinite.
+    """
+    if not math.isfinite(precision) or not math.isfinite(recall):
+        raise ValueError(f"Precision and recall must be finite, got precision={precision!r}, recall={recall!r}.")
     precision, recall = max(0.0, min(1.0, precision)), max(0.0, min(1.0, recall))
     return 0.0 if precision + recall == 0 else 2 * (precision * recall) / (precision + recall)
 
@@ -45,6 +53,9 @@ class SemanticF1(Module):
     Args:
         threshold: Minimum F1 score to accept during optimization. Defaults to 0.66.
         decompositional: If True, uses DecompositionalSemanticRecallPrecision. Defaults to False.
+
+    Raises:
+        ValueError: If the judge returns a non-finite precision or recall.
     """
 
     def __init__(self, threshold=0.66, decompositional=False):
@@ -104,6 +115,9 @@ class CompleteAndGrounded(Module):
 
     Args:
         threshold: Minimum score to accept during optimization. Defaults to 0.66.
+
+    Raises:
+        ValueError: If the judge returns non-finite completeness or groundedness.
     """
 
     def __init__(self, threshold=0.66):
