@@ -401,9 +401,13 @@ class ToolCalls(Type):
     def serialize_model(self):
         data = self.format()
         if self.tool_call_results is not None:
+            # A tool returns whatever it returns. One value pydantic cannot encode becomes its
+            # string form instead of making the whole trace unserializable — the same contract
+            # serialize_for_json follows (#10634).
             data["tool_call_results"] = TypeAdapter(type(self.tool_call_results)).dump_python(
                 self.tool_call_results,
                 mode="json",
+                fallback=str,
             )
         return data
 
