@@ -64,6 +64,25 @@ def test_structured_result_mode_returns_every_json_value_exactly(field_style, st
 
 
 @pytest.mark.extra
+@pytest.mark.parametrize("result_mode", ["text", "structured"])
+@pytest.mark.parametrize(
+    ("texts", "expected"),
+    [
+        pytest.param(["chart"], "chart", id="one-text"),
+        pytest.param([""], "", id="one-empty-text"),
+        pytest.param(["", ""], ["", ""], id="two-empty-texts"),
+    ],
+)
+def test_text_blocks_win_over_images_even_when_empty(result_mode, texts, expected):
+    from mcp.types import CallToolResult, ImageContent, TextContent
+
+    image = ImageContent(type="image", data="iVBORw0KGgo=", mimeType="image/png")
+    content = [TextContent(type="text", text=text) for text in texts] + [image]
+
+    assert _convert_mcp_tool_result(CallToolResult(content=content), result_mode=result_mode) == expected
+
+
+@pytest.mark.extra
 @pytest.mark.parametrize("field_style", ["camel", "snake"])
 def test_structured_result_mode_falls_back_when_field_is_absent(field_style):
     result = make_call_tool_result(field_style, texts=["fallback"])
