@@ -7,20 +7,29 @@ if TYPE_CHECKING:
 
 
 def run_async(coro):
-    """Run an async coroutine from a synchronous context."""
+    """Run an async coroutine from a synchronous context.
+
+    Inside a running event loop (e.g. Jupyter, or a server handler) a sync
+    call cannot be served without nested-loop hacks: `nest_asyncio` patches
+    the event loop process-wide as an import side effect and does not support
+    alternative loops such as uvloop. Follow the same fail-fast contract as
+    `dspy.Tool` and direct the caller to the native async path instead.
+    """
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
+        # Run the coroutine outside of "except" block to avoid propagation
         loop = None
 
-    if loop and loop.is_running():
-        # If we're in a running event loop (e.g., Jupyter), use asyncio.create_task and run until done
-        import nest_asyncio
-
-        nest_asyncio.apply()
-        return asyncio.get_event_loop().run_until_complete(coro)
-    else:
+    if loop is None:
         return asyncio.run(coro)
+
+    coro.close()
+    raise ValueError(
+        "You are calling a syncified program from within a running event loop, which cannot be "
+        "converted to a sync call. Please use the module's native async path instead, e.g. "
+        "`await program.aforward(...)` (or `await program.acall(...)`)."
+    )
 
 
 def syncify(program: "Module", in_place: bool = True) -> "Module":
