@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import weakref
 from typing import Any
 
 from dspy.utils.lazy_import import require
@@ -16,6 +17,9 @@ class Embeddings:
     This class retrieves the top-k most similar passages from a corpus using embedding-based similarity search.
     For large corpora, a FAISS index is built for fast approximate candidate retrieval, followed by exact
     re-ranking. For small corpora, brute-force search is used.
+
+    Use as a context manager or call close() to stop the batching worker when finished.
+    The worker also stops when the retriever is garbage collected.
     """
 
     def __init__(
@@ -39,7 +43,33 @@ class Embeddings:
         self.corpus_embeddings = self._normalize(self.corpus_embeddings) if self.normalize else self.corpus_embeddings
 
         self.index = self._build_faiss() if len(corpus) >= brute_force_threshold else None
-        self.search_fn = Unbatchify(self._batch_forward)
+        self._init_search()
+
+    def _init_search(self):
+        owner_ref = weakref.ref(self)
+
+        def batch_forward(queries):
+            owner = owner_ref()
+            if owner is None:
+                raise RuntimeError("Embeddings retriever is closed")
+            return owner._batch_forward(queries)
+
+        # The worker must not keep the retriever and its corpus alive.
+        self.search_fn = Unbatchify(batch_forward)
+        self._search_finalizer = weakref.finalize(self, self.search_fn.close)
+        # Daemon workers must not delay interpreter shutdown for unfinished queries.
+        self._search_finalizer.atexit = False
+
+    def close(self):
+        """Stop the batching worker. Further searches raise RuntimeError."""
+        self.search_fn.close()
+        self._search_finalizer.detach()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
 
     def __call__(self, query: str):
         return self.forward(query)
@@ -240,9 +270,8 @@ class Embeddings:
         """
         # Create a minimal instance without triggering embedding computation
         instance = cls.__new__(cls)
-        # Initialize the search function (required since we bypassed __init__)
-        instance.search_fn = Unbatchify(instance._batch_forward)
         instance.load(path, embedder)
+        instance._init_search()
         return instance
 
 
