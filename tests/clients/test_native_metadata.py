@@ -18,18 +18,44 @@ def local_metadata(monkeypatch):
     monkeypatch.setattr(metadata, "_source", {})
 
 
-def test_snapshot_capabilities():
-    lm = dspy.LM("openai/gpt-4o", engine="lm15")
-    assert lm.supports_function_calling
-    assert lm.supports_response_schema
-    assert "response_format" in lm.supported_params
-    assert not lm.supports_reasoning
-    claude = dspy.LM("anthropic/claude-sonnet-4-5", engine="lm15")
-    assert claude.supports_reasoning
-    assert claude.supports_response_schema
+@pytest.fixture
+def token_rates(monkeypatch):
+    # Fixed inputs for DSPy's arithmetic, not assertions about current provider prices.
+    monkeypatch.setattr(metadata, "_data", {
+        "openai/gpt-4o": {"input_cost_per_token": 2.5e-6, "output_cost_per_token": 1e-5,
+                          "cache_read_input_token_cost": 1.25e-6},
+        "anthropic/claude-sonnet-4-5": {"input_cost_per_token": 3e-6, "output_cost_per_token": 1.5e-5,
+                                       "cache_read_input_token_cost": 3e-7,
+                                       "cache_creation_input_token_cost": 3.75e-6},
+        "gemini/gemini-2.5-flash": {"input_cost_per_token": 3e-7, "output_cost_per_token": 2.5e-6},
+    })
 
 
-def test_unknown_and_custom_capabilities():
+def test_snapshot_loads():
+    data = metadata._snapshot()
+    assert isinstance(data, dict) and data
+    metadata.model_info("openai-chat", "unlisted")
+    assert metadata.source_info()["source"] == "local"
+    assert metadata.source_info()["is_env_forced"]
+
+
+@pytest.mark.parametrize("provider", ["openai", "anthropic"])
+@pytest.mark.parametrize("tools,schema,reasoning", [(True, False, True), (False, True, False), (None, None, None)])
+def test_catalog_capabilities(monkeypatch, provider, tools, schema, reasoning):
+    info = {key: value for key, value in {
+        "supports_function_calling": tools, "supports_response_schema": schema, "supports_reasoning": reasoning,
+    }.items() if value is not None}
+    monkeypatch.setattr(metadata, "_data", {f"{provider}/test": info})
+    lm = dspy.LM(f"{provider}/test", engine="lm15")
+    assert lm.supports_function_calling is (tools is True)
+    assert lm.supports_response_schema is (schema is True)
+    assert lm.supports_reasoning is (reasoning is True)
+    if schema:
+        assert "response_format" in lm.supported_params
+
+
+def test_unknown_and_custom_capabilities(monkeypatch):
+    monkeypatch.setattr(metadata, "_data", {})
     assert not dspy.LM("openai/unlisted").supports_function_calling
 
     class Engine:
@@ -83,9 +109,9 @@ def test_valid_remote_map_is_adopted(monkeypatch):
 
     monkeypatch.delenv("LITELLM_LOCAL_MODEL_COST_MAP")
     data = metadata._snapshot()
-    data["gpt-4o"]["supports_reasoning"] = True
+    data["openai/test-remote"] = {"supports_reasoning": True}
     with patch.object(metadata.urllib.request, "urlopen", return_value=io.BytesIO(json.dumps(data).encode())):
-        assert metadata.model_info("openai-chat", "gpt-4o")["supports_reasoning"]
+        assert metadata.model_info("openai-chat", "test-remote")["supports_reasoning"]
     assert metadata.source_info()["source"] == "remote"
 
 
@@ -94,21 +120,21 @@ def answer(model, **usage):
                     finish_reason="stop", usage=Usage(**usage))
 
 
-def test_openai_cached_input_and_reasoning_are_not_double_counted():
+def test_openai_cached_input_and_reasoning_are_not_double_counted(token_rates):
     response = answer("gpt-4o", input_tokens=100, output_tokens=30, cache_read_tokens=40, reasoning_tokens=10)
     cost, details = estimate_cost(response, provider="openai-chat", requested_model=response.model)
     assert cost == pytest.approx(60 * 2.5e-6 + 40 * 1.25e-6 + 30 * 1e-5)
     assert details["kind"] == "estimate"
 
 
-def test_anthropic_disjoint_cache_counters():
+def test_anthropic_disjoint_cache_counters(token_rates):
     response = answer("claude-sonnet-4-5", input_tokens=100, output_tokens=30,
                       cache_read_tokens=40, cache_write_tokens=20)
     cost, _ = estimate_cost(response, provider="anthropic", requested_model=response.model)
     assert cost == pytest.approx(100 * 3e-6 + 40 * 3e-7 + 20 * 3.75e-6 + 30 * 1.5e-5)
 
 
-def test_gemini_reasoning_is_additional_output():
+def test_gemini_reasoning_is_additional_output(token_rates):
     response = answer("gemini-2.5-flash", input_tokens=100, output_tokens=30, reasoning_tokens=10)
     cost, _ = estimate_cost(response, provider="gemini", requested_model=response.model)
     assert cost == pytest.approx(100 * 3e-7 + 40 * 2.5e-6)
@@ -126,6 +152,7 @@ def test_long_context_and_priority_rates(monkeypatch):
 
 
 def test_unknown_price_and_malformed_metadata_do_not_fail_generation(monkeypatch):
+    monkeypatch.setattr(metadata, "_data", {})
     response = answer("unknown", input_tokens=1, output_tokens=1)
     assert estimate_cost(response, provider="openai-chat", requested_model="unknown")[0] is None
     monkeypatch.setattr("dspy.clients.costs.model_info", lambda *args: {"broken": object()})
@@ -135,10 +162,12 @@ def test_unknown_price_and_malformed_metadata_do_not_fail_generation(monkeypatch
 @pytest.mark.parametrize("router_name", ["model-router", "azure/model-router"])
 @pytest.mark.parametrize("fallback", [False, True])
 def test_azure_router_fee_is_not_an_inference_estimate(monkeypatch, router_name, fallback):
-    data = metadata._snapshot()
-    assert data["azure/model-router"]["input_cost_per_token"] > 0
-    data["openai/model-router"] = {"litellm_provider": "openai", "input_cost_per_token": 2e-6,
-                                   "output_cost_per_token": 7e-6}
+    data = {
+        "azure/model-router": {"litellm_provider": "azure", "input_cost_per_token": 1e-7,
+                               "output_cost_per_token": 8e-8},
+        "openai/model-router": {"litellm_provider": "openai", "input_cost_per_token": 2e-6,
+                                "output_cost_per_token": 7e-6},
+    }
     monkeypatch.setattr(metadata, "_data", data)
     response = answer("unlisted-selected-model" if fallback else router_name, input_tokens=1000, output_tokens=500)
     for provider, namespaces in (("azure-chat", None), ("declared-azure", ("azure",))):
@@ -152,7 +181,7 @@ def test_azure_router_fee_is_not_an_inference_estimate(monkeypatch, router_name,
 
 
 @pytest.mark.parametrize("reported", [None, 0, 0.123])
-def test_cost_provenance_survives_cache_record(reported):
+def test_cost_provenance_survives_cache_record(reported, token_rates):
     from dataclasses import replace
 
     from dspy.clients.call_result import CallResult, combine
@@ -211,7 +240,7 @@ def test_native_inference_hosts_use_their_metadata_namespace(monkeypatch, provid
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("engine", ["auto", "lm15"])
 @pytest.mark.parametrize("model_type", ["chat", "responses"])
-async def test_native_estimated_cost_through_public_calls_and_cache(monkeypatch, engine, model_type, asynchronous):
+async def test_native_estimated_cost_through_public_calls_and_cache(monkeypatch, token_rates, engine, model_type, asynchronous):
     from tests.clients.test_lm_engine_execution import DualResponse, native_transport
 
     body = {"id": "r", "model": "gpt-4o", "status": "completed",
