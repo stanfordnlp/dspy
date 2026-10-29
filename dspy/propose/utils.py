@@ -1,6 +1,13 @@
+import ast
 import inspect
 import json
 import re
+import textwrap
+from dataclasses import fields, is_dataclass
+from enum import Enum
+from typing import get_args
+
+from pydantic import BaseModel
 
 import dspy
 
@@ -143,6 +150,172 @@ def create_example_string(fields, example):
     # Joining all the field strings
     return "\n".join(output)
 
+
+def _referenced_annotation_declarations(signature):
+    declarations = []
+    seen = set()
+
+    def is_user_class(annotation):
+        if not isinstance(annotation, type):
+            return False
+        return annotation.__module__.split(".", 1)[0] not in {
+            "builtins",
+            "dataclasses",
+            "dspy",
+            "enum",
+            "pydantic",
+            "typing",
+        }
+
+    def namespace(annotation):
+        module = inspect.getmodule(annotation)
+        values = dict(vars(module)) if module else {}
+        for name, value in (getattr(annotation, "__pydantic_parent_namespace__", None) or {}).items():
+            if callable(value) and type(value).__name__ == "_PydanticWeakRef":
+                value = value()
+            values[name] = value
+        return values
+
+    def alias_source(owner, alias_name):
+        module = inspect.getmodule(owner)
+        if module is None:
+            return None
+        try:
+            source = inspect.getsource(module)
+            tree = ast.parse(source)
+        except (OSError, SyntaxError, TypeError):
+            return None
+        for node in tree.body:
+            target = None
+            if isinstance(node, ast.Assign) and len(node.targets) == 1:
+                target = node.targets[0]
+            elif isinstance(node, ast.AnnAssign):
+                target = node.target
+            elif type(node).__name__ == "TypeAlias":
+                target = node.name
+            if isinstance(target, ast.Name) and target.id == alias_name:
+                return ast.get_source_segment(source, node)
+        return None
+
+    def visit_source_dependencies(annotation):
+        try:
+            tree = ast.parse(textwrap.dedent(inspect.getsource(annotation)))
+        except (IndentationError, OSError, SyntaxError, TypeError):
+            return
+        class_node = next((node for node in tree.body if isinstance(node, ast.ClassDef)), None)
+        if class_node is None:
+            return
+        annotation_nodes = list(class_node.bases)
+        annotation_nodes.extend(
+            node.annotation for node in class_node.body if isinstance(node, ast.AnnAssign)
+        )
+        values = namespace(annotation)
+        for annotation_node in annotation_nodes:
+            for node in ast.walk(annotation_node):
+                if not isinstance(node, ast.Name) or node.id not in values:
+                    continue
+                value = values[node.id]
+                source = alias_source(annotation, node.id)
+                if is_user_class(value):
+                    visit(value)
+                elif source is not None:
+                    visit(value, alias_name=node.id, alias_source_text=source, alias_owner=annotation)
+
+    def visit(annotation, alias_name=None, alias_source_text=None, alias_owner=None):
+        if alias_name is not None:
+            key = ("alias", alias_name, id(annotation))
+            if key in seen:
+                return
+            seen.add(key)
+            values = namespace(alias_owner)
+            try:
+                tree = ast.parse(alias_source_text)
+            except SyntaxError:
+                tree = None
+            if tree is not None:
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.Name) or node.id == alias_name or node.id not in values:
+                        continue
+                    value = values[node.id]
+                    source = alias_source(alias_owner, node.id)
+                    if is_user_class(value):
+                        visit(value)
+                    elif source is not None:
+                        visit(value, alias_name=node.id, alias_source_text=source, alias_owner=alias_owner)
+            declarations.append((alias_name, annotation, alias_source_text))
+            return
+
+        try:
+            is_pydantic_model = isinstance(annotation, type) and issubclass(annotation, BaseModel)
+        except TypeError:
+            is_pydantic_model = False
+
+        is_enum = isinstance(annotation, type) and issubclass(annotation, Enum)
+        if is_pydantic_model or is_enum or (is_user_class(annotation) and is_dataclass(annotation)):
+            key = ("class", annotation)
+            if key in seen or not is_user_class(annotation):
+                return
+            seen.add(key)
+            for base in annotation.__bases__:
+                visit(base)
+            if is_pydantic_model:
+                for field in annotation.model_fields.values():
+                    visit(field.annotation)
+            else:
+                for field_annotation in getattr(annotation, "__annotations__", {}).values():
+                    visit(field_annotation)
+            visit_source_dependencies(annotation)
+            declarations.append(annotation)
+            return
+
+        if isinstance(annotation, (list, tuple)):
+            for argument in annotation:
+                visit(argument)
+            return
+
+        alias_value = getattr(annotation, "__value__", None)
+        if alias_value is not None and type(annotation).__name__ == "TypeAliasType":
+            key = ("alias_value", id(annotation))
+            if key in seen:
+                return
+            seen.add(key)
+            visit(alias_value)
+            return
+
+        for argument in get_args(annotation):
+            visit(argument)
+
+    for field in signature.fields.values():
+        visit(field.annotation)
+
+    return declarations
+
+
+def _pydantic_model_sources(signature):
+    sources = []
+    for declaration in _referenced_annotation_declarations(signature):
+        if isinstance(declaration, tuple):
+            name, annotation, source = declaration
+            sources.append(source or f"{name} = {inspect.formatannotation(annotation)}")
+            continue
+        try:
+            sources.append(inspect.getsource(declaration))
+        except (TypeError, OSError):
+            if issubclass(declaration, BaseModel):
+                schema = json.dumps(declaration.model_json_schema(), indent=2, sort_keys=True)
+                sources.append(f"# JSON Schema for {declaration.__name__}\n{schema}")
+            elif issubclass(declaration, Enum):
+                members = {name: member.value for name, member in declaration.__members__.items()}
+                sources.append(f"{declaration.__name__} = Enum({declaration.__name__!r}, {members!r})")
+            elif is_dataclass(declaration):
+                field_sources = "\n".join(
+                    f"    {field.name}: {inspect.formatannotation(field.type, base_module=declaration.__module__)}"
+                    for field in fields(declaration)
+                )
+                sources.append(f"@dataclass\nclass {declaration.__name__}:\n{field_sources}")
+    return sources
+
+
 def get_dspy_source_code(module):
     header = []
     base_code = ""
@@ -172,7 +345,15 @@ def get_dspy_source_code(module):
             except TypeError:
                 continue
             if isinstance(item, Parameter):
-                if hasattr(item, "signature") and item.signature is not None and item.signature.__pydantic_parent_namespace__["signature_name"] + "_sig" not in completed_set:
+                if (
+                    hasattr(item, "signature")
+                    and item.signature is not None
+                    and item.signature.__pydantic_parent_namespace__["signature_name"] + "_sig" not in completed_set
+                ):
+                    for model_source in _pydantic_model_sources(item.signature):
+                        if model_source not in completed_set:
+                            header.append(model_source)
+                            completed_set.add(model_source)
                     try:
                         header.append(inspect.getsource(item.signature))
                         print(inspect.getsource(item.signature))
