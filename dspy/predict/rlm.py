@@ -758,11 +758,16 @@ class RLM(Module):
                 final_reasoning=reasoning,
             )
 
-        # Format non-final result as output
-        if isinstance(result, list):
-            output = "\n".join(map(str, result))
+        # Render the interpreter value faithfully. PythonInterpreter and
+        # LocalInterpreter return the last expression (including 0, False, and
+        # empty containers) and return stdout only when that value is None.
+        # A list is that value, not a sequence of stdout lines.
+        if isinstance(result, str):
+            output = result
+        elif result is None:
+            output = ""
         else:
-            output = str(result) if result else ""
+            output = str(result)
 
         output = self._format_output(output)
         if self.verbose:
