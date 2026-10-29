@@ -29,7 +29,11 @@ class Ensemble(Teleprompter):
                 self.programs = programs
 
             def forward(self, *args, **kwargs):
-                programs = random.sample(self.programs, size) if size else self.programs
+                if size:
+                    k = min(size, len(self.programs))
+                    programs = random.sample(self.programs, k) if k else []
+                else:
+                    programs = self.programs
                 outputs = [prog(*args, **kwargs) for prog in programs]
 
                 if reduce_fn:
