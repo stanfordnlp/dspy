@@ -128,6 +128,16 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
             return await self.aforward(*args, **kwargs)
 
+    async def aforward(self, *args, **kwargs):
+        """Run a sync-only module's ``forward`` method in a worker thread.
+
+        Subclasses with native async logic should override this method.
+        """
+        from dspy.utils.asyncify import asyncify
+
+        forward = object.__getattribute__(self, "forward")
+        return await asyncify(forward)(*args, **kwargs)
+
     def named_predictors(self):
         """Return all named Predict modules in this module.
 
