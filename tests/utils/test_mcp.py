@@ -30,6 +30,36 @@ def make_call_tool_result(field_style, texts=(), structured=_UNSET, is_error=Fal
 
 
 @pytest.mark.extra
+def test_text_result_mode_preserves_non_text_block_positions():
+    from mcp.types import CallToolResult, ImageContent, TextContent
+
+    img = ImageContent(type="image", data="aW1nMQ==", mimeType="image/png")
+    before = TextContent(type="text", text="before")
+    after = TextContent(type="text", text="after")
+    mid = TextContent(type="text", text="mid")
+
+    mixed = _convert_mcp_tool_result(CallToolResult(content=[before, img, after]))
+    assert mixed[0] == "before"
+    assert mixed[1] is img
+    assert mixed[2] == "after"
+    # The mixed result must not collide with the pure-text result.
+    assert mixed != _convert_mcp_tool_result(CallToolResult(content=[before, after]))
+
+    sandwiched = _convert_mcp_tool_result(CallToolResult(content=[img, mid, img]))
+    assert sandwiched[0] is img
+    assert sandwiched[1] == "mid"
+    assert sandwiched[2] is img
+    assert sandwiched != _convert_mcp_tool_result(CallToolResult(content=[mid]))
+
+
+@pytest.mark.extra
+def test_single_empty_text_block_returns_empty_list():
+    from mcp.types import CallToolResult, TextContent
+
+    assert _convert_mcp_tool_result(CallToolResult(content=[TextContent(type="text", text="")])) == []
+
+
+@pytest.mark.extra
 def test_convert_mcp_tool_result_supports_both_field_styles_without_changing_results():
     camel_result = make_call_tool_result("camel", texts=["hi"], structured={"result": "ignored"})
     snake_result = make_call_tool_result("snake", texts=["a", "b"], structured={"result": "ignored"})
