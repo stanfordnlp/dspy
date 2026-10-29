@@ -69,6 +69,46 @@ def test_nested_named_predictors():
     assert "hop.predict2" in names
 
 
+def test_named_predictors_in_nested_containers_support_module_operations():
+    module = Module()
+    predictor = dspy.Predict("question -> answer")
+    group = {"predictor": predictor, "shared": predictor}
+    group["cycle"] = group
+    module.groups = [[group]]
+
+    assert module.named_predictors() == [("groups[0][0]['predictor']", predictor)]
+
+    state = module.dump_state()
+    assert list(state) == ["groups[0][0]['predictor']"]
+    predictor.demos = [Example(question="q", answer="a").with_inputs("question")]
+    reset_module = module.reset_copy()
+    assert reset_module.groups[0][0]["predictor"].demos == []
+
+    module.load_state(state)
+    assert predictor.demos == []
+
+    lm = DummyLM([{"answer": "a"}])
+    module.set_lm(lm)
+    assert predictor.lm is lm
+
+
+def test_map_named_predictors_preserves_dict_key_identity():
+    module = Module()
+    keys = [1, "both'\"quotes"]
+    module.predictors_by_key = {key: dspy.Predict("question -> answer") for key in keys}
+    originals = list(module.predictors_by_key.values())
+    replacements = [dspy.Predict("question -> answer") for _ in keys]
+    replacement_iter = iter(replacements)
+
+    assert [name for name, _ in module.named_predictors()] == [f"predictors_by_key[{key!r}]" for key in keys]
+
+    module.map_named_predictors(lambda _: next(replacement_iter))
+
+    assert list(module.predictors_by_key) == keys
+    assert list(module.predictors_by_key.values()) == replacements
+    assert all(original is not replacement for original, replacement in zip(originals, replacements, strict=True))
+
+
 def test_empty_module():
     module = Module()
     assert list(module.named_sub_modules()) == [("self", module)]
