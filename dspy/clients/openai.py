@@ -100,23 +100,23 @@ class OpenAIProvider(Provider):
         return model
 
     @staticmethod
-    def does_job_exist(job_id: str) -> bool:
+    def does_job_exist(job_id: str | None) -> bool:
+        if job_id is None:
+            return False
         try:
-            # TODO(nit): This call may fail for other reasons. We should check
-            # the error message to ensure that the job does not exist.
             openai.fine_tuning.jobs.retrieve(job_id)
             return True
-        except Exception:
+        except openai.NotFoundError:
             return False
 
     @staticmethod
-    def does_file_exist(file_id: str) -> bool:
+    def does_file_exist(file_id: str | None) -> bool:
+        if file_id is None:
+            return False
         try:
-            # TODO(nit): This call may fail for other reasons. We should check
-            # the error message to ensure that the file does not exist.
             openai.files.retrieve(file_id)
             return True
-        except Exception:
+        except openai.NotFoundError:
             return False
 
     @staticmethod
