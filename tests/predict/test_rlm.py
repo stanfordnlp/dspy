@@ -6,7 +6,10 @@ Test organization:
 - Integration tests (@pytest.mark.deno): PythonInterpreter with Deno
 """
 
+import asyncio
 import base64
+import importlib.util
+import inspect
 import io
 import sys
 from contextlib import contextmanager, redirect_stdout
@@ -24,7 +27,7 @@ from dspy.primitives.code_interpreter import (
     resolve_interpreter_factory,
 )
 from dspy.primitives.prediction import Prediction
-from dspy.primitives.python_interpreter import PythonInterpreter
+from dspy.primitives.python_interpreter import PythonInterpreter, _await_in_sync
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from dspy.primitives.sandbox_serializable import SandboxSerializable
 from dspy.utils.dummies import DummyLM
@@ -1331,6 +1334,123 @@ class TestRLMAsyncMock:
 
         result = await rlm.aforward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "done"
+
+
+class TestRLMVariadicAndAsyncTools:
+    """Tools shaped like the ones ``Tool.from_mcp_tool`` builds: async, ``*args``/``**kwargs`` (#10647)."""
+
+    def test_variadic_tool_is_exposed_with_its_schema_args(self):
+        async def bridge(*args, **kwargs):
+            return kwargs
+
+        tool = Tool(
+            func=bridge,
+            name="search",
+            args={"limit": {"type": "integer", "default": 10}, "query": {"type": "string"}},
+            arg_types={"limit": int, "query": str},
+        )
+        exposed = RLM("query -> answer", tools=[tool])._prepare_execution_tools()["search"]
+
+        # Required args come first so the signature is valid; sandbox wrappers are built from it.
+        assert str(inspect.signature(exposed)) == "(query: str, limit: int = 10)"
+        assert PythonInterpreter()._extract_parameters(exposed) == [
+            {"name": "query", "type": "str"},
+            {"name": "limit", "type": "int", "default": 10},
+        ]
+
+    def test_regular_tool_signature_is_unchanged(self):
+        def add(a: int, b: int = 0) -> str:
+            return str(a + b)
+
+        exposed = RLM("query -> answer", tools=[add])._prepare_execution_tools()["add"]
+        assert inspect.signature(exposed) == inspect.signature(add)
+
+    @pytest.mark.asyncio
+    async def test_aforward_runs_async_tools_on_the_callers_loop(self):
+        caller_loop = asyncio.get_running_loop()
+        tool_loops = []
+
+        async def lookup(name: str) -> str:
+            # An MCP tool awaits a session that lives on the caller's loop.
+            tool_loops.append(asyncio.get_running_loop())
+            await asyncio.sleep(0)
+            return f"user:{name}"
+
+        def execute(code, variables):
+            if "lookup" not in code:
+                return None  # facade setup
+            # Like PythonInterpreter: a sandbox tool call reaches the host synchronously.
+            result = mock.tools["lookup"](name="Adam")
+            if inspect.isawaitable(result):
+                result = _await_in_sync(result)
+            return FinalOutput({"answer": result})
+
+        mock = MockInterpreter(execute_fn=execute)
+        rlm = RLM("query -> answer", max_iters=2, tools=[lookup])
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Look up the user", "code": 'SUBMIT(lookup(name="Adam"))'},
+        ])
+
+        result = await rlm.aforward(query="who", interpreter_factory=lambda: mock)
+
+        assert result.answer == "user:Adam"
+        assert tool_loops == [caller_loop]
+
+
+@pytest.mark.deno
+@pytest.mark.extra
+@pytest.mark.skipif(importlib.util.find_spec("mcp") is None, reason="mcp is not installed")
+class TestRLMWithMCPTools:
+    @pytest.mark.asyncio
+    async def test_aforward_calls_mcp_tool_from_the_sandbox(self):
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
+        server_params = StdioServerParameters(
+            command=sys.executable,
+            args=[str(Path(__file__).parents[1] / "utils" / "resources" / "mcp_server.py")],
+        )
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await asyncio.wait_for(session.initialize(), timeout=5)
+                tools = [Tool.from_mcp_tool(session, tool) for tool in (await session.list_tools()).tools]
+                add = next(tool for tool in tools if tool.name == "add")
+
+                rlm = RLM("query -> answer", max_iters=3, tools=[add])
+                rlm.generate_action = make_mock_predictor([
+                    {"reasoning": "Inspect", "code": "import inspect\nprint(inspect.signature(add))"},
+                    {"reasoning": "Add", "code": "SUBMIT(str(add(a=2, b=3)))"},
+                ])
+                result = await asyncio.wait_for(rlm.acall(query="2 + 3"), timeout=120)
+
+        assert result.trajectory[0]["output"].strip() == "(a: int, b: int)"
+        assert result.answer == "5"
+
+    @pytest.mark.asyncio
+    async def test_aforward_calls_mcp_tool_without_inputs_from_the_sandbox(self):
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
+        server_params = StdioServerParameters(
+            command=sys.executable,
+            args=[str(Path(__file__).parents[1] / "utils" / "resources" / "mcp_server.py")],
+        )
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await asyncio.wait_for(session.initialize(), timeout=5)
+                tools = [Tool.from_mcp_tool(session, tool) for tool in (await session.list_tools()).tools]
+                current_datetime = next(tool for tool in tools if tool.name == "current_datetime")
+                assert current_datetime.args == {}
+
+                rlm = RLM("query -> answer", max_iters=3, tools=[current_datetime])
+                rlm.generate_action = make_mock_predictor([
+                    {"reasoning": "Inspect", "code": "import inspect\nprint(inspect.signature(current_datetime))"},
+                    {"reasoning": "Call", "code": "SUBMIT(current_datetime())"},
+                ])
+                result = await asyncio.wait_for(rlm.acall(query="now"), timeout=120)
+
+        assert result.trajectory[0]["output"].strip() == "()"
+        assert result.answer == "2025-07-23T09:10:10.0+00:00"
 
 
 class TestRLMTypeCoercionMock:
