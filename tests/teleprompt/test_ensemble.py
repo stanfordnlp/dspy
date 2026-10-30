@@ -50,6 +50,15 @@ def test_ensemble_with_size_limitation():
     assert len(outputs) == ensemble_size, "Ensemble did not respect the specified size limitation"
 
 
+@pytest.mark.parametrize("ensemble_size", [-1, 6])
+def test_ensemble_rejects_invalid_size_at_compile_time(ensemble_size):
+    """Invalid sample sizes should fail before the compiled program is invoked."""
+    programs = [MockProgram(i) for i in range(5)]
+
+    with pytest.raises(ValueError, match="Ensemble size must be between 0"):
+        Ensemble(size=ensemble_size).compile(programs)
+
+
 def test_ensemble_deterministic_behavior():
     """Verify that the Ensemble class raises an assertion for deterministic behavior."""
     with pytest.raises(
