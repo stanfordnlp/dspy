@@ -2093,13 +2093,16 @@ class TestRLMHistoryWithDummyLM:
 
     def test_replayed_actions_use_the_live_reasoning_field_name(self):
         """Without native reasoning the action LM writes its reasoning as `plan`; replay must not drop or rename it."""
-        with dummy_lm_context(
-            [
-                {"plan": "explore the data", "code": "x = 1\nprint(x)"},
-                {"plan": "done", "code": "SUBMIT(7)"},
-                {"plan": "answer again", "code": "SUBMIT(8)"},
-            ]
-        ) as lm, dspy.context(adapter=dspy.ChatAdapter()):
+        with (
+            dummy_lm_context(
+                [
+                    {"plan": "explore the data", "code": "x = 1\nprint(x)"},
+                    {"plan": "done", "code": "SUBMIT(7)"},
+                    {"plan": "answer again", "code": "SUBMIT(8)"},
+                ]
+            ) as lm,
+            dspy.context(adapter=dspy.ChatAdapter()),
+        ):
             rlm = RLM("query -> answer: int", max_iters=3)
             first = rlm(query="What is seven?", interpreter_factory=PythonInterpreter)
             rlm(query="And eight?", history=first.history, interpreter_factory=PythonInterpreter)
@@ -2113,13 +2116,16 @@ class TestRLMHistoryWithDummyLM:
 
     def test_replayed_step_message_matches_the_live_one(self):
         """On a later turn, each prior step's user message is sent byte-identical to the one sent live."""
-        with dummy_lm_context(
-            [
-                {"plan": "explore", "code": "x = 1\nprint(x)"},
-                {"plan": "done", "code": "SUBMIT(7)"},
-                {"plan": "answer again", "code": "SUBMIT(8)"},
-            ]
-        ) as lm, dspy.context(adapter=dspy.ChatAdapter()):
+        with (
+            dummy_lm_context(
+                [
+                    {"plan": "explore", "code": "x = 1\nprint(x)"},
+                    {"plan": "done", "code": "SUBMIT(7)"},
+                    {"plan": "answer again", "code": "SUBMIT(8)"},
+                ]
+            ) as lm,
+            dspy.context(adapter=dspy.ChatAdapter()),
+        ):
             rlm = RLM("query -> answer: int", max_iters=3)
             first = rlm(query="What is seven?", interpreter_factory=PythonInterpreter)
             live_step_messages = [call["messages"][-1]["content"] for call in lm.history]
@@ -2154,6 +2160,15 @@ class TestRLMHistoryWithDummyLM:
         # Outer `reasoning` output is not rendered as a section; it is visible in the FINAL output
         assert "[[ ## reasoning ## ]]" not in messages[2]["content"]
         assert "FINAL: {'reasoning': 'outer reasoning out'}" in messages[2]["content"]
+
+    def test_input_shaped_like_tool_calls_does_not_break_replay(self):
+        """An outer input recorded on a history event is user data, never parsed as ToolCalls during replay."""
+        with dummy_lm_context([{"plan": "look", "code": "print(1)"}, {"plan": "done", "code": "SUBMIT('ok')"}]):
+            rlm = RLM("data: dict -> answer", max_iters=2)
+            result = rlm(data={"tool_calls": "metadata text"}, interpreter_factory=PythonInterpreter)
+
+        assert result.answer == "ok"
+        assert result.history.messages[0]["data"] == {"tool_calls": "metadata text"}
 
     def test_reused_history_extract_fallback_with_outer_field_named_reasoning(self):
         """A fallback event whose outer output is named like an inner action field replays from its own fields,
@@ -2205,13 +2220,16 @@ class TestRLMHistoryWithDummyLM:
 
     def test_extract_request_gives_the_current_turn_as_text(self):
         """Extract gets this turn's steps as `repl_history` text in a single request, with no replayed turns."""
-        with dummy_lm_context(
-            [
-                {"plan": "earlier turn", "code": "SUBMIT(1)"},
-                {"plan": "explore", "code": "x = 7\nprint(x)"},
-                {"answer": "7"},
-            ]
-        ) as lm, dspy.context(adapter=dspy.ChatAdapter()):
+        with (
+            dummy_lm_context(
+                [
+                    {"plan": "earlier turn", "code": "SUBMIT(1)"},
+                    {"plan": "explore", "code": "x = 7\nprint(x)"},
+                    {"answer": "7"},
+                ]
+            ) as lm,
+            dspy.context(adapter=dspy.ChatAdapter()),
+        ):
             rlm = RLM("query -> answer: int", max_iters=1)
             first = rlm(query="What is one?", interpreter_factory=PythonInterpreter)
             rlm(query="What is seven?", history=first.history, interpreter_factory=PythonInterpreter)

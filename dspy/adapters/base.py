@@ -583,18 +583,12 @@ class Adapter:
 
         messages = []
         for message in conversation_history:
-            tool_call_field_name, tool_calls = _tool_calls_from_message(message)
-            tool_call_results = (
-                ToolCallResults.model_validate(tool_calls.tool_call_results)
-                if tool_calls is not None and tool_calls.tool_call_results is not None
-                else None
-            )
-
             # RLM history events (see `build_repl_event`): a REPLEntry (or extract-fallback marker) with the
             # RLM's own input/output fields recorded around it. Only fields the current signature declares are
             # rendered, so the replay is the inner LM's own transcript: `variables_info` on the first event of a
             # turn, then each iteration's reasoning/code as an assistant turn and its REPL output as a user turn.
-            # Handled before the generic rendering below so it never applies to RLM events.
+            # Handled before tool-call detection and the generic rendering below so neither applies to RLM events
+            # (an RLM input such as `{"tool_calls": ...}` is user data, not a ToolCalls value).
             if is_repl_event(message):
                 repl_inputs, repl_entry, repl_outputs = split_repl_event(message)
                 if isinstance(repl_entry, ExtractFallbackMarker):
@@ -632,6 +626,13 @@ class Adapter:
                 )
                 messages.append(user_message(content))
                 continue
+
+            tool_call_field_name, tool_calls = _tool_calls_from_message(message)
+            tool_call_results = (
+                ToolCallResults.model_validate(tool_calls.tool_call_results)
+                if tool_calls is not None and tool_calls.tool_call_results is not None
+                else None
+            )
 
             # Preserve the format reminder from the original request for prompt-cache reuse.
             # Output-only events must not acquire a synthetic user message containing just the reminder.
