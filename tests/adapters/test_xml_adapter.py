@@ -370,6 +370,52 @@ def test_xml_adapter_nullable_containers_round_trip(values):
     assert adapter.parse(Result, formatted) == expected
 
 
+def test_xml_adapter_nested_schema_metadata_is_preserved():
+    """Regression test: nested output fields keep their schema metadata in the prompt.
+
+    The XML example tree only carries property names, so the formatted structure must
+    also carry the nested model's docstring, its Field descriptions, and Literal
+    allowed values, as the pre-nested-rewrite format did.
+    """
+
+    class Policy(pydantic.BaseModel):
+        """Refund rules stated in the passages."""
+
+        days: int = pydantic.Field(description="Calendar days; never assume 30")
+        channel: Literal["web_form", "courier_pickup"] = pydantic.Field(
+            description="How the customer starts a return"
+        )
+
+    class TestSignature(dspy.Signature):
+        policy: Policy = dspy.OutputField()
+        policies: list[Policy] = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    structure = adapter.format_field_structure(TestSignature)
+    # The XML example shape is unchanged.
+    assert "<policy>\n<days>\n...\n</days>\n<channel>\n...\n</channel>\n</policy>" in structure
+    assert "<policies>\n<item>\n<days>\n...\n</days>\n<channel>\n...\n</channel>\n</item>\n</policies>" in structure
+    # The metadata the tree alone drops is present for each nested field.
+    assert structure.count("Refund rules stated in the passages") == 2
+    assert structure.count("Calendar days; never assume 30") == 2
+    assert structure.count("How the customer starts a return") == 2
+    assert structure.count("courier_pickup") == 2
+
+
+def test_xml_adapter_typed_dict_literal_values_are_preserved():
+    class Preferences(TypedDict):
+        theme: Literal["light", "dark"]
+        retries: int
+
+    class TestSignature(dspy.Signature):
+        preferences: Preferences = dspy.OutputField()
+
+    structure = XMLAdapter().format_field_structure(TestSignature)
+    assert "<preferences>\n<theme>\n...\n</theme>\n<retries>\n...\n</retries>\n</preferences>" in structure
+    assert "must adhere to the JSON schema" in structure
+    assert '"enum": ["light", "dark"]' in structure
+
+
 def test_xml_adapter_concise_prompt_preserves_type_guidance_and_dictionary_keys():
     from enum import Enum
     from typing import Any
@@ -511,6 +557,24 @@ def test_xml_adapter_typed_dict_schema_and_parsing():
     orders_schema = (
         "<orders>\n<item>\n<order_id>\n...\n</order_id>\n<address>\n<city>\n...\n</city>\n</address>\n"
         "<labels>\n<item>\n...\n</item>\n</labels>\n</item>\n</orders>"
+    )
+    order_schema += (
+        '        # note: the value you produce must adhere to the JSON schema: {"type": "object", '
+        '"$defs": {"Address": {"type": "object", "properties": {"city": {"type": "string", "title": "City"}}, '
+        '"required": ["city"], "title": "Address"}}, '
+        '"properties": {"address": {"anyOf": [{"$ref": "#/$defs/Address"}, {"type": "null"}]}, '
+        '"labels": {"type": "array", "items": {"type": "string"}, "title": "Labels"}, '
+        '"order_id": {"type": "integer", "title": "Order Id"}}, "required": ["order_id", "address", "labels"], '
+        '"title": "Order"}'
+    )
+    orders_schema += (
+        '        # note: the value you produce must adhere to the JSON schema: {"type": "array", '
+        '"$defs": {"Address": {"type": "object", "properties": {"city": {"type": "string", "title": "City"}}, '
+        '"required": ["city"], "title": "Address"}, "Order": {"type": "object", '
+        '"properties": {"address": {"anyOf": [{"$ref": "#/$defs/Address"}, {"type": "null"}]}, '
+        '"labels": {"type": "array", "items": {"type": "string"}, "title": "Labels"}, '
+        '"order_id": {"type": "integer", "title": "Order Id"}}, "required": ["order_id", "address", "labels"], '
+        '"title": "Order"}}, "items": {"$ref": "#/$defs/Order"}}'
     )
     system_instructions = adapter.format_field_structure(TestSignature)
     assert f"{order_schema}\n\n{orders_schema}" in system_instructions
@@ -1194,7 +1258,10 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                  "Your output fields are:\n"
                  "1. `answer` (AnswerCard):\n"
                  "Output format (replace placeholders):\n"
-                 "<answer>\n<answer>\n...\n</answer>\n<sources>\n<item>\n...\n</item>\n</sources>\n</answer>\n"
+                 "<answer>\n<answer>\n...\n</answer>\n<sources>\n<item>\n...\n</item>\n</sources>\n</answer>"
+                 '        # note: the value you produce must adhere to the JSON schema: {"type": "object", '
+                 '"properties": {"answer": {"type": "string", "title": "Answer"}, "sources": {"type": "array", '
+                 '"items": {"type": "string"}, "title": "Sources"}}, "required": ["answer", "sources"], "title": "AnswerCard"}\n'
                  "In adhering to this structure, your objective is: \n"
                  "        Answer using all supplied context."},
      {"role": "user",
@@ -1234,7 +1301,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                  'Who is Ada?\n'
                  '</question>\n\n'
                  'Output format (replace placeholders):\n'
-                 '<answer>\n<answer>\n...\n</answer>\n<sources>\n<item>\n...\n</item>\n</sources>\n</answer>\n\n'
+                 '<answer>\n<answer>\n...\n</answer>\n<sources>\n<item>\n...\n</item>\n</sources>\n</answer>        # note: the value you produce must adhere to the JSON schema: {"type": "object", "properties": {"answer": {"type": "string", "title": "Answer"}, "sources": {"type": "array", "items": {"type": "string"}, "title": "Sources"}}, "required": ["answer", "sources"], "title": "AnswerCard"}\n\n'
                  'Use this format for text outputs. Put field tags on separate lines. '
                  'Write string values literally, without XML or JSON escaping.'},
      {"role": "assistant",
@@ -1262,7 +1329,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                            '</question>\n'
                            '\n'
                            'Output format (replace placeholders):\n'
-                           '<answer>\n<answer>\n...\n</answer>\n<sources>\n<item>\n...\n</item>\n</sources>\n</answer>\n\n'
+                           '<answer>\n<answer>\n...\n</answer>\n<sources>\n<item>\n...\n</item>\n</sources>\n</answer>        # note: the value you produce must adhere to the JSON schema: {"type": "object", "properties": {"answer": {"type": "string", "title": "Answer"}, "sources": {"type": "array", "items": {"type": "string"}, "title": "Sources"}}, "required": ["answer", "sources"], "title": "AnswerCard"}\n\n'
                            'Use this format for text outputs. Put field tags on separate lines. '
                            'Write string values literally, without XML or JSON escaping.'}]}]
     assert messages == expected_messages
@@ -1291,7 +1358,12 @@ def test_xml_adapter_format_exact_messages_with_nested_pydantic_output():
                  "1. `summary` (XmlSummary):\n"
                  "Output format (replace placeholders):\n"
                  "<summary>\n<title>\n...\n</title>\n<address>\n<city>\n...\n</city>\n<country>\n...\n</country>\n"
-                 "</address>\n</summary>\n"
+                 "</address>\n</summary>"
+                 '        # note: the value you produce must adhere to the JSON schema: {"type": "object", '
+                 '"$defs": {"XmlAddress": {"type": "object", "properties": {"city": {"type": "string", "title": "City"}, '
+                 '"country": {"type": "string", "title": "Country"}}, "required": ["city", "country"], '
+                 '"title": "XmlAddress"}}, "properties": {"address": {"$ref": "#/$defs/XmlAddress"}, '
+                 '"title": {"type": "string", "title": "Title"}}, "required": ["title", "address"], "title": "XmlSummary"}\n'
                  "In adhering to this structure, your objective is: \n"
                  "        Given the fields `question`, produce the fields `summary`."},
      {"role": "user",
@@ -1301,7 +1373,12 @@ def test_xml_adapter_format_exact_messages_with_nested_pydantic_output():
                  "\n"
                  "Output format (replace placeholders):\n"
                  "<summary>\n<title>\n...\n</title>\n<address>\n<city>\n...\n</city>\n<country>\n...\n</country>\n"
-                 "</address>\n</summary>\n\n"
+                 "</address>\n</summary>"
+                 '        # note: the value you produce must adhere to the JSON schema: {"type": "object", '
+                 '"$defs": {"XmlAddress": {"type": "object", "properties": {"city": {"type": "string", "title": "City"}, '
+                 '"country": {"type": "string", "title": "Country"}}, "required": ["city", "country"], '
+                 '"title": "XmlAddress"}}, "properties": {"address": {"$ref": "#/$defs/XmlAddress"}, '
+                 '"title": {"type": "string", "title": "Title"}}, "required": ["title", "address"], "title": "XmlSummary"}\n\n'
                  "Use this format for text outputs. Put field tags on separate lines. "
                  "Write string values literally, without XML or JSON escaping."}]
     assert messages == expected_messages
@@ -1394,13 +1471,13 @@ Output format (replace placeholders):
 <item>
 ...
 </item>
-</answers>
+</answers>        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "string"}}
 
 <scores>
 <item>
 ...
 </item>
-</scores>
+</scores>        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}
 In adhering to this structure, your objective is:\x20
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
