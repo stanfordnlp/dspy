@@ -8,6 +8,7 @@ Test organization:
 
 import base64
 import io
+import json
 import sys
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
@@ -17,6 +18,7 @@ import pydantic
 import pytest
 
 import dspy
+from dspy.adapters.types.decision import Score
 from dspy.adapters.types.tool import Tool
 from dspy.predict.rlm import RLM, _LLMCallBudget, _strip_code_fences
 from dspy.primitives.code_interpreter import (
@@ -2317,6 +2319,42 @@ class TestRLMCustomTypes:
         assert _png_size(result.rotated) == (4, 6)
         assert result.tag == _Sticker(sticker_label="silver")
 
+    @pytest.mark.parametrize("factory", _CUSTOM_TYPE_FACTORIES)
+    def test_llm_query_and_sub_agents_receive_and_return_custom_types(self, factory):
+        photo = _png(6, 4)
+
+        def rate() -> Score:
+            """Rate the photo."""
+            return Score(value=0.5, confidence=0.9)
+
+        rlm = RLM("photo: dspy.Image -> answer", tools=[rate], max_iters=2, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor([
+            {
+                "reasoning": "Show the image to llm_query and sub-agents",
+                "code": (
+                    "seen = llm_query(['What color?', photo, rate()])\n"
+                    "described = dspy.Predict('picture -> answer')(picture=photo).answer\n"
+                    "drawn = dspy.Predict('request -> drawing: dspy.Image')(request='square').drawing\n"
+                    "print(drawn.to_pil().size)"
+                ),
+            },
+            {"reasoning": "Submit", "code": "SUBMIT(described)"},
+        ])
+
+        lm = DummyLM([{"answer": "red"}, {"answer": "red"}, {"drawing": {"url": _png(2, 2).url}}], adapter=dspy.ChatAdapter())
+        lm.kwargs.update(temperature=0.7, max_tokens=321)
+        with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+            result = rlm(photo=photo)
+
+        assert result.trajectory[0]["output"].strip() == "(2, 2)"
+        llm_query_message, sub_agent_message = lm.history[0]["messages"][-1], lm.history[1]["messages"][-1]
+        image_part = {"type": "image", "media_type": "image/png", "data": photo.url.split(",", 1)[1]}
+        question, image, rating = llm_query_message["content"]
+        assert (question, image) == ({"type": "text", "text": "What color?"}, image_part)
+        assert json.loads(rating["text"]) == {"value": 0.5, "confidence": 0.9}
+        llm_query_config = lm.history[0]["request"].config
+        assert (llm_query_config.temperature, llm_query_config.max_tokens) == (0.7, 321)
+        assert image_part in sub_agent_message["content"]
 
     @pytest.mark.deno
     def test_sandbox_packages_load_for_types_outside_the_signature(self):

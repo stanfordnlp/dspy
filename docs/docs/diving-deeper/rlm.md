@@ -67,7 +67,7 @@ The public call validates the inputs against the signature, builds the variable 
 The model writes these into its code blocks. You don’t call them, but knowing them tells you what the model can do.
 
 **`llm_query(prompt)`**
-One sub-LLM call. It sends the prompt to `sub_lm` or the configured LM, increments the counter, and returns the response text. It raises if the prompt is empty or the budget is spent.
+One sub-LLM call. It sends the prompt to `sub_lm` or the configured LM, increments the counter, and returns the response text. The prompt may also be a list of strings and DSPy values such as images, sent as one multimodal message. It raises if the prompt is empty or the budget is spent.
 
 **`llm_query_batched(prompts)`**
 Concurrent sub-LLM calls over a list, run on an eight-worker thread pool and returned in input order. A failed call comes back as an `[ERROR] ...` string in its slot rather than aborting the batch. This beats a Python loop of `llm_query` when the model has many independent snippets to read.
@@ -96,6 +96,9 @@ A zero-argument callable that returns a fresh `CodeInterpreter` for one invocati
 
 **`__call__(**inputs, interpreter_factory=...)` / `acall(**inputs, interpreter_factory=...)`**
 A per-invocation factory override, supplied by keyword. For example, `rlm(query=query, interpreter_factory=dspy.PythonInterpreter)` explicitly chooses PythonInterpreter even when another factory is configured. The factory must return a fresh interpreter; RLM injects tools and output metadata and always shuts it down. Its `execution_instructions` metadata controls the runtime guidance for that invocation without changing the shared predictor. Sub-agents built in the sandbox run their own code on this factory too. Live interpreter instances are no longer accepted at call time. The factory option is keyword-only, and `interpreter_factory` is reserved for runtime configuration rather than signature inputs.
+
+**DSPy types (`dspy.Image`, `dspy.Audio`, custom `dspy.Type` subclasses)**
+These cross the sandbox boundary as themselves: inputs, tool results, tool arguments, `SUBMIT` values, `llm_query` parts, and sub-agent inputs and outputs. In the sandbox each value is a dict of its fields with attribute access and a short `repr`. A type adds sandbox methods through `sandbox_methods()` and the packages they need through `sandbox_packages()`; `dspy.Image` provides `to_pil()` and `dspy.Image.from_pil(image)`, with Pillow loaded by `PythonInterpreter`.
 
 **`dspy.SandboxSerializable`**
 The base class for inputs that need custom loading. Implement `sandbox_setup`, `to_sandbox`, `sandbox_assignment`, and `rlm_preview`. It also defines a Pydantic schema hook, so a subclass can be a typed field in a signature, as in `data: DataFrame = dspy.InputField()`.
