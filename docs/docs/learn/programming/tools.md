@@ -213,6 +213,8 @@ the screenshot below:
 
 Native function calling automatically checks whether the LM supports it. DSPy's built-in [`dspy.LM`][dspy.LM] uses model metadata and the selected backend's capabilities; native routes are bounded by their wire support. [Custom engines](../../tutorials/custom_lm_engines/index.md) can declare `supports_function_calling` to opt in. If the model does not support native function calling, DSPy falls back to manual text-based parsing even when `use_native_function_calling=True` is set. This adapter choice does not switch inference backends.
 
+Tools can return media such as a `dspy.Image`. With native function calling, it goes inside the tool result where the API carries it (OpenAI Responses, Anthropic, Gemini 3). Where tool results take text only, such as OpenAI Chat Completions or Gemini 2.5, the tool result keeps a placeholder and the media follows in a user message labelled with its tool call. `lm.supported_tool_result_media` reports which media a route carries.
+
 ## Async Tools
 
 DSPy tools support both synchronous and asynchronous functions. When working with async tools, you have two options:
