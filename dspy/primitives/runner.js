@@ -61,7 +61,9 @@ def ${toolName}(${signature}):
     parsed = result.to_py() if isinstance(result, JsProxy) else result
     if isinstance(parsed, dict) and parsed.get("${TOOL_BRIDGE_ERROR_KEY}"):
         raise RuntimeError(parsed.get("message", "Tool bridge error"))
-    return parsed
+    # The sandbox dspy facade, when installed, rebuilds dspy.Type values in tool results.
+    decode = globals().get("_dspy_decode")
+    return decode(parsed) if callable(decode) else parsed
 `;
 };
 
@@ -142,8 +144,17 @@ globalThis.addEventListener("unhandledrejection", (event) => {
 });
 
 const pyodide = await pyodideModule.loadPyodide();
+const packagesArg = Deno.args.find((arg) => arg.startsWith("--dspy-packages="))?.slice(16);
+if (packagesArg) await pyodide.loadPackage(JSON.parse(packagesArg));
+
+// Revoke startup-only access (Pyodide's cache, package downloads) before any sandboxed code runs.
 const denoDir = Deno.args.find((arg) => arg.startsWith("--dspy-deno-dir="))?.slice(16);
 if (denoDir) await Deno.permissions.revoke({ name: "read", path: denoDir });
+if (denoDir && Deno.args.includes("--dspy-revoke-package-cache-write")) {
+  await Deno.permissions.revoke({ name: "write", path: denoDir });
+}
+const packageNet = Deno.args.find((arg) => arg.startsWith("--dspy-revoke-package-net="))?.slice(26);
+if (packageNet) await Deno.permissions.revoke({ name: "net", host: packageNet });
 
 // Tool call support: allows Python code to call host-side functions
 // The stdin reader is shared so tool_call can read responses during execution

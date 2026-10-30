@@ -45,6 +45,79 @@ class _DspyPrediction:
         return "Prediction(" + repr(object.__getattribute__(self, "_fields")) + ")"
 
 
+_DSPY_TYPE_KEY = "__dspy_type__"
+
+
+class _DspyValue(dict):
+    """Sandbox-side stand-in for a host ``dspy.Type`` value: a dict of its fields tagged with its type name.
+
+    It stays a plain JSON object, so it crosses back to the host intact through any interpreter. Types
+    with ``sandbox_methods`` get a subclass, reachable as ``dspy.<TypeName>``, that adds those methods.
+    """
+
+    _dspy_type_name = None
+
+    def __init__(self, *_args, **_fields):
+        super().__init__(*_args, **_fields)
+        if _DSPY_TYPE_KEY not in self:
+            self[_DSPY_TYPE_KEY] = type(self)._dspy_type_name
+
+    def __getattr__(self, _name):
+        try:
+            return self[_name]
+        except KeyError:
+            raise AttributeError(_name) from None
+
+    # Attribute writes edit the fields, which are all that crosses back to the host.
+    def __setattr__(self, _name, _value):
+        self[_name] = _value
+
+    def __delattr__(self, _name):
+        try:
+            del self[_name]
+        except KeyError:
+            raise AttributeError(_name) from None
+
+    def __repr__(self):
+        def _short(_v):
+            _r = repr(_v)
+            return _r if len(_r) <= 80 else _r[:60] + "..." + " (" + str(len(_r)) + " chars)"
+
+        _fields = ", ".join(_k + "=" + _short(_v) for _k, _v in self.items() if _k != _DSPY_TYPE_KEY)
+        return _dspy_short_name(self.get(_DSPY_TYPE_KEY)) + "(" + _fields + ")"
+
+
+def _dspy_short_name(_tag):
+    # Tags are module-qualified host class names; show and expose the class name alone.
+    return str(_tag).rsplit(".", 1)[-1]
+
+
+_dspy_value_types = {}
+
+
+def _dspy_define_value_types(_methods):
+    # One _DspyValue subclass per host type with sandbox_methods (tag -> method source).
+    for _tag, _source in _methods.items():
+        _name = _dspy_short_name(_tag)
+        _body = "\n".join("    " + _line for _line in _source.splitlines())
+        _namespace = {"_DspyValue": _DspyValue}
+        exec("class " + _name + "(_DspyValue):\n    _dspy_type_name = " + repr(_tag) + "\n" + _body, _namespace)
+        _dspy_value_types[_tag] = _namespace[_name]
+
+
+def _dspy_decode(_v):
+    # Rebuild tagged dicts from the host (tool results, sub-agent outputs, inputs) as dspy values.
+    if isinstance(_v, dict):
+        _items = {_k: _dspy_decode(_x) for _k, _x in _v.items()}
+        _name = _items.get(_DSPY_TYPE_KEY)
+        if isinstance(_name, str):
+            return _dspy_value_types.get(_name, _DspyValue)(_items)
+        return _items
+    if isinstance(_v, list):
+        return [_dspy_decode(_x) for _x in _v]
+    return _v
+
+
 class _DspyProxy:
     """Sandbox-side handle to a host predictor. Calling it runs the real predictor on the host."""
 
@@ -146,6 +219,12 @@ _dspy.Signature = _dspy_signature
 _dspy.Tool = _dspy_tool
 for _k in ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought", "ReAct", "ReActV2"):
     setattr(_dspy, _k, _dspy_make_ctor(_k))
+_dspy_define_value_types(globals().get("__dspy_type_methods") or {})
+for _k, _v in _dspy_value_types.items():
+    # Never shadow a facade export or an earlier-loaded type (DSPy's own load first); a type whose name is
+    # taken keeps its methods on its values but has no ``dspy.<Name>`` constructor.
+    if not hasattr(_dspy, _dspy_short_name(_k)):
+        setattr(_dspy, _dspy_short_name(_k), _v)
 dspy = _dspy
 
 # Register as the importable ``dspy`` only inside the sandbox, where the registered host tools are

@@ -111,7 +111,10 @@ class Session:
         self.output_fields: list[dict[str, Any]] | None = None
 
     def call_tool(self, name: str, *args: Any, **kwargs: Any) -> Any:
-        return self.protocol.call_tool(name, args, kwargs)
+        value = self.protocol.call_tool(name, args, kwargs)
+        # The sandbox dspy facade, when installed, rebuilds dspy.Type values in tool results.
+        decode = self.namespace.get("_dspy_decode")
+        return decode(value) if callable(decode) else value
 
     def configure(self, tool_names: list[str], output_fields: list[dict[str, Any]] | None) -> None:
         if any(

@@ -301,3 +301,36 @@ def test_direct_tool_calls_receive_restored_custom_type_inputs() -> None:
     image = dspy.Image(url="https://example.com/x.png")
     assert program(image=image).a == "a cat"
     assert seen["img"] is image  # the original object, not the serialized tag string
+
+
+@deno_required
+def test_async_tool_results_keep_their_custom_type() -> None:
+    """An async tool's dspy.Image result reaches the sandbox, with its methods, and the next tool as an image."""
+    seen: dict = {}
+    png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+
+    async def snap() -> dspy.Image:
+        """Take a screenshot."""
+        return dspy.Image(png)
+
+    def describe(img) -> str:
+        """Describe an image."""
+        seen["img"] = img
+        return "a cat"
+
+    src = textwrap.dedent(
+        """
+        class SnapModule(dspy.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, q):
+                img = snap()
+                return dspy.Prediction(a=describe(img=img) + " " + str(img.to_pil().size))
+        """
+    ).strip()
+
+    program = Flex(Echo, tools=[snap, describe], interpreter_factory=lambda: dspy.PythonInterpreter())
+    program._bind_code(src)
+    assert program(q="x").a == "a cat (1, 1)"
+    assert seen["img"] == dspy.Image(png)

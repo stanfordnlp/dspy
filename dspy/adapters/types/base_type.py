@@ -52,6 +52,22 @@ class Type(pydantic.BaseModel):
         return ""
 
     @classmethod
+    def sandbox_methods(cls) -> str:
+        """Python source for methods on this type's values inside a code sandbox.
+
+        Sandboxed code (``dspy.RLM``, ``dspy.Flex``) receives custom-type values as dicts of their fields
+        with attribute access; methods defined here are added to that class, which sandboxed code can also
+        reach as ``dspy.<TypeName>``. The source runs in the sandbox, not the host, so import modules inside
+        each method and construct new values with ``cls(**fields)``.
+        """
+        return ""
+
+    @classmethod
+    def sandbox_packages(cls) -> list[str]:
+        """Packages that interpreters able to provision packages should install for ``sandbox_methods``."""
+        return []
+
+    @classmethod
     def extract_custom_type_from_annotation(cls, annotation):
         """Extract all custom types from the annotation.
 

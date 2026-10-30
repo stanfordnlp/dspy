@@ -25,6 +25,34 @@ except ImportError:
 
 _UNSET = object()
 
+# Methods of `dspy.Image` values inside a code sandbox (see `Type.sandbox_methods`).
+_SANDBOX_METHODS = '''
+def to_pil(self):
+    """Decode this image into a PIL image (needs Pillow and an embedded data URI, not a remote URL)."""
+    import base64
+    import io
+
+    from PIL import Image as PILImage
+
+    header, separator, data = self.url.partition(",")
+    if not (header.startswith("data:") and header.endswith(";base64") and separator):
+        raise ValueError(f"to_pil() needs an embedded base64 image, not a URL: {self.url[:100]}")
+    image = PILImage.open(io.BytesIO(base64.b64decode(data)))
+    image.load()
+    return image
+
+@classmethod
+def from_pil(cls, image, format="PNG"):
+    """Encode a PIL image as a dspy.Image value."""
+    import base64
+    import io
+
+    buffer = io.BytesIO()
+    image.save(buffer, format=format)
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return cls(url=f"data:image/{format.lower()};base64,{encoded}")
+'''
+
 
 class Image(Type):
     url: str
@@ -158,6 +186,14 @@ class Image(Type):
             stacklevel=2,
         )
         return cls(pil_image)
+
+    @classmethod
+    def sandbox_methods(cls) -> str:
+        return _SANDBOX_METHODS
+
+    @classmethod
+    def sandbox_packages(cls) -> list[str]:
+        return ["Pillow"]
 
     def __str__(self):
         return self.serialize_model()

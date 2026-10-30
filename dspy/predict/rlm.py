@@ -10,12 +10,14 @@ Reference: "Recursive Language Models" (Zhang, Kraska, Khattab, 2025)
 
 from __future__ import annotations
 
+import ast
 import base64
 import contextvars
 import functools
 import inspect
 import keyword
 import logging
+import textwrap
 import threading
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -25,6 +27,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator
 import pydantic
 
 import dspy
+from dspy.adapters.types.base_type import Type
 from dspy.adapters.types.decision import Choice, Noul, Score
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
@@ -32,12 +35,21 @@ from dspy.primitives.code_interpreter import (
     SIMPLE_TYPES,
     CodeExecutionError,
     CodeInterpreter,
+    CodeInterpreterError,
     FinalOutput,
     _validate_interpreter,
     _validate_interpreter_factory,
     resolve_interpreter_factory,
 )
-from dspy.primitives.facade import CALL_TOOL, CONSTRUCT_TOOL, FacadeInvocation, is_reserved_sandbox_name
+from dspy.primitives.facade import (
+    CALL_TOOL,
+    CONSTRUCT_TOOL,
+    FacadeInvocation,
+    from_sandbox_value,
+    is_reserved_sandbox_name,
+    preload_sandbox_packages,
+    to_sandbox_value,
+)
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -145,6 +157,40 @@ def _strip_code_fences(code: str) -> str:
         return remainder.strip()
 
     return remainder[:block_end].strip()
+
+
+def _sandbox_preview(value: Any, limit: int = 100) -> Any:
+    """Shorten long strings, such as base64 payloads, in a value's sandbox form for the variable preview."""
+    if isinstance(value, str) and len(value) > limit:
+        return f"{value[:limit]}... ({len(value):,} chars)"
+    if isinstance(value, dict):
+        return {k: _sandbox_preview(v, limit) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sandbox_preview(v, limit) for v in value]
+    return value
+
+
+def _types_in_value(value: Any) -> set[type[Type]]:
+    if isinstance(value, Type):
+        return {type(value)}
+    items = value.values() if isinstance(value, dict) else value if isinstance(value, (list, tuple)) else ()
+    return set().union(*(_types_in_value(v) for v in items))
+
+
+def _sandbox_methods_desc(types: set[type[Type]]) -> str:
+    """Describe how values of ``types`` appear in the sandbox, listing each type's sandbox methods."""
+    lines = []
+    for cls in sorted(types, key=lambda cls: cls.__name__):
+        methods = []
+        for node in ast.parse(textwrap.dedent(cls.sandbox_methods())).body:
+            if isinstance(node, ast.FunctionDef):
+                node.args.args = node.args.args[1:]  # drop self/cls
+                methods.append(f"{node.name}({ast.unparse(node.args)})")
+        line = f"dspy.{cls.__name__} values are dicts of their fields with attribute access; printing shows a summary."
+        if methods:
+            line += f" Methods (also on `dspy.{cls.__name__}`): {', '.join(methods)}."
+        lines.append(line)
+    return "\n".join(lines)
 
 
 @experimental
@@ -512,6 +558,12 @@ class RLM(Module):
             field_info = self.signature.input_fields.get(name)
             if isinstance(value, SandboxSerializable):
                 var = build_repl_variable(value, name, field_info=field_info)
+            elif _types_in_value(value):
+                var = REPLVariable.from_value(name, _sandbox_preview(to_sandbox_value(value)), field_info=field_info)
+                note = _sandbox_methods_desc(_types_in_value(value))
+                var = var.model_copy(
+                    update={"type_name": type(value).__name__, "desc": f"{var.desc}\n{note}" if var.desc else note}
+                )
             else:
                 var = REPLVariable.from_value(name, value, field_info=field_info)
             variables.append(var)
@@ -536,15 +588,23 @@ class RLM(Module):
     def _prepare_serializable_vars(
         self, input_args: dict[str, Any], repl: CodeInterpreter,
     ) -> dict[str, Any]:
-        """Inject SandboxSerializable values into the interpreter.
+        """Inject SandboxSerializable and dspy.Type values into the interpreter once.
 
         For each SandboxSerializable value in input_args, serializes it and
-        executes setup + assignment code in the interpreter. Returns the
-        remaining non-serializable args (for per-iteration use).
+        executes setup + assignment code in the interpreter. Values containing
+        dspy.Type values are injected in their tagged JSON form and rebuilt by the
+        sandbox dspy facade, when installed. Returns the remaining args (for
+        per-iteration use).
         """
         repl.start()
         regular_args = {}
+        facade_installed = CALL_TOOL in repl.tools
         for name, value in input_args.items():
+            if _types_in_value(value):
+                raw_var_name = f"_raw_{name}"
+                decode = f"_dspy_decode({raw_var_name})" if facade_installed else raw_var_name
+                repl.execute(f"{name} = {decode}", variables={raw_var_name: to_sandbox_value(value)})
+                continue
             if not isinstance(value, SandboxSerializable):
                 regular_args[name] = value
                 continue
@@ -604,12 +664,13 @@ class RLM(Module):
 
     def _make_interpreter_tool(self, tool: Tool) -> Callable:
         """Preserve function metadata while routing execution through Tool."""
+        # dspy.Type values cross the sandbox boundary in their tagged JSON form (see facade.to_sandbox_value).
         if inspect.iscoroutinefunction(tool.func) or inspect.iscoroutinefunction(getattr(tool.func, "__call__", None)):
             async def invoke(**kwargs):
-                return await tool.acall(**kwargs)
+                return to_sandbox_value(await tool.acall(**from_sandbox_value(kwargs)))
         else:
             def invoke(**kwargs):
-                return tool(**kwargs)
+                return to_sandbox_value(tool(**from_sandbox_value(kwargs)))
 
         functools.update_wrapper(invoke, tool.func)
         invoke.__signature__ = inspect.signature(tool.func)
@@ -701,8 +762,8 @@ class RLM(Module):
             field = self.signature.output_fields[name]
             annotation = getattr(field, "annotation", str)
             try:
-                parsed_outputs[name] = parse_value(raw_output[name], annotation)
-            except (ValueError, pydantic.ValidationError) as e:
+                parsed_outputs[name] = parse_value(from_sandbox_value(raw_output[name]), annotation)
+            except (ValueError, pydantic.ValidationError, CodeInterpreterError) as e:
                 type_errors.append(
                     f"{name}: expected {annotation.__name__ if hasattr(annotation, '__name__') else annotation}, "
                     f"got {type(raw_output[name]).__name__}: {e}"
@@ -848,6 +909,7 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter_factory) as repl:
+            preload_sandbox_packages(repl)
             sub_agent_rules = self._setup_facade(repl, budget, interpreter_factory)
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
@@ -946,6 +1008,7 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter_factory) as repl:
+            preload_sandbox_packages(repl)
             sub_agent_rules = self._setup_facade(repl, budget, interpreter_factory)
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)

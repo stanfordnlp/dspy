@@ -11,7 +11,9 @@ import io
 import sys
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
+from typing import NamedTuple
 
+import pydantic
 import pytest
 
 import dspy
@@ -2222,6 +2224,123 @@ class TestRLMFacadeDeno:
         assert "facade with serializable input" in result.trajectory[0]["output"]
         assert len(result.trajectory) == 2
 
+
+def _png(width: int, height: int) -> dspy.Image:
+    from PIL import Image as PILImage
+
+    buffer = io.BytesIO()
+    PILImage.new("RGB", (width, height), (255, 0, 0)).save(buffer, format="PNG")
+    return dspy.Image(buffer.getvalue())
+
+
+def _png_size(image: dspy.Image) -> tuple[int, int]:
+    from PIL import Image as PILImage
+
+    return PILImage.open(io.BytesIO(base64.b64decode(image.url.split(",", 1)[1]))).size
+
+
+class _Sticker(dspy.Type):
+    """A custom type without sandbox methods, whose field has an alias."""
+
+    label: str = pydantic.Field(alias="sticker_label")
+
+    def format(self):
+        return [dspy.lm15.TextPart(f"<sticker {self.label}>")]
+
+
+_CUSTOM_TYPE_FACTORIES = [
+    pytest.param(lambda: __import__("dspy").LocalInterpreter(), id="local"),
+    pytest.param(PythonInterpreter, id="deno", marks=pytest.mark.deno),
+]
+
+
+class TestRLMCustomTypes:
+    @pytest.mark.parametrize("factory", _CUSTOM_TYPE_FACTORIES)
+    def test_custom_types_cross_the_sandbox_as_themselves(self, factory):
+        class Image(dspy.Type):  # shares dspy.Image's name; dspy.Image must keep its values and constructor
+            url: str
+
+            @classmethod
+            def sandbox_methods(cls):
+                return "def shout(self):\n    return self.url.upper()"
+
+        received = {}
+
+        def screenshot() -> dspy.Image:
+            """Take a screenshot."""
+            return _png(3, 5)
+
+        class Point(NamedTuple):
+            x: int
+            y: int
+
+        def locate() -> Point:
+            """Locate the sticker."""
+            return Point(3, 4)
+
+        def make_sticker() -> _Sticker:
+            """Make a sticker."""
+            return _Sticker(sticker_label="gold")
+
+        def inspect_values(image: dspy.Image, sticker: _Sticker, images: list[dspy.Image], meta: dict) -> str:
+            """Inspect values."""
+            received.update(image=image, sticker=sticker, images=images, meta=meta)
+            return "ok"
+
+        rlm = RLM(
+            "photo: dspy.Image -> rotated: dspy.Image, tag: _Sticker",
+            tools=[screenshot, make_sticker, locate, inspect_values],
+            max_iters=2,
+            interpreter_factory=factory,
+        )
+        rlm.generate_action = make_mock_predictor([
+            {
+                "reasoning": "Use the image methods on an input and a tool result",
+                "code": (
+                    "shot, sticker = screenshot(), make_sticker()\n"
+                    "rotated = dspy.Image.from_pil(photo.to_pil().rotate(90, expand=True))\n"
+                    "print(photo.to_pil().size, shot.to_pil().size, sticker.label, repr(sticker), locate()['x'])\n"
+                    "sticker.label = 'silver'\n"
+                    "print(inspect_values(image=rotated, sticker=sticker, images=[photo, shot], meta={'__dspy_type__': None}))"
+                ),
+            },
+            {"reasoning": "Submit", "code": "SUBMIT(rotated, sticker)"},
+        ])
+
+        result = rlm(photo=_png(6, 4))
+
+        assert result.trajectory[0]["output"].strip() == "(6, 4) (3, 5) gold _Sticker(label='gold') 3\nok"
+        assert isinstance(received["image"], dspy.Image) and _png_size(received["image"]) == (4, 6)
+        assert [_png_size(image) for image in received["images"]] == [(6, 4), (3, 5)]
+        assert received["meta"] == {"__dspy_type__": None}  # not a type tag, so kept as data
+        assert received["sticker"] == _Sticker(sticker_label="silver")
+        assert _png_size(result.rotated) == (4, 6)
+        assert result.tag == _Sticker(sticker_label="silver")
+
+
+    @pytest.mark.deno
+    def test_sandbox_packages_load_for_types_outside_the_signature(self):
+        def screenshot():
+            """Take a screenshot."""
+            return _png(3, 5)
+
+        rlm = RLM("query -> answer", tools=[screenshot], max_iters=1, interpreter_factory=PythonInterpreter)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Decode an unannotated tool result", "code": "SUBMIT(str(screenshot().to_pil().size))"},
+        ])
+
+        assert rlm(query="size?").answer == "(3, 5)"
+
+    @pytest.mark.deno
+    def test_started_interpreter_without_sandbox_packages_still_runs(self):
+        interpreter = PythonInterpreter()
+        interpreter.execute("1")  # started before RLM could ask it to preload Pillow
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=lambda: interpreter)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Answer", "code": "SUBMIT('ok')"}])
+        try:
+            assert rlm(query="hi").answer == "ok"
+        finally:
+            interpreter.shutdown()
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

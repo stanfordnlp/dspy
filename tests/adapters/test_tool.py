@@ -2,7 +2,7 @@ import asyncio
 from typing import Any
 
 import pytest
-from pydantic import BaseModel, TypeAdapter
+from pydantic import AliasChoices, BaseModel, Field, TypeAdapter
 
 import dspy
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls, convert_input_schema_to_tool_args
@@ -144,6 +144,47 @@ def test_tool_from_function():
     assert tool.args["x"]["type"] == "integer"
     assert tool.args["y"]["type"] == "string"
     assert tool.args["y"]["default"] == "hello"
+
+
+def test_tool_accepts_custom_type_instances_for_custom_type_args():
+    def caption(image: dspy.Image, prefix: str) -> str:
+        return f"{prefix}: {image.url}"
+
+    image = dspy.Image("https://example.com/cat.png")
+
+    assert Tool(caption)(image=image, prefix="cat") == "cat: https://example.com/cat.png"
+
+    def count(images: list[dspy.Image]) -> int:
+        return len(images)
+
+    assert Tool(count)(images=[image, image]) == 2
+    with pytest.raises(ValueError):
+        Tool(count)(images=[image, 3])
+
+    from dspy.adapters.types.decision import Noul
+
+    def judge(verdict: Noul) -> bool:
+        return verdict.value
+
+    assert Tool(judge)(verdict=Noul(value=True, confidence=0.7)) is True  # its hidden probability field is not checked
+
+    class Labeled(dspy.Type):
+        label: str = Field(validation_alias="wire_label")
+        tag: str = Field(validation_alias=AliasChoices("wire_tag", "tag_name"))
+
+        def format(self):
+            return self.label
+
+    def read(item: Labeled) -> str:
+        return f"{item.label}/{item.tag}"
+
+    # The schema requires the validation aliases, so the fields are checked under those names.
+    assert Tool(read)(item=Labeled(wire_label="a", wire_tag="b")) == "a/b"
+
+    https_only = {"type": "object", "properties": {"url": {"type": "string", "pattern": "^https://"}}}
+    restricted = Tool(caption, args={"image": https_only, "prefix": {"type": "string"}})
+    with pytest.raises(ValueError, match="does not match"):
+        restricted(image=dspy.Image("http://example.com/cat.png"), prefix="cat")
 
 
 def test_tool_defaults_are_json_serializable():

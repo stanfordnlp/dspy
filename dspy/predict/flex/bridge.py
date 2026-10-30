@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ast
 import functools
+import inspect
 import json
 import logging
 from typing import Any, Callable
@@ -28,7 +29,13 @@ import dspy
 from dspy.adapters.types.base_type import Type as _CustomType
 from dspy.adapters.utils import annotation_allows_none, parse_value
 from dspy.primitives.code_interpreter import CodeInterpreterError, _create_interpreter
-from dspy.primitives.facade import FacadeInvocation, restore_custom_types
+from dspy.primitives.facade import (
+    FacadeInvocation,
+    from_sandbox_value,
+    preload_sandbox_packages,
+    restore_custom_types,
+    to_sandbox_value,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,11 +74,18 @@ def _tool_entrypoint(tool: Any) -> Callable[..., Any]:
 
 
 def _restoring_entrypoint(fn: Callable[..., Any], originals: dict[str, Any]) -> Callable[..., Any]:
-    """Wrap a tool entrypoint so serialized custom-type inputs arrive as the original objects."""
+    """Wrap a tool entrypoint so custom-type values cross the sandbox boundary as themselves."""
 
     @functools.wraps(fn)
     def entrypoint(**kwargs: Any) -> Any:
-        return fn(**{k: restore_custom_types(v, originals) for k, v in kwargs.items()})
+        result = fn(**{k: from_sandbox_value(restore_custom_types(v, originals)) for k, v in kwargs.items()})
+        if inspect.isawaitable(result):
+            # The interpreter awaits coroutines; encode the value they resolve to, not the coroutine.
+            async def encoded() -> Any:
+                return to_sandbox_value(await result)
+
+            return encoded()
+        return to_sandbox_value(result)
 
     return entrypoint
 
@@ -135,6 +149,7 @@ class BridgeRuntime:
         invocation = self.invocation(originals)
         interp = _create_interpreter(self._factory)
         try:
+            preload_sandbox_packages(interp)  # e.g. Pillow for dspy.Image's sandbox methods
             # User tools callable by name in the sandbox.
             interp.tools.update(
                 {name: _restoring_entrypoint(fn, originals) for name, fn in self._tool_callables().items()}
@@ -164,7 +179,7 @@ class BridgeRuntime:
                 "Sandboxed forward returned no serializable result; the generated forward must return "
                 f"a dspy.Prediction (got {result!r})"
             )
-        return self._to_prediction(json.loads(result))
+        return self._to_prediction(from_sandbox_value(json.loads(result)))
 
     def _to_prediction(self, fields: dict[str, Any]) -> Any:
         signature = self._flex.signature
