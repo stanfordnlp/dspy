@@ -85,6 +85,11 @@ def dummy_lm_context(responses: list[dict[str, Any]]):
         yield lm
 
 
+def as_chat_dicts(messages):
+    """lm15 messages as role/content dicts, for assertions on the formatted text."""
+    return [{"role": m.role, "content": m.text} for m in messages]
+
+
 # Common test tools
 def echo_tool(text: str = "") -> str:
     """Echo the input text."""
@@ -372,7 +377,7 @@ class TestRLMInitialization:
 
         tools = RLM("context -> answer", sub_lm=DummyLM([{"answer": "legacy answer"}]))._make_llm_tools()
 
-        assert tools["llm_query"]("test prompt") == "[[ ## answer ## ]]\nlegacy answer"
+        assert tools["llm_query"]("test prompt") == "<answer>\nlegacy answer\n</answer>"
 
     def test_llm_query_returns_typed_response_text(self):
         import dspy
@@ -383,7 +388,7 @@ class TestRLMInitialization:
         with dspy.context(experimental=True):
             result = tools["llm_query"]("test prompt")
 
-        assert result == "[[ ## answer ## ]]\ntyped answer"
+        assert result == "<answer>\ntyped answer\n</answer>"
 
     def test_llm_query_rejects_unsupported_response_shape(self):
         from unittest.mock import MagicMock
@@ -538,16 +543,16 @@ class TestRLMInterpreterLifecycle:
         class StopLMCall(BaseException):
             pass
 
-        class CapturingLM(dspy.BaseLM):
+        class CapturingEngine:
             def __init__(self):
-                super().__init__("snapshot-model", temperature=0.0, max_tokens=1000, cache=False)
-                self.messages = None
+                self.request = None
 
-            def forward(self, prompt=None, messages=None, **kwargs):
-                self.messages = messages
+            def complete(self, request):
+                self.request = request
                 raise StopLMCall
 
-        lm = CapturingLM()
+        engine = CapturingEngine()
+        lm = dspy.LM("snapshot-model", engine=engine, temperature=0.0, max_tokens=1000, cache=False)
         rlm = RLM("query -> answer", interpreter_factory=PythonInterpreter)
 
         with pytest.raises(StopLMCall), dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
@@ -561,11 +566,12 @@ class TestRLMInterpreterLifecycle:
 
         snapshot = Path(__file__).with_name("snapshots") / "rlm_python_interpreter_lm_request.json"
         recorded = json.loads(snapshot.read_text())
-        expected = [
-            {"role": message["role"], "content": "".join(part["text"] for part in message["parts"])}
-            for message in recorded["messages"]
+        expected = [{"role": message["role"], "content": "".join(part["text"] for part in message["parts"])}
+                    for message in recorded["messages"]]
+        sent = [{"role": "system", "content": engine.request.system}] + [
+            {"role": message.role, "content": message.text} for message in engine.request.messages
         ]
-        assert lm.messages == expected
+        assert sent == expected
 
     def test_interpreter_remains_available_as_signature_input(self):
         factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "CPython"})])
@@ -2011,8 +2017,10 @@ class TestRLMHistoryWithDummyLM:
             assert any("Variable: `query`" in line for line in event["variables_info"])
             assert event["iteration"] == label
 
-        messages = dspy.ChatAdapter().format_conversation_history(
-            rlm.generate_action.signature, "history", {"history": result.history}
+        messages = as_chat_dicts(
+            dspy.ChatAdapter().format_conversation_history(
+                rlm.generate_action.signature, "history", {"history": result.history}
+            )
         )
         assert [m["role"] for m in messages] == ["user", "assistant", "user", "user", "assistant", "user"]
 
@@ -2045,7 +2053,7 @@ class TestRLMHistoryWithDummyLM:
         original = adapter.format(signature, [], {**inputs, "history": result.history})
         replayed = adapter.format(signature, [], {**inputs, "history": restored})
         assert replayed == original
-        assert any("x = 1" in str(m["content"]) for m in original)
+        assert any("x = 1" in (m.text or "") for m in original.messages)
 
     def test_rlm_accepts_a_json_restored_history(self):
         with dummy_lm_context([{"plan": "done", "code": "SUBMIT(7)"}, {"plan": "again", "code": "SUBMIT(8)"}]):
@@ -2091,7 +2099,7 @@ class TestRLMHistoryWithDummyLM:
                 {"plan": "done", "code": "SUBMIT(7)"},
                 {"plan": "answer again", "code": "SUBMIT(8)"},
             ]
-        ) as lm:
+        ) as lm, dspy.context(adapter=dspy.ChatAdapter()):
             rlm = RLM("query -> answer: int", max_iters=3)
             first = rlm(query="What is seven?", interpreter_factory=PythonInterpreter)
             rlm(query="And eight?", history=first.history, interpreter_factory=PythonInterpreter)
@@ -2111,7 +2119,7 @@ class TestRLMHistoryWithDummyLM:
                 {"plan": "done", "code": "SUBMIT(7)"},
                 {"plan": "answer again", "code": "SUBMIT(8)"},
             ]
-        ) as lm:
+        ) as lm, dspy.context(adapter=dspy.ChatAdapter()):
             rlm = RLM("query -> answer: int", max_iters=3)
             first = rlm(query="What is seven?", interpreter_factory=PythonInterpreter)
             live_step_messages = [call["messages"][-1]["content"] for call in lm.history]
@@ -2130,8 +2138,10 @@ class TestRLMHistoryWithDummyLM:
         assert result.reasoning == "outer reasoning out"
         assert result.history.messages[0]["code"] == "print('outer code in')"  # recorded for callers
 
-        messages = dspy.ChatAdapter().format_conversation_history(
-            rlm.generate_action.signature, "history", {"history": result.history}
+        messages = as_chat_dicts(
+            dspy.ChatAdapter().format_conversation_history(
+                rlm.generate_action.signature, "history", {"history": result.history}
+            )
         )
         assert [m["role"] for m in messages] == ["user", "assistant", "user"]
         # Outer `code` input appears only via its preview, never as a `[[ ## code ## ]]` user section
@@ -2162,8 +2172,8 @@ class TestRLMHistoryWithDummyLM:
 
         # Under the action signature the fallback replays from its own fields: an assistant turn with just the
         # outer `reasoning` output -- never a partial action with `code: None`
-        action_messages = adapter.format_conversation_history(
-            rlm.generate_action.signature, "history", {"history": result.history}
+        action_messages = as_chat_dicts(
+            adapter.format_conversation_history(rlm.generate_action.signature, "history", {"history": result.history})
         )
         assert [m["role"] for m in action_messages] == ["user", "assistant", "user", "assistant"]
         assert "[[ ## reasoning ## ]]\ninner reasoning" in action_messages[1]["content"]
@@ -2186,8 +2196,8 @@ class TestRLMHistoryWithDummyLM:
 
         # The assistant turn is rendered from the event's own output fields, so a continuation still sees how
         # the prior turn concluded
-        action_messages = adapter.format_conversation_history(
-            rlm.generate_action.signature, "history", {"history": result.history}
+        action_messages = as_chat_dicts(
+            adapter.format_conversation_history(rlm.generate_action.signature, "history", {"history": result.history})
         )
         assert [m["role"] for m in action_messages] == ["user", "assistant", "user", "assistant"]
         assert action_messages[3]["content"] == "[[ ## answer ## ]]\n7\n\n[[ ## completed ## ]]\n"
@@ -2201,7 +2211,7 @@ class TestRLMHistoryWithDummyLM:
                 {"plan": "explore", "code": "x = 7\nprint(x)"},
                 {"answer": "7"},
             ]
-        ) as lm:
+        ) as lm, dspy.context(adapter=dspy.ChatAdapter()):
             rlm = RLM("query -> answer: int", max_iters=1)
             first = rlm(query="What is one?", interpreter_factory=PythonInterpreter)
             rlm(query="What is seven?", history=first.history, interpreter_factory=PythonInterpreter)
@@ -3403,11 +3413,15 @@ class TestRLMSubAgents:
 
     def test_facade_n_completions_draw_n_calls(self):
         invocation = _facade_invocation(RLM("query -> answer", max_llm_calls=2))
-        dspy.configure(lm=DummyLM([{"answer": "x"}] * 4))
+        lm = DummyLM([{"answer": "first"}, {"answer": "second"}, {"answer": "third"}])
+        dspy.configure(lm=lm)
 
         handle = invocation.construct("Predict", "question -> answer", "sub", {"n": 3})
-        with pytest.raises(RuntimeError, match=r"LLM call limit exceeded: 0 \+ 3 > 2"):
+        with pytest.raises(RuntimeError, match=r"LLM call limit exceeded: 2 \+ 1 > 2"):
             invocation.call(handle, {"question": "ping"})
+        assert len(lm.history) == 2
+        assert "first" in lm.history[0]["response"].text
+        assert "second" in lm.history[1]["response"].text
 
     def test_facade_resolves_the_lm_per_call_like_llm_query(self):
         # With no sub_lm, the facade serves dspy.settings.lm as it is when the sub-agent runs.

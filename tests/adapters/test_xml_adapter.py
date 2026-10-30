@@ -3,7 +3,6 @@ from unittest import mock
 
 import pydantic
 import pytest
-from litellm import Choices, Message, ModelResponse
 from typing_extensions import TypedDict
 
 import dspy
@@ -11,6 +10,7 @@ from dspy.adapters.chat_adapter import FieldInfoWithName
 from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.primitives.repl_types import REPLEntry
 from tests.adapters.conftest import format_messages_and_lm_kwargs
+from tests.test_utils.engines import make_response
 
 
 def test_xml_adapter_format_and_parse_basic():
@@ -88,12 +88,12 @@ def test_xml_adapter_predict_accepts_literal_code_without_fallback(fenced, closi
     completion = f"{prefix}<reasoning>\nKeep R&B tracks\n</reasoning>\n<code>\n{code}{closing_newline}</code>"
     if fenced:
         completion = f"```xml\n{completion}\n```"
-    with mock.patch("litellm.completion") as completion_mock:
-        completion_mock.return_value = ModelResponse(
-            choices=[Choices(message=Message(content=completion))], model="openai/gpt-4o-mini"
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as completion_mock:
+        completion_mock.return_value = make_response(
+            completion, model="openai/gpt-4o-mini"
         )
         with dspy.context(
-            lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False),
+            lm=dspy.LM("openai/gpt-4o-mini", cache=False),
             adapter=XMLAdapter(use_json_adapter_fallback=False),
         ):
             result = dspy.Predict(Generate)(question="Write a pagination check")
@@ -117,12 +117,11 @@ def test_xml_adapter_predict_accepts_literal_code_without_fallback(fenced, closi
 def test_xml_adapter_predict_ignores_trailing_prose(body, annotation, expected):
     signature = dspy.Signature("question -> answer").with_updated_fields("answer", type_=annotation)
     response = body + "\n\nLet me know if you need anything else."
-    with mock.patch(
-        "litellm.completion",
-        return_value=ModelResponse(choices=[Choices(message=Message(content=response))], model="openai/gpt-4o-mini"),
-    ):
+    with mock.patch("dspy.clients.engines.LM15Engine.complete", return_value=make_response(
+        response, model="openai/gpt-4o-mini"
+    )):
         with dspy.context(
-            lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False),
+            lm=dspy.LM("openai/gpt-4o-mini", cache=False),
             adapter=XMLAdapter(use_json_adapter_fallback=False),
         ):
             assert dspy.Predict(signature)(question="Name French cities").answer == expected
@@ -195,14 +194,7 @@ def test_xml_predict_round_trips_nested_html_and_unicode_keys(case):
         count: int = pydantic.Field(alias="count-alias")
 
     annotation, expected = (
-        (
-            Page,
-            Page(
-                html="<html>Body</html>\n<footer>Copyright</footer>",
-                name="literal <name> opening",
-                **{"count-alias": 2},
-            ),
-        )
+        (Page, Page(html="<html>Body</html>\n<footer>Copyright</footer>", name="literal <name> opening", **{"count-alias": 2}))
         if case != "unicode_key"
         else (dict[str, str], {"cafe\u0301": "decomposed", "café": "precomposed"})
     )
@@ -211,11 +203,10 @@ def test_xml_predict_round_trips_nested_html_and_unicode_keys(case):
     response = adapter.format_assistant_message_content(signature, {"result": expected})
     if case == "html_with_extra":
         response = response.replace("</name>", "</name>\n<extra>ignored</extra>")
-    with mock.patch(
-        "litellm.completion",
-        return_value=ModelResponse(choices=[Choices(message=Message(content=response))], model="openai/gpt-4o-mini"),
-    ):
-        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=adapter):
+    with mock.patch("dspy.clients.engines.LM15Engine.complete", return_value=make_response(
+        response, model="openai/gpt-4o-mini"
+    )):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=adapter):
             if case == "html_with_extra":
                 with pytest.raises(dspy.utils.exceptions.AdapterParseError):
                     dspy.Predict(signature)()
@@ -350,19 +341,17 @@ def test_xml_adapter_nullable_text_round_trip_distinguishes_empty_from_null(valu
     formatted = adapter.format_assistant_message_content(Result, {"text": value})
     assert adapter.parse(Result, formatted) == {"text": value}
     assert adapter.parse(Result, "<text>\n\n</text>") == {"text": ""}
-    messages = adapter.format(Result, [], {})
-    assert (
-        messages[0]["content"]
-        .split("Output format (replace placeholders):\n")[1]
-        .startswith("<text>\n{text}\n</text>\n")
+    prompt = adapter.format(Result, [], {})
+    assert prompt.system.split("Output format (replace placeholders):\n")[1].startswith(
+        "<text>\n{text}\n</text>\n"
     )
-    assert messages[-1]["content"] == (
+    assert prompt.messages[-1].text == (
         "Output format (replace placeholders):\n<text>\n{text}\n</text>\n\n"
         "Use this format for text outputs. Put field tags on separate lines. "
         "Write string values literally, without XML or JSON escaping."
         " Use <field/> for null and <field></field> for an empty string."
     )
-    assert "JSON" not in messages[0]["content"]
+    assert "JSON" not in prompt.system
 
 
 @pytest.mark.parametrize("values", [None, [], ["", None, "R&B"]])
@@ -397,16 +386,16 @@ def test_xml_adapter_concise_prompt_preserves_type_guidance_and_dictionary_keys(
         pair: tuple[str, int] = dspy.OutputField()
         metadata: dict[str, Any] = dspy.OutputField()
 
-    messages = XMLAdapter().format(Result, [], {"question": "Choose"})
-    structure = messages[0]["content"].split("Output format (replace placeholders):\n")[1]
+    prompt = XMLAdapter().format(Result, [], {"question": "Choose"})
+    structure = prompt.system.split("Output format (replace placeholders):\n")[1]
     assert "<question>" not in structure
     assert "<scalar>\n{scalar}\n</scalar>" in structure
     assert "{choice}        # note: the value you produce must be one of: yes; no" in structure
     assert "{pair}        # note: the value you produce must adhere to the JSON schema:" in structure
     assert "<metadata>\n...\n</metadata>" in structure
-    assert "Output format (replace placeholders):\n" in messages[-1]["content"]
-    assert "<metadata>\n...\n</metadata>" in messages[-1]["content"]
-    assert messages[-1]["content"].endswith(
+    assert "Output format (replace placeholders):\n" in prompt.messages[-1].text
+    assert "<metadata>\n...\n</metadata>" in prompt.messages[-1].text
+    assert prompt.messages[-1].text.endswith(
         "Use this format for text outputs. Put field tags on separate lines. "
         "Write string values literally, without XML or JSON escaping."
         ' Dictionary keys: <entry key="...">; escape key attributes only.'
@@ -646,10 +635,7 @@ def test_xml_adapter_format_and_parse_nested_model():
     result = InnerModel(value=5, label="foo", address=Address(city="London"))
     fields_with_values = {FieldInfoWithName(name="result", info=TestSignature.output_fields["result"]): result}
     xml = adapter.format_field_with_value(fields_with_values)
-    assert (
-        xml
-        == "<result>\n<value>\n5\n</value>\n<label>\nfoo\n</label>\n<address>\n<city>\nLondon\n</city>\n</address>\n</result>"
-    )
+    assert xml == "<result>\n<value>\n5\n</value>\n<label>\nfoo\n</label>\n<address>\n<city>\nLondon\n</city>\n</address>\n</result>"
     assert adapter.parse(TestSignature, xml) == {"result": result}
 
     # Legacy JSON values inside the outer XML field remain supported.
@@ -753,20 +739,19 @@ def test_xml_adapter_formats_nested_images():
 
     image_wrapper_2 = ImageWrapper(images=[dspy.Image(url="https://example.com/image4.jpg")], tag=["test", "example"])
     adapter = dspy.XMLAdapter()
-    messages = adapter.format(MySignature, demos, {"image": image_wrapper_2})
+    messages = adapter.format(MySignature, demos, {"image": image_wrapper_2}).messages
 
-    assert len(messages) == 4
+    assert len(messages) == 3
 
     # Image information in the few-shot example's user message
-    expected_image1_content = {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}}
-    expected_image2_content = {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}}
-    expected_image3_content = {"type": "image_url", "image_url": {"url": "https://example.com/image3.jpg"}}
-    assert expected_image1_content in messages[1]["content"]
-    assert expected_image2_content in messages[1]["content"]
-    assert expected_image3_content in messages[1]["content"]
+    from dspy.lm15 import ImagePart
+
+    assert ImagePart(url="https://example.com/image1.jpg", media_type="image/jpeg") in messages[0].parts
+    assert ImagePart(url="https://example.com/image2.jpg", media_type="image/jpeg") in messages[0].parts
+    assert ImagePart(url="https://example.com/image3.jpg", media_type="image/jpeg") in messages[0].parts
 
     # The query image is formatted in the last user message
-    assert {"type": "image_url", "image_url": {"url": "https://example.com/image4.jpg"}} in messages[-1]["content"]
+    assert ImagePart(url="https://example.com/image4.jpg", media_type="image/jpeg") in messages[-1].parts
 
 
 def test_xml_adapter_with_code():
@@ -778,15 +763,15 @@ def test_xml_adapter_with_code():
         result: str = dspy.OutputField()
 
     adapter = dspy.XMLAdapter()
-    messages = adapter.format(CodeAnalysis, [], {"code": "print('Hello, world!')"})
+    prompt = adapter.format(CodeAnalysis, [], {"code": "print('Hello, world!')"})
 
-    assert len(messages) == 2
+    assert len(prompt.messages) == 1
 
     # The output field type description should be included in the system message even if the output field is nested
-    assert dspy.Code.description() in messages[0]["content"]
+    assert dspy.Code.description() in prompt.system
 
     # The user message should include the question and the tools
-    assert "print('Hello, world!')" in messages[1]["content"]
+    assert "print('Hello, world!')" in prompt.messages[0].text
 
     # Test with code as output field
     class CodeGeneration(dspy.Signature):
@@ -796,13 +781,13 @@ def test_xml_adapter_with_code():
         code: dspy.Code = dspy.OutputField()
 
     adapter = dspy.XMLAdapter()
-    with mock.patch("litellm.completion") as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content='<code>print("Hello, world!")</code>'))],
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            '<code>print("Hello, world!")</code>',
             model="openai/gpt-4o-mini",
         )
         result = adapter(
-            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(model="openai/gpt-4o-mini", cache=False),
             {},
             CodeGeneration,
             [],
@@ -818,11 +803,10 @@ def test_xml_adapter_full_prompt():
         answer: str = dspy.OutputField()
 
     adapter = dspy.XMLAdapter()
-    messages = adapter.format(QA, [], {"query": "when was Marie Curie born"})
+    prompt = adapter.format(QA, [], {"query": "when was Marie Curie born"})
 
-    assert len(messages) == 2
-    assert messages[0]["role"] == "system"
-    assert messages[1]["role"] == "user"
+    assert len(prompt.messages) == 1
+    assert prompt.messages[0].role == "user"
 
     union_type_repr = "Union[str, NoneType]"
 
@@ -845,8 +829,8 @@ def test_xml_adapter_full_prompt():
         "Write string values literally, without XML or JSON escaping."
     )
 
-    assert messages[0]["content"] == expected_system
-    assert messages[1]["content"] == expected_user
+    assert prompt.system == expected_system
+    assert prompt.messages[0].text == expected_user
 
 
 def test_xml_adapter_native_only_outputs_do_not_request_text_fields():
@@ -886,8 +870,7 @@ def test_xml_adapter_format_exact_messages_for_simple_signature():
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
 
-    messages, lm_kwargs = format_messages_and_lm_kwargs(
-        dspy.XMLAdapter(),
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(),
         StringSignature,
         demos=[],
         inputs={"question": "why did a chicken cross the kitchen?"},
@@ -970,7 +953,7 @@ def test_xml_adapter_format_exact_non_native_tool_result_history_field():
         "</question>\n"
         "\n"
         "<tools>\n"
-        "[\"search. It takes arguments {'query': {'type': 'string'}}.\"]\n"
+        '["search. It takes arguments {\'query\': {\'type\': \'string\'}}."]\n'
         "</tools>\n"
         "\n"
         "Output format (replace placeholders):\n<next_thought>\n{next_thought}\n</next_thought>\n\n"
@@ -991,8 +974,7 @@ def test_xml_adapter_format_exact_messages_for_two_input_signature():
         answer: str = dspy.InputField()
         judgement: str = dspy.OutputField()
 
-    messages, lm_kwargs = format_messages_and_lm_kwargs(
-        dspy.XMLAdapter(),
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(),
         StringSignature,
         demos=[],
         inputs={"question": "why did a chicken cross the kitchen?", "answer": "To get to the other side!"},
@@ -1042,8 +1024,7 @@ def test_xml_adapter_format_exact_messages_with_demo_and_typed_output():
         answer: str = dspy.OutputField()
         score: float = dspy.OutputField()
 
-    messages, lm_kwargs = format_messages_and_lm_kwargs(
-        dspy.XMLAdapter(),
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(),
         MultiAnswer,
         demos=[{"question": "Q1", "answer": "A1", "score": 0.9}],
         inputs={"question": "Q2"},
@@ -1071,12 +1052,9 @@ Output format (replace placeholders):
 In adhering to this structure, your objective is:\x20
         Given the fields `question`, produce the fields `answer`, `score`.""",
         },
-        {
-            "role": "user",
-            "content": """<question>
+        {"role": "user", "content": """<question>
 Q1
-</question>""",
-        },
+</question>"""},
         {
             "role": "assistant",
             "content": """<answer>
@@ -1131,9 +1109,11 @@ def test_xml_adapter_long_history_preserves_turns_and_literals():
     assert [m["role"] for m in messages] == ["system"] + ["user", "assistant"] * 81 + ["user"]
     assert "Current question" in messages[-1]["content"]
     for turn, user, assistant in zip(turns, messages[3:-1:2], messages[4:-1:2], strict=False):
-        assert user["content"].startswith(f"<question>\n{turn['question']}\n</question>")
+        assert user["content"].startswith(f'<question>\n{turn["question"]}\n</question>')
         assert "<history>" not in user["content"]
-        assert adapter.parse(Conversation, assistant["content"]) == {"answer": turn["answer"], "counts": turn["counts"]}
+        assert adapter.parse(Conversation, assistant["content"]) == {
+            "answer": turn["answer"], "counts": turn["counts"]
+        }
     assert history.model_dump() == original
 
 
@@ -1185,8 +1165,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
             }
         ]
     )
-    messages, lm_kwargs = format_messages_and_lm_kwargs(
-        dspy.XMLAdapter(),
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(),
         RichRenderingSignature,
         demos=[
             {
@@ -1206,115 +1185,90 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
         },
     )
 
-    expected_messages = [
-        {
-            "role": "system",
-            "content": "Your input fields are:\n"
-            "1. `history` (History): \n"
-            "2. `image` (Image): \n"
-            "3. `tools` (list[Tool]): \n"
-            "4. `profile` (Profile): \n"
-            "5. `question` (str):\n"
-            "Your output fields are:\n"
-            "1. `answer` (AnswerCard):\n"
-            "Output format (replace placeholders):\n"
-            "<answer>\n<answer>\n...\n</answer>\n<sources>\n<item>\n...\n</item>\n</sources>\n</answer>\n"
-            "In adhering to this structure, your objective is: \n"
-            "        Answer using all supplied context.",
-        },
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": "This is an example of the task, though some input or output fields are not "
-                    "supplied.\n"
-                    "\n"
-                    "<image>\n",
-                },
-                {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
-                {
-                    "type": "text",
-                    "text": "\n"
-                    "</image>\n"
-                    "\n"
-                    "<tools>\n"
-                    '["search, whose description is <desc>Search for documents.</desc>. It '
-                    "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
-                    "'default': 3}}.\"]\n"
-                    "</tools>\n"
-                    "\n"
-                    "<profile>\n"
-                    '{"name": "Ada", "location": {"city": "London", "country": "UK"}, '
-                    '"interests": ["math", "machines"]}\n'
-                    "</profile>\n"
-                    "\n"
-                    "<question>\n"
-                    "What should we mention?\n"
-                    "</question>",
-                },
-            ],
-        },
-        {
-            "role": "assistant",
-            "content": "<answer>\n<answer>\nMention analytical engines.\n</answer>\n<sources>\n<item>\ndemo\n</item>\n</sources>\n</answer>",
-        },
-        {
-            "role": "user",
-            "content": "<profile>\n"
-            '{"name": "Ada", "location": {"city": "London", "country": "UK"}, "interests": '
-            '["math", "machines"]}\n'
-            "</profile>\n"
-            "\n"
-            "<question>\n"
-            "Who is Ada?\n"
-            "</question>\n\n"
-            "Output format (replace placeholders):\n"
-            "<answer>\n<answer>\n...\n</answer>\n<sources>\n<item>\n...\n</item>\n</sources>\n</answer>\n\n"
-            "Use this format for text outputs. Put field tags on separate lines. "
-            "Write string values literally, without XML or JSON escaping.",
-        },
-        {
-            "role": "assistant",
-            "content": "<answer>\n<answer>\nAda is a mathematician.\n</answer>\n<sources>\n<item>\nmemory\n</item>\n</sources>\n</answer>",
-        },
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "<image>\n"},
-                {"type": "image_url", "image_url": {"url": "https://example.com/current.png"}},
-                {
-                    "type": "text",
-                    "text": "\n"
-                    "</image>\n"
-                    "\n"
-                    "<tools>\n"
-                    '["search, whose description is <desc>Search for documents.</desc>. It '
-                    "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
-                    "'default': 3}}.\"]\n"
-                    "</tools>\n"
-                    "\n"
-                    "<profile>\n"
-                    '{"name": "Grace", "location": {"city": "Arlington", "country": "USA"}, '
-                    '"interests": ["compilers", "navy"]}\n'
-                    "</profile>\n"
-                    "\n"
-                    "<question>\n"
-                    "What should the answer include?\n"
-                    "</question>\n"
-                    "\n"
-                    "Output format (replace placeholders):\n"
-                    "<answer>\n<answer>\n...\n</answer>\n<sources>\n<item>\n...\n</item>\n</sources>\n</answer>\n\n"
-                    "Use this format for text outputs. Put field tags on separate lines. "
-                    "Write string values literally, without XML or JSON escaping.",
-                },
-            ],
-        },
-    ]
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `history` (History): \n"
+                 "2. `image` (Image): \n"
+                 "3. `tools` (list[Tool]): \n"
+                 "4. `profile` (Profile): \n"
+                 "5. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `answer` (AnswerCard):\n"
+                 "Output format (replace placeholders):\n"
+                 "<answer>\n<answer>\n...\n</answer>\n<sources>\n<item>\n...\n</item>\n</sources>\n</answer>\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Answer using all supplied context."},
+     {"role": "user",
+      "content": [{"type": "text",
+                   "text": "This is an example of the task, though some input or output fields are not "
+                           "supplied.\n"
+                           "\n"
+                           "<image>\n"},
+                  {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
+                  {"type": "text",
+                   "text": '\n'
+                           '</image>\n'
+                           '\n'
+                           '<tools>\n'
+                           '["search, whose description is <desc>Search for documents.</desc>. It '
+                           "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
+                           '\'default\': 3}}."]\n'
+                           '</tools>\n'
+                           '\n'
+                           '<profile>\n'
+                           '{"name": "Ada", "location": {"city": "London", "country": "UK"}, '
+                           '"interests": ["math", "machines"]}\n'
+                           '</profile>\n'
+                           '\n'
+                           '<question>\n'
+                           'What should we mention?\n'
+                           '</question>'}]},
+     {"role": "assistant",
+      "content": "<answer>\n<answer>\nMention analytical engines.\n</answer>\n<sources>\n<item>\ndemo\n</item>\n</sources>\n</answer>"},
+     {"role": "user",
+      "content": '<profile>\n'
+                 '{"name": "Ada", "location": {"city": "London", "country": "UK"}, "interests": '
+                 '["math", "machines"]}\n'
+                 '</profile>\n'
+                 '\n'
+                 '<question>\n'
+                 'Who is Ada?\n'
+                 '</question>\n\n'
+                 'Output format (replace placeholders):\n'
+                 '<answer>\n<answer>\n...\n</answer>\n<sources>\n<item>\n...\n</item>\n</sources>\n</answer>\n\n'
+                 'Use this format for text outputs. Put field tags on separate lines. '
+                 'Write string values literally, without XML or JSON escaping.'},
+     {"role": "assistant",
+      "content": "<answer>\n<answer>\nAda is a mathematician.\n</answer>\n<sources>\n<item>\nmemory\n</item>\n</sources>\n</answer>"},
+     {"role": "user",
+      "content": [{"type": "text", "text": "<image>\n"},
+                  {"type": "image_url", "image_url": {"url": "https://example.com/current.png"}},
+                  {"type": "text",
+                   "text": '\n'
+                           '</image>\n'
+                           '\n'
+                           '<tools>\n'
+                           '["search, whose description is <desc>Search for documents.</desc>. It '
+                           "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
+                           '\'default\': 3}}."]\n'
+                           '</tools>\n'
+                           '\n'
+                           '<profile>\n'
+                           '{"name": "Grace", "location": {"city": "Arlington", "country": "USA"}, '
+                           '"interests": ["compilers", "navy"]}\n'
+                           '</profile>\n'
+                           '\n'
+                           '<question>\n'
+                           'What should the answer include?\n'
+                           '</question>\n'
+                           '\n'
+                           'Output format (replace placeholders):\n'
+                           '<answer>\n<answer>\n...\n</answer>\n<sources>\n<item>\n...\n</item>\n</sources>\n</answer>\n\n'
+                           'Use this format for text outputs. Put field tags on separate lines. '
+                           'Write string values literally, without XML or JSON escaping.'}]}]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
-
 
 def test_xml_adapter_format_exact_messages_with_nested_pydantic_output():
     class XmlAddress(pydantic.BaseModel):
@@ -1329,36 +1283,28 @@ def test_xml_adapter_format_exact_messages_with_nested_pydantic_output():
         question: str = dspy.InputField()
         summary: XmlSummary = dspy.OutputField()
 
-    messages, lm_kwargs = format_messages_and_lm_kwargs(
-        dspy.XMLAdapter(), PydanticSignature, [], {"question": "Summarize"}
-    )
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(), PydanticSignature, [], {"question": "Summarize"})
 
-    expected_messages = [
-        {
-            "role": "system",
-            "content": "Your input fields are:\n"
-            "1. `question` (str):\n"
-            "Your output fields are:\n"
-            "1. `summary` (XmlSummary):\n"
-            "Output format (replace placeholders):\n"
-            "<summary>\n<title>\n...\n</title>\n<address>\n<city>\n...\n</city>\n<country>\n...\n</country>\n"
-            "</address>\n</summary>\n"
-            "In adhering to this structure, your objective is: \n"
-            "        Given the fields `question`, produce the fields `summary`.",
-        },
-        {
-            "role": "user",
-            "content": "<question>\n"
-            "Summarize\n"
-            "</question>\n"
-            "\n"
-            "Output format (replace placeholders):\n"
-            "<summary>\n<title>\n...\n</title>\n<address>\n<city>\n...\n</city>\n<country>\n...\n</country>\n"
-            "</address>\n</summary>\n\n"
-            "Use this format for text outputs. Put field tags on separate lines. "
-            "Write string values literally, without XML or JSON escaping.",
-        },
-    ]
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `summary` (XmlSummary):\n"
+                 "Output format (replace placeholders):\n"
+                 "<summary>\n<title>\n...\n</title>\n<address>\n<city>\n...\n</city>\n<country>\n...\n</country>\n"
+                 "</address>\n</summary>\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `question`, produce the fields `summary`."},
+     {"role": "user",
+      "content": "<question>\n"
+                 "Summarize\n"
+                 "</question>\n"
+                 "\n"
+                 "Output format (replace placeholders):\n"
+                 "<summary>\n<title>\n...\n</title>\n<address>\n<city>\n...\n</city>\n<country>\n...\n</country>\n"
+                 "</address>\n</summary>\n\n"
+                 "Use this format for text outputs. Put field tags on separate lines. "
+                 "Write string values literally, without XML or JSON escaping."}]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
@@ -1371,63 +1317,58 @@ def test_xml_adapter_format_exact_messages_with_incomplete_demo():
         answer: str = dspy.OutputField()
         score: float = dspy.OutputField()
 
-    messages, lm_kwargs = format_messages_and_lm_kwargs(
-        dspy.XMLAdapter(),
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(),
         IncompleteDemoSignature,
         [{"question": "Q1", "answer": "A1"}],
         {"question": "Q2", "context": "C2"},
     )
 
-    expected_messages = [
-        {
-            "role": "system",
-            "content": "Your input fields are:\n"
-            "1. `question` (str): \n"
-            "2. `context` (str):\n"
-            "Your output fields are:\n"
-            "1. `answer` (str): \n"
-            "2. `score` (float):\n"
-            "Output format (replace placeholders):\n"
-            "<answer>\n"
-            "{answer}\n"
-            "</answer>\n"
-            "\n"
-            "<score>\n"
-            "{score}\n"
-            "</score>\n"
-            "In adhering to this structure, your objective is: \n"
-            "        Given the fields `question`, `context`, produce the fields `answer`, "
-            "`score`.",
-        },
-        {
-            "role": "user",
-            "content": "This is an example of the task, though some input or output fields are not "
-            "supplied.\n"
-            "\n"
-            "<question>\n"
-            "Q1\n"
-            "</question>",
-        },
-        {
-            "role": "assistant",
-            "content": "<answer>\nA1\n</answer>\n\n<score>\nNot supplied for this particular example. \n</score>",
-        },
-        {
-            "role": "user",
-            "content": "<question>\n"
-            "Q2\n"
-            "</question>\n"
-            "\n"
-            "<context>\n"
-            "C2\n"
-            "</context>\n"
-            "\n"
-            "Output format (replace placeholders):\n<answer>\n{answer}\n</answer>\n\n"
-            "<score>\n{score}\n</score>\n\n"
-            "Use this format for text outputs. Put field tags on separate lines. "
-            "Write string values literally, without XML or JSON escaping.",
-        },
-    ]
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `question` (str): \n"
+                 "2. `context` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `answer` (str): \n"
+                 "2. `score` (float):\n"
+                 "Output format (replace placeholders):\n"
+                 "<answer>\n"
+                 "{answer}\n"
+                 "</answer>\n"
+                 "\n"
+                 "<score>\n"
+                 "{score}\n"
+                 "</score>\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `question`, `context`, produce the fields `answer`, "
+                 "`score`."},
+     {"role": "user",
+      "content": "This is an example of the task, though some input or output fields are not "
+                 "supplied.\n"
+                 "\n"
+                 "<question>\n"
+                 "Q1\n"
+                 "</question>"},
+     {"role": "assistant",
+      "content": "<answer>\n"
+                 "A1\n"
+                 "</answer>\n"
+                 "\n"
+                 "<score>\n"
+                 "Not supplied for this particular example. \n"
+                 "</score>"},
+     {"role": "user",
+      "content": "<question>\n"
+                 "Q2\n"
+                 "</question>\n"
+                 "\n"
+                 "<context>\n"
+                 "C2\n"
+                 "</context>\n"
+                 "\n"
+                 "Output format (replace placeholders):\n<answer>\n{answer}\n</answer>\n\n"
+                 "<score>\n{score}\n</score>\n\n"
+                 "Use this format for text outputs. Put field tags on separate lines. "
+                 "Write string values literally, without XML or JSON escaping."}]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs

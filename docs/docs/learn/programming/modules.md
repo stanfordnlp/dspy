@@ -306,7 +306,7 @@ This will output usage statistics like:
 }
 ```
 
-When using DSPy's caching features (either in-memory or on-disk via litellm), cached responses won't count toward usage statistics. For example:
+When using DSPy's in-memory or on-disk response cache, cached responses won't count toward billed usage statistics. For example:
 
 ```python
 # Enable caching

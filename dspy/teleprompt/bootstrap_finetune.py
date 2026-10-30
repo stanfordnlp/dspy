@@ -4,10 +4,9 @@ from typing import Any, Callable
 
 import dspy
 from dspy.adapters.base import Adapter
-from dspy.adapters.chat_adapter import ChatAdapter
+from dspy.adapters.utils import _get_adapter
 from dspy.clients.lm import LM
 from dspy.clients.utils_finetune import infer_data_format
-from dspy.dsp.utils.settings import settings
 from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
 from dspy.primitives.module import Module
@@ -173,7 +172,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
             logger.info(f"After filtering with the metric, {len(trace_data)} examples remain")
 
         data = []
-        adapter = self.adapter[lm] or settings.adapter or ChatAdapter()
+        adapter = self.adapter[lm] if self.adapter[lm] is not None else _get_adapter()
         data_format = infer_data_format(adapter)
         for item in trace_data:
             for trace_pred_ind, _ in enumerate(item["trace"]):

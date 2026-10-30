@@ -9,7 +9,8 @@ from pydantic import BaseModel, ValidationError
 import dspy
 from dspy.adapters.decision import record_evidence
 from dspy.experimental import Score
-from dspy.utils.dummies import DummyLM
+from dspy.lm15 import DataPart, ImagePart, TextPart
+from tests.test_utils.engines import recording_lm
 
 EDGES = {"top": 0.13, "bottom": 0.81, "left": 0.27, "right": 0.64}
 
@@ -62,12 +63,14 @@ async def test_boxes_are_structured_outputs_inputs_and_saved_demos(adapter_class
     assert predict.demos[0]["region"] == {"boxes": [EDGES]}
     answer = {"region": {"boxes": [EDGES]}, "missing": None}
     if adapter_class is dspy.TwoStepAdapter:
-        adapter = adapter_class(extraction_model=DummyLM([answer]))
-        lm = DummyLM([{"answer": "The region contains one box: top 0.13, bottom 0.81, left 0.27, right 0.64. "
-                                  "The missing box is null."}])
+        # TwoStepAdapter's extraction stage uses ChatAdapter.
+        extraction_lm = recording_lm([dspy.ChatAdapter().format_assistant_message_content(signature, answer)])
+        adapter = adapter_class(extraction_model=extraction_lm)
+        lm = recording_lm(["The region contains one box: top 0.13, bottom 0.81, left 0.27, right 0.64. "
+                           "The missing box is null."])
     else:
         adapter = adapter_class()
-        lm = DummyLM([answer], adapter=adapter)
+        lm = recording_lm([adapter.format_assistant_message_content(signature, answer)])
     with dspy.context(adapter=adapter):
         result = await predict.acall(previous=box, lm=lm) if asynchronous else predict(previous=box, lm=lm)
     assert result.region.boxes == [box]
@@ -173,8 +176,10 @@ async def test_predict_native_boxes_evidence_images_and_cache(asynchronous, mixe
         await lm.aclose()
 
 
-@pytest.mark.parametrize("with_image", [False, True])
-def test_native_state_serializes_inputs_and_demos(with_image, monkeypatch):
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("media_location", ["none", "top_level", "nested_input", "nested_demo", "nested_both"])
+async def test_native_state_serializes_inputs_and_demos(media_location, asynchronous, monkeypatch):
     from dspy import lm15
     from dspy._vendor.lm15.testing import FakeTransport
     from tests.clients.test_lm_engine_execution import DualResponse
@@ -182,9 +187,14 @@ def test_native_state_serializes_inputs_and_demos(with_image, monkeypatch):
     signature = dspy.Signature({"metadata": (dict, dspy.InputField()), "box": (dspy.BoundingBox, dspy.OutputField())})
     inputs = {"metadata": {"point": (9, 2), "date": date(2026, 10, 19), "tags": {"input"}}}
     demo = {"metadata": {"point": (4, 7), "date": date(2025, 3, 8), "tags": {"demo"}}, "box": dspy.BoundingBox(**EDGES)}
-    if with_image:
+    image = dspy.Image(Image.new("RGB", (320, 280), "red"))
+    if media_location == "top_level":
         signature = signature.prepend("photo", dspy.InputField(), type_=dspy.Image)
-        inputs["photo"] = demo["photo"] = dspy.Image(Image.new("RGB", (320, 280), "red"))
+        inputs["photo"] = demo["photo"] = image
+    if media_location in ("nested_input", "nested_both"):
+        inputs["metadata"]["photos"] = [{"image": image}]
+    if media_location in ("nested_demo", "nested_both"):
+        demo["metadata"]["photos"] = [{"image": image}]
     response = {"model": "jev-1.14.0", "answers": {"box": {"type": "box", "box": EDGES, "confidence": 0.8}}}
     transport = FakeTransport([DualResponse(200, json.dumps(response).encode())])
     monkeypatch.setattr("dspy.clients.execution.RouterConfig", lambda **kwargs: lm15.RouterConfig(**{**kwargs, "transport": transport}))
@@ -192,15 +202,28 @@ def test_native_state_serializes_inputs_and_demos(with_image, monkeypatch):
     predict = dspy.Predict(signature)
     predict.demos = [dspy.Example(**demo)]
     try:
-        assert predict(lm=lm, **inputs).box.model_dump() == EDGES
+        result = await predict.acall(lm=lm, **inputs) if asynchronous else predict(lm=lm, **inputs)
+        assert result.box.model_dump() == EDGES
+        request = lm.history[-1]["request"]
+        assert len(request.messages) == 1
+        assert request.messages[0].role == "user"
+        parts = request.messages[0].parts
         payload = json.loads(transport.requests[0].body)
-        if with_image:
-            assert len(payload["assets"]) == 2
+        if media_location != "none":
+            image_count = 2 if media_location in ("top_level", "nested_both") else 1
+            assert [part for part in parts if isinstance(part, ImagePart)] == image.format() * image_count
+            assert all(isinstance(part, (TextPart, ImagePart)) for part in parts)
+            assert "CUSTOM-TYPE" not in "".join(part.text for part in parts if isinstance(part, TextPart))
+            assert len(payload["assets"]) == image_count
+            assert all(asset["data_base64"] == image.url.split(",", 1)[1] for asset in payload["assets"].values())
         else:
+            assert len(parts) == 1 and isinstance(parts[0], DataPart)
+            assert parts[0].value == payload["state"]
             assert payload["state"]["inputs"]["metadata"] == {"point": [9, 2], "date": "2026-10-19", "tags": ["input"]}
             assert payload["state"]["demos"][0]["metadata"] == {"point": [4, 7], "date": "2025-03-08", "tags": ["demo"]}
+            assert payload["state"]["demos"][0]["box"] == EDGES
     finally:
-        lm.close()
+        await lm.aclose()
 
 
 @pytest.mark.parametrize("annotation", [list[dspy.BoundingBox], dspy.BoundingBox | None, str])

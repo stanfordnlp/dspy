@@ -3,6 +3,9 @@ from dspy.primitives.prediction import Completions, Prediction
 
 
 def default_normalize(s):
+    # Text normalization only applies to strings; vote on other values (ints, bools, enums) as-is.
+    if not isinstance(s, str):
+        return s
     return normalize_text(s) or None
 
 

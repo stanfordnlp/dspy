@@ -10,14 +10,16 @@ from unittest.mock import patch
 import orjson
 import pydantic
 import pytest
-from litellm import ModelResponse
 from pydantic import BaseModel, HttpUrl
 
 import dspy
 from dspy import Predict, Signature
+from dspy._vendor.lm15.providers.base import HttpResponse
 from dspy.clients.base_lm import LM_CLASS_STATE_KEY
+from dspy.lm15 import Usage
 from dspy.predict.predict import serialize_object
 from dspy.utils.dummies import DummyLM
+from tests.test_utils.engines import make_response, recording_lm, spy_lm
 
 
 class CustomStateLM(dspy.BaseLM):
@@ -48,6 +50,30 @@ def test_initialization_with_string_signature():
     expected_instruction = "Given the fields `input1`, `input2`, produce the fields `output`."
     assert predict.signature.instructions == expected_instruction
     assert predict.signature.instructions == Signature(signature_string).instructions
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("override", [dspy.ChatAdapter(), dspy.JSONAdapter()])
+async def test_default_xml_adapter_and_scoped_override(asynchronous, override):
+    predict = Predict("question -> answer: int")
+
+    async def call(lm):
+        with dspy.context(lm=lm):
+            return await predict.acall(question="17 - 23?") if asynchronous else predict(question="17 - 23?")
+
+    # Fix the model's wire format independently of the implicit adapter.
+    lm = DummyLM([{"answer": -6}] * 2, adapter=dspy.XMLAdapter())
+    assert (await call(lm)).answer == -6
+    assert "<question>" in lm.history[-1]["messages"][-1]["content"]
+
+    with dspy.context(adapter=override):
+        explicit_lm = DummyLM([{"answer": -6}], adapter=override)
+        assert (await call(explicit_lm)).answer == -6
+        assert "[[ ## question ## ]]" in explicit_lm.history[-1]["messages"][-1]["content"]
+
+    assert (await call(lm)).answer == -6
+    assert "<question>" in lm.history[-1]["messages"][-1]["content"]
 
 
 def test_reset_method():
@@ -333,7 +359,7 @@ def test_load_ignores_serialized_endpoint_override_by_default(tmp_path, endpoint
     file_path = tmp_path / "model.json"
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
-    original_predict.lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
+    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
     original_predict.save(file_path)
 
     with open(file_path, "rb") as f:
@@ -357,7 +383,7 @@ def test_load_allows_serialized_endpoint_override_with_opt_in(tmp_path, endpoint
     file_path = tmp_path / "model.json"
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
-    original_predict.lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
+    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
     original_predict.save(file_path)
 
     with open(file_path, "rb") as f:
@@ -379,7 +405,7 @@ def test_load_allows_serialized_endpoint_override_with_opt_in(tmp_path, endpoint
 def test_load_state_ignores_serialized_endpoint_override_by_default(endpoint_override_key):
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
-    original_predict.lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
+    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
     saved_state = copy.deepcopy(original_predict.dump_state())
     saved_state["lm"][endpoint_override_key] = override_url
 
@@ -397,7 +423,7 @@ def test_load_state_ignores_serialized_endpoint_override_by_default(endpoint_ove
 def test_load_state_allows_serialized_endpoint_override_with_opt_in(endpoint_override_key):
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
-    original_predict.lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
+    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
     saved_state = copy.deepcopy(original_predict.dump_state())
     saved_state["lm"][endpoint_override_key] = override_url
 
@@ -413,7 +439,7 @@ def test_load_state_allows_serialized_endpoint_override_with_opt_in(endpoint_ove
 def test_load_state_ignores_serialized_model_list_endpoint_override_by_default():
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
-    original_predict.lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
+    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
     saved_state = copy.deepcopy(original_predict.dump_state())
     saved_state["lm"]["model_list"] = [
         {
@@ -436,11 +462,11 @@ def test_load_state_ignores_serialized_model_list_endpoint_override_by_default()
 
 
 @pytest.mark.parametrize("endpoint_override_key", ["api_base", "base_url"])
-def test_load_prevents_serialized_endpoint_override_reaching_litellm(tmp_path, endpoint_override_key):
+def test_load_prevents_serialized_endpoint_override_reaching_engine(tmp_path, endpoint_override_key):
     file_path = tmp_path / "model.json"
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
-    original_predict.lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
+    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
     original_predict.save(file_path)
 
     with open(file_path, "rb") as f:
@@ -452,25 +478,19 @@ def test_load_prevents_serialized_endpoint_override_reaching_litellm(tmp_path, e
     loaded_predict = dspy.Predict("q->a")
     loaded_predict.load(file_path)
 
-    class FakeResp(dict):
-        cache_hit = False
-        usage = {}
-
-        def __init__(self):
-            super().__init__({"choices": []})
-
-    with patch("litellm.completion", return_value=FakeResp()) as completion_mock:
-        loaded_predict.lm.forward(prompt="hello", cache=False)
+    with patch("dspy.clients.engines.LM15Engine.complete", autospec=True, return_value=make_response("ok")) as completion_mock:
+        loaded_predict.lm("hello", cache=False)
 
     assert completion_mock.call_count == 1
-    assert completion_mock.call_args.kwargs.get(endpoint_override_key) != override_url
+    engine = completion_mock.call_args.args[0]
+    assert override_url not in (engine.config.base_urls or {}).values()
 
 
 def test_load_blocks_serialized_model_list_unless_opted_in(tmp_path):
     file_path = tmp_path / "model.json"
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
-    original_predict.lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
+    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
     original_predict.save(file_path)
 
     with open(file_path, "rb") as f:
@@ -487,29 +507,23 @@ def test_load_blocks_serialized_model_list_unless_opted_in(tmp_path):
     with open(file_path, "wb") as f:
         f.write(orjson.dumps(saved_state))
 
-    class FakeResp(dict):
-        cache_hit = False
-        usage = {}
-
-        def __init__(self):
-            super().__init__({"choices": []})
-
     safe_loaded_predict = dspy.Predict("q->a")
     safe_loaded_predict.load(file_path)
-    with patch("litellm.batch_completion_models", return_value=FakeResp()) as batch_completion_mock:
-        with patch("litellm.completion", return_value=FakeResp()) as completion_mock:
-            safe_loaded_predict.lm.forward(prompt="hello", cache=False)
+    with patch("dspy.clients.engines.LM15Engine.complete", return_value=make_response("ok")) as completion_mock:
+        safe_loaded_predict.lm("hello", cache=False)
 
     assert completion_mock.called
-    assert not batch_completion_mock.called
+    assert "model_list" not in safe_loaded_predict.lm.kwargs
 
     opt_in_loaded_predict = dspy.Predict("q->a")
     opt_in_loaded_predict.load(file_path, allow_unsafe_lm_state=True)
-    with patch("litellm.batch_completion_models", return_value=FakeResp()) as batch_completion_mock:
-        opt_in_loaded_predict.lm.forward(prompt="hello", cache=False)
-
-    opt_in_deployments = batch_completion_mock.call_args.kwargs["deployments"]
-    assert opt_in_deployments[0]["api_base"] == override_url
+    # Opt-in preserves the state; strict native execution still refuses
+    # this compatibility option rather than silently redirecting a request.
+    assert opt_in_loaded_predict.lm.kwargs["model_list"] == saved_state["lm"]["model_list"]
+    with patch("dspy._vendor.lm15.providers.base.BaseProviderLM._send") as send:
+        with pytest.raises(dspy.LMUnsupportedFeatureError, match="model_list"):
+            opt_in_loaded_predict.lm.copy(engine="lm15")("hello", cache=False)
+    send.assert_not_called()
 
 
 def test_load_uses_env_api_key_without_honoring_serialized_endpoint_override(tmp_path, monkeypatch):
@@ -518,7 +532,7 @@ def test_load_uses_env_api_key_without_honoring_serialized_endpoint_override(tmp
     env_api_key = "sk-live-test-secret"
 
     original_predict = dspy.Predict("q->a")
-    original_predict.lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini", model_type="text")
+    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
     original_predict.save(file_path)
 
     with open(file_path, "rb") as f:
@@ -528,32 +542,32 @@ def test_load_uses_env_api_key_without_honoring_serialized_endpoint_override(tmp
     with open(file_path, "wb") as f:
         f.write(orjson.dumps(saved_state))
 
-    monkeypatch.setenv("openai_API_KEY", env_api_key)
+    monkeypatch.setenv("OPENAI_API_KEY", env_api_key)
 
-    class FakeResp(dict):
-        cache_hit = False
-        usage = {}
-
-        def __init__(self):
-            super().__init__({"choices": []})
+    reply = HttpResponse(200, "OK", [], orjson.dumps({
+            "id": "test", "model": "gpt-4o-mini",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+        }))
 
     # Simulates legacy behavior by allowing serialized endpoint overrides.
     opt_in_loaded_predict = dspy.Predict("q->a")
     opt_in_loaded_predict.load(file_path, allow_unsafe_lm_state=True)
-    with patch("litellm.text_completion", return_value=FakeResp()) as text_completion_mock:
-        opt_in_loaded_predict.lm.forward(prompt="hello", cache=False)
+    with patch("dspy._vendor.lm15.providers.base.BaseProviderLM._send", return_value=reply) as send:
+        opt_in_loaded_predict.lm("hello", cache=False)
 
-    assert text_completion_mock.call_args.kwargs["api_base"] == override_url
-    assert text_completion_mock.call_args.kwargs["api_key"] == env_api_key
+    request = send.call_args.args[0]
+    assert request.url == override_url + "/chat/completions"
+    assert dict(request.headers)["Authorization"] == f"Bearer {env_api_key}"
 
     safe_loaded_predict = dspy.Predict("q->a")
     safe_loaded_predict.load(file_path)
-    with patch("litellm.text_completion", return_value=FakeResp()) as text_completion_mock:
-        safe_loaded_predict.lm.forward(prompt="hello", cache=False)
+    with patch("dspy._vendor.lm15.providers.base.BaseProviderLM._send", return_value=reply) as send:
+        safe_loaded_predict.lm("hello", cache=False)
 
     # In the safe path, the key still comes from the environment, but the serialized endpoint override does not.
-    assert text_completion_mock.call_args.kwargs["api_key"] == env_api_key
-    assert text_completion_mock.call_args.kwargs["api_base"] != override_url
+    request = send.call_args.args[0]
+    assert dict(request.headers)["Authorization"] == f"Bearer {env_api_key}"
+    assert request.url == "https://api.openai.com/v1/chat/completions"
 
 
 def test_forward_method():
@@ -619,7 +633,6 @@ def test_datetime_inputs_and_outputs():
     lm = DummyLM(
         [
             {
-                "reasoning": "Processed datetime inputs",
                 "summary": "All events are processed",
                 "next_event_time": "2024-11-27T14:00:00",
             }
@@ -652,7 +665,6 @@ def test_explicitly_valued_enum_inputs_and_outputs():
     lm = DummyLM(
         [
             {
-                "reasoning": "The current status is 'PENDING', advancing to 'IN_PROGRESS'.",
                 "next_status": "in_progress",
             }
         ]
@@ -675,11 +687,10 @@ def test_enum_inputs_and_outputs_with_shared_names_and_values():
 
     program = Predict(TicketStatusSignature)
 
-    # Mock reasoning and output
+    # Mock the declared output field only.
     lm = DummyLM(
         [
             {
-                "reasoning": "The ticket is currently 'OPEN', transitioning to 'CLOSED'.",
                 "next_status": "RESOLVED",  # Refers to TicketStatus.CLOSED by value
             }
         ]
@@ -702,7 +713,6 @@ def test_auto_valued_enum_inputs_and_outputs():
     lm = DummyLM(
         [
             {
-                "reasoning": "The current status is 'PENDING', advancing to 'IN_PROGRESS'.",
                 "next_status": "IN_PROGRESS",  # Use the auto-assigned value for IN_PROGRESS
             }
         ]
@@ -751,18 +761,6 @@ def test_load_state_chaining():
 
 @pytest.mark.parametrize("adapter_type", ["chat", "json"])
 def test_call_predict_with_chat_history(adapter_type):
-    class SpyLM(dspy.LM):
-        def __init__(self, *args, return_json=False, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.calls = []
-            self.return_json = return_json
-
-        def __call__(self, prompt=None, messages=None, **kwargs):
-            self.calls.append({"prompt": prompt, "messages": messages, "kwargs": kwargs})
-            if self.return_json:
-                return ["{'answer':'100%'}"]
-            return ["[[ ## answer ## ]]\n100%!"]
-
     class MySignature(dspy.Signature):
         question: str = dspy.InputField()
         history: dspy.History = dspy.InputField()
@@ -771,10 +769,10 @@ def test_call_predict_with_chat_history(adapter_type):
     program = Predict(MySignature)
 
     if adapter_type == "chat":
-        lm = SpyLM("dummy_model")
+        lm = spy_lm("dummy_model", replies=["[[ ## answer ## ]]\n100%!"])
         dspy.configure(adapter=dspy.ChatAdapter(), lm=lm)
     else:
-        lm = SpyLM("dummy_model", return_json=True)
+        lm = spy_lm("dummy_model", replies=["{'answer':'100%'}"])
         dspy.configure(adapter=dspy.JSONAdapter(), lm=lm)
 
     program(
@@ -795,12 +793,12 @@ def test_call_predict_with_chat_history(adapter_type):
 
 def test_lm_usage():
     program = Predict("question -> answer")
-    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), track_usage=True)
+    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
     with patch(
-        "dspy.clients.lm.litellm_completion",
-        return_value=ModelResponse(
-            choices=[{"message": {"content": "[[ ## answer ## ]]\nParis"}}],
-            usage={"total_tokens": 10},
+        "dspy.clients.engines.LM15Engine.complete",
+        return_value=make_response(
+            "<answer>\nParis\n</answer>",
+            usage=Usage(total_tokens=10),
         ),
     ):
         result = program(question="What is the capital of France?")
@@ -816,12 +814,12 @@ def test_lm_usage_with_parallel():
         time.sleep(0.5)
         return program(question=question)
 
-    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), track_usage=True)
+    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
     with patch(
-        "dspy.clients.lm.litellm_completion",
-        return_value=ModelResponse(
-            choices=[{"message": {"content": "[[ ## answer ## ]]\nParis"}}],
-            usage={"total_tokens": 10},
+        "dspy.clients.engines.LM15Engine.complete",
+        return_value=make_response(
+            "<answer>\nParis\n</answer>",
+            usage=Usage(total_tokens=10),
         ),
     ):
         parallelizer = dspy.Parallel()
@@ -848,12 +846,12 @@ async def test_lm_usage_with_async():
 
     program.aforward = types.MethodType(patched_aforward, program)
 
-    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), track_usage=True):
+    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True):
         with patch(
-            "litellm.acompletion",
-            return_value=ModelResponse(
-                choices=[{"message": {"content": "[[ ## answer ## ]]\nParis"}}],
-                usage={"total_tokens": 10},
+            "dspy.clients.engines.AsyncLM15Engine.complete",
+            return_value=make_response(
+                "<answer>\nParis\n</answer>",
+                usage=Usage(total_tokens=10),
             ),
         ):
             coroutines = [
@@ -904,18 +902,6 @@ def test_error_message_on_invalid_lm_setup():
 
 @pytest.mark.parametrize("adapter_type", ["chat", "json"])
 def test_field_constraints(adapter_type):
-    class SpyLM(dspy.LM):
-        def __init__(self, *args, return_json=False, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.calls = []
-            self.return_json = return_json
-
-        def __call__(self, prompt=None, messages=None, **kwargs):
-            self.calls.append({"prompt": prompt, "messages": messages, "kwargs": kwargs})
-            if self.return_json:
-                return ["{'score':'0.5', 'count':'2'}"]
-            return ["[[ ## score ## ]]\n0.5\n[[ ## count ## ]]\n2"]
-
     class ConstrainedSignature(dspy.Signature):
         """Test signature with constrained fields."""
 
@@ -928,12 +914,11 @@ def test_field_constraints(adapter_type):
         count: int = dspy.OutputField(multiple_of=2, desc="Even number count")
 
     program = Predict(ConstrainedSignature)
-    lm = SpyLM("dummy_model")
     if adapter_type == "chat":
-        lm = SpyLM("dummy_model")
+        lm = spy_lm("dummy_model", replies=["[[ ## score ## ]]\n0.5\n[[ ## count ## ]]\n2"])
         dspy.configure(adapter=dspy.ChatAdapter(), lm=lm)
     else:
-        lm = SpyLM("dummy_model", return_json=True)
+        lm = spy_lm("dummy_model", replies=["{'score':'0.5', 'count':'2'}"])
         dspy.configure(adapter=dspy.JSONAdapter(), lm=lm)
 
     # Call the predictor to trigger instruction generation
@@ -962,15 +947,14 @@ async def test_async_predict():
 
 def test_predicted_outputs_piped_from_predict_to_lm_call():
     program = Predict("question -> answer")
-    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm"))
-
-    with patch("litellm.completion") as mock_completion:
+    lm = recording_lm(["<answer>To get to the other side</answer>"])
+    with dspy.context(lm=lm):
         program(
             question="Why did a chicken cross the kitchen?",
             prediction={"type": "content", "content": "A chicken crossing the kitchen"},
         )
 
-        assert mock_completion.call_args[1]["prediction"] == {
+        assert lm.engine.requests[0].config.extensions["prediction"] == {
             "type": "content",
             "content": "A chicken crossing the kitchen",
         }
@@ -978,10 +962,11 @@ def test_predicted_outputs_piped_from_predict_to_lm_call():
     # If the signature has prediction as an input field, and the prediction is not set as the standard predicted output
     # format, it should not be passed to the LM.
     program = Predict("question, prediction -> judgement")
-    with patch("litellm.completion") as mock_completion:
+    lm = recording_lm(["<judgement>funny</judgement>"])
+    with dspy.context(lm=lm):
         program(question="Why did a chicken cross the kitchen?", prediction="To get to the other side!")
 
-    assert "prediction" not in mock_completion.call_args[1]
+    assert "prediction" not in (lm.engine.requests[0].config.extensions or {})
 
 
 def test_dump_state_pydantic_non_primitive_types():
@@ -1062,21 +1047,12 @@ def test_per_module_history_disabled():
     assert len(program.history) == 0
 
 def test_input_field_default_value():
-    class SpyLM(dspy.LM):
-        def __init__(self):
-            super().__init__("dummy")
-            self.calls = []
-
-        def __call__(self, prompt=None, messages=None, **kwargs):
-            self.calls.append({"messages": messages})
-            return ["[[ ## answer ## ]]\ntest"]
-
     class SignatureWithDefault(dspy.Signature):
         context: str = dspy.InputField(default="DEFAULT_CONTEXT")
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
 
-    lm = SpyLM()
+    lm = spy_lm("dummy", replies=["<answer>\ntest\n</answer>"])
     dspy.configure(lm=lm)
     predictor = Predict(SignatureWithDefault)
     predictor(question="test")

@@ -2,12 +2,12 @@ from typing import Any, ClassVar
 from unittest import mock
 
 import pytest
-from litellm import Choices, Message, ModelResponse
 
 import dspy
 from dspy.primitives.example import Example
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, bootstrap_trace_data
 from dspy.utils import DummyLM
+from tests.test_utils.engines import make_response
 
 
 def test_bootstrap_trace_data():
@@ -37,21 +37,19 @@ def test_bootstrap_trace_data():
         return example.number == prediction.number
 
     # Configure dspy
-    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
 
     # One reply per example: JSON parsing failures do not restart execution in
     # another format. Keep four successes and one captured parsing failure.
     responses = [
-        ModelResponse(
-            choices=[Choices(message=Message(content=(
-                "This is an invalid JSON!" if number is None else f'```json\n{{"number": {number}}}\n```'
-            )))],
+        make_response(
+            "This is an invalid JSON!" if number is None else f'```json\n{{"number": {number}}}\n```',
             model="openai/gpt-4o-mini",
         )
         for number in (1, 2, None, 4, 5)
     ]
 
-    with mock.patch("litellm.completion", side_effect=responses) as completion:
+    with mock.patch("dspy.clients.engines.LM15Engine.complete", side_effect=responses) as completion:
         # Call bootstrap_trace_data
         results = bootstrap_trace_data(
             program=program,

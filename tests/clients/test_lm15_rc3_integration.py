@@ -1,6 +1,7 @@
 """The rc3 integration through DSPy's public LM boundary, without provider calls."""
 
 import copy
+import json
 
 import pytest
 
@@ -9,6 +10,7 @@ from dspy import lm15
 from dspy.clients.call_result import CallResult
 from dspy.clients.errors import wrap_error
 from tests.clients.test_engine_errors import AsyncEngine, Engine, Sink, invoke
+from tests.clients.test_lm_engine_execution import DualResponse, native_transport, wire
 
 
 def response_body(text="hi preSTOPtail"):
@@ -24,43 +26,20 @@ def response_body(text="hi preSTOPtail"):
     }
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("stop", [(), ("NEVER",), ("STOP",), ("hi",)])
-async def test_typed_litellm_responses_honors_stops_and_preserves_usage(asynchronous, stop, monkeypatch):
-    import litellm
+def test_completed_response_stop_preserves_billed_usage_and_logprobs(stop):
+    from dspy._vendor.lm15.result import apply_client_side_stop
+    from dspy.clients.lm15_boundary import response_value
 
-    calls = []
     body = response_body()
     original = copy.deepcopy(body)
-
-    def reply(**kwargs):
-        calls.append(kwargs)
-        return body
-
-    async def areply(**kwargs):
-        return reply(**kwargs)
-
-    monkeypatch.setattr(litellm, "responses", reply)
-    monkeypatch.setattr(litellm, "aresponses", areply)
-    lm = dspy.LM("openai/gpt-4o", model_type="responses", engine="litellm", cache=False, num_retries=0)
-    request = lm15.Request(model=lm.model, messages=(lm15.Message.user("hi"),),
+    request = lm15.Request(model="openai/gpt-4o", messages=(lm15.Message.user("hi"),),
                            config=lm15.Config(stop=stop, logprobs=0))
-    response = await invoke(lm, asynchronous, request)
+    response = apply_client_side_stop(response_value(body, "responses", request), stop)
     expected = "hi pre" if stop == ("STOP",) else "" if stop == ("hi",) else "hi preSTOPtail"
     assert response.text == expected
     assert response.usage == lm15.Usage(input_tokens=2, output_tokens=3, total_tokens=5)
-    assert len(calls) == 1 and "stop" not in calls[0]
     assert body == original  # leave the provider evidence intact
-    if stop:
-        note, = response.adaptations
-        assert (note.field, note.action, note.asked, note.applied) == (
-            "config.stop", "client_side", list(stop), list(stop),
-        )
-        assert "completed" in note.reason and "not stopped early" in note.reason
-        assert lm.history[-1]["adaptations"] == response.adaptations
-    else:
-        assert response.adaptations == ()
     if stop == ("STOP",):
         assert [token.token for token in response.logprobs] == ["hi "]
         assert not response.logprobs_complete
@@ -76,25 +55,12 @@ async def test_typed_litellm_responses_honors_stops_and_preserves_usage(asynchro
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
-async def test_litellm_chat_still_sends_stop_to_provider(asynchronous, monkeypatch):
-    import litellm
-
-    calls = []
-
-    def reply(**kwargs):
-        calls.append(kwargs)
-        return {"model": "gpt-4o", "choices": [{"index": 0,
-                "message": {"role": "assistant", "content": "stopped upstream"}, "finish_reason": "stop"}]}
-
-    async def areply(**kwargs):
-        return reply(**kwargs)
-
-    monkeypatch.setattr(litellm, "completion", reply)
-    monkeypatch.setattr(litellm, "acompletion", areply)
-    lm = dspy.LM("openai/gpt-4o", engine="litellm", cache=False, num_retries=0)
+async def test_native_chat_still_sends_stop_to_provider(asynchronous, monkeypatch):
+    transport = native_transport(monkeypatch, [wire("stopped upstream")])
+    lm = dspy.LM("openai/gpt-4o", cache=False, num_retries=0)
     request = lm15.Request(model=lm.model, messages=(lm15.Message.user("hi"),), config=lm15.Config(stop=("STOP",)))
     response = await invoke(lm, asynchronous, request)
-    assert calls[0]["stop"] == ["STOP"]
+    assert json.loads(transport.requests[0].body)["stop"] == ["STOP"]
     assert response.text == "stopped upstream" and response.adaptations == ()
 
 
@@ -153,7 +119,7 @@ def test_collection_limit_wrap_does_not_require_raising_to_access_partial():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
-async def test_request_conversion_refusal_keeps_the_feature(asynchronous, monkeypatch):
+async def test_request_routing_refusal_keeps_the_feature(asynchronous, monkeypatch):
     import dspy.clients.execution as execution
 
     original = lm15.UnsupportedFeatureError("cannot convert", feature="config.custom")
@@ -161,7 +127,7 @@ async def test_request_conversion_refusal_keeps_the_feature(asynchronous, monkey
     def refuse(*args, **kwargs):
         raise original
 
-    monkeypatch.setattr(execution, "_canonical", refuse)
+    monkeypatch.setattr(execution, "select_backend", refuse)
     lm = dspy.LM("openai/gpt-4o", engine="lm15", api_key="unused", cache=False, num_retries=0)
     with pytest.raises(dspy.LMUnsupportedFeatureError) as caught:
         await invoke(lm, asynchronous, "hello")
@@ -179,9 +145,8 @@ async def test_judgment_response_preserves_json_prediction_and_typed_value(async
     import json
     from typing import Literal
 
-    from dspy._vendor.lm15.providers.base import HttpResponse
-    from dspy._vendor.lm15.providers.openai_chat import OpenAIChatLM
-    from dspy.clients.execution import _canonical, prepare
+    from dspy.clients.execution import prepare
+    from tests.clients.test_lm_engine_execution import native_transport
 
     class Answer(dspy.Signature):
         question: str = dspy.InputField()
@@ -191,30 +156,25 @@ async def test_judgment_response_preserves_json_prediction_and_typed_value(async
     body = {"model": "gpt-4o", "choices": [{"index": 0, "message": {
         "role": "assistant", "content": '{"accepted":false,"label":"yes"}',
     }, "finish_reason": "stop"}]}
-    monkeypatch.setattr(OpenAIChatLM, "_send", lambda *args: HttpResponse(
-        status=200, reason="OK", headers=[], body=json.dumps(body).encode(),
-    ))
     # Exercise the real native parser with a fake wire, including async mirrors.
-    from dspy._vendor.lm15.providers.async_base import AsyncOpenAIChatLM
-
-    async def send(*args):
-        return HttpResponse(status=200, reason="OK", headers=[], body=json.dumps(body).encode())
-
-    monkeypatch.setattr(AsyncOpenAIChatLM, "_send", send)
+    transport = native_transport(monkeypatch, [
+        DualResponse(status=200, body=json.dumps(body).encode()) for _ in range(2)
+    ])
     lm = dspy.LM("openai/gpt-4o", api_key="test", cache=False, num_retries=0)
-    with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
-        predict = dspy.Predict(Answer)
-        result = await predict.acall(question="test") if asynchronous else predict(question="test")
-    assert result.accepted is False and result.label == "yes"
-    request = _canonical(prepare(lm, "test", None, {"response_format": {
+    request = prepare(lm, "test", {"response_format": {
         "type": "json_schema", "json_schema": {"name": "Answer", "schema": {
             "type": "object", "properties": {"accepted": {"type": "boolean"}},
         }},
-    }}))
+    }}).request
     response = await invoke(lm, asynchronous, request)
     assert isinstance(response.message.parts[0], lm15.DataPart)
     assert response.data == {"accepted": False, "label": "yes"}
     assert CallResult.load(CallResult.native(response).dump()).responses[0] == response
+    with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
+        predict = dspy.Predict(Answer)
+        result = await predict.acall(question="test") if asynchronous else predict(question="test")
+    assert result.accepted is False and result.label == "yes"
+    assert len(transport.requests) == 2
 
 
 @pytest.mark.asyncio
@@ -225,7 +185,6 @@ async def test_typesafe_image_judgments_preserve_media_and_cached_answers(asynch
 
     import dspy.clients.execution as execution
     from dspy._vendor.lm15.testing import FakeTransport
-    from tests.clients.test_lm_engine_execution import DualResponse
 
     path = tmp_path / "first.png"
     path.write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -282,7 +241,6 @@ async def test_token_scored_judgments_preserve_generated_boxes_and_cache(asynchr
 
     import dspy.clients.execution as execution
     from dspy._vendor.lm15.testing import FakeTransport
-    from tests.clients.test_lm_engine_execution import DualResponse
 
     class ScoringTransport(FakeTransport):
         def stream(self, request):
