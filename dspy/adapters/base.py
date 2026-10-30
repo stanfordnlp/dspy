@@ -17,7 +17,8 @@ from dspy.clients.capabilities import with_capability_planning
 from dspy.clients.requests import build_request
 from dspy.dsp.utils.settings import settings
 from dspy.lm15 import Message, Request, Response, TextPart, ToolCallPart
-from dspy.signatures.field import InputField
+from dspy.primitives.repl_types import ExtractFallbackMarker, REPLEntry, is_repl_event, split_repl_event
+from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.exceptions import AdapterParseError
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
 _TOOL_CALL_RESULTS_SIGNATURE = Signature({"tool_call_results": (ToolCallResults, InputField())})
+_REPL_OUTPUT_SIGNATURE = Signature({"repl_output": (str, InputField())})
 
 
 @dataclass(frozen=True)
@@ -581,6 +583,50 @@ class Adapter:
 
         messages = []
         for message in conversation_history:
+            # RLM history events (see `build_repl_event`): a REPLEntry (or extract-fallback marker) with the
+            # RLM's own input/output fields recorded around it. Only fields the current signature declares are
+            # rendered, so the replay is the inner LM's own transcript: `variables_info` on the first event of a
+            # turn, then each iteration's reasoning/code as an assistant turn and its REPL output as a user turn.
+            # Handled before tool-call detection and the generic rendering below so neither applies to RLM events
+            # (an RLM input such as `{"tool_calls": ...}` is user data, not a ToolCalls value).
+            if is_repl_event(message):
+                repl_inputs, repl_entry, repl_outputs = split_repl_event(message)
+                if isinstance(repl_entry, ExtractFallbackMarker):
+                    # Extract-fallback event: the outputs the extract call produced. The model said them, so they
+                    # replay as an assistant turn, rendered from the event's own output fields (the RLM's outputs,
+                    # which the action signature does not declare).
+                    if repl_outputs:
+                        fallback_signature = Signature({name: (str, OutputField()) for name in repl_outputs})
+                        assistant_content = self.format_assistant_message_content(fallback_signature, repl_outputs)
+                        messages.append(Message.assistant(assistant_content))
+                    continue
+
+                # Replay the step's inputs the way they were sent, reminder included (see the generic path below).
+                user_content = self.format_user_message_content(
+                    signature, repl_inputs, main_request=any(name in repl_inputs for name in signature.input_fields)
+                )
+                if user_content:
+                    messages.append(user_message(user_content))
+
+                # The entry is always an action (reasoning + code), so render it with an action signature whose
+                # reasoning field uses the name the live call asked for (see `_repl_reasoning_field_name`).
+                reasoning_name = _repl_reasoning_field_name(signature)
+                assistant_values: dict[str, Any] = {"code": repl_entry.code}
+                action_fields: dict[str, Any] = {"code": (str, OutputField())}
+                if reasoning_name is not None:
+                    assistant_values[reasoning_name] = repl_entry.reasoning
+                    action_fields = {reasoning_name: (str, OutputField()), **action_fields}
+                assistant_content = self.format_assistant_message_content(Signature(action_fields), assistant_values)
+                messages.append(Message.assistant(assistant_content))
+
+                # Format user message with repl output
+                content = self.format_user_message_content(
+                    _REPL_OUTPUT_SIGNATURE,
+                    {"repl_output": REPLEntry.format_output(repl_entry.output, repl_entry.max_output_chars)},
+                )
+                messages.append(user_message(content))
+                continue
+
             tool_call_field_name, tool_calls = _tool_calls_from_message(message)
             tool_call_results = (
                 ToolCallResults.model_validate(tool_calls.tool_call_results)
@@ -692,6 +738,23 @@ def _candidate_calls(lm: BaseLM, lm_kwargs: dict[str, Any], request: Request) ->
             if index and request.config.seed is not None:
                 candidate = replace(request, config=replace(request.config, seed=request.config.seed + index))
             yield candidate, {**options, "rollout_id": ("dspy.adapter.candidate", rollout_id, index)}
+
+
+def _repl_reasoning_field_name(signature: type[Signature]) -> str | None:
+    """Name under which a replayed REPL action's reasoning was produced, or None if it was not produced as text.
+
+    The adapter rewrites RLM's `reasoning` output before each call: under native reasoning it is deleted (the model
+    reasons natively and never emits it as text), otherwise it is renamed to a fallback such as `plan` and tagged
+    with `__dspy_reasoning_field`. Replay must use the same name so prior turns match what the model wrote.
+    """
+    for name, field in signature.output_fields.items():
+        if (field.json_schema_extra or {}).get("__dspy_reasoning_field") == "reasoning":
+            return name
+    if "reasoning" in signature.output_fields:
+        return "reasoning"
+    if "code" in signature.output_fields:
+        return None  # The action signature with its reasoning field deleted: native reasoning.
+    return "reasoning"
 
 
 def _tool_calls_from_message(message: dict[str, Any]) -> tuple[str | None, ToolCalls | None]:

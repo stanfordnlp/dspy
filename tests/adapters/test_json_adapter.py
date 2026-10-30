@@ -8,6 +8,7 @@ import pytest
 import dspy
 from dspy.clients.lm15_boundary import request_kwargs
 from dspy.lm15 import ImagePart, Usage
+from dspy.primitives.repl_types import REPLEntry
 from tests.adapters.conftest import format_messages_and_lm_kwargs
 from tests.test_utils.engines import make_response, recording_lm
 
@@ -608,6 +609,155 @@ def test_json_adapter_format_exact_messages_and_lm_kwargs_with_native_tool_calli
                                                            "k": {"type": "integer", "default": 3}},
                                             "required": ["query"]}}}]}
     assert lm_kwargs == expected_lm_kwargs
+
+def test_json_adapter_format_messages_and_lm_kwargs_with_repl_history_non_reasoning_lm():
+    class NonReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_reasoning(self):
+            return False
+
+    class REPLHistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        variables_info: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        code: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {
+                "variables_info": "INFO_1",
+                "repl_entry": REPLEntry(
+                    reasoning="First explore the data",
+                    code="x = 10\nprint(f'x = {x}')",
+                    output="x = 20",
+                    max_output_chars=100,
+                ),
+            }
+        ]
+    )
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.JSONAdapter(),
+        REPLHistorySignature,
+        [],
+        {"variables_info": "INFO_2", "history": history},
+        lm=NonReasoningLM([{}]),
+    )
+
+    assert messages[1]["role"] == "user"
+    assert "INFO_1" in messages[1]["content"]
+    assert messages[2] == {
+        "role": "assistant",
+        "content": '{\n  "reasoning": "First explore the data",\n  "code": "x = 10\\nprint(f\'x = {x}\')"\n}',
+    }
+    assert messages[3] == {
+        "role": "user",
+        "content": "[[ ## repl_output ## ]]\nx = 20",
+    }
+    assert messages[4]["role"] == "user"
+    assert "INFO_2" in messages[4]["content"]
+    assert "history" not in messages[4]["content"]
+    assert "reasoning_effort" not in lm_kwargs
+
+
+def test_json_adapter_format_messages_and_lm_kwargs_with_repl_history_reasoning_lm():
+    class ReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_reasoning(self):
+            return True
+
+    class REPLHistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        variables_info: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        code: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {
+                "variables_info": "INFO_1",
+                "repl_entry": REPLEntry(
+                    reasoning="First explore the data",
+                    code="x = 10\nprint(f'x = {x}')",
+                    output="x = 20",
+                    max_output_chars=100,
+                ),
+            }
+        ]
+    )
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.JSONAdapter(),
+        REPLHistorySignature,
+        [],
+        {"variables_info": "INFO_2", "history": history},
+        lm=ReasoningLM([{}]),
+    )
+
+    assert messages[1]["role"] == "user"
+    assert "INFO_1" in messages[1]["content"]
+    assert messages[2] == {
+        "role": "assistant",
+        "content": '{\n  "code": "x = 10\\nprint(f\'x = {x}\')"\n}',
+    }
+    assert messages[3] == {
+        "role": "user",
+        "content": "[[ ## repl_output ## ]]\nx = 20",
+    }
+    assert messages[4]["role"] == "user"
+    assert "INFO_2" in messages[4]["content"]
+    assert "history" not in messages[4]["content"]
+    assert "reasoning_effort" in lm_kwargs
+
+
+def test_json_adapter_format_messages_and_lm_kwargs_with_repl_history_and_truncation():
+    class ReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_reasoning(self):
+            return True
+
+    class REPLHistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        variables_info: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        code: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {
+                "variables_info": "INFO_1",
+                "repl_entry": REPLEntry(
+                    reasoning="First explore the data",
+                    code="x = 10\nprint(f'x = {x}')",
+                    output="x = 20",
+                    max_output_chars=4,
+                ),
+            }
+        ]
+    )
+
+    messages, _ = format_messages_and_lm_kwargs(
+        dspy.JSONAdapter(),
+        REPLHistorySignature,
+        [],
+        {"variables_info": "INFO_2", "history": history},
+        lm=ReasoningLM([{}]),
+    )
+
+    assert messages[1]["role"] == "user"
+    assert "INFO_1" in messages[1]["content"]
+    assert messages[2] == {
+        "role": "assistant",
+        "content": '{\n  "code": "x = 10\\nprint(f\'x = {x}\')"\n}',
+    }
+    assert messages[3] == {
+        "role": "user",
+        "content": "[[ ## repl_output ## ]]\nx \n\n... (2 characters omitted) ...\n\n20",
+    }
+    assert messages[4]["role"] == "user"
+    assert "INFO_2" in messages[4]["content"]
+    assert "history" not in messages[4]["content"]
+
 
 def test_json_adapter_format_exact_messages_with_tool_calls_output_demo():
     class ToolCallsSignature(dspy.Signature):

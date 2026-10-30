@@ -8,6 +8,7 @@ from typing_extensions import TypedDict
 import dspy
 from dspy.adapters.chat_adapter import FieldInfoWithName
 from dspy.adapters.xml_adapter import XMLAdapter
+from dspy.primitives.repl_types import REPLEntry
 from tests.adapters.conftest import format_messages_and_lm_kwargs
 from tests.test_utils.engines import make_response
 
@@ -1371,6 +1372,155 @@ def test_xml_adapter_format_exact_messages_with_incomplete_demo():
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
+
+
+def test_xml_adapter_format_messages_and_lm_kwargs_with_repl_history_non_reasoning_lm():
+    class NonReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_reasoning(self):
+            return False
+
+    class REPLHistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        variables_info: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        code: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {
+                "variables_info": "INFO_1",
+                "repl_entry": REPLEntry(
+                    reasoning="First explore the data",
+                    code="x = 10\nprint(f'x = {x}')",
+                    output="x = 20",
+                    max_output_chars=100,
+                ),
+            }
+        ]
+    )
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
+        REPLHistorySignature,
+        [],
+        {"variables_info": "INFO_2", "history": history},
+        lm=NonReasoningLM([{}]),
+    )
+
+    assert messages[1]["role"] == "user"
+    assert "INFO_1" in messages[1]["content"]
+    assert messages[2] == {
+        "role": "assistant",
+        "content": "<reasoning>\nFirst explore the data\n</reasoning>\n\n<code>\nx = 10\nprint(f'x = {x}')\n</code>",
+    }
+    assert messages[3] == {
+        "role": "user",
+        "content": "<repl_output>\nx = 20\n</repl_output>",
+    }
+    assert messages[4]["role"] == "user"
+    assert "INFO_2" in messages[4]["content"]
+    assert "history" not in messages[4]["content"]
+    assert "reasoning_effort" not in lm_kwargs
+
+
+def test_xml_adapter_format_messages_and_lm_kwargs_with_repl_history_reasoning_lm():
+    class ReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_reasoning(self):
+            return True
+
+    class REPLHistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        variables_info: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        code: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {
+                "variables_info": "INFO_1",
+                "repl_entry": REPLEntry(
+                    reasoning="First explore the data",
+                    code="x = 10\nprint(f'x = {x}')",
+                    output="x = 20",
+                    max_output_chars=100,
+                ),
+            }
+        ]
+    )
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
+        REPLHistorySignature,
+        [],
+        {"variables_info": "INFO_2", "history": history},
+        lm=ReasoningLM([{}]),
+    )
+
+    assert messages[1]["role"] == "user"
+    assert "INFO_1" in messages[1]["content"]
+    assert messages[2] == {
+        "role": "assistant",
+        "content": "<code>\nx = 10\nprint(f'x = {x}')\n</code>",
+    }
+    assert messages[3] == {
+        "role": "user",
+        "content": "<repl_output>\nx = 20\n</repl_output>",
+    }
+    assert messages[4]["role"] == "user"
+    assert "INFO_2" in messages[4]["content"]
+    assert "history" not in messages[4]["content"]
+    assert "reasoning_effort" in lm_kwargs
+
+
+def test_xml_adapter_format_messages_and_lm_kwargs_with_repl_history_and_truncation():
+    class ReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_reasoning(self):
+            return True
+
+    class REPLHistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        variables_info: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        code: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {
+                "variables_info": "INFO_1",
+                "repl_entry": REPLEntry(
+                    reasoning="First explore the data",
+                    code="x = 10\nprint(f'x = {x}')",
+                    output="x = 20",
+                    max_output_chars=4,
+                ),
+            }
+        ]
+    )
+
+    messages, _ = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
+        REPLHistorySignature,
+        [],
+        {"variables_info": "INFO_2", "history": history},
+        lm=ReasoningLM([{}]),
+    )
+
+    assert messages[1]["role"] == "user"
+    assert "INFO_1" in messages[1]["content"]
+    assert messages[2] == {
+        "role": "assistant",
+        "content": "<code>\nx = 10\nprint(f'x = {x}')\n</code>",
+    }
+    assert messages[3] == {
+        "role": "user",
+        "content": "<repl_output>\nx \n\n... (2 characters omitted) ...\n\n20\n</repl_output>",
+    }
+    assert messages[4]["role"] == "user"
+    assert "INFO_2" in messages[4]["content"]
+    assert "history" not in messages[4]["content"]
 
 
 def test_format_system_message():
