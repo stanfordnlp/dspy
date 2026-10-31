@@ -2110,6 +2110,30 @@ def test_chat_adapter_exception_raised_on_failure():
         adapter.parse(signature, invalid_completion)
 
 
+@pytest.mark.parametrize("indent", ["", "  ", "    ", "\t"])
+def test_chat_adapter_parses_indented_field_header_with_inline_value(indent):
+    """An indented field header must not leave part of the header in the value.
+
+    Models do indent the completion, for instance when they answer inside a list or a
+    code block. The header is matched on the stripped line, so the value has to be
+    taken from the same string instead of from the original line, whose indices are
+    shifted by the indentation.
+    """
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter()
+
+    assert adapter.parse(signature, f"{indent}[[ ## answer ## ]] 42") == {"answer": "42"}
+
+
+def test_chat_adapter_parses_indented_field_header_with_value_on_next_lines():
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter()
+
+    assert adapter.parse(signature, "  [[ ## answer ## ]]\n  42") == {"answer": "42"}
+    # The indentation of the value lines is content, and is kept.
+    assert adapter.parse(signature, "  [[ ## answer ## ]]\n  first\n  second") == {"answer": "first\n  second"}
+
+
 def test_chat_adapter_formats_image():
     # Test basic image formatting
     image = dspy.Image(url="https://example.com/image.jpg")
