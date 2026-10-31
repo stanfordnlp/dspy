@@ -217,11 +217,15 @@ class ChatAdapter(Adapter):
         sections = [(None, [])]
 
         for line in completion.splitlines():
-            match = field_header_pattern.match(line.strip())
+            stripped_line = line.strip()
+            match = field_header_pattern.match(stripped_line)
             if match:
-                # If the header pattern is found, split the rest of the line as content
+                # If the header pattern is found, split the rest of the line as content.
+                # The match offsets index into `stripped_line`, so the content has to be
+                # sliced from it as well: slicing the original line would shift them by
+                # the indentation and leave part of the header in the value.
                 header = match.group(1)
-                remaining_content = line[match.end() :].strip()
+                remaining_content = stripped_line[match.end() :].strip()
                 sections.append((header, [remaining_content] if remaining_content else []))
             else:
                 sections[-1][1].append(line)
