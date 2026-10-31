@@ -322,6 +322,41 @@ async def test_request_cache_decorator_async(cache):
         assert result3 == "Response for Different with openai/gpt-4o-mini"
 
 
+def test_request_cache_named_positional_argument():
+    from dspy.clients.cache import request_cache
+
+    calls = []
+
+    @request_cache(cache_arg_name="request")
+    def complete(request):
+        calls.append(request.copy())
+        return request.pop("prompt")
+
+    assert complete({"prompt": "first"}) == "first"
+    assert complete(request={"prompt": "first"}) == "first"
+    assert complete({"prompt": "second"}) == "second"
+    assert complete({"prompt": "second"}) == "second"
+    assert calls == [{"prompt": "first"}, {"prompt": "second"}]
+
+
+@pytest.mark.asyncio
+async def test_request_cache_named_positional_only_argument():
+    from dspy.clients.cache import request_cache
+
+    calls = []
+
+    @request_cache(cache_arg_name="request")
+    async def complete(request, /):
+        calls.append(request.copy())
+        return request.pop("prompt")
+
+    assert await complete({"prompt": "first"}) == "first"
+    assert await complete({"prompt": "first"}) == "first"
+    assert await complete({"prompt": "second"}) == "second"
+    assert await complete({"prompt": "second"}) == "second"
+    assert calls == [{"prompt": "first"}, {"prompt": "second"}]
+
+
 def test_cache_consistency_with_lm_call_modifies_the_request(cache):
     """Test that the cache is consistent with the LM call that modifies the request."""
     from dspy.clients.cache import request_cache
