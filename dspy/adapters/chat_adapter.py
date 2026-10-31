@@ -97,32 +97,37 @@ class ChatAdapter(Adapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-       processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-self._validate_field_markers(processed_signature)
-with adapter_fallback_scope() as progress:
-    try:
-        return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-    except AdapterParseError:
-        from dspy.adapters.json_adapter import JSONAdapter
-        if progress.emitted or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
-            raise
-        return self._make_json_adapter_fallback()(lm, lm_kwargs, signature, demos, inputs)
+        processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
+        self._validate_field_markers(processed_signature)
+        with adapter_fallback_scope() as progress:
+            try:
+                return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+            except AdapterParseError:
+                from dspy.adapters.json_adapter import JSONAdapter
+
+                if progress.emitted or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
+                    raise
+                return self._make_json_adapter_fallback()(lm, lm_kwargs, signature, demos, inputs)
+
+    async def acall(
+        self,
         lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-self._validate_field_markers(processed_signature)
-with adapter_fallback_scope() as progress:
-    try:
-        return await super().acall(lm, lm_kwargs, signature, demos, inputs)
-    except AdapterParseError:
-        from dspy.adapters.json_adapter import JSONAdapter
-        if progress.emitted or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
-            raise
-        return await self._make_json_adapter_fallback().acall(lm, lm_kwargs, signature, demos, inputs)
+        processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
+        self._validate_field_markers(processed_signature)
+        with adapter_fallback_scope() as progress:
+            try:
+                return await super().acall(lm, lm_kwargs, signature, demos, inputs)
+            except AdapterParseError:
+                from dspy.adapters.json_adapter import JSONAdapter
+
+                if progress.emitted or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
+                    raise
+                return await self._make_json_adapter_fallback().acall(lm, lm_kwargs, signature, demos, inputs)
     def format_field_description(self, signature: type[Signature]) -> str:
         return (
             f"Your input fields are:\n{get_field_description_string(signature.input_fields)}\n"
