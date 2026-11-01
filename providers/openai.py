@@ -113,6 +113,7 @@ from .base import (
     resolve_credential_value,
 )
 from .common import (
+    usage_from_responses,
     check_message_media,
     tool_result_error_text,
     tool_result_output_openai,
@@ -126,7 +127,6 @@ from .common import (
     path_id,
     tool_description,
     unnamed_tool_call_error,
-    with_partial_usage,
     parts_to_text,
 )
 
@@ -457,38 +457,12 @@ def _is_codex(lm: BaseProviderLM) -> bool:
 MODEL_LIST_HINT = "List the models your subscription accepts: call .list_models() on this client."
 
 
-def _usage_from_response(usage_data: dict[str, Any]) -> Usage:
-    input_details = usage_data.get("input_tokens_details") or {}
-    output_details = usage_data.get("output_tokens_details") or {}
-    return Usage(
-        input_tokens=usage_data.get("input_tokens"),
-        output_tokens=usage_data.get("output_tokens"),
-        total_tokens=usage_data.get("total_tokens"),
-        reasoning_tokens=output_details.get("reasoning_tokens"),
-        cache_read_tokens=input_details.get("cached_tokens"),
-        cache_write_tokens=input_details.get("cache_write_tokens"),
-        input_audio_tokens=input_details.get("audio_tokens"),
-        output_audio_tokens=output_details.get("audio_tokens"),
-    )
-
-
 def _live_usage_from_response(response: dict[str, Any]) -> Usage | None:
     """Usage from a Realtime ``response.done`` payload, or None when absent."""
     usage_data = response.get("usage") if isinstance(response, dict) else None
     if not isinstance(usage_data, dict):
         return None
-    u_in = usage_data.get("input_token_details") or usage_data.get("input_tokens_details") or {}
-    u_out = usage_data.get("output_token_details") or usage_data.get("output_tokens_details") or {}
-    return Usage(
-        input_tokens=usage_data.get("input_tokens"),
-        output_tokens=usage_data.get("output_tokens"),
-        total_tokens=usage_data.get("total_tokens"),
-        reasoning_tokens=u_out.get("reasoning_tokens"),
-        cache_read_tokens=u_in.get("cached_tokens"),
-        cache_write_tokens=u_in.get("cache_write_tokens"),
-        input_audio_tokens=u_in.get("audio_tokens"),
-        output_audio_tokens=u_out.get("audio_tokens"),
-    )
+    return usage_from_responses(usage_data)
 
 
 @dataclass(slots=True)
@@ -1138,12 +1112,9 @@ class OpenAILM(BaseProviderLM):
 
         resp_error = data.get("error") if isinstance(data, dict) else None
         if isinstance(resp_error, dict):
-            raise with_partial_usage(
-                self._response_error(
-                    str(resp_error.get("code") or ""),
-                    str(resp_error.get("message") or resp_error),
-                ),
-                data, model=request.model, parse_usage=_usage_from_response,
+            raise self._response_error(
+                str(resp_error.get("code") or ""),
+                str(resp_error.get("message") or resp_error),
             )
 
         parts: list[Any] = []
@@ -1188,10 +1159,7 @@ class OpenAILM(BaseProviderLM):
                         _record_unmapped(unmapped, f"output[{item_index}].content[{content_index}]", ctype)
             elif item_type == "function_call":
                 if not item.get("name"):
-                    raise with_partial_usage(
-                        unnamed_tool_call_error(self.provider, f"output[{item_index}]"),
-                        data, model=request.model, parse_usage=_usage_from_response,
-                    )
+                    raise unnamed_tool_call_error(self.provider, f"output[{item_index}]")
                 parts.append(
                     ToolCallPart(
                         id=str(item.get("call_id") or item.get("id") or f"call_{len(parts)}"),
@@ -1226,7 +1194,7 @@ class OpenAILM(BaseProviderLM):
         if not parts:
             parts = [TextPart(text=str(data.get("output_text") or ""))]
 
-        usage = _usage_from_response(data.get("usage", {}) or {})
+        usage = usage_from_responses(data.get("usage"))
 
         has_tool = any(isinstance(part, ToolCallPart) for part in parts)
         # D8 (2026-09-06): Response.id carries the response id; no
@@ -1356,19 +1324,7 @@ class OpenAILM(BaseProviderLM):
 
         if et == "response.completed":
             response = payload.get("response", {}) if isinstance(payload.get("response"), dict) else {}
-            usage_data = response.get("usage", {}) if isinstance(response, dict) else {}
-            input_details = usage_data.get("input_tokens_details") or {}
-            output_details = usage_data.get("output_tokens_details") or {}
-            usage = Usage(
-                input_tokens=usage_data.get("input_tokens"),
-                output_tokens=usage_data.get("output_tokens"),
-                total_tokens=usage_data.get("total_tokens"),
-                reasoning_tokens=output_details.get("reasoning_tokens"),
-                cache_read_tokens=input_details.get("cached_tokens"),
-                cache_write_tokens=input_details.get("cache_write_tokens"),
-                input_audio_tokens=input_details.get("audio_tokens"),
-                output_audio_tokens=output_details.get("audio_tokens"),
-            )
+            usage = usage_from_responses(response.get("usage") if isinstance(response, dict) else None)
             output = response.get("output", []) if isinstance(response, dict) else []
             has_tool = any(isinstance(item, dict) and item.get("type") == "function_call" for item in output)
             return StreamEndEvent(
@@ -1522,19 +1478,7 @@ class OpenAILM(BaseProviderLM):
             return [StreamDeltaEvent(delta=ToolCallDelta(input=arguments if isinstance(arguments, str) else json.dumps(arguments or {}), id=call_id or None, name=name))]
         if et in {"response.done", "response.completed"}:
             response = payload.get("response", {}) if isinstance(payload.get("response"), dict) else {}
-            usage_data = response.get("usage", {}) if isinstance(response, dict) else {}
-            u_in = usage_data.get("input_token_details") or usage_data.get("input_tokens_details") or {}
-            u_out = usage_data.get("output_token_details") or usage_data.get("output_tokens_details") or {}
-            usage = Usage(
-                input_tokens=usage_data.get("input_tokens"),
-                output_tokens=usage_data.get("output_tokens"),
-                total_tokens=usage_data.get("total_tokens"),
-                reasoning_tokens=u_out.get("reasoning_tokens"),
-                cache_read_tokens=u_in.get("cached_tokens"),
-                cache_write_tokens=u_in.get("cache_write_tokens"),
-                input_audio_tokens=u_in.get("audio_tokens"),
-                output_audio_tokens=u_out.get("audio_tokens"),
-            )
+            usage = usage_from_responses(response.get("usage") if isinstance(response, dict) else None)
             return [StreamEndEvent(finish_reason="stop", usage=usage, provider_data=response if isinstance(response, dict) else None)]
         if et in {"error", "response.error"}:
             err = payload.get("error")
@@ -2158,12 +2102,7 @@ class OpenAILM(BaseProviderLM):
                 images.append(ImagePart(media_type=media_type or "application/octet-stream", data=str(item["b64_json"])))
             elif item.get("url"):
                 images.append(ImagePart(media_type=media_type or "application/octet-stream", url=str(item["url"])))
-        usage_obj = data.get("usage") if isinstance(data.get("usage"), dict) else {}
-        usage = Usage(
-            input_tokens=usage_obj.get("input_tokens"),
-            output_tokens=usage_obj.get("output_tokens"),
-            total_tokens=usage_obj.get("total_tokens"),
-        )
+        usage = usage_from_responses(data.get("usage"))
         # Captured: the images response carries no id and no model echo.
         return ImageGenerationResponse(images=tuple(images), usage=usage, provider_data=data)
 

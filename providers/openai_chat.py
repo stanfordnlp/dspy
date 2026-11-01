@@ -68,6 +68,8 @@ from ..types import (
 )
 from .base import BaseProviderLM, Credential, HttpResponse, SyncTransport, default_transport, _attach_error_metadata
 from .common import (
+    settle_usage,
+    wire_count,
     check_message_media,
     MEDIA_KINDS,
     check_tool_result_media,
@@ -78,7 +80,6 @@ from .common import (
     parse_json_object,
     tool_description,
     unnamed_tool_call_error,
-    with_partial_usage,
     parts_to_text,
     data_part_text,
 )
@@ -948,7 +949,7 @@ def request_from_openai_chat(body: Mapping[str, Any], *, compat: OpenAIChatCompa
 
 def _response_from_chat_body(
     provider: str, data: Any, *, model: str | None, choice: int | None,
-    on_error: Callable[[str, str], ProviderError],
+    on_error: Callable[[str, str], ProviderError], reasoning_usage: str = "in_completion",
 ) -> Response:
     """The one Chat Completions response reader: ``parse_response`` for
     provider traffic and :func:`response_from_openai_chat` for a foreign
@@ -960,10 +961,7 @@ def _response_from_chat_body(
         raise TypeError(f"a Chat Completions response body is a JSON object, got {type(data).__name__}")
     resp_error = data.get("error")
     if isinstance(resp_error, dict):
-        raise with_partial_usage(
-            on_error(str(resp_error.get("code") or ""), str(resp_error.get("message") or resp_error)),
-            data, model=model, parse_usage=_usage_from_chat,
-        )
+        raise on_error(str(resp_error.get("code") or ""), str(resp_error.get("message") or resp_error))
 
     unmapped: list[dict[str, str]] = []
     choices = data.get("choices") or []
@@ -1023,10 +1021,7 @@ def _response_from_chat_body(
             continue
         function = call.get("function") if isinstance(call.get("function"), dict) else {}
         if not function.get("name"):
-            raise with_partial_usage(
-                unnamed_tool_call_error(provider, f"{path}.message.tool_calls[{call_index}]"),
-                data, model=model, parse_usage=_usage_from_chat,
-            )
+            raise unnamed_tool_call_error(provider, f"{path}.message.tool_calls[{call_index}]")
         parts.append(
             ToolCallPart(
                 id=str(call.get("id") or f"call_{len(parts)}"),
@@ -1040,7 +1035,7 @@ def _response_from_chat_body(
         parts = [TextPart(text="")]
 
     has_tool = any(isinstance(part, ToolCallPart) for part in parts)
-    usage = _usage_from_chat(data.get("usage") or {})
+    usage = _usage_from_chat(data.get("usage") or {}, reasoning_usage)
     # choices[i].logprobs.content is the message-level token sequence.
     # Refusal logprobs (choices[i].logprobs.refusal) stay in
     # provider_data — no canonical refusal-token concept.
@@ -1090,8 +1085,10 @@ def response_from_openai_chat(body: Mapping[str, Any], *, model: str | None = No
     one choice is refused (a Response is one message; read each choice by
     index instead) — the twin of the request side's refusal of ``n``.
     Keys the reader does not know are neither refused nor lost: the whole
-    body is ``provider_data``.  No compat is taken: the Chat Completions
-    response shape does not vary by server the way the request does.
+    body is ``provider_data``.  Usage is read under OpenAI's own counting
+    (reasoning inside ``completion_tokens``, MAP-19); to read a body from a
+    server that counts it beside, use the server's adapter
+    (``OpenAIChatLM.response_from_openai_chat``), which applies its preset.
     """
     def on_error(code: str, message: str) -> ProviderError:
         cls = OpenAILM._response_error_code_map.get(code, ServerError)
@@ -1100,25 +1097,52 @@ def response_from_openai_chat(body: Mapping[str, Any], *, model: str | None = No
     return _fold_judgments(_response_from_chat_body("openai-chat", body, model=model, choice=choice, on_error=on_error), response_format)
 
 
-def _usage_from_chat(usage_data: dict[str, Any]) -> Usage:
+def _usage_from_chat(usage_data: dict[str, Any], reasoning_usage: str = "in_completion") -> Usage:
+    """MAP-19, Chat Completions.
+
+    ``prompt_tokens`` already includes the cached and written tokens (the
+    ``prompt_tokens_details`` object is a breakdown of it; DeepSeek's
+    ``prompt_cache_hit_tokens + prompt_cache_miss_tokens`` equals it, and a
+    cached and an uncached call with the same prompt report the same
+    ``prompt_tokens`` on OpenAI, Fireworks, Parasail, Meta and Moonshot).
+    Reasoning is inside ``completion_tokens`` unless the server's preset says
+    ``reasoning_usage="separate"`` (xAI), where canonical output is
+    completion + reasoning. Under "separate", a body that does not report
+    reasoning still determines output when its total is prompt + completion
+    (no reasoning was spent); otherwise output is unknown.
+    """
     prompt_details = usage_data.get("prompt_tokens_details") or {}
     completion_details = usage_data.get("completion_tokens_details") or {}
-    return Usage(
-        input_tokens=usage_data.get("prompt_tokens"),
-        output_tokens=usage_data.get("completion_tokens"),
-        total_tokens=usage_data.get("total_tokens"),
-        reasoning_tokens=completion_details.get("reasoning_tokens"),
-        # Nested (OpenAI) first; some servers report the count flat on usage
-        # instead (Together's non-reasoning models: `usage.cached_tokens`,
-        # openai-compatibility.md, live 2026-09-26).  Reading one place only
-        # turns a reported 0 into "not reported".
-        cache_read_tokens=(
-            prompt_details["cached_tokens"] if prompt_details.get("cached_tokens") is not None
-            else usage_data.get("cached_tokens")
-        ),
-        cache_write_tokens=prompt_details.get("cache_write_tokens"),
-        input_audio_tokens=prompt_details.get("audio_tokens"),
-        output_audio_tokens=completion_details.get("audio_tokens"),
+    if not isinstance(prompt_details, dict):
+        prompt_details = {}
+    if not isinstance(completion_details, dict):
+        completion_details = {}
+    prompt = wire_count(usage_data.get("prompt_tokens"), "prompt_tokens")
+    completion = wire_count(usage_data.get("completion_tokens"), "completion_tokens")
+    total = wire_count(usage_data.get("total_tokens"), "total_tokens")
+    reasoning = wire_count(completion_details.get("reasoning_tokens"), "reasoning_tokens")
+    output = completion
+    if reasoning_usage == "separate" and completion is not None:
+        if reasoning is not None:
+            output = completion + reasoning
+        elif not (total is not None and prompt is not None and total == prompt + completion):
+            output = None
+    # Nested (OpenAI) first; some servers report the count flat on usage
+    # instead (Together's non-reasoning models: `usage.cached_tokens`,
+    # openai-compatibility.md, live 2026-09-26).  Reading one place only
+    # turns a reported 0 into "not reported".
+    cached = prompt_details.get("cached_tokens")
+    if cached is None:
+        cached = usage_data.get("cached_tokens")
+    return settle_usage(
+        input_tokens=prompt,
+        output_tokens=output,
+        total_tokens=total,
+        reasoning_tokens=reasoning,
+        cache_read_tokens=wire_count(cached, "cached_tokens"),
+        cache_write_tokens=wire_count(prompt_details.get("cache_write_tokens"), "cache_write_tokens"),
+        input_audio_tokens=wire_count(prompt_details.get("audio_tokens"), "input audio_tokens"),
+        output_audio_tokens=wire_count(completion_details.get("audio_tokens"), "output audio_tokens"),
     )
 
 
@@ -1650,6 +1674,7 @@ class OpenAIChatLM(BaseProviderLM):
         resp = _response_from_chat_body(
             self.provider, response.json(), model=request.model,
             choice=None, on_error=self._response_error,
+            reasoning_usage=self._compat_for(request.model).reasoning_usage,
         )
         return _fold_judgments(resp, request.config.response_format)
 
@@ -1765,7 +1790,9 @@ class OpenAIChatLM(BaseProviderLM):
             if usage_raw.get(name) is not None and not isinstance(usage_raw[name], dict):
                 raise self._judgment_reply_error(response, f"{name} must be an object or null")
         try:
-            usage = _usage_from_chat(usage_raw)
+            raw_model = data.get("model")
+            compat = self._compat_for(raw_model) if isinstance(raw_model, str) and raw_model else self._resolved_compat
+            usage = _usage_from_chat(usage_raw, compat.reasoning_usage)
         except (ValueError, TypeError, OverflowError) as exc:
             raise self._judgment_reply_error(response, f"invalid usage: {exc}") from exc
         model = data.get("model")
@@ -2102,7 +2129,9 @@ class OpenAIChatLM(BaseProviderLM):
         under this adapter's provider name and error mapping; see
         :func:`response_from_openai_chat`.  ``response_format`` (the
         request's) folds a judgment answer into a DataPart (MAP-14)."""
-        resp = _response_from_chat_body(self.provider, body, model=model, choice=choice, on_error=self._response_error)
+        compat = self._compat_for(model) if model is not None else self._resolved_compat
+        resp = _response_from_chat_body(self.provider, body, model=model, choice=choice, on_error=self._response_error,
+                                         reasoning_usage=compat.reasoning_usage)
         return _fold_judgments(resp, response_format)
 
     # ─── Stream parsing ──────────────────────────────────────────────
@@ -2164,9 +2193,9 @@ class OpenAIChatLM(BaseProviderLM):
         if finish_raw:
             yield StreamEndEvent(
                 finish_reason=_FINISH_REASON_MAP.get(str(finish_raw), "stop"),
-                usage=_usage_from_chat(usage_data) if isinstance(usage_data, dict) else None,
+                usage=_usage_from_chat(usage_data, self._compat_for(request.model).reasoning_usage) if isinstance(usage_data, dict) else None,
                 provider_data=payload,
             )
         elif isinstance(usage_data, dict):
             # Final usage-only chunk (stream_options.include_usage).
-            yield StreamEndEvent(usage=_usage_from_chat(usage_data), provider_data=payload)
+            yield StreamEndEvent(usage=_usage_from_chat(usage_data, self._compat_for(request.model).reasoning_usage), provider_data=payload)
