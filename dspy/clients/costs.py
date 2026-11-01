@@ -63,17 +63,16 @@ def _estimate_cost(response, *, provider, requested_model, request=None, namespa
         return unknown("input or output usage was not reported")
     anthropic = provider in {"anthropic", "aws-anthropic", "bedrock-anthropic", "azure-anthropic",
                              "vertex-anthropic", "deepseek-anthropic", "meta-anthropic", "moonshotai-anthropic"}
-    separate_reasoning = provider in {"gemini", "vertex", "vertex-express", "xai"}
     cached, written = u.cache_read_tokens or 0, u.cache_write_tokens or 0
-    inputs = u.input_tokens if anthropic else u.input_tokens - cached - written
+    inputs = u.input_tokens - cached - written
     reasoning = u.reasoning_tokens or 0
-    outputs = u.output_tokens if separate_reasoning else u.output_tokens - reasoning
+    outputs = u.output_tokens - reasoning
     input_audio, output_audio = u.input_audio_tokens or 0, u.output_audio_tokens or 0
     inputs -= input_audio
     outputs -= output_audio
     if min(inputs, outputs) < 0:
         return unknown("usage dimensions cannot be separated safely")
-    total_input = u.input_tokens + cached + written if anthropic else u.input_tokens
+    total_input = u.input_tokens
     tier = request.config.service_tier if request is not None else None
     # Prefer the provider's actual served tier when it reports one.
     raw = response.provider_data or {}
