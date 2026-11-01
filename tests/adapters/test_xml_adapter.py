@@ -370,6 +370,24 @@ def test_xml_adapter_nullable_containers_round_trip(values):
     assert adapter.parse(Result, formatted) == expected
 
 
+def test_xml_adapter_untyped_values_read_item_tags_as_lists():
+    from typing import Any
+
+    class Result(dspy.Signature):
+        metadata: dict[str, Any] = dspy.OutputField()
+        rows: list[Any] = dspy.OutputField()
+
+    expected = {
+        "metadata": {"tags": ["a", "b"], "single": ["only"], "nested": {"ids": ["x", "y"]}},
+        "rows": ["a", ["b", "c"]],
+    }
+    adapter = XMLAdapter()
+    formatted = adapter.format_assistant_message_content(Result, expected)
+    assert adapter.parse(Result, formatted) == expected
+    completion = "<metadata><tags><item>a</item><item>b</item></tags></metadata><rows><item>a</item></rows>"
+    assert adapter.parse(Result, completion) == {"metadata": {"tags": ["a", "b"]}, "rows": ["a"]}
+
+
 def test_xml_adapter_concise_prompt_preserves_type_guidance_and_dictionary_keys():
     from enum import Enum
     from typing import Any
