@@ -7,7 +7,7 @@ In this tutorial, we will explore the design of DSPy's caching mechanism and dem
 DSPy's caching system is architected in three distinct layers:
 
 1.  **In-memory cache**: Implemented using `cachetools.LRUCache`, this layer provides fast access to frequently used data.
-2.  **On-disk cache**: Leveraging `diskcache.FanoutCache`, this layer offers persistent storage for cached items.
+2.  **On-disk cache**: Leveraging `diskcache_community.FanoutCache`, this layer offers persistent storage for cached items.
 3.  **Prompt cache (Server-side cache)**: This layer is managed by the LLM service provider (e.g., OpenAI, Anthropic).
 
 DSPy controls its in-memory and on-disk answer caches. Provider-side prompt caching is separate: DSPy can pass caching instructions, but the provider determines eligibility, retention, and billing.
@@ -130,8 +130,9 @@ dspy.configure_cache(restrict_pickle=False)
 
 With the default restriction, the cache only allows:
 
+- **Standard-library data types** -- such as `dict`, `list`, `tuple`, `datetime` and `Decimal`.
 - **OpenAI response types** (`openai.types.*`) -- SDK data models. Native LM responses use DSPy's serialized lm15 response representation rather than SDK response objects.
-- **NumPy array reconstruction helpers** -- the specific internal functions needed to deserialize `numpy.ndarray` (used by embedding caches).
+- **NumPy arrays** (`numpy.ndarray`) -- used by embedding caches.
 - **User-registered types** via `safe_types` -- any additional types you explicitly trust.
 
 If you cache custom types (dataclasses, pydantic models, etc.), register them:
@@ -150,7 +151,7 @@ dspy.configure_cache(safe_types=[MyResult])
 If a type is missing from the allowlist, the cache treats it as a miss and returns `None`. The log message will name the exact type that was rejected:
 
 ```
-WARNING dspy.clients.cache: Failed to deserialize disk cache entry <key>
+WARNING diskcache_community: treating an unreadable entry in '<dir>' as missing: UnpicklingError: SafeDisk refuses to unpickle <module>.<Type>
 ```
 
 ### Nested types
@@ -161,7 +162,7 @@ If your registered type contains nested custom types, you must register all of t
 dspy.configure_cache(safe_types=[MyResult, Metadata])
 ```
 
-The error message will tell you exactly which nested type is missing.
+The log message will tell you exactly which nested type is missing.
 
 ## Disabling/Enabling DSPy Cache
 

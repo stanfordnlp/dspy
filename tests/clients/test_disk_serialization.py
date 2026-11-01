@@ -1,15 +1,15 @@
 """Tests for restricted pickle deserialization."""
 
-import io
 import pickle
 import subprocess
 import sys
 from dataclasses import dataclass
 
-import diskcache
+import diskcache_community
 import numpy as np
 import pydantic
 import pytest
+from diskcache_community.core import MODE_PICKLE
 from openai.types import Completion as TextCompletionResponse
 from openai.types import CreateEmbeddingResponse as EmbeddingResponse
 from openai.types.chat import ChatCompletion as ModelResponse
@@ -17,11 +17,7 @@ from openai.types.responses import Response as ResponsesAPIResponse
 from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
 from openai.types.responses import ResponseUsage as ResponseAPIUsage
 
-from dspy.clients.disk_serialization import (
-    DeserializationError,
-    _restricted_load,
-    restricted_disk,
-)
+from dspy.clients.disk_serialization import restricted_disk
 from dspy.clients.lm15_boundary import response_value
 from dspy.lm15 import Message, Request
 
@@ -47,19 +43,14 @@ class _Outer:
         value: int
 
 
-def _allowed_for(*types):
-    return frozenset((cls.__module__, cls.__qualname__) for cls in types)
-
-
-def _roundtrip(value, allowed=None):
-    """Pickle then restricted-unpickle."""
-    return _restricted_load(io.BytesIO(pickle.dumps(value)), allowed or set())
+def _restricted_load(directory, data, allowed=()):
+    return restricted_disk(allowed)(str(directory)).fetch(MODE_PICKLE, None, data, False)
 
 
 # -- roundtrip tests (through diskcache) --
 
 def _make_cache(directory, allowed):
-    return diskcache.FanoutCache(
+    return diskcache_community.FanoutCache(
         directory=directory,
         shards=4,
         disk=restricted_disk(allowed),
@@ -185,15 +176,13 @@ def test_plain_values_roundtrip(tmp_path, value):
 
 
 def test_pydantic_roundtrip(tmp_path):
-    allowed = _allowed_for(AllowedPydanticModel)
-    cache = _make_cache(str(tmp_path), allowed)
+    cache = _make_cache(str(tmp_path), [AllowedPydanticModel])
     cache["k"] = AllowedPydanticModel(name="test", value=42)
     assert cache["k"] == AllowedPydanticModel(name="test", value=42)
 
 
 def test_dataclass_roundtrip(tmp_path):
-    allowed = _allowed_for(AllowedDataclass)
-    cache = _make_cache(str(tmp_path), allowed)
+    cache = _make_cache(str(tmp_path), [AllowedDataclass])
     cache["k"] = AllowedDataclass(name="test", value=42)
     assert cache["k"] == AllowedDataclass(name="test", value=42)
 
@@ -206,6 +195,11 @@ def test_ndarray_roundtrip(tmp_path):
     assert isinstance(result, np.ndarray)
     assert result.dtype == value.dtype
     np.testing.assert_array_equal(result, value)
+
+
+def test_numpy_cannot_be_registered_as_safe_type():
+    with pytest.raises(ValueError, match="with_types refuses"):
+        restricted_disk([np.ndarray])
 
 
 def test_openai_chat_response_roundtrip(tmp_path):
@@ -324,27 +318,24 @@ def test_cached_responses_function_call_normalizes_after_fresh_process_roundtrip
 
 # -- allowlist enforcement --
 
-def test_unlisted_type_blocked_on_read(tmp_path):
+def test_unlisted_type_refused_on_write(tmp_path):
     cache = _make_cache(str(tmp_path), set())
-    cache["k"] = _UnlistedModel(value=1)
-    with pytest.raises(DeserializationError, match="not in the safe_types allowlist"):
-        cache["k"]
+    with pytest.raises(TypeError, match="SafeDisk cannot store"):
+        cache["k"] = _UnlistedModel(value=1)
 
 
 def test_allowlists_are_isolated(tmp_path):
-    allowed = _allowed_for(AllowedPydanticModel)
-    cache = _make_cache(str(tmp_path / "a"), allowed)
+    cache = _make_cache(str(tmp_path / "a"), [AllowedPydanticModel])
     cache["k"] = AllowedPydanticModel(name="test", value=1)
     assert cache["k"] == AllowedPydanticModel(name="test", value=1)
 
     empty_cache = _make_cache(str(tmp_path / "b"), set())
-    empty_cache["k"] = AllowedPydanticModel(name="test", value=1)
-    with pytest.raises(DeserializationError):
-        empty_cache["k"]
+    with pytest.raises(TypeError, match="SafeDisk cannot store"):
+        empty_cache["k"] = AllowedPydanticModel(name="test", value=1)
 
 
-def test_numpy_ctypeslib_blocked():
-    """Only specific numpy reconstruction functions are allowed, not arbitrary submodules."""
+def test_numpy_ctypeslib_blocked(tmp_path):
+    """numpy functions must not resolve from a pickled entry."""
     payload = (
         b"\x80\x05"                    # PROTO 5
         b"\x8c\x0fnumpy.ctypeslib"     # SHORT_BINUNICODE (15 bytes)
@@ -356,44 +347,26 @@ def test_numpy_ctypeslib_blocked():
         b"R"                            # REDUCE
         b"."                            # STOP
     )
-    with pytest.raises(DeserializationError):
-        _restricted_load(io.BytesIO(payload), set())
+    with pytest.raises(pickle.UnpicklingError, match="SafeDisk refuses"):
+        _restricted_load(tmp_path, payload)
 
 
 # -- _restricted_load unit tests --
 
-def test_restricted_load_rejects_unknown_type():
+def test_restricted_load_rejects_unknown_type(tmp_path):
     data = pickle.dumps(_UnlistedModel(value=1))
-    with pytest.raises(DeserializationError, match="not in the safe_types allowlist"):
-        _restricted_load(io.BytesIO(data), set())
-
-
-def test_corrupt_pickle_raises_deserialization_error():
-    """Real pickle corruption must raise DeserializationError, not UnpicklingError."""
-    data = pickle.dumps({"key": "value"})
-    corrupted = data[:5] + b"nope" + data[9:]
-    with pytest.raises(DeserializationError, match="Corrupt cache entry"):
-        _restricted_load(io.BytesIO(corrupted), set())
+    with pytest.raises(pickle.UnpicklingError, match="SafeDisk refuses"):
+        _restricted_load(tmp_path, data)
 
 
 def test_nested_class_safe_types(tmp_path):
     """safe_types must work for nested classes (pickle uses __qualname__)."""
-    allowed = _allowed_for(_Outer.Inner)
-    cache = _make_cache(str(tmp_path), allowed)
+    cache = _make_cache(str(tmp_path), [_Outer.Inner])
     cache["k"] = _Outer.Inner(value=42)
     assert cache["k"] == _Outer.Inner(value=42)
 
 
-def test_restricted_load_allows_builtin_types():
-    response = ModelResponse(
-        id="t", model="m", created=0, object="chat.completion",
-        choices=[{"message": {"role": "assistant", "content": "hi"}, "index": 0, "finish_reason": "stop"}],
-    )
-    result = _roundtrip(response)
-    assert isinstance(result, ModelResponse)
-
-
-def test_all_cached_lm_types_roundtrip():
+def test_all_cached_lm_types_roundtrip(tmp_path):
     """Every LM return type that DSPy caches must roundtrip through the restricted unpickler."""
     test_values = [
         ModelResponse(
@@ -410,7 +383,7 @@ def test_all_cached_lm_types_roundtrip():
         ),
     ]
     for value in test_values:
-        result = _roundtrip(value)
+        result = _restricted_load(tmp_path, pickle.dumps(value))
         assert type(result) is type(value), f"Failed roundtrip for {type(value).__name__}"
 
 

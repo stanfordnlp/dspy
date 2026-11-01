@@ -1,87 +1,40 @@
 """Restricted pickle deserialization for disk cache.
 
-Provides a RestrictedDisk subclass that overrides diskcache's fetch to use
-a restricted unpickler.
+Provides a SafeDisk from diskcache_community configured for the DSPy cache.
 
 Trust model:
 - openai.types.* is trusted by module prefix (pydantic
   data models only, forward-compatible with library upgrades)
-- numpy reconstruction helpers are trusted by exact (module, name) pairs
-- user safe_types are trusted by exact (module, qualname) pairs
+- numpy arrays are stored by the disk in its own array format
+- user safe_types are trusted by identity
+
+SafeDisk resolves classes only in modules that are already imported, so this
+module imports openai.types when openai is installed. An entry that the disk
+refuses is treated as a cache miss.
 """
 
 from __future__ import annotations
 
-import io
-import os.path
 import pickle
-from typing import Any
+from collections.abc import Iterable
 
-from diskcache import Disk
-from diskcache.core import MODE_PICKLE
+from diskcache_community import SafeDisk
 
-_TRUSTED_MODULE_PREFIXES = (
-    "openai.types.",
-)
+_TRUSTED_MODULES = ("openai.types",)
 
-_NUMPY_ALLOWED: frozenset[tuple[str, str]] = frozenset({
-    ("numpy", "dtype"),
-    ("numpy", "ndarray"),
-    ("numpy._core.numeric", "_frombuffer"),
-    ("numpy.core.numeric", "_frombuffer"),
-    ("numpy.core.multiarray", "_reconstruct"),
-    ("numpy._core.multiarray", "_reconstruct"),
-    ("_codecs", "encode"),
-})
+try:
+    import openai.types  # noqa: F401
+except ImportError:
+    pass
+
+# Kept for code that imports it from earlier releases.
+DeserializationError = pickle.UnpicklingError
 
 
-class DeserializationError(Exception):
-    """Raised when a cached value cannot be deserialized."""
-
-
-class _RestrictedUnpickler(pickle.Unpickler):
-    _allowed: frozenset[tuple[str, str]] = frozenset()
-
-    def find_class(self, module: str, name: str) -> type:
-        if any(module.startswith(p) for p in _TRUSTED_MODULE_PREFIXES):
-            return super().find_class(module, name)
-        if (module, name) in _NUMPY_ALLOWED or (module, name) in self._allowed:
-            return super().find_class(module, name)
-        raise DeserializationError(
-            f"Type {module}.{name} is not in the safe_types allowlist. "
-            f"Register it via dspy.configure_cache(safe_types=[...])."
-        )
-
-
-def _restricted_load(f: Any, allowed: frozenset[tuple[str, str]]) -> Any:
-    unpickler = _RestrictedUnpickler(f)
-    unpickler._allowed = allowed
-    try:
-        return unpickler.load()
-    except DeserializationError:
-        raise
-    except Exception as e:
-        raise DeserializationError(f"Corrupt cache entry: {e}") from e
-
-
-class _RestrictedDisk(Disk):
-    """Disk subclass that restricts pickle deserialization to an allowlist."""
-
-    _allowed: frozenset[tuple[str, str]]
-
-    def fetch(self, mode, filename, value, read):
-        if mode == MODE_PICKLE:
-            if value is None:
-                with open(os.path.join(self._directory, filename), "rb") as f:
-                    return _restricted_load(f, self._allowed)
-            return _restricted_load(io.BytesIO(value), self._allowed)
-        return super().fetch(mode, filename, value, read)
-
-
-def restricted_disk(allowed: frozenset[tuple[str, str]]) -> type[_RestrictedDisk]:
-    """Return a Disk subclass bound to the given allowlist.
-
-    diskcache expects ``disk=`` to be a class it instantiates itself, so
-    we return a subclass with ``_allowed`` baked in as a class attribute.
-    """
-    return type("RestrictedDisk", (_RestrictedDisk,), {"_allowed": allowed})
+def restricted_disk(safe_types: Iterable[type] = ()) -> type[SafeDisk]:
+    """Return a SafeDisk subclass that also allows OpenAI data models, numpy arrays and the given types."""
+    return (
+        SafeDisk.with_types(*safe_types, modules=_TRUSTED_MODULES)
+        .with_numpy()
+        .with_options(on_error="miss")
+    )

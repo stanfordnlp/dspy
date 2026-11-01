@@ -35,7 +35,7 @@ class Cache:
 
     `Cache` provides 2 levels of caching (in the given order):
         1. In-memory cache - implemented with cachetools.LRUCache
-        2. On-disk cache - implemented with diskcache.FanoutCache
+        2. On-disk cache - implemented with diskcache_community.FanoutCache
     """
 
     def __init__(
@@ -75,7 +75,7 @@ class Cache:
         else:
             self.memory_cache = {}
         if self.enable_disk_cache:
-            from diskcache import FanoutCache
+            from diskcache_community import FanoutCache
 
             from dspy.clients.disk_serialization import restricted_disk
 
@@ -89,8 +89,7 @@ class Cache:
                 for t in safe_types or []:
                     if not isinstance(t, type):
                         raise TypeError(f"safe_types entries must be types, got {t!r}")
-                allowed = frozenset((cls.__module__, cls.__qualname__) for cls in (safe_types or []))
-                fanout_kwargs["disk"] = restricted_disk(allowed)
+                fanout_kwargs["disk"] = restricted_disk(safe_types or [])
             self.disk_cache = FanoutCache(**fanout_kwargs)
         else:
             self.disk_cache = {}
@@ -129,13 +128,10 @@ class Cache:
                 return self._prepare_cached_response(response)
 
         if self.enable_disk_cache:
-            from dspy.clients.disk_serialization import DeserializationError
-
             try:
                 response = self.disk_cache.get(key)
-            except DeserializationError:
-                logger.debug("Failed to deserialize disk cache entry %s", key)
-                self.disk_cache.delete(key)
+            except (ImportError, MemoryError, RecursionError):
+                # An entry that cannot be read is a miss.
                 return None
 
             if response is None:

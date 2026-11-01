@@ -1,4 +1,5 @@
 import os
+import pickle
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -7,7 +8,7 @@ from unittest.mock import patch
 import pydantic
 import pytest
 from cachetools import LRUCache
-from diskcache import FanoutCache
+from diskcache_community import FanoutCache
 
 import dspy
 from dspy.clients.cache import Cache
@@ -460,10 +461,23 @@ def test_configure_cache_registers_safe_types(tmp_path):
         dspy.cache = original_cache
 
 
-def test_corrupt_disk_entries_return_none(tmp_path):
-    """Real pickle corruption in a cache entry must return None, not raise."""
+def _replace_disk_value(directory, key, value):
     import sqlite3
 
+    for shard_id in range(16):
+        db_path = os.path.join(str(directory), f"{shard_id:03d}", "cache.db")
+        if not os.path.exists(db_path):
+            continue
+        conn = sqlite3.connect(db_path)
+        row = conn.execute("SELECT rowid, value FROM Cache WHERE key = ?", (key,)).fetchone()
+        if row:
+            conn.execute("UPDATE Cache SET value = ? WHERE rowid = ?", (sqlite3.Binary(value), row[0]))
+            conn.commit()
+        conn.close()
+
+
+def test_corrupt_disk_entries_return_none(tmp_path):
+    """Real pickle corruption in a cache entry must return None, not raise."""
     cache = Cache(
         enable_disk_cache=True,
         enable_memory_cache=False,
@@ -472,21 +486,37 @@ def test_corrupt_disk_entries_return_none(tmp_path):
     )
     request = {"model": "test", "prompt": "will_be_corrupted"}
     cache.put(request, {"value": "good"})
-    key = cache.cache_key(request)
 
-    # Corrupt the pickle blob in the SQLite database
-    for shard_id in range(16):
-        db_path = os.path.join(str(tmp_path), f"{shard_id:03d}", "cache.db")
-        if not os.path.exists(db_path):
-            continue
-        conn = sqlite3.connect(db_path)
-        row = conn.execute("SELECT rowid, value FROM Cache WHERE key = ?", (key,)).fetchone()
-        if row:
-            conn.execute("UPDATE Cache SET value = X'DEADBEEF' WHERE rowid = ?", (row[0],))
-            conn.commit()
-        conn.close()
+    _replace_disk_value(tmp_path, cache.cache_key(request), b"\xde\xad\xbe\xef")
 
     assert cache.get(request) is None
+
+
+class _MakesDirectoryOnLoad:
+    def __init__(self, path):
+        self.path = str(path)
+
+    def __reduce__(self):
+        return os.mkdir, (self.path,)
+
+
+def test_tampered_disk_entry_is_a_cache_miss(tmp_path):
+    cache = Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=False,
+        disk_cache_dir=str(tmp_path / "cache"),
+        restrict_pickle=True,
+    )
+    request = {"model": "test", "prompt": "will_be_tampered"}
+    cache.put(request, {"value": "good"})
+    key = cache.cache_key(request)
+    marker = tmp_path / "marker"
+
+    _replace_disk_value(tmp_path / "cache", key, pickle.dumps(_MakesDirectoryOnLoad(marker)))
+
+    assert cache.get(request) is None
+    assert not marker.exists()
+    assert key not in cache
 
 
 def test_restricted_and_unrestricted_share_wire_format(tmp_path):
