@@ -110,7 +110,7 @@ from .base import (
     default_transport,
     resolve_credential,
 )
-from .common import EFFORT_THINKING_BUDGETS, MEDIA_KINDS, build_url, data_part_text, iso_utc, media_base64, model_infos_from_entries, multipart_related_body, parts_to_text, path_id, tool_description, unnamed_tool_call_error
+from .common import settle_usage, wire_count, EFFORT_THINKING_BUDGETS, MEDIA_KINDS, build_url, data_part_text, iso_utc, media_base64, model_infos_from_entries, multipart_related_body, parts_to_text, path_id, tool_description, unnamed_tool_call_error
 
 # Canonical builtin tool name → Gemini tool key
 _GEMINI_BUILTIN_MAP: dict[str, str] = {
@@ -281,37 +281,52 @@ def _response_format_to_gemini_config(format_config: dict[str, Any]) -> dict[str
 
 
 def _gemini_usage(usage_payload: Any, *, output_keys: tuple[str, ...]) -> Usage:
-    """Map a Gemini ``usageMetadata`` object to canonical Usage (INV-029).
+    """Map a Gemini ``usageMetadata`` object to canonical Usage (MAP-19).
+
+    Gemini counts the prompt, the tokens its own tools added
+    (``toolUsePromptTokenCount``), the answer and the thoughts side by side:
+    ``totalTokenCount`` is their sum (pinned by every recorded body with a
+    thought or tool-use count). Canonical input is prompt + tool-use, output
+    is answer + thoughts; ``cachedContentTokenCount`` is a part of the prompt.
 
     Gemini's proto3-JSON wire omits zero-valued fields, so inside a present
-    ``usageMetadata`` an absent primary counter means "0", not "not
-    reported" (pinned: lm15-contract goldens/gemini/max_output_tokens.json,
-    where ``candidatesTokenCount`` is absent and ``totalTokenCount`` equals
-    prompt + thoughts).  When ``usageMetadata`` itself is missing nothing
-    was reported and every counter stays None.  Secondary counters are
-    conditional on a feature (cache, thinking) and stay verbatim: absent is
-    "not reported".  ``output_keys`` lists the wire names for output tokens
-    in priority order (``candidatesTokenCount`` on generateContent,
-    ``responseTokenCount`` on Live).
+    ``usageMetadata`` an absent counter is a reported ``0`` (pinned:
+    goldens/gemini/max_output_tokens.json, no ``candidatesTokenCount`` and
+    a total of prompt + thoughts; gemini/reasoning_off.json, no
+    ``thoughtsTokenCount`` and a total of prompt + answer). When
+    ``usageMetadata`` itself is missing nothing was reported and every
+    counter stays None. Gemini reports no cache-write count, so
+    ``cache_write_tokens`` stays None. ``output_keys`` lists the wire names
+    for the answer, in priority order (``candidatesTokenCount`` on
+    generateContent, ``responseTokenCount`` on Live).
     """
     if not isinstance(usage_payload, dict) or not usage_payload:
         return Usage()
-    output_tokens: Any = 0
+
+    def count(key: str) -> int:
+        value = wire_count(usage_payload.get(key), key)
+        return 0 if value is None else value
+
+    answer = 0
     for key in output_keys:
         if key in usage_payload:
-            output_tokens = usage_payload[key]
+            answer = count(key)
             break
-    return Usage(
-        input_tokens=usage_payload.get("promptTokenCount", 0),
-        output_tokens=output_tokens,
-        total_tokens=usage_payload.get("totalTokenCount"),
-        cache_read_tokens=usage_payload.get("cachedContentTokenCount"),
-        reasoning_tokens=usage_payload.get("thoughtsTokenCount"),
+    prompt = count("promptTokenCount")
+    tool_use = count("toolUsePromptTokenCount")
+    thoughts = count("thoughtsTokenCount")
+    audio_in = [_modality_tokens(usage_payload.get(k), "AUDIO") for k in ("promptTokensDetails", "toolUsePromptTokensDetails")]
+    return settle_usage(
+        input_tokens=prompt + tool_use,
+        output_tokens=answer + thoughts,
+        total_tokens=wire_count(usage_payload.get("totalTokenCount"), "totalTokenCount"),
+        cache_read_tokens=count("cachedContentTokenCount"),
+        reasoning_tokens=thoughts,
         # Modality breakdowns: {modality, tokenCount} entries. AUDIO has a
         # canonical slot on both sides (OpenAI fills the same slots); IMAGE
-        # and VIDEO do not and stay in provider_data. Independent review
-        # 2026-09-02: three goldens carried audio counts nowhere.
-        input_audio_tokens=_modality_tokens(usage_payload.get("promptTokensDetails"), "AUDIO"),
+        # and VIDEO do not and stay in provider_data. A breakdown with no
+        # AUDIO entry is "not reported", as before.
+        input_audio_tokens=None if all(a is None for a in audio_in) else sum(a or 0 for a in audio_in),
         output_audio_tokens=_modality_tokens(
             usage_payload.get("candidatesTokensDetails") or usage_payload.get("responseTokensDetails"), "AUDIO"
         ),
@@ -1188,11 +1203,10 @@ class GeminiLM(BaseProviderLM):
             while True:
                 raw = ws.recv()
                 events, turn_complete, usage = self._decode_live_completion_stream_events(raw)
-                acc_usage = Usage(
-                    input_tokens=max(acc_usage.input_tokens, usage.input_tokens),
-                    output_tokens=max(acc_usage.output_tokens, usage.output_tokens),
-                    total_tokens=max(acc_usage.total_tokens or 0, usage.total_tokens or 0),
-                )
+                # usageMetadata on Live is the turn's running count; the
+                # latest frame that carries one is the turn's usage.
+                if usage != Usage():
+                    acc_usage = usage
                 for event in events:
                     if event.type == "delta" and isinstance(event.delta, ToolCallDelta):
                         saw_tool_call = True
