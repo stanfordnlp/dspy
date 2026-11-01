@@ -718,6 +718,52 @@ class TestRLMFormatting:
         formatted = rlm._format_output(long_output)
         assert formatted == long_output
 
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (0, "0"),
+            (0.0, "0.0"),
+            (False, "False"),
+            ({}, "{}"),
+            ((), "()"),
+            (set(), "set()"),
+        ],
+    )
+    def test_falsy_interpreter_value_is_kept_as_output(self, value, expected):
+        """A falsy value is still what the cell evaluated to, so the model has to be told about it."""
+        rlm = RLM("context -> answer")
+        history = rlm._process_execution_result(
+            dspy.Prediction(reasoning=None),
+            code="value",
+            result=value,
+            history=REPLHistory(),
+            output_field_names=["answer"],
+        )
+        assert history.entries[-1].output == expected
+
+    def test_empty_list_interpreter_value_is_kept_as_output(self):
+        rlm = RLM("context -> answer")
+        history = rlm._process_execution_result(
+            dspy.Prediction(reasoning=None),
+            code="value",
+            result=[],
+            history=REPLHistory(),
+            output_field_names=["answer"],
+        )
+        assert history.entries[-1].output == "[]"
+
+    def test_list_interpreter_value_is_not_split_into_lines(self):
+        """A list is one value, not a transcript of what the cell printed."""
+        rlm = RLM("context -> answer")
+        history = rlm._process_execution_result(
+            dspy.Prediction(reasoning=None),
+            code="value",
+            result=[1, 2, 3],
+            history=REPLHistory(),
+            output_field_names=["answer"],
+        )
+        assert history.entries[-1].output == "[1, 2, 3]"
+
     def test_format_variable_info_string(self):
         """Test variable info formatting for string value using REPLVariable."""
         var = REPLVariable.from_value("context", "Hello world", preview_chars=5)

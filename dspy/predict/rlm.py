@@ -758,11 +758,14 @@ class RLM(Module):
                 final_reasoning=reasoning,
             )
 
-        # Format non-final result as output
-        if isinstance(result, list):
-            output = "\n".join(map(str, result))
+        # Format non-final result as output. The interpreter hands back the value of the last
+        # expression, so a falsy value like 0, False or [] is a real answer and has to reach the
+        # model as such instead of looking like a cell that printed nothing. Only None (and an
+        # explicit empty string) still gets the "did you forget to print" hint.
+        if result is None or result == "":
+            output = ""
         else:
-            output = str(result) if result else ""
+            output = str(result)
 
         output = self._format_output(output)
         if self.verbose:
