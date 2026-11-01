@@ -127,6 +127,7 @@ from .common import (
     path_id,
     tool_description,
     unnamed_tool_call_error,
+    with_partial_usage,
     parts_to_text,
 )
 
@@ -1112,9 +1113,12 @@ class OpenAILM(BaseProviderLM):
 
         resp_error = data.get("error") if isinstance(data, dict) else None
         if isinstance(resp_error, dict):
-            raise self._response_error(
-                str(resp_error.get("code") or ""),
-                str(resp_error.get("message") or resp_error),
+            raise with_partial_usage(
+                self._response_error(
+                    str(resp_error.get("code") or ""),
+                    str(resp_error.get("message") or resp_error),
+                ),
+                data, model=request.model, parse_usage=usage_from_responses,
             )
 
         parts: list[Any] = []
@@ -1159,7 +1163,10 @@ class OpenAILM(BaseProviderLM):
                         _record_unmapped(unmapped, f"output[{item_index}].content[{content_index}]", ctype)
             elif item_type == "function_call":
                 if not item.get("name"):
-                    raise unnamed_tool_call_error(self.provider, f"output[{item_index}]")
+                    raise with_partial_usage(
+                        unnamed_tool_call_error(self.provider, f"output[{item_index}]"),
+                        data, model=request.model, parse_usage=usage_from_responses,
+                    )
                 parts.append(
                     ToolCallPart(
                         id=str(item.get("call_id") or item.get("id") or f"call_{len(parts)}"),
