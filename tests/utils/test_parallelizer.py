@@ -195,3 +195,32 @@ def test_none_returning_tasks_are_counted_as_complete(num_threads):
 
     assert results == [None] * len(data)
     assert update_progress.call_args == mock.call(mock.ANY, len(data), len(data))
+
+
+def test_straggler_resubmission_happens_at_most_once_per_item(monkeypatch):
+    """A straggler must not be resubmitted repeatedly (see the "at most once per item" invariant)."""
+    from dspy.utils import parallelizer
+
+    real_wait = parallelizer.wait
+
+    def fast_wait(futures, timeout=None, return_when=None):
+        # Poll quickly so the straggler check runs many times during a short task.
+        return real_wait(futures, timeout=0.02, return_when=return_when)
+
+    monkeypatch.setattr(parallelizer, "wait", fast_wait)
+
+    invocations = []
+    lock = threading.Lock()
+
+    def slow_task(item):
+        with lock:
+            invocations.append(item)
+        time.sleep(0.3)
+        return item
+
+    executor = ParallelExecutor(num_threads=4, timeout=0.05, straggler_limit=3, disable_progress_bar=True)
+    results = executor.execute(slow_task, [1, 2])
+
+    assert results == [1, 2]
+    per_item = {item: invocations.count(item) for item in (1, 2)}
+    assert per_item == {1: 2, 2: 2}, f"each straggler should run at most twice, got {per_item}"
