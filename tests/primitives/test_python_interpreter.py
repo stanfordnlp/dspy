@@ -602,6 +602,41 @@ def test_rejects_write_paths_overlapping_runtime_files(monkeypatch, tmp_path):
         PythonInterpreter(enable_write_paths=[cache])
 
 
+def test_rejects_write_paths_overlapping_the_compiled_sandbox_archives():
+    from dspy.primitives.sandbox_bundle import bundle_root
+
+    with pytest.raises(CodeInterpreterError, match="runtime files"):
+        PythonInterpreter(enable_write_paths=[bundle_root() / "stdlib.zip"])
+
+
+def test_starts_from_the_compiled_standard_library():
+    with PythonInterpreter() as interpreter:
+        # Modules come from the bytecode beside each source in the standard library archive.
+        assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".pyc")
+        stdlib = next(arg.split("=", 1)[1] for arg in interpreter.deno_command if arg.startswith("--dspy-stdlib="))
+        assert stdlib in next(arg for arg in interpreter.deno_command if arg.startswith("--allow-read="))
+        # Sandboxed code cannot read the archive once Pyodide has started from it.
+        read = interpreter.execute(
+            "from js import Deno\n"
+            f"try:\n    Deno.readFileSync({stdlib!r})\n    result = 'read'\n"
+            "except Exception as e:\n    result = str(e)\n"
+            "result"
+        )
+        assert "Requires read access" in read
+
+
+def test_starts_from_the_source_standard_library_when_the_compiled_one_cannot_be_built(monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    def unavailable(*args):
+        raise sandbox_bundle.SandboxBundleError("read-only cache")
+
+    monkeypatch.setattr(sandbox_bundle, "prepare_stdlib", unavailable)
+    with PythonInterpreter() as interpreter:
+        assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".py")
+        assert not any(arg.startswith("--dspy-stdlib=") for arg in interpreter.deno_command)
+
+
 @pytest.mark.parametrize("version", [(2, 0, 0), (2, 4, 5), (2, 9, 5)])
 def test_accepts_supported_deno_2_versions(monkeypatch, version):
     monkeypatch.setattr(python_interpreter, "_get_deno_version", lambda executable: version)

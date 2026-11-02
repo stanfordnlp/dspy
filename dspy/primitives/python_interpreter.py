@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.primitives.sandbox_bundle import bundle_root
 from dspy.utils.callback import BaseCallback, with_callbacks
 
 __all__ = ["PythonInterpreter", "FinalOutput", "CodeExecutionError", "CodeInterpreterError"]
@@ -305,7 +306,12 @@ class PythonInterpreter:
 
             # Also allow reading Deno's cache directory so Pyodide can load its files
             deno_dir = self._get_deno_dir(deno_executable)
-            protected = [_canonicalize_path(self._get_runner_path()), *([_canonicalize_path(deno_dir)] if deno_dir else [])]
+            # The runtime: the runner, Deno's cache, and the archives Pyodide starts from.
+            protected = [
+                _canonicalize_path(self._get_runner_path()),
+                *([_canonicalize_path(deno_dir)] if deno_dir else []),
+                _canonicalize_path(bundle_root()),
+            ]
             if any(_paths_overlap(_canonicalize_path(path), item) for path in self.enable_write_paths for item in protected):
                 raise CodeInterpreterError("Write paths cannot overlap PythonInterpreter runtime files.")
             raw_read_paths = [
@@ -327,6 +333,9 @@ class PythonInterpreter:
             if self.enable_write_paths:
                 args.append(f"--allow-write={','.join(_canonicalize_path(x) for x in self.enable_write_paths)}")
 
+            self._deno_run = args[:5]
+            self._deno_dir = _canonicalize_path(deno_dir) if deno_dir else None
+            self._runner = _canonicalize_path(self._get_runner_path())
             args.append(_canonicalize_path(self._get_runner_path()))
 
             # For runner.js to load in env vars and revoke cache access after startup
@@ -342,6 +351,25 @@ class PythonInterpreter:
         self._handling_tool_call = False
         self._pending_large_vars = {}
         self._session_ended = False
+
+    def _start_from_compiled_stdlib(self) -> None:
+        """Have Pyodide start from its byte-compiled standard library, built once per Pyodide release (see
+        ``dspy.primitives.sandbox_bundle``). Without it, Pyodide compiles the library on every start."""
+        from dspy.primitives.sandbox_bundle import SandboxBundleError, prepare_stdlib
+
+        if not self._uses_default_deno_command or any(arg.startswith("--dspy-stdlib=") for arg in self.deno_command):
+            return
+        try:
+            stdlib = _canonicalize_path(prepare_stdlib(self._deno_run, self._deno_dir, self._runner))
+        except SandboxBundleError as e:
+            logger.debug("Starting Pyodide from its source standard library: %s", e)
+            return
+        self._allow_read(stdlib)
+        self.deno_command.append(f"--dspy-stdlib={stdlib}")
+
+    def _allow_read(self, path: str) -> None:
+        read = next(i for i, arg in enumerate(self.deno_command) if arg.startswith("--allow-read="))
+        self.deno_command[read] += f",{path}"
 
     execution_instructions = (
         "Python runs in Pyodide/WebAssembly. State persists across executions, but subprocesses and native "
@@ -554,6 +582,7 @@ class PythonInterpreter:
     def _spawn_process(self) -> None:
         if self._uses_default_deno_command:
             _validate_deno_version(self.deno_command[0])
+            self._start_from_compiled_stdlib()
 
         try:
             self.deno_process = subprocess.Popen(

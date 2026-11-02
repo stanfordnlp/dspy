@@ -23,6 +23,13 @@ DSPy disables ambient `deno.json`, lockfile, `package.json`, and local `node_mod
 runner. A `package.json` in the current directory or an ancestor therefore cannot redirect the sandbox's pinned
 Pyodide dependency. No `DENO_NO_PACKAGE_JSON` environment variable is required.
 
+## Startup
+
+Pyodide normally compiles each module of its standard library every time it starts. The first time a
+`PythonInterpreter` starts on a machine, DSPy byte-compiles Pyodide's standard library once into
+`$DSPY_CACHEDIR/sandbox` (`~/.dspy_cache/sandbox` by default), and every later interpreter starts from it, in about
+a quarter of the time. If that cache can't be written, interpreters start from Pyodide's own standard library.
+
 ## Execution Instructions
 
 `PythonInterpreter.execution_instructions` describes stable constraints of its Pyodide execution environment. It
