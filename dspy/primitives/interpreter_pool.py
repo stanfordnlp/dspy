@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 from dspy.primitives.code_interpreter import CodeInterpreter
 from dspy.primitives.python_interpreter import PythonInterpreter
+from dspy.primitives.sandbox_bundle import SandboxBundleError
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +21,9 @@ class InterpreterPool:
 
     Each call returns a fresh interpreter from ``factory`` that has run no code, as ``factory()`` would, except that
     it is usually already started: the pool starts ``size`` interpreters in the background and starts a replacement
-    whenever it hands one out. When none is ready, a call returns a new, unstarted interpreter instead. With
-    ``preload_dspy``, a ``PythonInterpreter`` also loads dspy before it is handed out, which is what ``dspy.Flex``
-    imports first.
+    whenever it hands one out. When none is ready, a call returns a new, unstarted interpreter instead. A pooled
+    ``PythonInterpreter`` can import dspy, and with ``preload_dspy`` it has already loaded it, which is what
+    ``dspy.Flex`` imports first.
 
     Pass it wherever an ``interpreter_factory`` goes:
 
@@ -91,8 +92,12 @@ class InterpreterPool:
     def _start_one(self) -> None:
         try:
             interpreter = self._factory()
-            if self._preload_dspy and isinstance(interpreter, PythonInterpreter):
-                interpreter.provide_dspy(preload=True)
+            if isinstance(interpreter, PythonInterpreter):
+                # Flex and RLM add the dspy bundle to their interpreters, which must happen before one starts.
+                try:
+                    interpreter.provide_dspy(preload=self._preload_dspy)
+                except SandboxBundleError:
+                    logger.debug("InterpreterPool starts interpreters without dspy", exc_info=True)
             interpreter.start()
         except Exception:
             # A call that finds no interpreter ready makes its own, and surfaces the failure there.

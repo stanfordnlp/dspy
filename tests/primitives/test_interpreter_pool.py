@@ -84,6 +84,20 @@ def test_pool_falls_back_to_a_new_interpreter_when_none_is_ready():
         pool.close()
 
 
+@pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
+@pytest.mark.parametrize("preload_dspy", [True, False])
+def test_pooled_python_interpreters_can_import_dspy_with_or_without_preloading(preload_dspy):
+    class Doubler(dspy.Signature):
+        value: int = dspy.InputField()
+        result: int = dspy.OutputField()
+
+    with dspy.InterpreterPool(size=1, preload_dspy=preload_dspy) as pool:
+        _wait_for(lambda: pool._ready.qsize() == 1)
+        flex = dspy.Flex(Doubler, interpreter_factory=pool)
+        with dspy.context(lm=DummyLM([{"result": "4"}])):
+            assert flex(value=2).result == 4
+
+
 @pytest.mark.parametrize(
     "factory",
     [
