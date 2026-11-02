@@ -19,6 +19,7 @@ names in that namespace.
 
 import sys as _dspy_sys
 import types as _dspy_types
+import typing as _dspy_typing
 
 
 def _dspy_host(_fn, **_kw):
@@ -126,13 +127,55 @@ def _dspy_enc(_v):
 
 def _dspy_make_ctor(_kind):
     def _ctor(signature=None, **_kwargs):
-        return _DspyPending(_kind, signature, {_k: _dspy_enc(_v) for _k, _v in _kwargs.items()})
+        return _DspyPending(_kind, _dspy_sig(signature), {_k: _dspy_enc(_v) for _k, _v in _kwargs.items()})
 
     return _ctor
 
 
-def _dspy_signature(signature, instructions=None, **_kw):
-    return {"__dspy_sig__": True, "signature": signature, "instructions": instructions}
+class _DspyField:
+    def __init__(self, _io, _kwargs):
+        self.io = _io
+        self.kwargs = _kwargs
+
+
+class _DspySignature:
+    # dspy.Signature("a -> b", "instructions") returns a __dspy_sig__ payload; subclasses are class-based signatures.
+    def __new__(cls, signature, instructions=None, **_kw):
+        return {"__dspy_sig__": True, "signature": signature, "instructions": instructions}
+
+
+def _dspy_type_str(_t):
+    if isinstance(_t, str):
+        # Under `from __future__ import annotations`, a quoted annotation arrives with its quotes.
+        return _t[1:-1] if len(_t) > 1 and _t[0] == _t[-1] and _t[0] in "'\"" else _t
+    if isinstance(_t, type) and not _dspy_typing.get_args(_t):
+        return _t.__name__
+    return repr(_t).replace("typing.", "")
+
+
+def _dspy_sig(_s):
+    # A class-based signature crosses as a string signature plus each field's InputField/OutputField kwargs.
+    if not (isinstance(_s, type) and issubclass(_s, _DspySignature)):
+        return _s
+    _fields, _annotated = {}, set()
+    for _c in reversed(_s.__mro__):
+        _ann = getattr(_c, "__annotations__", {})
+        _annotated.update(_ann)
+        for _k, _v in vars(_c).items():
+            if isinstance(_v, _DspyField):
+                _fields[_k] = (_v, _dspy_type_str(_ann.get(_k, str)))
+    _missing = sorted(_annotated - set(_fields))
+    if _missing:
+        raise TypeError(f"Field(s) {_missing} in {_s.__name__} must be declared with InputField or OutputField")
+    _sides = {"input": [], "output": []}
+    for _k, (_v, _t) in _fields.items():
+        _sides[_v.io].append(_k + ": " + _t)
+    return {
+        "__dspy_sig__": True,
+        "signature": ", ".join(_sides["input"]) + " -> " + ", ".join(_sides["output"]),
+        "instructions": _s.__doc__,
+        "fields": {_k: _v.kwargs for _k, (_v, _t) in _fields.items()},
+    }
 
 
 def _dspy_tool(func, **_kw):
@@ -142,7 +185,9 @@ def _dspy_tool(func, **_kw):
 _dspy = _dspy_types.ModuleType("dspy")
 _dspy.Module = _DspyModule
 _dspy.Prediction = _DspyPrediction
-_dspy.Signature = _dspy_signature
+_dspy.Signature = _DspySignature
+_dspy.InputField = lambda **_kw: _DspyField("input", _kw)
+_dspy.OutputField = lambda **_kw: _DspyField("output", _kw)
 _dspy.Tool = _dspy_tool
 for _k in ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought", "ReAct", "ReActV2"):
     setattr(_dspy, _k, _dspy_make_ctor(_k))

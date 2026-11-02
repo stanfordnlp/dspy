@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import ast
+import builtins
 import types
 import typing
 from dataclasses import dataclass, field
 from typing import Any, get_args, get_origin
 
 from dspy.primitives.facade import is_reserved_sandbox_name
+from dspy.signatures.field import PYDANTIC_CONSTRAINT_MAP
 
 
 @dataclass
@@ -74,6 +76,38 @@ class FlexContext:
             return ", ".join(parts)
 
         return f"{_render(cls.input_fields)} -> {_render(cls.output_fields)}"
+
+    def field_kwargs(self) -> dict[str, dict[str, Any]]:
+        """Each field's InputField/OutputField kwargs that the string form drops: its desc and constraints."""
+        out: dict[str, dict[str, Any]] = {}
+        for fname, finfo in self.signature_cls.fields.items():
+            desc = (finfo.json_schema_extra or {}).get("desc", "")
+            kwargs = {"desc": desc} if desc and not desc.startswith("${") else {}
+            kwargs.update({k: getattr(m, k) for m in finfo.metadata for k in PYDANTIC_CONSTRAINT_MAP if hasattr(m, k)})
+            out[fname] = kwargs
+        return out
+
+    def render_signature_class(self, class_name: str) -> str:
+        """Render a class-based ``dspy.Signature`` that keeps each field's desc and constraints."""
+        cls = self.signature_cls
+        custom = self.custom_types()
+        lines = [f"class {class_name}(dspy.Signature):"]
+        instructions = (getattr(cls, "instructions", "") or "").strip()
+        if instructions:
+            lines += [f"    {instructions!r}", ""]
+        for fname, kwargs in self.field_kwargs().items():
+            ctor = "InputField" if fname in cls.input_fields else "OutputField"
+            field = f"dspy.{ctor}({', '.join(f'{k}={v!r}' for k, v in kwargs.items())})"
+            try:
+                ann = render_annotation(cls.fields[fname].annotation, custom)
+            except ValueError:
+                lines.append(f"    {fname} = {field}")
+                continue
+            # Quote annotations naming non-builtins, so the sandbox needn't import or define them.
+            if not {n.id for n in ast.walk(ast.parse(ann, mode="eval")) if isinstance(n, ast.Name)} <= vars(builtins).keys():
+                ann = repr(ann)
+            lines.append(f"    {fname}: {ann} = {field}")
+        return "\n".join(lines)
 
     def custom_types(self) -> dict[str, type]:
         cls = self.signature_cls

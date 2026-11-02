@@ -88,9 +88,10 @@ The list above is the WHOLE of `dspy` available here. These do NOT exist in this
 module, and referencing one makes the code fail to bind: adapters
 (`dspy.ChatAdapter`, `dspy.JSONAdapter`), `dspy.settings`, `dspy.context`,
 `dspy.configure`, `dspy.LM`, `dspy.Example`, `dspy.Evaluate`, the optimizers,
-retrievers, `dspy.Flex` itself, and class-based signatures with
-`dspy.InputField` / `dspy.OutputField` (use the string form,
-`dspy.Signature("a -> b", "instructions")`). The host owns prompting, parsing,
+retrievers, and `dspy.Flex` itself. A class-based signature (subclassing
+`dspy.Signature`, with `dspy.InputField` / `dspy.OutputField`) works too; quote
+annotations that name custom types, e.g. `verdict: "Verdict" = dspy.OutputField()`.
+The host owns prompting, parsing,
 and the LM; this source only declares predictors and the Python wiring them
 together. The code also runs sandboxed, with no host filesystem or network, unless otherwise
 provided via a host tool.
