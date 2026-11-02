@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import atexit
 import logging
 import queue
 import threading
@@ -36,7 +35,7 @@ class InterpreterPool:
     so size the pool to your memory. One interpreter hides the start-up cost when each call spends longer in LM
     calls than a sandbox takes to start; calls that run back to back, or in parallel threads, need one per call in
     flight. ``factory`` must return interchangeable interpreters, since the pool calls it ahead of time. Idle
-    interpreters are shut down by ``close()``, and at exit.
+    interpreters are shut down by ``close()``, when the pool is garbage-collected, and at exit.
     """
 
     def __init__(
@@ -53,7 +52,8 @@ class InterpreterPool:
         self._ready: queue.Queue[CodeInterpreter] = queue.Queue()
         self._lock = threading.Lock()
         self._closed = False
-        _pools.add(self)
+        # Shuts the idle interpreters down when the pool is closed, garbage-collected, or the process exits.
+        self._finalizer = weakref.finalize(self, _shut_down_idle, self._ready)
         for _ in range(size):
             self._refill()
 
@@ -73,12 +73,7 @@ class InterpreterPool:
         """Shut down the idle interpreters and stop starting new ones."""
         with self._lock:
             self._closed = True
-        while True:
-            try:
-                interpreter = self._ready.get_nowait()
-            except queue.Empty:
-                return
-            interpreter.shutdown()
+        self._finalizer()
 
     def __enter__(self) -> InterpreterPool:
         return self
@@ -110,10 +105,10 @@ class InterpreterPool:
         interpreter.shutdown()
 
 
-_pools: weakref.WeakSet[InterpreterPool] = weakref.WeakSet()
-
-
-@atexit.register
-def _close_pools() -> None:
-    for pool in list(_pools):
-        pool.close()
+def _shut_down_idle(ready: queue.Queue[CodeInterpreter]) -> None:
+    while True:
+        try:
+            interpreter = ready.get_nowait()
+        except queue.Empty:
+            return
+        interpreter.shutdown()

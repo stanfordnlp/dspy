@@ -59,6 +59,18 @@ def test_pool_hands_out_each_started_interpreter_once_and_refills():
     assert all(interpreter._process is None for interpreter in factory.made)  # close() stopped the idle ones
 
 
+def test_a_dropped_pool_shuts_down_its_idle_interpreters():
+    import gc
+
+    factory = Recorder()
+    pool = dspy.InterpreterPool(factory, size=1)
+    ready = pool._ready
+    _wait_for(lambda: ready.qsize() == 1)
+    del pool
+    gc.collect()
+    assert [interpreter._process for interpreter in factory.made] == [None]
+
+
 def test_pool_falls_back_to_a_new_interpreter_when_none_is_ready():
     gate = threading.Event()
 

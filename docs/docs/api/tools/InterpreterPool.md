@@ -22,7 +22,7 @@ as `dspy.Evaluate(num_threads=...)`, need one for each call in flight.
 !!! warning "Idle interpreters hold memory"
     Every pooled interpreter is a running sandbox process. A `PythonInterpreter` with dspy loaded holds about 400 MB,
     so size the pool to your machine. Idle interpreters are shut down by `close()`, when the pool is used as a
-    context manager, and at exit.
+    context manager, when the pool is garbage-collected, and at exit.
 
 `factory` must return interchangeable interpreters, because the pool calls it before the interpreter is needed. A
 factory whose interpreters depend on when it is called, for example on the current input, should not be pooled.
