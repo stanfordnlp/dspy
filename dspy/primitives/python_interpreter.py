@@ -353,13 +353,14 @@ class PythonInterpreter:
         self._pending_large_vars = {}
         self._session_ended = False
 
-    def provide_dspy(self) -> None:
+    def provide_dspy(self, *, preload: bool = False) -> None:
         """Make ``import dspy`` work in the sandbox, with the host's dspy and Pyodide builds of its dependencies.
 
         The first call for a dspy source tree fetches the dependencies and byte-compiles the bundle (see
-        ``dspy.primitives.sandbox_bundle``), which the sandbox installs when it starts. Call before the
-        interpreter starts; a second call does nothing. With ``sandbox_cache=False`` the bundle is built in a
-        temporary directory of the process instead of the cache, once per process.
+        ``dspy.primitives.sandbox_bundle``), which the sandbox installs when it starts, and with ``preload`` it
+        imports dspy then too. Call before the interpreter starts; a second call does nothing.
+        With ``sandbox_cache=False`` the bundle is built in a temporary directory of the process instead of the cache,
+        once per process.
         """
         from dspy.primitives.sandbox_bundle import SandboxBundleError, prepare_bundle, scratch_root
 
@@ -377,6 +378,8 @@ class PythonInterpreter:
         bundle = _canonicalize_path(prepare_bundle(self._deno_run, self._deno_dir, self._runner, root))
         self._allow_read(bundle)
         self.deno_command.append(f"--dspy-bundle={bundle}")
+        if preload:
+            self.deno_command.append("--dspy-preload")
 
     def _start_from_compiled_stdlib(self) -> None:
         """Have Pyodide start from its byte-compiled standard library, built once per Pyodide release (see

@@ -205,6 +205,8 @@ class InlineExecutor(concurrent.futures.Executor):
 concurrent.futures.ThreadPoolExecutor = InlineExecutor
 del InlineExecutor
 `);
+  // Preloading: import dspy now, before any sandboxed code, so a started interpreter is ready to run it.
+  if (Deno.args.includes("--dspy-preload")) pyodide.pyimport("dspy");
 }
 
 // Tool call support: allows Python code to call host-side functions

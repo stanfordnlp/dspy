@@ -36,7 +36,8 @@ writes nothing to `$DSPY_CACHEDIR/sandbox`, and Pyodide starts from its own stan
 dspy still need its bundle (below): each process builds its own in a temporary directory, removed when it exits.
 
 `provide_dspy()` lets sandboxed code `import dspy`, with the host's dspy source and Pyodide builds of its
-dependencies. `dspy.Flex` and `dspy.RLM` call it on the interpreters they create.
+dependencies. `dspy.Flex` and `dspy.RLM` call it on the interpreters they create. To start interpreters before they
+are needed, see [`InterpreterPool`](InterpreterPool.md).
 
 ## Execution Instructions
 
