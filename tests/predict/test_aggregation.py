@@ -57,3 +57,17 @@ def test_majority_skips_none_values():
     completions = [{"answer": None}, {"answer": 7}, {"answer": None}]
     result = majority(completions)
     assert result.completions[0]["answer"] == 7
+
+
+def test_majority_with_unhashable_values():
+    completions_list = [{"answer": [1, 2]}, {"answer": [3]}, {"answer": [1, 2]}]
+    result_list = majority(completions_list)
+    assert result_list.completions[0]["answer"] == [1, 2]
+
+    completions_dict = [{"answer": {"a": 1}}, {"answer": {"b": 2}}, {"answer": {"a": 1}}]
+    result_dict = majority(completions_dict)
+    assert result_dict.completions[0]["answer"] == {"a": 1}
+
+    completions_tie = [{"answer": ["first"]}, {"answer": ["second"]}]
+    result_tie = majority(completions_tie)
+    assert result_tie.completions[0]["answer"] == ["first"]
