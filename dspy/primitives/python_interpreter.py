@@ -840,7 +840,7 @@ class PythonInterpreter:
                 error_type = error_data.get("type", "Error")
 
                 if error_code == JSONRPC_APP_ERRORS["SyntaxError"]:
-                    raise SyntaxError(f"Invalid Python syntax. message: {error_message}")
+                    raise SyntaxError(f"Invalid Python syntax. message: {error_data.get('args') or error_message}")
                 if error_code in JSONRPC_APP_ERRORS.values():
                     raise CodeExecutionError(f"{error_type}: {error_data.get('args') or error_message}")
                 self._raise_terminal_error(f"{error_type}: {error_data.get('args') or error_message}")
