@@ -71,3 +71,7 @@ def test_majority_with_unhashable_values():
     completions_tie = [{"answer": ["first"]}, {"answer": ["second"]}]
     result_tie = majority(completions_tie)
     assert result_tie.completions[0]["answer"] == ["first"]
+
+    completions_mixed = [{"answer": 1}, {"answer": 1}, {"answer": [2]}, {"answer": [2]}]
+    result_mixed = majority(completions_mixed, normalize=None)
+    assert result_mixed.completions[0]["answer"] == 1
