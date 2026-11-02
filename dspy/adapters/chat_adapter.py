@@ -135,7 +135,7 @@ class ChatAdapter(Adapter):
         )
 
     def format_field_structure(self, signature: type[Signature]) -> str:
-    """`ChatAdapter` requires input and output fields to be in their own sections,
+        """`ChatAdapter` requires input and output fields to be in their own sections,
         with section header using markers `[[ ## field_name ## ]]`. An arbitrary
         field `completed` ([[ ## completed ## ]]) is added to the end of the output
         fields section to indicate the end of the output fields.
