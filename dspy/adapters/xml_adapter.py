@@ -58,8 +58,11 @@ class XMLAdapter(ChatAdapter):
                 # schema note the flat path adds: without it, nested field
                 # descriptions, Literal values, and model docstrings never
                 # reach the prompt. The "{name}" placeholder it leads with is
-                # replaced by the tree itself.
-                note = translate_field_type(name, field).removeprefix("{" + name + "}")
+                # replaced by the tree itself. The note's schema must use field
+                # names, not aliases (by_alias=False), like the tree and the
+                # parser: the tags are the field names, so a schema naming
+                # aliases would contradict them.
+                note = translate_field_type(name, field, by_alias=False).removeprefix("{" + name + "}")
                 return self._xml_schema(name, field.annotation) + note
             annotations = (
                 get_args(field.annotation)

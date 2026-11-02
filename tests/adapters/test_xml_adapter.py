@@ -533,6 +533,12 @@ def test_xml_adapter_uses_pydantic_field_names_as_xml_tags():
     assert "<address>\n<postal_code>\n...\n</postal_code>\n<country_code>\n...\n</country_code>\n</address>" in (
         adapter.format_field_structure(TestSignature)
     )
+    # The schema note appended to the tree must name the fields, not their
+    # aliases, so the note does not contradict the tags.
+    structure = adapter.format_field_structure(TestSignature)
+    assert '"country_code"' in structure
+    assert "country-code" not in structure
+    assert '"postal code"' not in structure
     assert adapter.parse(TestSignature, xml) == {"address": address}
 
 
