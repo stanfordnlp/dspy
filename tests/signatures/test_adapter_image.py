@@ -1,3 +1,4 @@
+import base64
 import os
 import tempfile
 import warnings
@@ -493,16 +494,23 @@ def test_canonical_factories_do_not_warn(tmp_path):
         dspy.Image.from_path(str(tmp_file))
 
 
-def test_deprecated_factory_aliases_warn(tmp_path):
-    tmp_file = tmp_path / "test.png"
-    tmp_file.write_bytes(b"pngdata")
+@pytest.mark.parametrize("name", ["from_file", "from_PIL"])
+def test_removed_image_factory_aliases(name):
+    with pytest.raises(AttributeError, match=name):
+        getattr(dspy.Image, name)
 
-    with pytest.warns(DeprecationWarning, match="Image.from_file is deprecated"):
-        dspy.Image.from_file(str(tmp_file))
 
+def test_pil_image_constructor_preserves_pixels():
     sample_pil = PILImage.new("RGB", (10, 10), color="blue")
-    with pytest.warns(DeprecationWarning):
-        dspy.Image.from_PIL(sample_pil)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        image = dspy.Image(sample_pil)
+
+    assert image.url.startswith("data:image/png;base64,")
+    decoded = PILImage.open(BytesIO(base64.b64decode(image.url.split(",", 1)[1])))
+    assert decoded.size == (10, 10)
+    assert decoded.getpixel((0, 0)) == (0, 0, 255)
 
 
 def test_invalid_string_format():
