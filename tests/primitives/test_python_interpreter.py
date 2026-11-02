@@ -635,7 +635,7 @@ def test_rebuilds_the_compiled_standard_library_after_the_cache_is_cleared(monke
         shutil.rmtree(tmp_path / "sandbox")
 
 
-def test_a_failed_build_is_not_retried(monkeypatch, tmp_path):
+def test_a_failed_build_is_retried_only_after_a_while(monkeypatch, tmp_path):
     from dspy.primitives import sandbox_bundle
 
     builds = []
@@ -645,7 +645,12 @@ def test_a_failed_build_is_not_retried(monkeypatch, tmp_path):
     for _ in range(2):
         with PythonInterpreter() as interpreter:
             assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".py")
-    assert len(builds) == 1
+    assert len(builds) == 1  # the second start fell back right away
+
+    monkeypatch.setattr(sandbox_bundle, "_RETRY_AFTER", 0.0)  # once the wait is over, the build is tried again
+    with PythonInterpreter() as interpreter:
+        interpreter.execute("1")
+    assert len(builds) == 2
 
 
 def test_starts_from_the_source_standard_library_when_the_compiled_one_cannot_be_built(monkeypatch):

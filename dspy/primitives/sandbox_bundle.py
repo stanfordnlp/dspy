@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 from dspy.utils.caching import DSPY_CACHEDIR
@@ -18,7 +19,8 @@ from dspy.utils.exceptions import DSPyError
 # Must match the npm:pyodide version runner.js imports.
 PYODIDE_VERSION = "0.29.4"
 _lock = threading.Lock()
-_failed: dict[tuple, str] = {}
+_failed: dict[tuple, tuple[str, float]] = {}
+_RETRY_AFTER = 60.0
 
 
 class SandboxBundleError(DSPyError):
@@ -36,19 +38,23 @@ def prepare_stdlib(deno_command: list[str], deno_dir: str | None, runner: str) -
 
 
 def _guarded(prepare, *args):
-    # The archives are checked on every call, so a cleared cache gets rebuilt. A failed build is not retried in
-    # this process: callers fall back without paying for another build attempt each time.
+    # The archives are checked on every call, so a cleared cache gets rebuilt. A failed build is retried only after
+    # _RETRY_AFTER seconds: callers in between fail fast (or fall back) instead of each paying for another attempt,
+    # and a long-running process recovers once the cause, like a network outage, goes away.
     key = (prepare.__name__, *args)
-    if key in _failed:
-        raise SandboxBundleError(_failed[key])
+    failed = _failed.get(key)
+    if failed is not None and time.monotonic() - failed[1] < _RETRY_AFTER:
+        raise SandboxBundleError(failed[0])
     try:
-        return prepare(*args)
+        result = prepare(*args)
     except Exception as e:
         message = str(e) if isinstance(e, SandboxBundleError) else f"Preparing the Pyodide sandbox failed: {e}"
-        _failed[key] = message
+        _failed[key] = (message, time.monotonic())
         if isinstance(e, SandboxBundleError):
             raise
         raise SandboxBundleError(message) from e
+    _failed.pop(key, None)
+    return result
 
 
 def _build(deno_command: tuple[str, ...], deno_dir: str | None, runner: str, read: list[str], write: Path,
