@@ -7,7 +7,6 @@ sandboxed code, and every ``PythonInterpreter`` starts from it, in a fraction of
 
 from __future__ import annotations
 
-import functools
 import os
 import subprocess
 import threading
@@ -19,6 +18,7 @@ from dspy.utils.exceptions import DSPyError
 # Must match the npm:pyodide version runner.js imports.
 PYODIDE_VERSION = "0.29.4"
 _lock = threading.Lock()
+_failed: dict[tuple, str] = {}
 
 
 class SandboxBundleError(DSPyError):
@@ -30,18 +30,25 @@ def bundle_root() -> Path:
 
 
 def prepare_stdlib(deno_command: list[str], deno_dir: str | None, runner: str) -> Path:
-    """Return the byte-compiled standard library, building it if missing. Thread-safe and cached per process."""
+    """Return the byte-compiled standard library, building it if it is missing. Thread-safe."""
     with _lock:
         return _guarded(_prepare_stdlib, tuple(deno_command), deno_dir, runner)
 
 
 def _guarded(prepare, *args):
+    # The archives are checked on every call, so a cleared cache gets rebuilt. A failed build is not retried in
+    # this process: callers fall back without paying for another build attempt each time.
+    key = (prepare.__name__, *args)
+    if key in _failed:
+        raise SandboxBundleError(_failed[key])
     try:
         return prepare(*args)
-    except SandboxBundleError:
-        raise
     except Exception as e:
-        raise SandboxBundleError(f"Preparing the Pyodide sandbox failed: {e}") from e
+        message = str(e) if isinstance(e, SandboxBundleError) else f"Preparing the Pyodide sandbox failed: {e}"
+        _failed[key] = message
+        if isinstance(e, SandboxBundleError):
+            raise
+        raise SandboxBundleError(message) from e
 
 
 def _build(deno_command: tuple[str, ...], deno_dir: str | None, runner: str, read: list[str], write: Path,
@@ -63,7 +70,6 @@ def _build(deno_command: tuple[str, ...], deno_dir: str | None, runner: str, rea
         raise SandboxBundleError(f"Building a Pyodide sandbox archive failed:\n{result.stdout}\n{result.stderr}")
 
 
-@functools.cache
 def _prepare_stdlib(deno_command: tuple[str, ...], deno_dir: str | None, runner: str) -> Path:
     root = bundle_root()
     root.mkdir(parents=True, exist_ok=True)

@@ -625,6 +625,29 @@ def test_starts_from_the_compiled_standard_library():
         assert "Requires read access" in read
 
 
+def test_rebuilds_the_compiled_standard_library_after_the_cache_is_cleared(monkeypatch, tmp_path):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path / "sandbox")
+    for _ in range(2):
+        with PythonInterpreter() as interpreter:
+            assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".pyc")
+        shutil.rmtree(tmp_path / "sandbox")
+
+
+def test_a_failed_build_is_not_retried(monkeypatch, tmp_path):
+    from dspy.primitives import sandbox_bundle
+
+    builds = []
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path / "sandbox")
+    monkeypatch.setattr(sandbox_bundle, "_build", lambda *args: builds.append(args) or 1 / 0)
+    monkeypatch.setattr(sandbox_bundle, "_failed", {})
+    for _ in range(2):
+        with PythonInterpreter() as interpreter:
+            assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".py")
+    assert len(builds) == 1
+
+
 def test_starts_from_the_source_standard_library_when_the_compiled_one_cannot_be_built(monkeypatch):
     from dspy.primitives import sandbox_bundle
 
