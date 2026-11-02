@@ -21,7 +21,6 @@ classifiers = [
     "Programming Language :: Python :: 3"
 ]
 dependencies = [
-    "openai>=1.66.2",
     "regex>=2023.10.3",
     "orjson>=3.9.0",
     "tqdm>=4.66.1",
@@ -36,10 +35,11 @@ dependencies = [
     "cachetools>=5.5.0",
     "cloudpickle>=3.1.2",
     # gepa declares requires-python <3.15.
-    "gepa[dspy]==0.1.4; python_version < '3.15'",
+    "gepa==0.1.4; python_version < '3.15'",
 ]
 
 [project.optional-dependencies]
+openai = ["openai>=1.66.2"]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
 weaviate = ["weaviate-client>=4.5.4,<4.22.0"]
 mcp = ["mcp; python_version >= '3.10'"]
@@ -64,7 +64,8 @@ dev = [
     "datamodel_code_generator>=0.26.3",
     "build>=1.0.3",
     "numpy>=1.26.0",
-    "gepa[dspy]==0.1.4",
+    "openai>=1.66.2",
+    "gepa==0.1.4",
 ]
 test_extras = [
     "mcp>=1.2.0; python_version >= '3.10'",  # FastMCP powers the offline test server.

@@ -291,3 +291,11 @@ def test_install_hints_match_pyproject_extras(pytestconfig):
             f"_INSTALL_HINTS[{module!r}] = {hint!r} is not a declared extra in "
             f"pyproject.toml (declared: {sorted(extras)})"
         )
+
+
+def test_import_dspy_leaves_optional_sdks_unimported():
+    import subprocess
+
+    code = "import sys, dspy; print(sorted({'openai', 'jiter', 'litellm'} & set(sys.modules)))"
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == "[]"
