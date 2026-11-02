@@ -141,7 +141,8 @@ class Completions:
 
     def __getitem__(self, key):
         if isinstance(key, int):
-            if key < 0 or key >= len(self):
+            n = len(self)
+            if not -n <= key < n:
                 raise IndexError("Index out of range")
 
             return Prediction(**{k: v[key] for k, v in self._completions.items()})
