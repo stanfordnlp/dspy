@@ -228,14 +228,21 @@ def test_require_returns_stub_when_missing():
     assert isinstance(stub, _MissingModule)
 
 
-def test_require_stub_raises_on_access_with_install_hint():
+def test_require_stub_raises_on_access_with_install_hint(monkeypatch):
+    def unexpected_stack(*args, **kwargs):
+        pytest.fail("require() must not inspect the whole stack")
+
+    monkeypatch.setattr("dspy.utils.lazy_import.inspect.stack", unexpected_stack)
     dist = _detect_dspy_dist()
+    line = sys._getframe().f_lineno + 1
     stub = require("nonexistent_abc", feature="dspy.Test")
     with pytest.raises(ImportError) as exc_info:
         _ = stub.something
     msg = str(exc_info.value)
     assert f"{dist}[nonexistent_abc]" in msg, msg
     assert "dspy.Test" in msg
+    assert f"File {__file__}, line {line}, in test_require_stub_raises_on_access_with_install_hint" in msg
+    assert 'stub = require("nonexistent_abc", feature="dspy.Test")' in msg
 
 
 def test_require_stub_uses_install_hint_for_optional_dependency(monkeypatch):
