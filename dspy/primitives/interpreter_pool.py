@@ -112,7 +112,7 @@ class InterpreterPool:
             if not self._closed:
                 self._ready.put(interpreter)
                 return
-        interpreter.shutdown()
+        _shut_down(interpreter)
 
 
 def _shut_down_idle(ready: queue.Queue[CodeInterpreter]) -> None:
@@ -121,4 +121,12 @@ def _shut_down_idle(ready: queue.Queue[CodeInterpreter]) -> None:
             interpreter = ready.get_nowait()
         except queue.Empty:
             return
+        _shut_down(interpreter)
+
+
+def _shut_down(interpreter: CodeInterpreter) -> None:
+    # One that fails (its process already gone, say) does not keep the others running.
+    try:
         interpreter.shutdown()
+    except Exception:
+        logger.debug("InterpreterPool could not shut down an idle interpreter", exc_info=True)

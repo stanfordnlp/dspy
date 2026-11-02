@@ -71,6 +71,21 @@ def test_a_dropped_pool_shuts_down_its_idle_interpreters():
     assert [interpreter._process for interpreter in factory.made] == [None]
 
 
+def test_closing_shuts_down_every_idle_interpreter_even_if_one_fails():
+    factory = Recorder()
+    pool = dspy.InterpreterPool(factory, size=2)
+    _wait_for(lambda: pool._ready.qsize() == 2)
+    for interpreter in factory.made:  # each shuts down, then raises, as when its process is already gone
+
+        def broken_shutdown(real=interpreter.shutdown):
+            real()
+            raise BrokenPipeError
+
+        interpreter.shutdown = broken_shutdown
+    pool.close()
+    assert [interpreter._process for interpreter in factory.made] == [None, None]
+
+
 def test_pool_falls_back_to_a_new_interpreter_when_none_is_ready():
     gate = threading.Event()
 
