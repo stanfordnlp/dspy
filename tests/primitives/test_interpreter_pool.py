@@ -96,6 +96,27 @@ def test_pool_falls_back_to_a_new_interpreter_when_none_is_ready():
         pool.close()
 
 
+def test_pool_starts_again_after_its_background_starts_failed():
+    class FailsAtFirst(Recorder):
+        def __init__(self):
+            super().__init__()
+            self.failures, self.lock = 2, threading.Lock()
+
+        def __call__(self):
+            with self.lock:
+                if self.failures:
+                    self.failures -= 1
+                    raise RuntimeError("not yet")
+            return super().__call__()
+
+    with dspy.InterpreterPool(FailsAtFirst(), size=2) as pool:
+        _wait_for(lambda: pool._starting == 0)  # both first starts failed
+        assert pool._ready.qsize() == 0
+        cold = pool()
+        _wait_for(lambda: pool._ready.qsize() == 2)  # the call started replacements for them
+        cold.shutdown()
+
+
 @pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
 @pytest.mark.parametrize("preload_dspy", [True, False])
 def test_pooled_python_interpreters_can_import_dspy_with_or_without_preloading(preload_dspy):

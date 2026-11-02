@@ -20,7 +20,8 @@ class InterpreterPool:
 
     Each call returns a fresh interpreter from ``factory`` that has run no code, as ``factory()`` would, except that
     it is usually already started: the pool starts ``size`` interpreters in the background and starts a replacement
-    whenever it hands one out. When none is ready, a call returns a new, unstarted interpreter instead. A pooled
+    whenever it hands one out, or after a start failed. When none is ready, a call returns a new, unstarted
+    interpreter instead. A pooled
     ``PythonInterpreter`` can import dspy, and with ``preload_dspy`` it has already loaded it, which is what
     ``dspy.Flex`` imports first.
 
@@ -48,14 +49,15 @@ class InterpreterPool:
         if size < 1:
             raise ValueError("size must be at least 1")
         self._factory = factory
+        self._size = size
         self._preload_dspy = preload_dspy
+        self._starting = 0
         self._ready: queue.Queue[CodeInterpreter] = queue.Queue()
         self._lock = threading.Lock()
         self._closed = False
         # Shuts the idle interpreters down when the pool is closed, garbage-collected, or the process exits.
         self._finalizer = weakref.finalize(self, _shut_down_idle, self._ready)
-        for _ in range(size):
-            self._refill()
+        self._refill()
 
     @property
     def execution_instructions(self) -> str:
@@ -65,9 +67,9 @@ class InterpreterPool:
         try:
             interpreter = self._ready.get_nowait()
         except queue.Empty:
-            return self._factory()
+            interpreter = None
         self._refill()
-        return interpreter
+        return interpreter if interpreter is not None else self._factory()
 
     def close(self) -> None:
         """Shut down the idle interpreters and stop starting new ones."""
@@ -82,7 +84,12 @@ class InterpreterPool:
         self.close()
 
     def _refill(self) -> None:
-        threading.Thread(target=self._start_one, name="dspy-interpreter-pool", daemon=True).start()
+        """Start interpreters until ``size`` are ready or starting."""
+        with self._lock:
+            missing = 0 if self._closed else self._size - self._ready.qsize() - self._starting
+            self._starting += max(missing, 0)
+        for _ in range(missing):
+            threading.Thread(target=self._start_one, name="dspy-interpreter-pool", daemon=True).start()
 
     def _start_one(self) -> None:
         try:
@@ -97,8 +104,11 @@ class InterpreterPool:
         except Exception:
             # A call that finds no interpreter ready makes its own, and surfaces the failure there.
             logger.debug("InterpreterPool could not start an interpreter", exc_info=True)
+            with self._lock:
+                self._starting -= 1
             return
         with self._lock:
+            self._starting -= 1
             if not self._closed:
                 self._ready.put(interpreter)
                 return
