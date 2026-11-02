@@ -23,9 +23,6 @@ except ImportError:
     PIL_AVAILABLE = False
 
 
-_UNSET = object()
-
-
 class Image(Type):
     url: str
 
@@ -36,7 +33,7 @@ class Image(Type):
         extra="forbid",
     )
 
-    def __init__(self, source: Any = None, /, *, download: Any = _UNSET, verify: Any = _UNSET, **data):
+    def __init__(self, source: Any = None, /, **data):
         """Create an Image.
 
         Parameters
@@ -50,38 +47,19 @@ class Image(Type):
             - ``dict`` with a single ``{"url": value}`` entry (legacy form)
             - already encoded data URI
 
-        download, verify:
-            Deprecated. Use :meth:`from_url` (which accepts ``verify``) to download a
-            remote image, or :meth:`from_path` for a local file. Accepted for one release
-            with a warning: ``download=True`` eagerly fetches an HTTP(S) ``source``.
-
         Any additional keyword arguments are passed to :class:`pydantic.BaseModel`.
 
         Ordinary construction never touches the filesystem or network. Local files and remote
-        resources must be loaded explicitly with :meth:`from_path` and :meth:`from_url`. The
-        deprecated positional ``Image(url, download=True)`` compatibility call also downloads.
+        resources must be loaded explicitly with :meth:`from_path` and :meth:`from_url`.
+        The removed ``download`` and ``verify`` constructor keywords raise :class:`TypeError`;
+        :meth:`from_url` still accepts ``verify``.
         """
 
-        download_requested = download is not _UNSET
-        verify_requested = verify is not _UNSET
-        if (download_requested or verify_requested) and source is None:
-            # `download`/`verify` are a compatibility shim for the positional constructor
-            # `Image(url, download=True)`. They must never be honored through the validation
-            # path: pydantic routes dict data into `__init__`, so an untrusted value such as
-            # `{"url": "http://169.254.169.254/...", "download": true}` would otherwise trigger
-            # a server-side fetch during output parsing. Requiring a positional source keeps the
-            # shim reachable only from direct developer construction.
+        if "download" in data or "verify" in data:
             raise TypeError(
-                "`download` and `verify` are only valid with a positional image source; "
-                "use Image.from_url(url, verify=...) to download a remote image."
-            )
-        if download_requested or verify_requested:
-            warnings.warn(
-                "The `download` and `verify` arguments to Image() are deprecated and will be removed in "
-                "3.4. Use Image.from_url(url, verify=...) to download a remote image, or "
-                "Image.from_path(path) for a local file.",
-                DeprecationWarning,
-                stacklevel=2,
+                "Image() no longer accepts `download` or `verify`; use Image.from_url(url, verify=...) "
+                "to download a remote image, Image.from_path(path) for a local file, or Image(url) "
+                "to keep a URL reference."
             )
 
         if source is not None and "url" in data:
@@ -95,11 +73,7 @@ class Image(Type):
             else:
                 data["url"] = source
 
-        url = data.get("url")
-        if download_requested and download and isinstance(url, str) and _is_http_url(url):
-            # Legacy download=True path: eagerly fetch the remote URL.
-            data["url"] = _encode_image_from_url(url, verify=verify if verify_requested else True)
-        elif "url" in data:
+        if "url" in data:
             # Normalize any accepted input into a base64 data URI or plain URL.
             data["url"] = encode_image(data["url"])
 

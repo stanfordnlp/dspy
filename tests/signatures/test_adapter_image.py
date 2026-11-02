@@ -1,4 +1,3 @@
-import base64
 import os
 import tempfile
 import warnings
@@ -526,37 +525,22 @@ def test_positional_local_path_hard_breaks(tmp_path, monkeypatch):
         dspy.Image(str(tmp_file))
 
 
-def test_deprecated_download_true_downloads(monkeypatch):
-    response = type("Response", (), {"content": b"pngdata", "headers": {"Content-Type": "image/png"}})()
-    response.raise_for_status = lambda: None
-    monkeypatch.setattr("dspy.adapters.types.image.requests.get", lambda *args, **kwargs: response)
-
-    with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
-        image = dspy.Image("https://example.com/dog.jpg", download=True)
-
-    assert image.url.startswith("data:image/png;base64,")
-    assert base64.b64decode(image.url.split(",", 1)[1]) == b"pngdata"
-
-
-def test_deprecated_download_false_keeps_reference():
-    source = "https://example.com/dog.jpg"
-    with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
-        image = dspy.Image(source, download=False)
-    assert image.url == source
-
-
-def test_deprecated_verify_warns_without_download():
-    source = "https://example.com/dog.jpg"
-    with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
-        image = dspy.Image(source, verify=False)
-    assert image.url == source
-
-
-def test_pil_image_with_deprecated_download_still_encodes():
-    sample_pil = PILImage.new("RGB", (60, 30), color="red")
-    with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
-        image = dspy.Image(sample_pil, download=True)
-    assert image.url.startswith("data:image/")
+@pytest.mark.parametrize("source", ["https://example.com/dog.jpg", PILImage.new("RGB", (2, 1), color="red")])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"download": True},
+        {"download": False},
+        {"download": None},
+        {"verify": True},
+        {"verify": False},
+        {"verify": None},
+        {"download": True, "verify": False},
+    ],
+)
+def test_image_constructor_rejects_removed_keywords(source, kwargs):
+    with pytest.raises(TypeError, match=r"no longer accepts.*Image\.from_url"):
+        dspy.Image(source, **kwargs)
 
 
 def test_from_path_missing_file():
