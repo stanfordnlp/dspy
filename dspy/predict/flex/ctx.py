@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import builtins
+import math
 import types
 import typing
 from dataclasses import dataclass, field
@@ -83,7 +84,11 @@ class FlexContext:
         for fname, finfo in self.signature_cls.fields.items():
             desc = (finfo.json_schema_extra or {}).get("desc", "")
             kwargs = {"desc": desc} if desc and not desc.startswith("${") else {}
-            kwargs.update({k: getattr(m, k) for m in finfo.metadata for k in PYDANTIC_CONSTRAINT_MAP if hasattr(m, k)})
+            for m in finfo.metadata:
+                for k in PYDANTIC_CONSTRAINT_MAP:
+                    # Only plain numbers can be written into source and sent back as JSON (not Decimal or inf).
+                    if isinstance(v := getattr(m, k, None), int | float) and math.isfinite(v):
+                        kwargs[k] = v
             out[fname] = kwargs
         return out
 

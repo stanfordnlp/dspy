@@ -124,7 +124,8 @@ Rules you MUST follow:
   pure-Python `forward` and define no predictors in `__init__`.
 
 - Define any helper functions NESTED inside `forward` (not at module scope), and
-  add no module-scope code other than the single class definition, so the persisted
+  add no module-scope code other than the module class and any signature classes it
+  uses, defined above it, so the persisted
   module file and the live module execute identically.
 
 - Keep the design composable: prefer two short predictors with clear signatures

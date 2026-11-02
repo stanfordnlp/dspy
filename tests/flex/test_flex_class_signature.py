@@ -1,6 +1,7 @@
 """Class-based signatures through dspy.Flex: the Flex's own signature, and ones defined by sandboxed code."""
 
 import shutil
+from decimal import Decimal
 from typing import Literal
 
 import pydantic
@@ -37,18 +38,19 @@ class Grade(dspy.Signature):
 
 ANSWER = {"tone": "formal", "points": 87, "verdict": '{"label": "pass", "score": 0.87}'}
 
-# Sandboxed code with its own class-based signature: inherited fields, a typing annotation, a quoted custom type.
+# Sandboxed code with its own class-based signature: inherited fields and instructions, a typing annotation,
+# a quoted custom type.
 SANDBOX_SIGNATURE_SRC = '''
 from typing import Literal
 
 
 class EssayInput(dspy.Signature):
+    """Grade the essay against the rubric."""
+
     essay: str = dspy.InputField(desc="the student's essay, verbatim")
 
 
 class SubGrade(EssayInput):
-    """Grade the essay against the rubric."""
-
     tone: Literal["formal", "casual"] = dspy.OutputField(desc="register of the essay")
     points: int = dspy.OutputField(desc="total points awarded", ge=0, le=100)
     verdict: "Verdict" = dspy.OutputField(desc="structured verdict")
@@ -130,6 +132,20 @@ def test_sandboxed_class_signature_requires_input_or_output_field(factory):
     with dspy.context(lm=DummyLM([ANSWER])):
         with pytest.raises(CodeExecutionError, match=r"\['essay'\] in SubGrade must be declared with InputField"):
             flex(essay="An essay.")
+
+
+@pytest.mark.parametrize("factory", INTERPRETERS)
+def test_flex_baseline_skips_constraints_that_are_not_plain_numbers(factory):
+    class Pay(dspy.Signature):
+        """Extract the amount."""
+
+        text: str = dspy.InputField(desc="invoice text")
+        amount: Decimal = dspy.OutputField(gt=Decimal("0"), le=1000)
+
+    flex = dspy.Flex(Pay, interpreter_factory=factory)
+    assert "amount: 'Decimal' = dspy.OutputField(le=1000)" in flex.module_src
+    with dspy.context(lm=DummyLM([{"amount": "12.50"}])):
+        assert flex(text="Total: 12.50").amount == Decimal("12.50")
 
 
 def test_flex_baseline_keeps_string_signature_without_field_metadata():

@@ -173,7 +173,7 @@ def _dspy_sig(_s):
     return {
         "__dspy_sig__": True,
         "signature": ", ".join(_sides["input"]) + " -> " + ", ".join(_sides["output"]),
-        "instructions": _s.__doc__,
+        "instructions": next((_c.__doc__ for _c in _s.__mro__ if issubclass(_c, _DspySignature) and _c.__doc__), None),
         "fields": {_k: _v.kwargs for _k, (_v, _t) in _fields.items()},
     }
 
