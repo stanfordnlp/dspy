@@ -189,7 +189,7 @@ _dspy.Signature = _DspySignature
 _dspy.InputField = lambda **_kw: _DspyField("input", _kw)
 _dspy.OutputField = lambda **_kw: _DspyField("output", _kw)
 _dspy.Tool = _dspy_tool
-for _k in ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought", "ReAct", "ReActV2"):
+for _k in ("Predict", "ChainOfThought", "RLM", "ReAct", "ReActV2"):
     setattr(_dspy, _k, _dspy_make_ctor(_k))
 dspy = _dspy
 
