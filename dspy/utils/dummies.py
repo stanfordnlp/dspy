@@ -84,6 +84,11 @@ class DummyLM(BaseLM):
 
         engine = DummyEngine(self)
         super().__init__("dummy", "chat", 0.0, 1000, True, engine=engine, async_engine=AsyncDummyEngine(engine))
+        if not isinstance(answers, (list, dict)):
+            raise TypeError(
+                "DummyLM answers must be a list of response dicts or a dict keyed "
+                f"by prompt, but got {type(answers).__name__}"
+            )
         self.answers = answers
         if isinstance(answers, list):
             self.answers = iter(answers)
