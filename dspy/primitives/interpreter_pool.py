@@ -21,9 +21,8 @@ class InterpreterPool:
     Each call returns a fresh interpreter from ``factory`` that has run no code, as ``factory()`` would, except that
     it is usually already started: the pool starts ``size`` interpreters in the background and starts a replacement
     whenever it hands one out, or after a start failed. When none is ready, a call returns a new, unstarted
-    interpreter instead. A pooled
-    ``PythonInterpreter`` can import dspy, and with ``preload_dspy`` it has already loaded it, which is what
-    ``dspy.Flex`` imports first.
+    interpreter instead. A pooled ``PythonInterpreter`` has dspy installed, and usually already imported, which is
+    what ``dspy.Flex`` imports first.
 
     Pass it wherever an ``interpreter_factory`` goes:
 
@@ -39,18 +38,11 @@ class InterpreterPool:
     interpreters are shut down by ``close()``, when the pool is garbage-collected, and at exit.
     """
 
-    def __init__(
-        self,
-        factory: Callable[[], CodeInterpreter] = PythonInterpreter,
-        size: int = 1,
-        *,
-        preload_dspy: bool = True,
-    ) -> None:
+    def __init__(self, factory: Callable[[], CodeInterpreter] = PythonInterpreter, size: int = 1) -> None:
         if size < 1:
             raise ValueError("size must be at least 1")
         self._factory = factory
         self._size = size
-        self._preload_dspy = preload_dspy
         self._starting = 0
         self._ready: queue.Queue[CodeInterpreter] = queue.Queue()
         self._lock = threading.Lock()
@@ -97,7 +89,7 @@ class InterpreterPool:
             if isinstance(interpreter, PythonInterpreter):
                 # Flex and RLM add the dspy bundle to their interpreters, which must happen before one starts.
                 try:
-                    interpreter.provide_dspy(preload=self._preload_dspy)
+                    interpreter.provide_dspy()
                 except SandboxBundleError:
                     logger.debug("InterpreterPool starts interpreters without dspy", exc_info=True)
             interpreter.start()

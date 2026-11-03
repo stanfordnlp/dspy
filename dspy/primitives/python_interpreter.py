@@ -96,6 +96,10 @@ def _find_deno_executable() -> str:
         return shutil.which("deno") or "deno"
 
 
+# runner.js exits with this when it cannot restore its dspy snapshot.
+_SNAPSHOT_REFUSED = 70
+
+
 def _get_deno_version(deno_executable: str) -> tuple[int, int, int] | None:
     try:
         result = subprocess.run(
@@ -353,16 +357,22 @@ class PythonInterpreter:
         self._pending_large_vars = {}
         self._session_ended = False
 
-    def provide_dspy(self, *, preload: bool = False) -> None:
+    def provide_dspy(self) -> None:
         """Make ``import dspy`` work in the sandbox, with the host's dspy and Pyodide builds of its dependencies.
 
-        The first call for a dspy source tree fetches the dependencies and byte-compiles the bundle (see
-        ``dspy.primitives.sandbox_bundle``), which the sandbox installs when it starts, and with ``preload`` it
-        imports dspy then too. Call before the interpreter starts; a second call does nothing.
-        With ``sandbox_cache=False`` the bundle is built in a temporary directory of the process instead of the cache,
-        once per process.
+        The first call for a dspy source tree fetches the dependencies, byte-compiles the bundle, and records the
+        memory of a sandbox that has imported it (see ``dspy.primitives.sandbox_bundle``). The sandbox restores that
+        snapshot when it starts, so dspy is already imported. Without one, it installs the bundle and imports dspy on
+        first use. Call before the interpreter starts; a second call does nothing. With ``sandbox_cache=False`` the
+        bundle is built in a temporary directory of the process instead of the cache, and no snapshot is recorded.
         """
-        from dspy.primitives.sandbox_bundle import SandboxBundleError, prepare_bundle, scratch_root
+        from dspy.primitives.sandbox_bundle import (
+            SandboxBundleError,
+            prepare_bundle,
+            prepare_snapshot,
+            prepare_stdlib,
+            scratch_root,
+        )
 
         if any(arg.startswith("--dspy-bundle=") for arg in self.deno_command):
             return
@@ -378,8 +388,17 @@ class PythonInterpreter:
         bundle = _canonicalize_path(prepare_bundle(self._deno_run, self._deno_dir, self._runner, root))
         self._allow_read(bundle)
         self.deno_command.append(f"--dspy-bundle={bundle}")
-        if preload:
-            self.deno_command.append("--dspy-preload")
+        if root is not None:  # no snapshot, without the cache: each sandbox imports dspy itself
+            return
+        try:
+            stdlib = _canonicalize_path(prepare_stdlib(self._deno_run, self._deno_dir, self._runner))
+            snapshot = prepare_snapshot(self._deno_run, self._deno_dir, self._runner, bundle, stdlib)
+        except SandboxBundleError as e:
+            logger.debug("The sandbox imports dspy itself: %s", e)
+            return
+        snapshot = _canonicalize_path(snapshot)
+        self._allow_read(snapshot)
+        self.deno_command.append(f"--dspy-snapshot={snapshot}")
 
     def _start_from_compiled_stdlib(self) -> None:
         """Have Pyodide start from its byte-compiled standard library, built once per Pyodide release (see
@@ -614,7 +633,23 @@ class PythonInterpreter:
         if self._uses_default_deno_command:
             _validate_deno_version(self.deno_command[0])
             self._start_from_compiled_stdlib()
+        self._popen()
+        try:
+            self._health_check()
+        except CodeInterpreterError as e:
+            snapshot = next((arg for arg in self.deno_command if arg.startswith("--dspy-snapshot=")), None)
+            if snapshot is None or self.deno_process.returncode != _SNAPSHOT_REFUSED:
+                raise
+            from dspy.primitives.sandbox_bundle import discard_snapshot
 
+            logger.warning("Starting the sandbox without its dspy snapshot: %s", e)
+            discard_snapshot(snapshot.removeprefix("--dspy-snapshot="))
+            self.deno_command.remove(snapshot)
+            self._session_ended = False
+            self._popen()
+            self._health_check()
+
+    def _popen(self) -> None:
         try:
             self.deno_process = subprocess.Popen(
                 self.deno_command,
@@ -636,7 +671,6 @@ class PythonInterpreter:
                 "For additional configurations: https://docs.deno.com/runtime/getting_started/installation/"
             )
             raise CodeInterpreterError(install_instructions) from e
-        self._health_check()
 
     _MAX_SKIP_LINES = 100
 
