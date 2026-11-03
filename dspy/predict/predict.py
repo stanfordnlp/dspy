@@ -5,7 +5,6 @@ import types
 from typing import Any, Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel
-from pydantic_core import PydanticUndefined
 
 from dspy.adapters.decision import resolve_adapter
 from dspy.adapters.decision_state import DecisionState
@@ -194,10 +193,19 @@ class Predict(Module, Parameter):
                 # to the lm kwargs.
                 config["prediction"] = kwargs.pop("prediction")
 
-        # Populate default values for missing input fields.
-        for k, v in signature.input_fields.items():
-            if k not in kwargs and v.default is not PydanticUndefined:
-                kwargs[k] = v.default
+        # Populate default values for missing input fields. Keep literal
+        # defaults as-is and materialize default_factory fields, passing the
+        # values supplied so far to factories that accept validated data.
+        input_fields = signature.input_fields
+        for k, v in input_fields.items():
+            if k not in kwargs and not v.is_required():
+                if v.default_factory is not None:
+                    available = {name: kwargs[name] for name in input_fields if name in kwargs}
+                    kwargs[k] = v.get_default(
+                        call_default_factory=True, validated_data=available
+                    )
+                else:
+                    kwargs[k] = v.default
 
         # Check and warn for extra fields not in signature
         extra_fields = [k for k in kwargs if k not in signature.input_fields]
