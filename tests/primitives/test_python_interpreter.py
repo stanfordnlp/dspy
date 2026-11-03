@@ -672,6 +672,7 @@ def test_the_cache_follows_the_pyodide_release_runner_js_pins():
     runner = (Path(sandbox_bundle.__file__).parent / "runner.js").read_text()
     assert f'"npm:pyodide@{sandbox_bundle.PYODIDE_VERSION}/pyodide.js"' in runner
     assert sandbox_bundle.bundle_root().name == f"pyodide-{sandbox_bundle.PYODIDE_VERSION}"
+    assert sandbox_bundle._pinned_pyodide(Path(sandbox_bundle.__file__).parent / "missing.js") is None  # no crash
 
 
 def test_starts_from_the_source_standard_library_when_the_compiled_one_cannot_be_built(monkeypatch):

@@ -19,10 +19,14 @@ from dspy.utils.caching import DSPY_CACHEDIR
 from dspy.utils.exceptions import DSPyError
 
 
-def _pinned_pyodide() -> str:
-    """The Pyodide release runner.js imports, where it is pinned: upgrading Pyodide there also moves the cache."""
-    runner = (Path(__file__).parent / "runner.js").read_text()
-    return re.search(r"npm:pyodide@([\w.-]+)/", runner).group(1)
+def _pinned_pyodide(runner: Path = Path(__file__).parent / "runner.js") -> str | None:
+    """The Pyodide release runner.js imports, where it is pinned: upgrading Pyodide there also moves the cache.
+    ``None`` where the runner can't be read, which then can't start an interpreter either, so that ``import dspy``
+    still works there."""
+    try:
+        return re.search(r"npm:pyodide@([\w.-]+)/", runner.read_text()).group(1)
+    except (OSError, AttributeError):
+        return None
 
 
 PYODIDE_VERSION = _pinned_pyodide()
