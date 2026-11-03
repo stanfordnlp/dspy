@@ -285,6 +285,9 @@ def _answer_match(prediction, answers, frac=1.0):
     When `frac >= 1.0`, require exact match (EM). Otherwise, return whether the
     maximum token-level F1 across answers is at least `frac`.
     """
+    if not answers:
+        return False
+
     if frac >= 1.0:
         return EM(prediction, answers)
 

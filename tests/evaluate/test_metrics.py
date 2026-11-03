@@ -94,3 +94,12 @@ def test_em_f1_hotpot_tuple_and_set():
     assert EM("paris", {"Paris", "France"})
     assert F1("paris", ("Paris",)) == 1.0
     assert HotPotF1("yes", ("yes", "no")) == 1.0
+
+
+def test_answer_exact_match_empty_references():
+    pred = dspy.Prediction(answer="Paris")
+    for empty_ref in ([], (), set()):
+        example = dspy.Example(answer=empty_ref)
+        assert not answer_exact_match(example, pred, frac=1.0)
+        assert not answer_exact_match(example, pred, frac=0.5)
+        assert not answer_exact_match(example, pred, frac=0.0)
