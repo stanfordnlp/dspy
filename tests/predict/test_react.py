@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 import dspy
 from dspy.utils.exceptions import ContextWindowExceededError
-from tests.test_utils.engines import make_response
+from tests.test_utils.engines import make_response, recording_lm
 
 
 class ReasoningDummyLM(dspy.utils.DummyLM):
@@ -19,6 +19,44 @@ def test_react_submit_tool_returns_original_output_fields():
 
     assert react.tools["submit"](answer="Paris") == {"answer": "Paris"}
     assert "tool_call_results" not in react.react.signature.input_fields
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_react_preserves_output_field_metadata_in_lm_request(native):
+    class Task(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(desc="Return the answer in Spanish.")
+        confidence: int = dspy.OutputField(desc="An integer confidence percentage from 0 to 100.", ge=0, le=100)
+
+    outputs = {"answer": "París", "confidence": 95}
+    if native:
+        lm = recording_lm([make_response(tool_calls=[("submit_1", "submit", outputs)])])
+    else:
+        lm = dspy.utils.DummyLM([{
+            "next_thought": "Done.",
+            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": outputs}]),
+        }])
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=native)):
+        result = dspy.ReAct(Task, tools=[])(question="What is the capital of France?")
+
+    assert result.answer == "París"
+    assert result.confidence == 95
+    if native:
+        submit = next(tool for tool in lm.engine.requests[0].tools if tool.name == "submit")
+        assert submit.parameters["properties"] == {
+            "answer": {"type": "string", "description": "Return the answer in Spanish."},
+            "confidence": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100,
+                "description": "An integer confidence percentage from 0 to 100.",
+            },
+        }
+    else:
+        prompt = str(lm.history[0]["messages"])
+        assert "Return the answer in Spanish." in prompt
+        assert "An integer confidence percentage from 0 to 100." in prompt
 
 
 def test_react_text_mock_lm_loop_records_inputs_once():

@@ -88,11 +88,14 @@ class ReAct(Module):
                 raise ValueError(f"Missing required final output field(s): {', '.join(missing)}")
             return {name: kwargs[name] for name in output_names}
 
+        arg_types = {name: field.rebuild_annotation() for name, field in output_fields.items()}
         args = {
-            name: _json_schema_for_annotation(field.annotation)
-            for name, field in output_fields.items()
+            name: _json_schema_for_annotation(annotation)
+            for name, annotation in arg_types.items()
         }
-        arg_types = {name: field.annotation for name, field in output_fields.items()}
+        for name, field in output_fields.items():
+            if description := field.json_schema_extra.get("desc"):
+                args[name]["description"] = description
         return Tool(
             submit,
             name="submit",
