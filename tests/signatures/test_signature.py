@@ -170,6 +170,49 @@ def test_signature_inequality_different_defaults():
     assert not SigWithDefault.equals(SigNoDefault)
 
 
+def test_signature_default_factory():
+    class SigWithFactory(Signature):
+        input: list = InputField(default_factory=list)
+        output: str = OutputField()
+
+    class SigWithDiffFactory(Signature):
+        input: dict = InputField(default_factory=dict)
+        output: str = OutputField()
+
+    class SigNoFactory(Signature):
+        input: list = InputField()
+        output: str = OutputField()
+
+    assert SigWithFactory.equals(SigWithFactory)
+    assert not SigWithFactory.equals(SigWithDiffFactory)
+    assert not SigWithFactory.equals(SigNoFactory)
+
+
+def test_signature_non_scalar_and_nan_defaults():
+    import numpy as np
+
+    class SigWithArray1(Signature):
+        input: object = InputField(default=np.array([1, 2]))
+        output: str = OutputField()
+
+    class SigWithArray2(Signature):
+        input: object = InputField(default=np.array([1, 2]))
+        output: str = OutputField()
+
+    class SigWithDiffArray(Signature):
+        input: object = InputField(default=np.array([1, 3]))
+        output: str = OutputField()
+
+    class SigWithNan(Signature):
+        input: float = InputField(default=float("nan"))
+        output: str = OutputField()
+
+    assert SigWithArray1.equals(SigWithArray1)
+    assert SigWithArray1.equals(SigWithArray2)
+    assert not SigWithArray1.equals(SigWithDiffArray)
+    assert SigWithNan.equals(SigWithNan)
+
+
 def test_signature_equals_non_signature_classes():
     from pydantic import BaseModel
 

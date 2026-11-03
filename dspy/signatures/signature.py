@@ -18,6 +18,7 @@ For compatibility with the legacy dsp format, you can use the signature_to_templ
 import ast
 import importlib
 import inspect
+import math
 import re
 import sys
 import types
@@ -36,6 +37,29 @@ def _default_instructions(cls) -> str:
     inputs_ = ", ".join([f"`{field}`" for field in cls.input_fields])
     outputs_ = ", ".join([f"`{field}`" for field in cls.output_fields])
     return f"Given the fields {inputs_}, produce the fields {outputs_}."
+
+
+def _safe_equals(val1: Any, val2: Any) -> bool:
+    """Safely compare two values, handling NaN floats, numpy arrays, and non-scalar comparisons."""
+    if val1 is val2:
+        return True
+    if isinstance(val1, float) and isinstance(val2, float) and math.isnan(val1) and math.isnan(val2):
+        return True
+    try:
+        res = val1 == val2
+        if hasattr(res, "__iter__"):
+            try:
+                import numpy as np
+
+                return bool(np.array_equal(val1, val2, equal_nan=True))
+            except Exception:
+                try:
+                    return all(res)
+                except Exception:
+                    return False
+        return bool(res)
+    except Exception:
+        return False
 
 
 class SignatureMeta(type(BaseModel)):
@@ -516,11 +540,14 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         for name in cls.fields.keys() | other.fields.keys():
             if name not in other.fields or name not in cls.fields:
                 return False
-            if cls.fields[name].annotation != other.fields[name].annotation:
+            f1, f2 = cls.fields[name], other.fields[name]
+            if f1.annotation != f2.annotation:
                 return False
-            if cls.fields[name].default != other.fields[name].default:
+            if not _safe_equals(f1.default, f2.default):
                 return False
-            if cls.fields[name].json_schema_extra != other.fields[name].json_schema_extra:
+            if f1.default_factory != f2.default_factory:
+                return False
+            if f1.json_schema_extra != f2.json_schema_extra:
                 return False
         return True
 
