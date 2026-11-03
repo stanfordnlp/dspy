@@ -41,7 +41,7 @@ CONSTRUCT_TOOL = "__dspy_construct__"
 CALL_TOOL = "__dspy_call__"
 
 # Predictors the sandbox shim may construct and the host builds
-BRIDGEABLE_KINDS = ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought", "ReAct", "ReActV2")
+BRIDGEABLE_KINDS = ("Predict", "ChainOfThought", "RLM", "ReAct", "ReActV2")
 # The shim's dspy.Signature(...) emits this marker so the host can rebuild a Signature.
 SIGNATURE_MARKER = "__dspy_sig__"
 # The shim passes tools by name (callables can't cross the JSON boundary); the host resolves the name

@@ -24,7 +24,7 @@ class _DSPyFinalOutput(BaseException):
     # Control-flow exception to signal completion (like StopIteration)
     pass
 
-# Default SUBMIT for single-output signatures (e.g., Program of Thought).
+# Default SUBMIT for single-output signatures.
 # Only define if not already registered with typed signatures.
 if 'SUBMIT' not in dir():
     def SUBMIT(output):

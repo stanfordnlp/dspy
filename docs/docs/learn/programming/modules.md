@@ -81,17 +81,15 @@ The others are very similar. They mainly change the internal behavior with which
 
 2. **`dspy.ChainOfThought`**: Teaches the LM to think step-by-step before committing to the signature's response.
 
-3. **`dspy.ProgramOfThought`**: Teaches the LM to output code, whose execution results will dictate the response.
+3. **`dspy.ReAct`**: An agent that can use tools to implement the given signature.
 
-4. **`dspy.ReAct`**: An agent that can use tools to implement the given signature.
+4. **`dspy.MultiChainComparison`**: Can compare multiple outputs from `ChainOfThought` to produce a final prediction.
 
-5. **`dspy.MultiChainComparison`**: Can compare multiple outputs from `ChainOfThought` to produce a final prediction.
-
-6. **`dspy.RLM`**: A [Recursive Language Model](../../api/modules/RLM.md) that explores large contexts through a sandboxed Python REPL with recursive sub-LLM calls. Use when context is too large to fit in the prompt effectively.
+5. **`dspy.RLM`**: A [Recursive Language Model](../../api/modules/RLM.md) that explores large contexts through a sandboxed Python REPL with recursive sub-LLM calls. Use when context is too large to fit in the prompt effectively.
 
 We also have some function-style modules:
 
-7. **`dspy.majority`**: Can do basic voting to return the most popular response from a set of predictions.
+6. **`dspy.majority`**: Can do basic voting to return the most popular response from a set of predictions.
 
 
 !!! info "A few examples of DSPy modules on simple tasks."
