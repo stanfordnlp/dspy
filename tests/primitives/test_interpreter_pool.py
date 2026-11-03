@@ -1,5 +1,6 @@
 """InterpreterPool: an interpreter factory that starts interpreters ahead of need."""
 
+import copy
 import shutil
 import textwrap
 import threading
@@ -179,3 +180,16 @@ def test_flex_runs_on_pooled_interpreters(factory):
         with dspy.context(lm=DummyLM([{"plan": "p", "code": "SUBMIT(result=value * 2)"}] * 4)):
             # A pooled interpreter is fresh: state from the first forward does not reach the second.
             assert [flex(value=2).result, flex(value=3).result] == [4, 6]
+
+
+def test_a_program_with_a_pool_can_be_copied_and_saved(tmp_path):
+    with dspy.InterpreterPool(dspy.LocalInterpreter, size=1) as pool:
+        flex = dspy.Flex("question -> answer", interpreter_factory=pool)
+        assert copy.deepcopy(flex)._interpreter_factory is pool  # copies share the pool
+        flex.save(tmp_path / "program", save_program=True)
+        restored = dspy.load(tmp_path / "program", allow_pickle=True)._interpreter_factory
+        try:
+            assert isinstance(restored, dspy.InterpreterPool) and restored is not pool  # a new pool like it
+            assert (restored._factory, restored._size) == (dspy.LocalInterpreter, 1)
+        finally:
+            restored.close()

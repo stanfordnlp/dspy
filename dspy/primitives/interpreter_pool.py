@@ -72,6 +72,16 @@ class InterpreterPool:
     def __enter__(self) -> InterpreterPool:
         return self
 
+    def __copy__(self) -> InterpreterPool:
+        return self  # copies of a program share its pool, as they share its LM
+
+    def __deepcopy__(self, memo: dict) -> InterpreterPool:
+        return self
+
+    def __reduce__(self) -> tuple:
+        # Saved with a program: its interpreters are processes, so loading it makes a new pool like this one.
+        return type(self), (self._factory, self._size)
+
     def __exit__(self, *_: Any) -> None:
         self.close()
 
