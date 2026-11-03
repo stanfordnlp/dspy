@@ -127,7 +127,7 @@ The base class. Subclass it (it’s a `pydantic.BaseModel`) and implement `forma
 
 **`dspy.Image(source)`**
 
-URL reference, data URI, bytes, or PIL image. `format()` returns one lm15 `ImagePart` (a URL reference or inline base64 data). Ordinary construction and adapter parsing never access the filesystem or network. Use `Image.from_path(path)` to read a local file or `Image.from_url(url)` to download and base64-encode a remote resource. The deprecated direct call `Image(url, download=True)` also downloads for compatibility through 3.3; migrate it to `Image.from_url(url)`.
+URL reference, data URI, bytes, or PIL image. `format()` returns one lm15 `ImagePart` (a URL reference or inline base64 data). Ordinary construction and adapter parsing never access the filesystem or network. Use `Image.from_path(path)` to read a local file or `Image.from_url(url, verify=...)` to download and base64-encode a remote resource. The constructor no longer accepts `download` or `verify`; use `Image(url)` for a non-downloading URL reference.
 
 **`dspy.Audio(source)`**
 
@@ -162,7 +162,8 @@ In DSPy 3.3, constructing or validating `Image`, `Audio`, and `File` values no l
 | Before 3.3 | 3.3 replacement | Behavior |
 | --- | --- | --- |
 | `Image(path)` | `Image.from_path(path)` | Read and embed a local image |
-| `Image(url, download=True)` | `Image.from_url(url)` | Download and embed a remote image |
+| `Image(url, download=True, verify=...)` | `Image.from_url(url, verify=...)` | Download and embed a remote image |
+| `Image(url, download=False)` | `Image(url)` | Keep a non-downloading URL reference |
 | `Image.from_url(url)` or `Image.from_url(url, download=False)` | `Image(url)` | Keep a non-downloading URL reference |
 | `Audio(path)` | `Audio.from_path(path)` | Read and embed a local audio file |
 | `Audio(url)` | `Audio.from_url(url)` | Download and embed remote audio |
@@ -170,7 +171,9 @@ In DSPy 3.3, constructing or validating `Image`, `Audio`, and `File` values no l
 | `Image.from_file(path)` | `Image.from_path(path)` | Replace the deprecated alias |
 | `Audio.from_file(path)` | `Audio.from_path(path)` | Replace the deprecated alias |
 
-Safe in-memory inputs such as data URIs, bytes, PIL images, audio arrays, and structured dictionaries remain supported. The deprecated direct call `Image(url, download=True)` continues to work with a warning through 3.3; `Image.from_file()`, `Image.from_PIL()`, and `Audio.from_file()` are also scheduled for removal in 3.4.
+Safe in-memory inputs such as data URIs, bytes, PIL images, audio arrays, and structured dictionaries remain supported. The `Image()` constructor's `download` and `verify` keywords were scheduled for removal in 3.4 and are now removed in 3.5. Passing either keyword raises `TypeError`, even with a false or `None` value. Remove both keywords to retain a URL reference, or migrate downloading calls to `Image.from_url(url, verify=...)`. The `verify` option remains supported on both `Image.from_url()` and `Audio.from_url()`.
+
+`Image.from_file()`, `Image.from_PIL()`, and `Audio.from_file()` are also scheduled for removal in 3.4.
 
 `Image.from_url()` and `Audio.from_url()` perform synchronous, caller-initiated HTTP requests and follow redirects. They do not validate destinations against an SSRF allowlist, so applications must validate or allowlist URLs derived from untrusted input before calling them.
 
