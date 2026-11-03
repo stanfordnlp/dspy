@@ -918,6 +918,17 @@ def test_json_adapter_parse_picks_output_object_among_several(completion):
     assert dspy.JSONAdapter().parse(signature, completion) == {"reasoning": "r", "answer": 42}
 
 
+def test_json_adapter_parse_prefers_complete_object_over_more_optional_keys():
+    class OptionalExtras(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        note: str = dspy.OutputField(default="")
+        maybe: str | None = dspy.OutputField()
+
+    completion = '{"answer": "42"}\n{"note": "extra", "maybe": null}'
+    assert dspy.JSONAdapter().parse(OptionalExtras, completion) == {"answer": "42", "note": "", "maybe": None}
+
+
 def test_json_adapter_parse_raise_error_on_mismatch_fields():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.JSONAdapter()

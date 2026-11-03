@@ -129,10 +129,16 @@ class JSONAdapter(ChatAdapter):
         fields = json_repair.loads(completion)
 
         if isinstance(fields, list):
-            # Several top-level objects (e.g. a scratchpad JSON before the answer): take the one with the
-            # most output keys, preferring the later one on ties since the answer usually comes last.
+            # Several top-level objects (e.g. a scratchpad JSON before the answer): prefer one that has every
+            # required output field, then the most output keys, then the later one since the answer usually
+            # comes last. Optional keys alone must not outrank a complete answer.
+            def rank(candidate: dict[str, Any]) -> tuple[bool, int]:
+                present = {k: v for k, v in candidate.items() if k in signature.output_fields}
+                complete = apply_output_field_defaults(signature, present).keys() == signature.output_fields.keys()
+                return complete, len(present)
+
             candidates = [item for item in reversed(fields) if isinstance(item, dict)]
-            best = max(candidates, key=lambda c: sum(k in signature.output_fields for k in c), default=None)
+            best = max(candidates, key=rank, default=None)
             if best is not None and any(k in signature.output_fields for k in best):
                 fields = best
 
