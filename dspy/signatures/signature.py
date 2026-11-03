@@ -45,18 +45,35 @@ def _safe_equals(val1: Any, val2: Any) -> bool:
         return True
     if isinstance(val1, float) and isinstance(val2, float) and math.isnan(val1) and math.isnan(val2):
         return True
+    if hasattr(val1, "equals") and callable(val1.equals):
+        try:
+            return bool(val1.equals(val2))
+        except Exception:
+            pass
     try:
         res = val1 == val2
         if hasattr(res, "__iter__"):
             try:
                 import numpy as np
 
-                return bool(np.array_equal(val1, val2, equal_nan=True))
-            except Exception:
                 try:
-                    return all(res)
-                except Exception:
-                    return False
+                    return bool(np.array_equal(val1, val2, equal_nan=True))
+                except TypeError:
+                    return bool(np.array_equal(val1, val2))
+            except Exception:
+                pass
+            try:
+                if hasattr(res, "to_numpy"):
+                    return bool(res.to_numpy().all())
+                if hasattr(res, "values"):
+                    import numpy as np
+
+                    return bool(np.all(res.values))
+                import numpy as np
+
+                return bool(np.all(res))
+            except Exception:
+                return False
         return bool(res)
     except Exception:
         return False

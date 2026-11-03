@@ -213,6 +213,26 @@ def test_signature_non_scalar_and_nan_defaults():
     assert SigWithNan.equals(SigWithNan)
 
 
+def test_signature_dataframe_defaults():
+    import pandas as pd
+
+    class SigWithDf1(Signature):
+        input: object = InputField(default=pd.DataFrame({"text": ["alpha"]}))
+        output: str = OutputField()
+
+    class SigWithDf2(Signature):
+        input: object = InputField(default=pd.DataFrame({"text": ["alpha"]}))
+        output: str = OutputField()
+
+    class SigWithDiffDf(Signature):
+        input: object = InputField(default=pd.DataFrame({"text": ["beta"]}))
+        output: str = OutputField()
+
+    assert SigWithDf1.equals(SigWithDf1)
+    assert SigWithDf1.equals(SigWithDf2)
+    assert not SigWithDf1.equals(SigWithDiffDf)
+
+
 def test_signature_equals_non_signature_classes():
     from pydantic import BaseModel
 
