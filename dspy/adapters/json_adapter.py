@@ -11,6 +11,7 @@ from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
+    annotation_allows_none,
     apply_output_field_defaults,
     format_field_value,
     get_annotation_name,
@@ -132,9 +133,15 @@ class JSONAdapter(ChatAdapter):
             # Several top-level objects (e.g. a scratchpad JSON before the answer): prefer one that has every
             # required output field, then the most output keys, then the later one since the answer usually
             # comes last. Optional keys alone must not outrank a complete answer.
+            required_keys = {
+                k
+                for k, v in signature.output_fields.items()
+                if v.is_required() and not annotation_allows_none(v.annotation)
+            }
+
             def rank(candidate: dict[str, Any]) -> tuple[bool, int]:
                 present = {k: v for k, v in candidate.items() if k in signature.output_fields}
-                complete = apply_output_field_defaults(signature, present).keys() == signature.output_fields.keys()
+                complete = required_keys.issubset(present)
                 return complete, len(present)
 
             candidates = [item for item in reversed(fields) if isinstance(item, dict)]

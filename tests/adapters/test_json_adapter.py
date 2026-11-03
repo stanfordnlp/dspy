@@ -929,6 +929,28 @@ def test_json_adapter_parse_prefers_complete_object_over_more_optional_keys():
     assert dspy.JSONAdapter().parse(OptionalExtras, completion) == {"answer": "42", "note": "", "maybe": None}
 
 
+def test_json_adapter_parse_does_not_call_default_factory_during_ranking():
+    factory_calls = 0
+
+    def counter_factory() -> int:
+        nonlocal factory_calls
+        factory_calls += 1
+        return factory_calls
+
+    class FactorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        counter: int = dspy.OutputField(default_factory=counter_factory)
+
+    completion = '{"step": 1, "note": "scratch"}\n{"answer": "42"}'
+    assert dspy.JSONAdapter().parse(FactorySignature, completion) == {"answer": "42", "counter": 1}
+    assert factory_calls == 1
+
+    completion_with_counter = '{"step": 1, "note": "scratch"}\n{"answer": "42", "counter": 99}'
+    assert dspy.JSONAdapter().parse(FactorySignature, completion_with_counter) == {"answer": "42", "counter": 99}
+    assert factory_calls == 1
+
+
 def test_json_adapter_parse_raise_error_on_mismatch_fields():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.JSONAdapter()
