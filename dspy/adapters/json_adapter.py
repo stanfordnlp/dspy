@@ -128,6 +128,14 @@ class JSONAdapter(ChatAdapter):
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         fields = json_repair.loads(completion)
 
+        if isinstance(fields, list):
+            # Several top-level objects (e.g. a scratchpad JSON before the answer): take the one with the
+            # most output keys, preferring the later one on ties since the answer usually comes last.
+            candidates = [item for item in reversed(fields) if isinstance(item, dict)]
+            best = max(candidates, key=lambda c: sum(k in signature.output_fields for k in c), default=None)
+            if best is not None and any(k in signature.output_fields for k in best):
+                fields = best
+
         if not isinstance(fields, dict):
             pattern = r"\{(?:[^{}]|(?R))*\}"
             match = regex.search(pattern, completion, regex.DOTALL)

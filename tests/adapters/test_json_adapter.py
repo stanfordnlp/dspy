@@ -904,6 +904,20 @@ def test_json_adapter_on_pydantic_model():
         assert result.answer.result == "Paris"
 
 
+@pytest.mark.parametrize(
+    "completion",
+    [
+        'Thought: {"step": 1, "note": "calculating"}\n\n```json\n{"reasoning": "r", "answer": 42}\n```',
+        'Scratch: {"reasoning": "draft"}\n{"reasoning": "r", "answer": 42}',
+        '{"reasoning": "r", "answer": 42}\nHope this helps! {"note": "x"}',
+        '{"reasoning": "draft", "answer": 41}\nRevised: {"reasoning": "r", "answer": 42}',
+    ],
+)
+def test_json_adapter_parse_picks_output_object_among_several(completion):
+    signature = dspy.make_signature("question -> reasoning, answer: int")
+    assert dspy.JSONAdapter().parse(signature, completion) == {"reasoning": "r", "answer": 42}
+
+
 def test_json_adapter_parse_raise_error_on_mismatch_fields():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.JSONAdapter()
