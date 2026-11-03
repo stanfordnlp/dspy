@@ -2,6 +2,42 @@
 
 **GEPA** (Genetic-Pareto) is a reflective optimizer proposed in "GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning" (Agrawal et al., 2025, [arxiv:2507.19457](https://arxiv.org/abs/2507.19457)), that adaptively evolves _textual components_ (such as prompts) of arbitrary systems. In addition to scalar scores returned by metrics, users can also provide GEPA with a text feedback to guide the optimization process. Such textual feedback provides GEPA more visibility into why the system got the score that it did, and then GEPA can introspect to identify how to improve the score. This allows GEPA to propose high performing prompts in very few rollouts.
 
+## Stability and supported usage
+
+DSPy's GEPA integration remains experimental pending its graduation review. In particular,
+[predictor trace attribution](https://github.com/stanfordnlp/dspy/pull/9974) must distinguish
+predictors that share the same signature: currently their reflective examples can be mixed up.
+Do not rely on predictor-specific feedback being correctly attributed in that case.
+Removing the experimental notices requires resolving this correctness gate, reviewing the
+public compatibility contract, and passing release validation with maintainer sign-off.
+
+The integration's public usage contract is:
+
+- Provide exactly one budget: `auto`, `max_full_evals`, or `max_metric_calls`, and provide
+  either a `reflection_lm` or a custom `instruction_proposer`. Budgets count program evaluations,
+  not individual LM requests or tokens; a program can make several LM calls per evaluation.
+- The metric must accept `(gold, pred, trace=None, pred_name=None, pred_trace=None)`.
+  Return a number, or `dspy.Prediction(score=..., feedback=...)`, not a plain dictionary.
+  Higher scores are better. Predictor-specific feedback may differ, but its score should
+  remain the module-level score. The optional Flex `program_trace` argument is described below.
+- `compile(student, trainset=..., valset=...)` returns a new DSPy module. It does not replace
+  the student's instructions. A teacher is not supported. Use separate training, validation,
+  and final test sets when measuring generalization.
+- `track_stats=True` attaches `DspyGEPAResult` as `detailed_results`; aggregate validation scores
+  are per candidate, not per example. `track_best_outputs=True` additionally retains per-example
+  outputs and requires `track_stats=True`.
+- A fixed seed controls optimizer sampling, not LM/provider nondeterminism or concurrent completion
+  order. `num_threads` is a shared evaluation concurrency budget, not a provider rate limit or retry policy.
+- Custom instruction proposers, component selectors, and Flex code proposers use the contracts
+  in [Advanced Features](GEPA_Advanced.md). `gepa_kwargs` exposes the separately versioned upstream
+  engine; it is not a promise that all upstream options or checkpoint formats are stable DSPy APIs.
+
+Failed examples are assigned `failure_score` while retaining their batch positions; a successful
+compile alone does not establish program quality. Inspect validation results and logs for failures.
+`add_format_failure_as_feedback=True` additionally makes captured parse failures available for reflection.
+Metrics, tools, and custom proposers execute user code. Flex code optimization also requires the
+[Flex execution boundary](../../modules/Flex.md); GEPA does not add a separate security sandbox.
+
 <!-- START_API_REF -->
 ::: dspy.GEPA
     handler: python
@@ -61,11 +97,40 @@ See GEPA usage tutorials in [GEPA Tutorials](../../../tutorials/gepa_ai_program/
 GEPA can act as a test-time/inference search mechanism. By setting your `valset` to your _evaluation batch_ and using `track_best_outputs=True`, GEPA produces for each batch element the highest-scoring outputs found during the evolutionary search.
 
 ```python
-gepa = dspy.GEPA(metric=metric, track_stats=True, ...)
+gepa = dspy.GEPA(metric=metric, track_stats=True, track_best_outputs=True, ...)
 new_prog = gepa.compile(student, trainset=my_tasks, valset=my_tasks)
 highest_score_achieved_per_task = new_prog.detailed_results.highest_score_achieved_per_val_task
 best_outputs = new_prog.detailed_results.best_outputs_valset
 ```
+
+### Saving and reusing optimized programs
+
+An optimized program uses the ordinary DSPy module persistence APIs. Prefer JSON state for
+deployment: recreate the same program architecture, load the state, and configure the inference
+LM and adapter for the new process. The reflection LM is needed for optimization, not inference.
+
+```python
+optimized = gepa.compile(student, trainset=trainset, valset=valset)
+optimized.save("optimized.json")
+
+restored = student.deepcopy()  # or construct the same module architecture in a new process
+restored.load("optimized.json")
+result = restored(**test_example.inputs())
+score = dspy.Evaluate(devset=testset, metric=metric)(restored).score
+```
+
+State-only saves retain optimized predictor instructions (and Flex source for Flex components),
+not `detailed_results` or the optimizer's search state. To retain the whole program and its
+diagnostics, use `optimized.save("optimized_program", save_program=True)` and
+`dspy.load("optimized_program", allow_pickle=True)`. **Only load trusted pickle artifacts:**
+they can execute arbitrary code. Use a compatible environment and supply any external tools
+and runtime dependencies your program requires.
+
+`log_dir` serves a different purpose: it stores upstream GEPA search checkpoints and run artifacts.
+For dynamic DSPy signatures, use `gepa_kwargs={"use_cloudpickle": True}` when checkpointing;
+standard pickle cannot serialize all such signatures. Resuming with the same `log_dir` requires
+compatible program, metric, data, and dependencies. Treat checkpoints as trusted, version-specific
+artifacts, not as a portable deployment format. They can contain dataset inputs, outputs, and traces.
 
 ### Objective-Aware Frontier Tracking
 

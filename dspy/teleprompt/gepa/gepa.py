@@ -228,7 +228,7 @@ class GEPA(Teleprompter):
         Note the `pred_name` and `pred_trace` arguments. During optimization, GEPA will call the metric to obtain
         feedback for individual predictors being optimized. GEPA provides the name of the predictor in `pred_name`
         and the sub-trace (of the trace) corresponding to the predictor in `pred_trace`.
-        If available at the predictor level, the metric should return {'score': float, 'feedback': str} corresponding
+        If available at the predictor level, the metric should return dspy.Prediction(score=..., feedback=...) corresponding
         to the predictor.
         If not available at the predictor level, the metric can also return a text feedback at the program level
         (using just the gold, pred and trace).
@@ -243,11 +243,11 @@ class GEPA(Teleprompter):
 
     Examples:
     ```
-    gepa = GEPA(metric=metric, track_stats=True)
+    gepa = GEPA(metric=metric, reflection_lm=reflection_lm, auto="light", track_stats=True)
     batch_of_tasks = [dspy.Example(...) for task in tasks]
     new_prog = gepa.compile(student, trainset=trainset, valset=batch_of_tasks)
-    pareto_frontier = new_prog.detailed_results.val_aggregate_scores
-    # pareto_frontier is a list of scores, one for each task in the batch.
+    candidate_scores = new_prog.detailed_results.val_aggregate_scores
+    # candidate_scores contains one aggregate validation score per candidate, not per task.
     ```
 
     Args:
@@ -378,7 +378,8 @@ class GEPA(Teleprompter):
         The `auto` parameter provides preset configurations: "light" for quick experimentation, "medium" for
         balanced optimization, and "heavy" for thorough optimization.
 
-        Reflection Configuration: The `reflection_lm` parameter is required and should be a strong language model.
+        Reflection Configuration: Provide `reflection_lm` or a custom `instruction_proposer`.
+        When provided, `reflection_lm` should be a strong language model.
         GEPA performs best with models like `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)`.
         The reflection process analyzes failed examples to generate feedback for program improvement.
 
