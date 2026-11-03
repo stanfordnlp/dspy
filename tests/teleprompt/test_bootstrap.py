@@ -3,7 +3,7 @@ import pytest
 import dspy
 from dspy import Example
 from dspy.predict import Predict
-from dspy.teleprompt import BootstrapFewShot
+from dspy.teleprompt import BootstrapFewShot, LabeledFewShot
 from dspy.utils.dummies import DummyLM
 
 
@@ -227,3 +227,13 @@ def test_metric_threshold_none_uses_metric_value_as_success(metric_value, expect
     )
 
     assert len(compiled_student.predictor.demos) == expected_demos
+
+def test_rejects_negative_demo_counts():
+    with pytest.raises(ValueError, match="max_labeled_demos must be a non-negative integer"):
+        BootstrapFewShot(max_labeled_demos=-1)
+
+    with pytest.raises(ValueError, match="max_bootstrapped_demos must be a non-negative integer"):
+        BootstrapFewShot(max_bootstrapped_demos=-3)
+
+    with pytest.raises(ValueError, match="k must be a non-negative integer"):
+        LabeledFewShot(k=-1)

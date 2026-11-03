@@ -5,6 +5,8 @@ from dspy.teleprompt.teleprompt import Teleprompter
 
 class LabeledFewShot(Teleprompter):
     def __init__(self, k=16):
+        if k is not None and k < 0:
+            raise ValueError(f"k must be a non-negative integer, but received {k}.")
         self.k = k
 
     def compile(self, student, *, trainset, sample=True):

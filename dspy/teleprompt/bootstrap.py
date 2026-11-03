@@ -73,6 +73,17 @@ class BootstrapFewShot(Teleprompter):
             max_errors (Optional[int]): Maximum number of errors until program ends.
                 If ``None``, inherits from ``dspy.settings.max_errors``.
         """
+        if max_bootstrapped_demos is not None and max_bootstrapped_demos < 0:
+            raise ValueError(
+                "max_bootstrapped_demos must be a non-negative integer, but "
+                f"received {max_bootstrapped_demos}."
+            )
+        if max_labeled_demos is not None and max_labeled_demos < 0:
+            raise ValueError(
+                "max_labeled_demos must be a non-negative integer, but "
+                f"received {max_labeled_demos}."
+            )
+
         self.metric = metric
         self.metric_threshold = metric_threshold
         self.teacher_settings = {} if teacher_settings is None else teacher_settings
