@@ -1416,3 +1416,27 @@ def test_xml_adapter_missing_optional_output_fields_fall_back_to_defaults():
     adapter = XMLAdapter()
     parsed = adapter.parse(TestSignature, "<answer>Paris</answer>")
     assert parsed == {"answer": "Paris", "note": "No note", "maybe": None}
+
+
+def test_xml_adapter_preserves_nested_output_metadata():
+    """Nested XML skeletons must not drop descriptions, Literals or docstrings (#10754)."""
+    from pydantic import BaseModel, Field
+
+    class Policy(BaseModel):
+        """Refund rules stated in the passages."""
+
+        days: int = Field(description="Calendar days; never assume 30 if the passages do not say")
+        channel: Literal["web_form", "courier_pickup"] = Field(description="How the customer starts a return")
+
+    class Signature(dspy.Signature):
+        """Answer from the passages."""
+
+        passages: str = dspy.InputField()
+        policy: Policy = dspy.OutputField(desc="The policy")
+
+    structure = XMLAdapter().format_field_structure(Signature)
+
+    assert "Calendar days; never assume 30" in structure
+    assert "How the customer starts a return" in structure
+    assert "courier_pickup" in structure
+    assert "Refund rules stated in the passages." in structure

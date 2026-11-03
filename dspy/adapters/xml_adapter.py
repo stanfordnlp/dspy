@@ -54,7 +54,14 @@ class XMLAdapter(ChatAdapter):
 
         def format_field(name, field):
             if self._uses_nested_xml(field.annotation):
-                return self._xml_schema(name, field.annotation)
+                schema = self._xml_schema(name, field.annotation)
+                if self._schema_has_metadata(field.annotation):
+                    # The XML skeleton only carries property names, so keep the
+                    # JSON schema note for docstrings, field descriptions and
+                    # Literal values that the skeleton cannot express.
+                    note = translate_field_type(name, field).removeprefix(f"{{{name}}}").strip()
+                    return f"{schema}\n\n{note}"
+                return schema
             annotations = (
                 get_args(field.annotation)
                 if get_origin(field.annotation) in (Union, types.UnionType)
@@ -334,6 +341,20 @@ class XMLAdapter(ChatAdapter):
             or is_typeddict(annotation)
             or (isinstance(annotation, type) and issubclass(annotation, pydantic.BaseModel))
         )
+
+    @staticmethod
+    def _schema_has_metadata(annotation: Any) -> bool:
+        """Whether the JSON schema carries information the XML skeleton drops."""
+        stack = [TypeAdapter(annotation).json_schema(by_alias=False)]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                if "description" in node or "enum" in node or "const" in node:
+                    return True
+                stack.extend(node.values())
+            elif isinstance(node, list):
+                stack.extend(node)
+        return False
 
 
 class _XMLParser:
