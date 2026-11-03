@@ -127,28 +127,32 @@ def test_openai_cached_input_and_reasoning_are_not_double_counted(token_rates):
     assert details["kind"] == "estimate"
 
 
-def test_anthropic_disjoint_cache_counters(token_rates):
-    response = answer("claude-sonnet-4-5", input_tokens=100, output_tokens=30,
+def test_anthropic_cache_is_part_of_canonical_input(token_rates):
+    response = answer("claude-sonnet-4-5", input_tokens=160, output_tokens=30,
                       cache_read_tokens=40, cache_write_tokens=20)
     cost, _ = estimate_cost(response, provider="anthropic", requested_model=response.model)
     assert cost == pytest.approx(100 * 3e-6 + 40 * 3e-7 + 20 * 3.75e-6 + 30 * 1.5e-5)
 
 
-def test_gemini_reasoning_is_additional_output(token_rates):
-    response = answer("gemini-2.5-flash", input_tokens=100, output_tokens=30, reasoning_tokens=10)
+def test_gemini_reasoning_is_part_of_canonical_output(token_rates):
+    response = answer("gemini-2.5-flash", input_tokens=100, output_tokens=40, reasoning_tokens=10)
     cost, _ = estimate_cost(response, provider="gemini", requested_model=response.model)
     assert cost == pytest.approx(100 * 3e-7 + 40 * 2.5e-6)
 
 
-def test_long_context_and_priority_rates(monkeypatch):
-    monkeypatch.setattr(metadata, "_data", {"openai/test": {
+@pytest.mark.parametrize("provider", ["openai", "anthropic"])
+@pytest.mark.parametrize("inputs", [200000, 200001])
+def test_long_context_and_priority_rates(monkeypatch, provider, inputs):
+    monkeypatch.setattr(metadata, "_data", {f"{provider}/test": {
+        "input_cost_per_token_priority": 1e-6,
+        "output_cost_per_token_priority": 4e-6,
         "input_cost_per_token_above_200k_tokens_priority": 2e-6,
         "output_cost_per_token_above_200k_tokens_priority": 8e-6,
     }})
-    response = answer("test", input_tokens=200001, output_tokens=30, reasoning_tokens=10)
+    response = answer("test", input_tokens=inputs, output_tokens=30, reasoning_tokens=10, cache_read_tokens=100000)
     request = Request(model="test", messages=(Message.user("hi"),), config=Config(service_tier="priority"))
-    cost, _ = estimate_cost(response, provider="openai-chat", requested_model="test", request=request)
-    assert cost == pytest.approx(200001 * 2e-6 + 30 * 8e-6)
+    cost, _ = estimate_cost(response, provider=provider, requested_model="test", request=request)
+    assert cost == pytest.approx((inputs * 1e-6 + 30 * 4e-6) * (2 if inputs > 200000 else 1))
 
 
 def test_unknown_price_and_malformed_metadata_do_not_fail_generation(monkeypatch):
@@ -262,6 +266,67 @@ async def test_native_estimated_cost_through_public_calls_and_cache(monkeypatch,
     assert lm.history[-1]["cost"] == cold["cost"]
     assert lm.history[-1]["cost_details"] == details
     assert lm.history[-1]["usage"] == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("provider", ["anthropic", "gemini", "xai", "openai"])
+async def test_canonical_usage_and_cost_through_provider_wire(monkeypatch, provider, asynchronous):
+    from dspy.utils.usage_tracker import track_usage
+    from tests.clients.test_lm_engine_execution import DualResponse, native_transport
+
+    monkeypatch.setattr(metadata, "_data", {f"{provider}/test": {
+        "input_cost_per_token": 2e-6, "output_cost_per_token": 7e-6,
+        "cache_read_input_token_cost": 1e-6, "cache_creation_input_token_cost": 3e-6,
+        "output_cost_per_reasoning_token": 11e-6,
+    }})
+    if provider == "anthropic":
+        body = {"model": "test", "role": "assistant", "content": [{"type": "text", "text": "ok"}],
+                "stop_reason": "end_turn", "usage": {"input_tokens": 100, "output_tokens": 30,
+                    "cache_read_input_tokens": 40, "cache_creation_input_tokens": 20}}
+        inputs, outputs, cost = 160, 30, 510e-6
+    elif provider == "gemini":
+        body = {"modelVersion": "test", "candidates": [{"content": {"role": "model", "parts": [{"text": "ok"}]},
+                "finishReason": "STOP"}], "usageMetadata": {"promptTokenCount": 100, "candidatesTokenCount": 30,
+                "thoughtsTokenCount": 10, "toolUsePromptTokenCount": 5, "totalTokenCount": 145}}
+        inputs, outputs, cost = 105, 40, 530e-6
+    else:
+        body = {"model": "test", "choices": [{"message": {"role": "assistant", "content": "ok"},
+                "finish_reason": "stop"}], "usage": {"prompt_tokens": 100, "completion_tokens": 30,
+                "total_tokens": 140 if provider == "xai" else 130,
+                "completion_tokens_details": {"reasoning_tokens": 10}}}
+        inputs, outputs, cost = 100, 40 if provider == "xai" else 30, 520e-6 if provider == "xai" else 450e-6
+    transport = native_transport(monkeypatch, [DualResponse(status=200, body=json.dumps(body).encode())])
+    lm = dspy.LM(f"{provider}/test", engine="lm15", api_key="fake", cache=True)
+    with track_usage() as tracker:
+        assert (await lm.acall("canonical usage") if asynchronous else lm("canonical usage")) == ["ok"]
+        cold = lm.history[-1]
+        assert cold["usage"]["prompt_tokens"] == inputs
+        assert cold["usage"]["completion_tokens"] == outputs
+        assert cold["usage"]["total_tokens"] == inputs + outputs
+        assert cold["cost"] == pytest.approx(cost)
+        assert (await lm.acall("canonical usage") if asynchronous else lm("canonical usage")) == ["ok"]
+        assert tracker.get_total_tokens()[lm.model]["total_tokens"] == inputs + outputs
+    assert len(transport.requests) == 1
+    assert lm.history[-1]["usage"] == {}
+    assert lm.history[-1]["cost"] == cold["cost"]
+
+
+def test_pre_canonical_usage_cache_record_is_a_miss(monkeypatch):
+    from tests.clients.test_lm_engine_execution import native_transport, wire
+
+    transport = native_transport(monkeypatch, [wire("fresh")])
+    lm = dspy.LM("openai/gpt-4o-mini", engine="lm15", api_key="fake", cache=True)
+    old = {"_dspy_format": "dspy-lm15-result-v1", "outputs": ["stale"], "usage": {}, "cost": 123,
+           "response_model": "test", "responses": [{"model": "test", "message": {"role": "assistant", "parts": []},
+           "usage": {"input_tokens": 10, "cache_read_tokens": 40, "output_tokens": 2}}]}
+    with monkeypatch.context() as m:
+        m.setattr(dspy.cache, "get", lambda *args: old)
+        assert lm("old accounting cache") == ["fresh"]
+    assert lm("old accounting cache") == ["fresh"]
+    assert len(transport.requests) == 1
+    assert lm.history[-1]["usage"] == {}
+    assert lm.history[-1]["cost"] != 123
 
 
 @pytest.mark.asyncio
