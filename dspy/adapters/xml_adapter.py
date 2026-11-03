@@ -351,14 +351,40 @@ class XMLAdapter(ChatAdapter):
                 return False
             if "description" in node or "enum" in node or "const" in node:
                 return True
-            for key in ("$defs", "definitions", "properties", "patternProperties", "dependentSchemas"):
+            # Name-keyed maps whose values are schemas.
+            for key in (
+                "$defs",
+                "definitions",
+                "properties",
+                "patternProperties",
+                "dependentSchemas",
+                "dependencies",
+            ):
                 children = node.get(key)
                 if isinstance(children, dict) and any(walk(child) for child in children.values()):
                     return True
-            for key in ("items", "additionalProperties", "additionalItems", "not", "if", "then", "else", "contains"):
-                if walk(node.get(key)):
+            # Keywords that hold one schema, or a list of schemas in older drafts.
+            for key in (
+                "items",
+                "prefixItems",
+                "additionalItems",
+                "additionalProperties",
+                "propertyNames",
+                "unevaluatedItems",
+                "unevaluatedProperties",
+                "not",
+                "if",
+                "then",
+                "else",
+                "contains",
+            ):
+                child = node.get(key)
+                if isinstance(child, list):
+                    if any(walk(item) for item in child):
+                        return True
+                elif walk(child):
                     return True
-            for key in ("anyOf", "oneOf", "allOf", "prefixItems"):
+            for key in ("anyOf", "oneOf", "allOf"):
                 children = node.get(key)
                 if isinstance(children, list) and any(walk(child) for child in children):
                     return True

@@ -1474,3 +1474,14 @@ def test_xml_adapter_plain_field_named_description_gets_no_schema_note():
     structure = XMLAdapter().format_field_structure(Signature)
 
     assert "# note:" not in structure
+
+
+def test_xml_adapter_dict_literal_keys_get_schema_note():
+    """Allowed dictionary keys live under propertyNames and must not be dropped."""
+    class Signature(dspy.Signature):
+        counts: dict[Literal["web", "courier"], int] = dspy.OutputField()
+
+    structure = XMLAdapter().format_field_structure(Signature)
+
+    assert "web" in structure
+    assert "courier" in structure
