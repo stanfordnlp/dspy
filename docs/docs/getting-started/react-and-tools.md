@@ -18,18 +18,11 @@ def wikipedia_search(query: str) -> list[str]:
     return wikipedia.search(query)
 ```
 
-The `dspy.ReAct` module presents it like so:
-
-```
-When selecting the next_tool_name and its next_tool_args, the tool must be one of:
-        
-(1) wikipedia_search, whose description is <desc>Search Wikipedia for the given query and return a list of page titles.</desc>. It takes arguments {'query': {'type': 'string'}}.
-(2) finish, whose description is <desc>Marks the task as complete. That is, signals that all information for producing the outputs, i.e. `haiku`, are now available to be extracted.</desc>. It takes arguments {}.
-```
+The `dspy.ReAct` module presents the model with a tool schema containing the name `wikipedia_search`, its docstring, and a required string argument named `query`. The active adapter renders this schema as native function-calling metadata or formatted prompt text.
 
 Note how DSPy presents the function name, docstring, and parameters to the model. Writing tools, like signatures, requires being mindful about naming. `wikipedia_search` and the parameter `query` are helpful names, that clearly describe their function and role.
 
-Note that there’s a tool in the mix that we didn’t define. `finish` is a special tool used by `dspy.ReAct` that the model calls when it’s done. `dspy.ReAct` populates that one for us.
+ReAct also adds an internal `submit` tool whose arguments are the signature's typed output fields. The model calls it with the final outputs when it is done; there is no separate extraction pass.
 
 ## Defining our Wikipedia-wielding haiku bot
 
@@ -53,7 +46,7 @@ When we called `haiku_bot` it:
 
 1. Searched Wikipedia for “Camp Meeker”, which yielded nine relevant results, including “Camp Meeker, California”.  
 2. Fetched the page content for “Camp Meeker, California”.  
-3. Called `finish`, then synthesized its outputs.
+3. Called `submit` with its final `haiku` output.
 
 The code above yields:
 
@@ -63,15 +56,11 @@ Summer creek whispers old tales
 Quiet mind lingers
 ```
 
-Printing `result.reasoning` produces:
-
-```
-I gathered context about Camp Meeker, California—its redwood forest, Dutch Bill Creek, and the quiet summer atmosphere—from the Wikipedia page. I focused on a pensive mood and the summer season, weaving in imagery of towering trees and a gently flowing creek. The haiku follows the traditional 5‑7‑5 syllable structure, evoking the stillness and reflection of a summer day among the redwoods.
-```
+ReAct returns the output fields declared by `HaikuBot`, along with `history` and `termination_reason`. If you also want a final explanation, declare it as an output field in your signature; ReAct does not add an extractor-generated `reasoning` field.
 
 ## ReAct manages an agentic loop
 
-ReAct is a test-time (or inference time) loop strategy. We hand the model a set of tools and a task. The `dspy.ReAct` module instructs the model to reason then act using its tools. When the model calls `finish`, DSPy stops the loop and runs one last synthesis pass to produce the declared output fields.
+ReAct is a test-time (or inference time) loop strategy. We hand the model a set of tools and a task. The `dspy.ReAct` module instructs the model to reason then act using its tools. Each model turn can request multiple tools, which DSPy executes sequentially. A successful `submit` ends the loop with typed output fields.
 
 The model decides how many loops to run, but we can cap the number with the `max_iters` parameter, like so:
 
@@ -79,23 +68,23 @@ The model decides how many loops to run, but we can cap the number with the `max
 haiku_bot = dspy.ReAct(HaikuBot, tools=[wikipedia_search, get_wikipedia_page], max_iters=4)
 ```
 
-While testing this program, we saw runs where the model made as many as 8 tool calls (investigating Vermont syrup farming) and runs where it skipped research entirely.
+`max_iters` limits model turns, not individual tool calls. If the budget runs out before submission, ReAct makes a final call requesting `submit`. If that fails, it raises instead of returning incomplete outputs. For async tools, run the same agent with `await haiku_bot.acall(...)`.
 
-## Inspecting the ReAct trajectory
+## Inspecting ReAct history
 
-ReAct’s returned `Prediction` instance carries a `trajectory` field: a dictionary that records each thought, tool call, and observation (what the tool returned) in order. When an agent does something surprising, the trajectory is the first thing to read.
+ReAct’s returned `Prediction` carries a `history` field: a `dspy.History` containing structured events with thoughts, tool calls, and results. When an agent does something surprising, history is the first thing to read.
 
 We can print it like so:
 
 ```py
-for step, value in result.trajectory.items():
-    print(f"{step}: {value}")
+for event in result.history.messages:
+    print(event)
 ```
 
-For tool authoring patterns and MCP integration, see [Tools and MCP](../diving-deeper/tools.md). For the ReAct loop's execution model and trajectory debugging, see [ReAct and ReActV2](../diving-deeper/react.md).
+For tool authoring patterns and MCP integration, see [Tools and MCP](../diving-deeper/tools.md). For the loop's execution model, continuation history, and debugging, see [ReAct](../diving-deeper/react.md).
 
-!!! note "Experimental: ReActV2"
-    `dspy.ReActV2` is the experimental, structured-history replacement for the current ReAct implementation. It will become `dspy.ReAct` in DSPy 3.5, bringing native multi-turn and parallel tool calls and improved prompt-cache reuse. The `dspy.ReActV2` name will remain as a deprecated compatibility alias throughout 3.5 and will be removed in 3.6. See [The transition from ReAct to ReActV2](../diving-deeper/react.md#the-transition-from-react-to-reactv2).
+!!! note "Upgrading to DSPy 3.5"
+    Structured-history execution is now canonical `dspy.ReAct`. The old trajectory, extractor, and truncation APIs are gone, and old optimized state must be recompiled for the new predictor schema. `dspy.ReActV2` is a deprecated compatibility subclass that warns on construction and will be removed in 3.6. See [Migration to DSPy 3.5](../diving-deeper/react.md#migration-to-dspy-35).
 
 ---
 

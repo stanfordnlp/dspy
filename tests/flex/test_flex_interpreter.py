@@ -179,8 +179,9 @@ def test_react_kinds_are_bridgeable_and_construct_on_host() -> None:
     assert not hasattr(agent, "interpreter")
 
 
-def test_reactv2_constructs_and_runs_through_the_bridge() -> None:
-    # primitives_doc recommends dspy.ReActV2 for tool-use steps, so the whole bridged path must
+@pytest.mark.parametrize("kind", ["ReAct", "ReActV2"])
+def test_react_constructs_and_runs_through_the_bridge(kind) -> None:
+    # primitives_doc recommends dspy.ReAct for tool-use steps, so the whole bridged path must
     # work: a shim-style construct payload builds the real agent on the host with the resolved
     # tool, the host LM drives the loop, and the prediction (incl. history) crosses the JSON
     # boundary back to the sandbox.
@@ -190,9 +191,9 @@ def test_reactv2_constructs_and_runs_through_the_bridge() -> None:
 
     flex = Flex(ShoutSig, tools=[lookup], interpreter_factory=lambda: MockInterpreter())
     inv = flex._bridge.invocation()
-    inv.construct("ReActV2", "question: str -> answer: str", "agent", {"tools": [{facade.TOOL_MARKER: "lookup"}]})
+    inv.construct(kind, "question: str -> answer: str", "agent", {"tools": [{facade.TOOL_MARKER: "lookup"}]})
     agent = inv._predictors["agent"]
-    assert isinstance(agent, dspy.ReActV2)
+    assert isinstance(agent, dspy.ReAct)
     assert not hasattr(agent, "interpreter")  # not a code-executing predictor
 
     lm = DummyLM([
@@ -775,7 +776,7 @@ def test_recovered_lm_failure_does_not_hijack_through_the_real_sandbox() -> None
 
 
 # A module that constructs and calls a dspy.ReAct with a Flex-level tool. ReAct runs no code of its
-# own: the LM picks a tool, the host runs it, and the LM extracts the answer — all bridged from the
+# own: the LM picks a tool, the host runs it, and the LM submits the answer — all bridged from the
 # sandbox where the module's glue runs.
 REACT_MODULE = textwrap.dedent(
     """
@@ -796,9 +797,14 @@ def test_bridged_react_runs_in_flex_sandbox() -> None:
     dspy.configure(
         lm=DummyLM(
             [
-                {"next_thought": "shout it", "next_tool_name": "shout", "next_tool_args": {"text": "hello"}},
-                {"next_thought": "done", "next_tool_name": "finish", "next_tool_args": {}},
-                {"plan": "the tool returned HELLO", "out": "HELLO"},
+                {
+                    "next_thought": "shout it",
+                    "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "shout", "args": {"text": "hello"}}]),
+                },
+                {
+                    "next_thought": "the tool returned HELLO",
+                    "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"out": "HELLO"}}]),
+                },
             ]
         )
     )

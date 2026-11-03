@@ -192,7 +192,11 @@ def test_load_dspy_program_cross_version():
     `dspy.ReAct` program.
     """
     path = Path(__file__).parent / "resources" / "saved_program.json"
-    loaded_react = dspy.ReAct("question->answer", tools=[])
+    # Recreate the saved program's predictor layout: ReAct itself now uses a
+    # different schema, but Module.load must still read historical predictor state.
+    loaded_react = dspy.Module()
+    loaded_react.react = dspy.Predict("question, trajectory -> next_thought, next_tool_name, next_tool_args: dict")
+    loaded_react.extract = dspy.ChainOfThought("question, trajectory -> answer")
     loaded_react.load(path)
     assert (
         "Imagine you are a detective racing against time to solve a high-profile"

@@ -1024,7 +1024,7 @@ def test_chat_adapter_native_preserves_caller_tools_on_ordinary_signature():
 def test_chat_adapter_native_strips_tool_choice_when_lm_lacks_function_calling():
     """Regression test for #10397.
 
-    ReActV2's forced-submit path always sets `tool_choice` (to force a final
+    ReAct's forced-submit path always sets `tool_choice` (to force a final
     `submit` call), regardless of whether the LM is marked as supporting
     native function calling. When it isn't (e.g. a model missing from DSPy's
     capability catalog), the adapter never adds `tools` - so a `tool_choice`
