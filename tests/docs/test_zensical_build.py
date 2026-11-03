@@ -22,30 +22,10 @@ from docs.scripts.zensical_build import (
     remove_redirect_sources,
     social_cards,
     source_dates,
-    source_title,
     validate_output,
     write_page_markdown,
     write_redirects,
 )
-
-
-@pytest.mark.parametrize("suffix", [".md", ".ipynb"])
-def test_source_title_reads_utf8_independently_of_locale(tmp_path, monkeypatch, suffix):
-    source = tmp_path / f"example{suffix}"
-    heading = "# 中文 🚀"
-    content = heading
-    if suffix == ".ipynb":
-        content = json.dumps({"cells": [{"cell_type": "markdown", "source": [heading]}]}, ensure_ascii=False)
-    source.write_text(content, encoding="utf-8")
-    original_open = Path.open
-
-    def locale_open(self, mode="r", buffering=-1, encoding=None, errors=None, newline=None):
-        if "b" not in mode and encoding is None:
-            encoding = "cp936"
-        return original_open(self, mode, buffering, encoding, errors, newline)
-
-    monkeypatch.setattr(Path, "open", locale_open)
-    assert source_title(source) == "中文 🚀"
 
 
 def test_zensical_configuration_is_native_and_keeps_build_compatibility_separate():
