@@ -1440,3 +1440,37 @@ def test_xml_adapter_preserves_nested_output_metadata():
     assert "How the customer starts a return" in structure
     assert "courier_pickup" in structure
     assert "Refund rules stated in the passages." in structure
+
+
+def test_xml_adapter_nested_schema_note_uses_xml_tag_names():
+    """The schema note must not suggest alias names the XML parser rejects."""
+    from pydantic import BaseModel, Field
+
+    class Address(BaseModel):
+        country_code: str = Field(alias="country-code", description="Country code")
+
+    class Signature(dspy.Signature):
+        address: Address = dspy.OutputField()
+
+    structure = XMLAdapter().format_field_structure(Signature)
+
+    assert "<country_code>" in structure
+    assert "country-code" not in structure
+    assert '"country_code"' in structure
+
+
+def test_xml_adapter_plain_field_named_description_gets_no_schema_note():
+    """Only real schema metadata should trigger the extra schema note."""
+    from pydantic import BaseModel
+
+    class Plain(BaseModel):
+        description: str
+        enum: str
+        const: str
+
+    class Signature(dspy.Signature):
+        plain: Plain = dspy.OutputField()
+
+    structure = XMLAdapter().format_field_structure(Signature)
+
+    assert "# note:" not in structure

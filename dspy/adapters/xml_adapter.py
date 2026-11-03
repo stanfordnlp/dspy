@@ -59,7 +59,7 @@ class XMLAdapter(ChatAdapter):
                     # The XML skeleton only carries property names, so keep the
                     # JSON schema note for docstrings, field descriptions and
                     # Literal values that the skeleton cannot express.
-                    note = translate_field_type(name, field).removeprefix(f"{{{name}}}").strip()
+                    note = translate_field_type(name, field, by_alias=False).removeprefix(f"{{{name}}}").strip()
                     return f"{schema}\n\n{note}"
                 return schema
             annotations = (
@@ -345,16 +345,26 @@ class XMLAdapter(ChatAdapter):
     @staticmethod
     def _schema_has_metadata(annotation: Any) -> bool:
         """Whether the JSON schema carries information the XML skeleton drops."""
-        stack = [TypeAdapter(annotation).json_schema(by_alias=False)]
-        while stack:
-            node = stack.pop()
-            if isinstance(node, dict):
-                if "description" in node or "enum" in node or "const" in node:
+
+        def walk(node: Any) -> bool:
+            if not isinstance(node, dict):
+                return False
+            if "description" in node or "enum" in node or "const" in node:
+                return True
+            for key in ("$defs", "definitions", "properties", "patternProperties", "dependentSchemas"):
+                children = node.get(key)
+                if isinstance(children, dict) and any(walk(child) for child in children.values()):
                     return True
-                stack.extend(node.values())
-            elif isinstance(node, list):
-                stack.extend(node)
-        return False
+            for key in ("items", "additionalProperties", "additionalItems", "not", "if", "then", "else", "contains"):
+                if walk(node.get(key)):
+                    return True
+            for key in ("anyOf", "oneOf", "allOf", "prefixItems"):
+                children = node.get(key)
+                if isinstance(children, list) and any(walk(child) for child in children):
+                    return True
+            return False
+
+        return walk(TypeAdapter(annotation).json_schema(by_alias=False))
 
 
 class _XMLParser:
