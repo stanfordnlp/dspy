@@ -39,6 +39,11 @@ class Container:
     def capacity(self) -> int:
         return 100
 
+    @experimental
+    @property
+    def label(self) -> str:
+        return "primary"
+
 
 def check_experimental_contracts() -> None:
     # 1. Unversioned function decoration
@@ -90,3 +95,7 @@ def check_experimental_contracts() -> None:
     assert_type(Container.capacity, property)
     container = Container()
     assert_type(container.capacity, int)
+
+    # 9. Decorating the property object itself keeps it a property
+    assert_type(Container.label, property)
+    assert_type(container.label, str)
