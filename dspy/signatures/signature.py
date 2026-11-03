@@ -632,6 +632,13 @@ def make_signature(
     if instructions is None:
         sig = Signature(signature, "", custom_types=custom_types)  # Simple way to parse input/output fields
         instructions = _default_instructions(sig)
+    elif not isinstance(instructions, str):
+        # instructions becomes __doc__, and the adapters read it back through
+        # inspect.getdoc: a non-string silently broke every later prompt.
+        raise TypeError(
+            "`instructions` must be a string or None, but received an object of "
+            f"type {type(instructions).__name__}: {instructions!r}."
+        )
 
     return create_model(
         signature_name,
