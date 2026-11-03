@@ -40,7 +40,8 @@ def test_source_title_reads_utf8_independently_of_locale(tmp_path, monkeypatch, 
     original_open = Path.open
 
     def locale_open(self, mode="r", buffering=-1, encoding=None, errors=None, newline=None):
-        if "b" not in mode and encoding is None:
+        # Path.read_text normalizes its default to "locale" on Python 3.11.
+        if "b" not in mode and encoding in (None, "locale"):
             encoding = "cp936"
         return original_open(self, mode, buffering, encoding, errors, newline)
 
