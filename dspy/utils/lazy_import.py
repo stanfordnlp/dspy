@@ -44,6 +44,7 @@ _INSTALL_HINTS: dict[str, str] = {
     "weaviate": "weaviate",
     "anthropic": "anthropic",
     "numpy": "numpy",
+    "openai": "openai",
 }
 
 
