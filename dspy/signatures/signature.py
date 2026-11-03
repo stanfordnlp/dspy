@@ -509,12 +509,16 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     @classmethod
     def equals(cls, other) -> bool:
         """Compare the JSON schema of two Signature classes."""
-        if not isinstance(other, type) or not issubclass(other, BaseModel):
+        if not isinstance(other, type) or not issubclass(other, Signature):
             return False
         if cls.instructions != other.instructions:
             return False
         for name in cls.fields.keys() | other.fields.keys():
             if name not in other.fields or name not in cls.fields:
+                return False
+            if cls.fields[name].annotation != other.fields[name].annotation:
+                return False
+            if cls.fields[name].default != other.fields[name].default:
                 return False
             if cls.fields[name].json_schema_extra != other.fields[name].json_schema_extra:
                 return False

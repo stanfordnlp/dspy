@@ -152,6 +152,38 @@ def test_signature_inequality():
     assert not sig1.equals(sig2)
 
 
+def test_signature_inequality_different_types():
+    sig1 = Signature("input: int -> output: str")
+    sig2 = Signature("input: str -> output: int")
+    assert not sig1.equals(sig2)
+
+
+def test_signature_inequality_different_defaults():
+    class SigWithDefault(Signature):
+        input: str = InputField(default="abc")
+        output: str = OutputField()
+
+    class SigNoDefault(Signature):
+        input: str = InputField()
+        output: str = OutputField()
+
+    assert not SigWithDefault.equals(SigNoDefault)
+
+
+def test_signature_equals_non_signature_classes():
+    from pydantic import BaseModel
+
+    class PlainModel(BaseModel):
+        input: str
+
+    sig = Signature("input -> output")
+    assert not sig.equals(PlainModel)
+    assert not sig.equals(BaseModel)
+    assert not sig.equals(object)
+    assert not sig.equals(None)
+    assert not sig.equals("string")
+
+
 def test_equality_format():
     class TestSignature(Signature):
         input = InputField(format=lambda x: x)
