@@ -653,6 +653,27 @@ def test_a_failed_build_is_retried_only_after_a_while(monkeypatch, tmp_path):
     assert len(builds) == 2
 
 
+@pytest.mark.parametrize("opt_out", ["argument", "environment"])
+def test_the_sandbox_cache_can_be_turned_off(monkeypatch, tmp_path, opt_out):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path / "sandbox")
+    if opt_out == "environment":
+        monkeypatch.setenv("DSPY_SANDBOX_CACHE", "0")
+    with PythonInterpreter(**({"sandbox_cache": False} if opt_out == "argument" else {})) as interpreter:
+        assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".py")
+        assert not any(arg.startswith("--dspy-stdlib=") for arg in interpreter.deno_command)
+    assert not (tmp_path / "sandbox").exists()  # nothing written, not even the directory
+
+
+def test_the_cache_follows_the_pyodide_release_runner_js_pins():
+    from dspy.primitives import sandbox_bundle
+
+    runner = (Path(sandbox_bundle.__file__).parent / "runner.js").read_text()
+    assert f'"npm:pyodide@{sandbox_bundle.PYODIDE_VERSION}/pyodide.js"' in runner
+    assert sandbox_bundle.bundle_root().name == f"pyodide-{sandbox_bundle.PYODIDE_VERSION}"
+
+
 def test_starts_from_the_source_standard_library_when_the_compiled_one_cannot_be_built(monkeypatch):
     from dspy.primitives import sandbox_bundle
 

@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeExecutionError, CodeInterpreterError, FinalOutput
-from dspy.primitives.sandbox_bundle import bundle_root
+from dspy.primitives.sandbox_bundle import bundle_root, cache_enabled
 from dspy.utils.callback import BaseCallback, with_callbacks
 
 __all__ = ["PythonInterpreter", "FinalOutput", "CodeExecutionError", "CodeInterpreterError"]
@@ -252,6 +252,7 @@ class PythonInterpreter:
         tools: dict[str, Callable[..., str]] | None = None,
         output_fields: list[dict] | None = None,
         callbacks: list[BaseCallback] | None = None,
+        sandbox_cache: bool | None = None,
     ) -> None:
         """
         Args:
@@ -268,6 +269,10 @@ class PythonInterpreter:
             output_fields: List of output field definitions for typed SUBMIT signature.
                    Each dict should have 'name' and optionally 'type' keys.
             callbacks: Optional instance-level callback handlers.
+            sandbox_cache: Whether the interpreter may write DSPy's sandbox cache in ``$DSPY_CACHEDIR/sandbox``: a
+                   byte-compiled copy of Pyodide's standard library, which interpreters start from about four times
+                   faster. With ``False`` nothing is written there, and Pyodide starts from its own standard library.
+                   Defaults to the ``DSPY_SANDBOX_CACHE`` environment variable, where ``0`` turns it off.
         """
         if isinstance(deno_command, dict):
             raise TypeError("deno_command must be a list of strings, not a dict")
@@ -288,6 +293,7 @@ class PythonInterpreter:
         self.tools = dict(tools) if tools else {}
         self.output_fields = output_fields
         self.callbacks = list(callbacks or [])
+        self.sandbox_cache = cache_enabled() if sandbox_cache is None else sandbox_cache
         self._tools_registered = False
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
@@ -357,7 +363,9 @@ class PythonInterpreter:
         ``dspy.primitives.sandbox_bundle``). Without it, Pyodide compiles the library on every start."""
         from dspy.primitives.sandbox_bundle import SandboxBundleError, prepare_stdlib
 
-        if not self._uses_default_deno_command or any(arg.startswith("--dspy-stdlib=") for arg in self.deno_command):
+        if not self.sandbox_cache or not self._uses_default_deno_command:
+            return
+        if any(arg.startswith("--dspy-stdlib=") for arg in self.deno_command):
             return
         try:
             stdlib = _canonicalize_path(prepare_stdlib(self._deno_run, self._deno_dir, self._runner))

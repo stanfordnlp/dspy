@@ -2,12 +2,14 @@
 
 Pyodide otherwise compiles every module of its standard library it imports, on every start. The host builds
 ``<dspy cache dir>/sandbox/pyodide-<release>/stdlib.zip`` once per Pyodide release, in one Deno run that executes no
-sandboxed code, and every ``PythonInterpreter`` starts from it, in a fraction of the time.
+sandboxed code, and every ``PythonInterpreter`` starts from it, in a fraction of the time. ``DSPY_SANDBOX_CACHE=0``
+or ``PythonInterpreter(sandbox_cache=False)`` turns this off, for environments where writing files is unwelcome.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import threading
 import time
@@ -16,8 +18,14 @@ from pathlib import Path
 from dspy.utils.caching import DSPY_CACHEDIR
 from dspy.utils.exceptions import DSPyError
 
-# Must match the npm:pyodide version runner.js imports.
-PYODIDE_VERSION = "0.29.4"
+
+def _pinned_pyodide() -> str:
+    """The Pyodide release runner.js imports, where it is pinned: upgrading Pyodide there also moves the cache."""
+    runner = (Path(__file__).parent / "runner.js").read_text()
+    return re.search(r"npm:pyodide@([\w.-]+)/", runner).group(1)
+
+
+PYODIDE_VERSION = _pinned_pyodide()
 _lock = threading.Lock()
 _failed: dict[tuple, tuple[str, float]] = {}
 _RETRY_AFTER = 60.0
@@ -25,6 +33,12 @@ _RETRY_AFTER = 60.0
 
 class SandboxBundleError(DSPyError):
     """A sandbox archive could not be prepared."""
+
+
+def cache_enabled() -> bool:
+    """Whether interpreters may write the sandbox cache, unless ``DSPY_SANDBOX_CACHE`` turns it off (``0``,
+    ``false``, ``no`` or ``off``)."""
+    return os.environ.get("DSPY_SANDBOX_CACHE", "").strip().lower() not in ("0", "false", "no", "off")
 
 
 def bundle_root() -> Path:
