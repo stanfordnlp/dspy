@@ -681,7 +681,7 @@ def test_sandbox_wheel_download_retry_policy(monkeypatch, tmp_path, failure, fai
     name = "download_probe-1.0-py3-none-any.whl"
     info = {"file_name": name, "sha256": hashlib.sha256(payload).hexdigest()}
     monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path)
-    monkeypatch.setattr(sandbox_bundle, "_plan", lambda deno_dir: ({"download-probe": info}, ["download-probe"], []))
+    monkeypatch.setattr(sandbox_bundle, "_plan", lambda deno_dir, libraries=(): ({"download-probe": info}, ["download-probe"], []))
     monkeypatch.setattr(sandbox_bundle, "_planned_at", {})
     monkeypatch.setattr(sandbox_bundle, "_failed", {})
 
@@ -1919,7 +1919,7 @@ def test_a_module_added_or_removed_after_the_first_bundle_makes_a_new_plan(tmp_p
     listed = []
 
     @functools.cache
-    def plan(deno_dir):  # lists the package's modules once, until its cache is cleared, as _plan does
+    def plan(deno_dir, libraries=()):  # lists the package's modules once, until its cache is cleared, as _plan does
         listed.append(deno_dir)
         return {}, [], [(path, f"pkg/{path.name}") for path in sorted(package.glob("*.py"))]
 
@@ -1948,13 +1948,13 @@ def test_an_edited_source_file_makes_a_new_dspy_bundle(tmp_path, monkeypatch):
     source = tmp_path / "module.py"
     source.write_text("value = 1\n")
     root = tmp_path / "cache"
-    monkeypatch.setattr(sandbox_bundle, "_plan", lambda deno_dir: ({}, [], [(source, "module.py")]))
+    monkeypatch.setattr(sandbox_bundle, "_plan", lambda deno_dir, libraries=(): ({}, [], [(source, "module.py")]))
     monkeypatch.setattr(sandbox_bundle, "_build", lambda *args, **kwargs: args[3].write_text("built"))
 
-    first = sandbox_bundle._prepare_bundle((), None, "", root)
-    assert sandbox_bundle._prepare_bundle((), None, "", root) == first  # unchanged sources reuse it
+    first = sandbox_bundle._prepare_bundle((), None, "", (), root)
+    assert sandbox_bundle._prepare_bundle((), None, "", (), root) == first  # unchanged sources reuse it
     source.write_text("value = 22\n")  # patched in place, as an installed file may be
-    assert sandbox_bundle._prepare_bundle((), None, "", root) != first
+    assert sandbox_bundle._prepare_bundle((), None, "", (), root) != first
 
 
 def _with_dspy() -> PythonInterpreter:

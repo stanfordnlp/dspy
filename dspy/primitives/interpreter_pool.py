@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 import queue
 import threading
@@ -21,7 +22,8 @@ class InterpreterPool:
     it is usually already started: the pool starts ``size`` interpreters in the background and starts a replacement
     whenever it hands one out, or after a start failed. When none is ready, a call returns a new, unstarted
     interpreter instead. A pooled ``PythonInterpreter`` has dspy installed, and usually already imported, which is
-    what ``dspy.Flex`` imports first.
+    what ``dspy.Flex`` imports first. For a ``dspy.Flex`` whose code imports ``libraries``, pass their module names
+    too, so that pooled interpreters have them.
 
     Pass it wherever an ``interpreter_factory`` goes:
 
@@ -37,11 +39,18 @@ class InterpreterPool:
     interpreters are shut down by ``close()``, when the pool is garbage-collected, and at exit.
     """
 
-    def __init__(self, factory: Callable[[], CodeInterpreter] = PythonInterpreter, size: int = 1) -> None:
+    def __init__(
+        self,
+        factory: Callable[[], CodeInterpreter] = PythonInterpreter,
+        size: int = 1,
+        *,
+        libraries: list[str] | None = None,
+    ) -> None:
         if size < 1:
             raise ValueError("size must be at least 1")
         self._factory = factory
         self._size = size
+        self._libraries = tuple(libraries or ())  # modules a pooled PythonInterpreter can import besides dspy
         self._starting = 0
         self._ready: queue.Queue[CodeInterpreter] = queue.Queue()
         self._lock = threading.Lock()
@@ -79,7 +88,7 @@ class InterpreterPool:
 
     def __reduce__(self) -> tuple:
         # Saved with a program: its interpreters are processes, so loading it makes a new pool like this one.
-        return type(self), (self._factory, self._size)
+        return functools.partial(type(self), libraries=list(self._libraries)), (self._factory, self._size)
 
     def __exit__(self, *_: Any) -> None:
         self.close()
@@ -98,7 +107,7 @@ class InterpreterPool:
             interpreter = self._factory()
             if isinstance(interpreter, PythonInterpreter):
                 # Flex and RLM add the dspy bundle to their interpreters, which must happen before one starts.
-                interpreter.provide_dspy()
+                interpreter.provide_dspy(libraries=self._libraries)
             interpreter.start()
         except Exception:
             # A call that finds no interpreter ready makes its own, and surfaces the failure there.
