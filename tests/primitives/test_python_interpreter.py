@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -699,6 +700,7 @@ def test_the_cache_follows_the_pyodide_release_runner_js_pins():
 
     runner = (Path(sandbox_bundle.__file__).parent / "runner.js").read_text()
     assert f'"npm:pyodide@{sandbox_bundle.PYODIDE_VERSION}/pyodide.js"' in runner
+    assert re.findall(r"npm:pyodide@[\d.]+", runner) == [f"npm:pyodide@{sandbox_bundle.PYODIDE_VERSION}"]  # pinned once
     assert sandbox_bundle.bundle_root().name == f"pyodide-{sandbox_bundle.PYODIDE_VERSION}"
     assert sandbox_bundle._pinned_pyodide(Path(sandbox_bundle.__file__).parent / "missing.js") is None  # no crash
 

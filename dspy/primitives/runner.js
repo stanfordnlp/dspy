@@ -160,7 +160,8 @@ const SNAPSHOT_REFUSED = 70;
 // records where they landed, and a restore that differs is refused.
 let layout = null;
 if (bundle) {
-  await import("npm:pyodide@0.29.4/pyodide.asm.js"); // defines the module factory loadPyodide uses
+  // Defines the module factory loadPyodide uses, from the release imported above: the version is pinned only there.
+  await import(`npm:pyodide@${pyodideModule.version}/pyodide.asm.js`);
   const create = globalThis._createPyodideModule;
   globalThis._createPyodideModule = (settings) => {
     let extensions = [];
