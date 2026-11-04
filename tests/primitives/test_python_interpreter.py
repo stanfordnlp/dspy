@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import types
 from collections import namedtuple
 from datetime import datetime
@@ -664,6 +665,32 @@ def test_the_sandbox_cache_can_be_turned_off(monkeypatch, tmp_path, opt_out):
         assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".py")
         assert not any(arg.startswith("--dspy-stdlib=") for arg in interpreter.deno_command)
     assert not (tmp_path / "sandbox").exists()  # nothing written, not even the directory
+
+
+def test_without_the_cache_a_dspy_sandbox_gets_a_bundle_of_its_own(monkeypatch, tmp_path):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path / "sandbox")
+    interpreter = PythonInterpreter(sandbox_cache=False)
+    interpreter.provide_dspy()
+    bundle = next(arg.split("=", 1)[1] for arg in interpreter.deno_command if arg.startswith("--dspy-bundle="))
+    assert Path(bundle).is_relative_to(os.path.realpath(sandbox_bundle.scratch_root()))  # removed when the process exits
+    with interpreter:
+        assert interpreter.execute("import dspy\ndspy.Predict.__name__") == "Predict"
+    assert not (tmp_path / "sandbox").exists()
+
+
+def test_the_package_data_bundled_outside_git_is_the_one_dspy_declares():
+    tomllib = pytest.importorskip("tomllib")
+    from dspy.primitives import sandbox_bundle
+
+    pyproject = tomllib.loads((Path(sandbox_bundle.__file__).parents[2] / "pyproject.toml").read_text())
+    declared = {
+        f"{package.removeprefix('dspy').lstrip('.').replace('.', '/')}/{pattern}".lstrip("/")
+        for package, patterns in pyproject["tool"]["setuptools"]["package-data"].items()
+        for pattern in patterns
+    }
+    assert declared == set(sandbox_bundle._DSPY_PACKAGE_DATA)
 
 
 def test_the_cache_follows_the_pyodide_release_runner_js_pins():
@@ -1743,3 +1770,90 @@ def test_execution_instructions_are_class_metadata():
     assert interpreter.execution_instructions == PythonInterpreter.execution_instructions
     assert "Pyodide" in interpreter.execution_instructions
     assert "standard libraries" in interpreter.execution_instructions
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_a_package_on_disk_is_bundled_without_its_local_files(tmp_path, monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    class Editable:  # an editable install, whose metadata lists no files
+        files = None
+
+        def __init__(self):
+            self.metadata = {"Name": "flexpkg"}
+
+        def read_text(self, name):
+            return None
+
+    package = tmp_path / "flexpkg"
+    names = ["__init__.py", "data.json", "sub/__init__.py", "new.py", "secrets.yaml", ".env", "ignored.py",
+             "local.key", "sub/.cache/token"]
+    for name in names:
+        (package / name).parent.mkdir(parents=True, exist_ok=True)
+        (package / name).write_text("x = 1\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    def bundled():
+        return sorted(arcname.removeprefix("flexpkg/") for _, arcname in sandbox_bundle._files(Editable()))
+
+    # Outside a git work tree, only its Python source: the other files may be local ones, like credentials.
+    assert bundled() == ["__init__.py", "ignored.py", "new.py", "sub/__init__.py"]
+    # And the package data it declares, like dspy's own.
+    shipped = sandbox_bundle._shipped(package, ("data.json", "sub/*.json"))
+    assert sorted(path.relative_to(package).as_posix() for path in shipped) == [
+        "__init__.py", "data.json", "ignored.py", "new.py", "sub/__init__.py"
+    ]
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / ".gitignore").write_text("*.key\nignored.py\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "flexpkg/__init__.py", "flexpkg/data.json"], check=True)
+    # In one, the files git tracks and the Python source it doesn't ignore. Hidden files, like a .env, stay out.
+    assert bundled() == ["__init__.py", "data.json", "new.py", "sub/__init__.py"]
+
+
+def test_pruning_leaves_builds_in_progress_and_files_other_processes_replace(tmp_path, monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    old = time.time() - 7200
+    for name in ["dspy-a.zip", "dspy-b.zip", "dspy-c.zip", "dspy-d.zip.123.456.tmp"]:
+        (tmp_path / name).write_text("x")
+        os.utime(tmp_path / name, (old, old))
+    gone = tmp_path / "dspy-e.zip"  # listed, then replaced by another process before it is looked at
+    listed = list(tmp_path.glob("dspy-*")) + [gone]
+    monkeypatch.setattr(Path, "glob", lambda self, pattern: iter(listed))
+
+    sandbox_bundle._prune(tmp_path, keep=tmp_path / "dspy-a.zip", count=2)
+
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["dspy-a.zip", "dspy-c.zip", "dspy-d.zip.123.456.tmp"]
+
+    # One another process takes into use after it was listed is kept.
+    (tmp_path / "dspy-b.zip").write_text("x")
+    os.utime(tmp_path / "dspy-b.zip", (old, old))
+    listed = list(tmp_path.glob("dspy-*"))
+    looked = []
+    real = sandbox_bundle._last_used
+
+    def last_used(path):
+        if path.name == "dspy-b.zip" and path in looked:
+            os.utime(path)  # just now, by another process
+        looked.append(path)
+        return real(path)
+
+    monkeypatch.setattr(sandbox_bundle, "_last_used", last_used)
+    sandbox_bundle._prune(tmp_path, keep=tmp_path / "dspy-a.zip", count=2)
+    assert (tmp_path / "dspy-b.zip").exists()
+
+
+def test_an_edited_source_file_makes_a_new_dspy_bundle(tmp_path, monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    source = tmp_path / "module.py"
+    source.write_text("value = 1\n")
+    root = tmp_path / "cache"
+    monkeypatch.setattr(sandbox_bundle, "_plan", lambda deno_dir: ({}, [], [(source, "module.py")]))
+    monkeypatch.setattr(sandbox_bundle, "_build", lambda *args, **kwargs: args[3].write_text("built"))
+
+    first = sandbox_bundle._prepare_bundle((), None, "", root)
+    assert sandbox_bundle._prepare_bundle((), None, "", root) == first  # unchanged sources reuse it
+    source.write_text("value = 22\n")  # patched in place, as an installed file may be
+    assert sandbox_bundle._prepare_bundle((), None, "", root) != first
