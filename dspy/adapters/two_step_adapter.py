@@ -1,3 +1,4 @@
+import warnings
 from typing import Any
 
 from dspy.adapters.base import Adapter, Prompt, response_text, user_message
@@ -20,6 +21,11 @@ adapter explicitly constructed with no demonstrations. This means that it cannot
 
 class TwoStepAdapter(Adapter):
     """
+    .. deprecated:: 3.5
+        Will be removed in DSPy 3.6. Use ``dspy.JSONAdapter()`` for models supporting
+        structured outputs, or ``dspy.XMLAdapter()`` otherwise. These adapters do not
+        use a separate extraction LM.
+
     A two-stage adapter that:
         1. Uses a simpler, more natural prompt for the main LM
         2. Uses a smaller LM with chat adapter to extract structured data from the response of main LM
@@ -40,6 +46,12 @@ class TwoStepAdapter(Adapter):
     """
 
     def __init__(self, extraction_model: BaseLM, **kwargs):
+        warnings.warn(
+            "dspy.TwoStepAdapter is deprecated in DSPy 3.5 and will be removed in DSPy 3.6. "
+            "Use dspy.JSONAdapter() for models supporting structured outputs, or dspy.XMLAdapter() otherwise.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         super().__init__(**kwargs)
         if not isinstance(extraction_model, BaseLM):
             raise ValueError("extraction_model must be an instance of dspy.BaseLM")
