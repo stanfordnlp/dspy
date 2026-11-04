@@ -20,10 +20,10 @@ from pydantic import BaseModel, ConfigDict
 
 import dspy.primitives.python_interpreter as python_interpreter
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.primitives.deno_utils import deno_subprocess_env
 from dspy.primitives.python_interpreter import (
     LARGE_VAR_THRESHOLD,
     PythonInterpreter,
-    _deno_subprocess_env,
     _find_deno_executable,
     _make_jsonable,
     _validate_deno_version,
@@ -318,7 +318,7 @@ result"""
 def test_default_runner_starts_offline_from_warm_shared_cache(monkeypatch, tmp_path):
     shared_cache = tmp_path / "deno"
     runner = str(Path(python_interpreter.__file__).with_name("runner.js"))
-    env = {**_deno_subprocess_env(), "DENO_DIR": str(shared_cache)}
+    env = {**deno_subprocess_env(), "DENO_DIR": str(shared_cache)}
     subprocess.run([_find_deno_executable(), "cache", "--no-config", "--no-lock", runner], env=env, check=True)
     monkeypatch.setenv("DENO_DIR", str(shared_cache))
 
@@ -525,7 +525,7 @@ def test_deno_subprocess_env_disables_package_json(monkeypatch):
     monkeypatch.setenv("DENO_NO_PACKAGE_JSON", "0")
     monkeypatch.setenv("DSPY_DENO_TEST_VALUE", "preserved")
 
-    env = _deno_subprocess_env()
+    env = deno_subprocess_env()
 
     assert env["DENO_NO_PACKAGE_JSON"] == "1"
     assert env["DSPY_DENO_TEST_VALUE"] == "preserved"
@@ -600,6 +600,91 @@ def test_rejects_write_paths_overlapping_runtime_files(monkeypatch, tmp_path):
 
     with pytest.raises(CodeInterpreterError, match="runtime files"):
         PythonInterpreter(enable_write_paths=[cache])
+
+
+def test_rejects_write_paths_overlapping_the_compiled_sandbox_archives():
+    from dspy.primitives.sandbox_bundle import bundle_root
+
+    with pytest.raises(CodeInterpreterError, match="runtime files"):
+        PythonInterpreter(enable_write_paths=[bundle_root() / "stdlib.zip"])
+
+
+def test_starts_from_the_compiled_standard_library():
+    with PythonInterpreter() as interpreter:
+        # Modules come from the bytecode beside each source in the standard library archive.
+        assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".pyc")
+        stdlib = next(arg.split("=", 1)[1] for arg in interpreter.deno_command if arg.startswith("--dspy-stdlib="))
+        assert stdlib in next(arg for arg in interpreter.deno_command if arg.startswith("--allow-read="))
+        # Sandboxed code cannot read the archive once Pyodide has started from it.
+        read = interpreter.execute(
+            "from js import Deno\n"
+            f"try:\n    Deno.readFileSync({stdlib!r})\n    result = 'read'\n"
+            "except Exception as e:\n    result = str(e)\n"
+            "result"
+        )
+        assert "Requires read access" in read
+
+
+def test_rebuilds_the_compiled_standard_library_after_the_cache_is_cleared(monkeypatch, tmp_path):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path / "sandbox")
+    for _ in range(2):
+        with PythonInterpreter() as interpreter:
+            assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".pyc")
+        shutil.rmtree(tmp_path / "sandbox")
+
+
+def test_a_failed_build_is_retried_only_after_a_while(monkeypatch, tmp_path):
+    from dspy.primitives import sandbox_bundle
+
+    builds = []
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path / "sandbox")
+    monkeypatch.setattr(sandbox_bundle, "_build", lambda *args: builds.append(args) or 1 / 0)
+    monkeypatch.setattr(sandbox_bundle, "_failed", {})
+    for _ in range(2):
+        with PythonInterpreter() as interpreter:
+            assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".py")
+    assert len(builds) == 1  # the second start fell back right away
+
+    monkeypatch.setattr(sandbox_bundle, "_RETRY_AFTER", 0.0)  # once the wait is over, the build is tried again
+    with PythonInterpreter() as interpreter:
+        interpreter.execute("1")
+    assert len(builds) == 2
+
+
+@pytest.mark.parametrize("opt_out", ["argument", "environment"])
+def test_the_sandbox_cache_can_be_turned_off(monkeypatch, tmp_path, opt_out):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path / "sandbox")
+    if opt_out == "environment":
+        monkeypatch.setenv("DSPY_SANDBOX_CACHE", "0")
+    with PythonInterpreter(**({"sandbox_cache": False} if opt_out == "argument" else {})) as interpreter:
+        assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".py")
+        assert not any(arg.startswith("--dspy-stdlib=") for arg in interpreter.deno_command)
+    assert not (tmp_path / "sandbox").exists()  # nothing written, not even the directory
+
+
+def test_the_cache_follows_the_pyodide_release_runner_js_pins():
+    from dspy.primitives import sandbox_bundle
+
+    runner = (Path(sandbox_bundle.__file__).parent / "runner.js").read_text()
+    assert f'"npm:pyodide@{sandbox_bundle.PYODIDE_VERSION}/pyodide.js"' in runner
+    assert sandbox_bundle.bundle_root().name == f"pyodide-{sandbox_bundle.PYODIDE_VERSION}"
+    assert sandbox_bundle._pinned_pyodide(Path(sandbox_bundle.__file__).parent / "missing.js") is None  # no crash
+
+
+def test_starts_from_the_source_standard_library_when_the_compiled_one_cannot_be_built(monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    def unavailable(*args):
+        raise sandbox_bundle.SandboxBundleError("read-only cache")
+
+    monkeypatch.setattr(sandbox_bundle, "prepare_stdlib", unavailable)
+    with PythonInterpreter() as interpreter:
+        assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".py")
+        assert not any(arg.startswith("--dspy-stdlib=") for arg in interpreter.deno_command)
 
 
 @pytest.mark.parametrize("version", [(2, 0, 0), (2, 4, 5), (2, 9, 5)])

@@ -141,9 +141,42 @@ globalThis.addEventListener("unhandledrejection", (event) => {
   }));
 });
 
-const pyodide = await pyodideModule.loadPyodide();
-const denoDir = Deno.args.find((arg) => arg.startsWith("--dspy-deno-dir="))?.slice(16);
+// Built once by dspy/primitives/sandbox_bundle.py: Pyodide's standard library with its bytecode, which Pyodide
+// starts from instead of compiling the library on every start.
+const argValue = (name) => Deno.args.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1);
+const stdlib = argValue("--dspy-stdlib");
+const stdlibTarget = argValue("--dspy-build-stdlib");
+
+const pyodide = await pyodideModule.loadPyodide(stdlib ? { stdLibURL: stdlib } : {});
+const denoDir = argValue("--dspy-deno-dir");
 if (denoDir) await Deno.permissions.revoke({ name: "read", path: denoDir });
+if (stdlib) await Deno.permissions.revoke({ name: "read", path: stdlib });
+
+// Build mode runs no sandboxed code: it byte-compiles the archive, writes it, and exits.
+const PACK = `
+import compileall, os, py_compile, sys, zipfile
+
+def pack(root, target):
+    with zipfile.ZipFile(target, "w") as archive:
+        for folder, _, files in os.walk(root):
+            for name in files:
+                path = os.path.join(folder, name)
+                archive.write(path, os.path.relpath(path, root))
+
+unchecked = py_compile.PycInvalidationMode.UNCHECKED_HASH
+`;
+
+if (stdlibTarget) {
+  pyodide.runPython(PACK + `
+# Each module's bytecode goes beside it, where zipimport looks for it.
+stdlib = next(path for path in sys.path if path.endswith(".zip"))
+zipfile.ZipFile(stdlib).extractall("/tmp/stdlib")
+compileall.compile_dir("/tmp/stdlib", quiet=2, legacy=True, ddir=stdlib, invalidation_mode=unchecked)
+pack("/tmp/stdlib", "/tmp/stdlib.zip")
+`);
+  Deno.writeFileSync(stdlibTarget, pyodide.FS.readFile("/tmp/stdlib.zip"));
+  Deno.exit(0);
+}
 
 // Tool call support: allows Python code to call host-side functions
 // The stdin reader is shared so tool_call can read responses during execution
