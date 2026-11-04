@@ -8,7 +8,6 @@ to every module or patching DSPy's internals.
 
 import inspect
 import re
-import warnings
 
 import pytest
 
@@ -28,33 +27,12 @@ class Doubler(dspy.Signature):
     result: int = dspy.OutputField()
 
 
-class BasicQA(dspy.Signature):
-    question: str = dspy.InputField()
-    answer: str = dspy.OutputField()
-
-
 class StaticPredictor:
     def __init__(self, **fields):
         self.fields = fields
 
     def __call__(self, **kwargs):
         return dspy.Prediction(**self.fields)
-
-
-def _program_of_thought(**kwargs):
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        return dspy.ProgramOfThought(BasicQA, **kwargs)
-
-
-def _code_act(**kwargs):
-    def add(a: float, b: float) -> float:
-        """add two numbers"""
-        return a + b
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        return dspy.CodeAct(BasicQA, tools=[add], **kwargs)
 
 
 # =============================================================================
@@ -70,8 +48,6 @@ def test_python_interpreter_is_the_unconfigured_default():
 def test_code_executing_module_signatures_keep_python_interpreter_as_the_default():
     assert inspect.signature(dspy.RLM.__init__).parameters["interpreter_factory"].default is PythonInterpreter
     assert inspect.signature(dspy.Flex.__init__).parameters["interpreter_factory"].default is PythonInterpreter
-    assert inspect.signature(dspy.ProgramOfThought.__init__).parameters["interpreter_factory"].default is PythonInterpreter
-    assert inspect.signature(dspy.CodeAct.__init__).parameters["interpreter_factory"].default is PythonInterpreter
 
 
 def test_configured_factory_is_used_when_the_caller_has_none():
@@ -167,32 +143,6 @@ def test_rlm_refreshes_execution_instructions_for_context_factory():
     assert len(context_factory.instances) == 1
 
 
-def test_program_of_thought_forward_uses_the_configured_factory():
-    factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "2"})])
-    dspy.configure(interpreter_factory=factory)
-
-    pot = _program_of_thought()
-    assert pot._interpreter_factory is PythonInterpreter
-    pot.code_generate = StaticPredictor(generated_code="SUBMIT({'answer': 2})")
-    pot.generate_output = StaticPredictor(answer="2")
-
-    assert pot(question="What is 1+1?").answer == "2"
-    assert len(factory.instances) == 1
-
-
-def test_code_act_forward_uses_the_configured_factory():
-    factory = MockInterpreterFactory(responses=["", "2\n"])
-    dspy.configure(interpreter_factory=factory)
-
-    program = _code_act()
-    assert program._interpreter_factory is PythonInterpreter
-    program.codeact = StaticPredictor(generated_code="print(add(1, 1))", finished=True)
-    program.extractor = StaticPredictor(answer="2")
-
-    assert program(question="What is 1+1?").answer == "2"
-    assert len(factory.instances) == 1
-
-
 def test_flex_forward_uses_the_configured_factory():
     def execute_fn(code, variables):
         # The shim setup and the class definition come with no variables; only the driver
@@ -220,5 +170,4 @@ def test_flex_lets_a_sub_predictor_resolve_the_configured_factory_itself():
     dspy.configure(interpreter_factory=MockInterpreterFactory())
 
     flex = Flex(Doubler)
-    assert flex._bridge._sub_interpreter_factory() is PythonInterpreter
-    assert flex._bridge._build_predictor("RLM", "query -> answer", {})._interpreter_factory is PythonInterpreter
+    assert flex._bridge.invocation()._build_predictor("RLM", "query -> answer", {})._interpreter_factory is PythonInterpreter

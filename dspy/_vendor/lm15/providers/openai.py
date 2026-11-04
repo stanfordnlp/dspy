@@ -23,6 +23,8 @@ from ..errors import (
     TimeoutError,
     UnsupportedFeatureError,
     UnsupportedModelError,
+    is_pinned_auth_failure,
+    is_pinned_model_not_found,
     canonical_error_code,
     map_http_error,
 )
@@ -31,12 +33,14 @@ from ..auth import extract_chatgpt_account_id
 from ..compat import OPENAI_RESPONSES_PRESET_BASE_URLS, OpenAIResponsesCompat, preset_base_url
 from ..features import ProviderManifest
 from ..judgments import note_unmeasurable_probabilities, replace_text_with_data, request_judgments
+from ._managed import operation, require_unmanaged_live
 from ..result import materialize_response
 from ..live import WebSocketLiveSession, require_websocket_sync_connect
 from ..profiles import ProviderProfile, ResolvedOpenAIResponsesCompat, resolve_openai_responses_compat
 from ..sse import SSEEvent
 from ..transports import TransportRequest
 from ..types import (
+    JsonObject,
     continuation_data,
     VideoGenerationRequest,
     VideoJobInfo,
@@ -109,6 +113,8 @@ from .base import (
     resolve_credential_value,
 )
 from .common import (
+    usage_from_responses,
+    check_message_media,
     tool_result_error_text,
     tool_result_output_openai,
     iso_utc,
@@ -119,7 +125,9 @@ from .common import (
     parse_json_object,
     part_to_openai_input,
     path_id,
+    tool_description,
     unnamed_tool_call_error,
+    with_partial_usage,
     parts_to_text,
 )
 
@@ -255,7 +263,30 @@ def _cache_common_payload(request: Request, payload: dict, cache_control: str, p
     swallows silently — Meta, live 2026-09-03).
     """
     cache_cfg = request.config.cache
-    if cache_cfg is None or cache_control not in ("openai", "openai_implicit"):
+    if cache_cfg is None:
+        return
+    if cache_control not in ("openai", "openai_implicit"):
+        # MAP-6 rule 7: a stored-cache resource on a provider without that
+        # tier RAISES. Dropping it would silently send the request without
+        # the prompt prefix the resource holds (MAP-13: refuse when a guess
+        # could hurt). Found 2026-09-24 by lm15-rs, which already refused.
+        if cache_cfg.resource is not None:
+            raise UnsupportedFeatureError(
+                f"{provider}: cache.resource is not supported — this provider has no stored-cache "
+                "tier; sending without it would drop the prompt prefix the resource holds",
+                provider=provider, feature="config.cache.resource",
+            )
+        # MAP-13: the key and the lifetime have no home on a server without
+        # OpenAI's cache fields; dropped and recorded (implicit caching, where
+        # the server has it, still applies).
+        if cache_cfg.key is not None:
+            adapt("config.cache.key", "dropped",
+                  "this server has no cache affinity field; implicit caching still applies",
+                  asked=cache_cfg.key, provider=provider)
+        if cache_cfg.retention == "long":
+            adapt("config.cache.retention", "dropped",
+                  "this server has no in-request cache lifetime knob; implicit caching still applies",
+                  asked="long", provider=provider)
         return
     if cache_control == "openai_implicit":
         if cache_cfg.mode != "off":
@@ -432,18 +463,7 @@ def _live_usage_from_response(response: dict[str, Any]) -> Usage | None:
     usage_data = response.get("usage") if isinstance(response, dict) else None
     if not isinstance(usage_data, dict):
         return None
-    u_in = usage_data.get("input_token_details") or usage_data.get("input_tokens_details") or {}
-    u_out = usage_data.get("output_token_details") or usage_data.get("output_tokens_details") or {}
-    return Usage(
-        input_tokens=usage_data.get("input_tokens"),
-        output_tokens=usage_data.get("output_tokens"),
-        total_tokens=usage_data.get("total_tokens"),
-        reasoning_tokens=u_out.get("reasoning_tokens"),
-        cache_read_tokens=u_in.get("cached_tokens"),
-        cache_write_tokens=u_in.get("cache_write_tokens"),
-        input_audio_tokens=u_in.get("audio_tokens"),
-        output_audio_tokens=u_out.get("audio_tokens"),
-    )
+    return usage_from_responses(usage_data)
 
 
 @dataclass(slots=True)
@@ -630,6 +650,8 @@ class OpenAILM(BaseProviderLM):
 
     def _error_detail(self, provider_code: str, message: str) -> ErrorDetail:
         cls = self._stream_error_code_map.get(provider_code, ProviderError)
+        if is_pinned_model_not_found(provider_code, message):  # MAP-15
+            cls = UnsupportedModelError
         return ErrorDetail(
             code=canonical_error_code(cls),
             message=message or provider_code or "provider error",
@@ -655,6 +677,8 @@ class OpenAILM(BaseProviderLM):
 
             provider_code = code or err_type or None
 
+            if is_pinned_auth_failure(provider_code, msg):  # MAP-18
+                return self._provider_error(AuthError, msg, status=status, provider_code=provider_code)
             if code == "context_length_exceeded":
                 return self._provider_error(
                     ContextLengthError,
@@ -664,7 +688,7 @@ class OpenAILM(BaseProviderLM):
                 )
             if code in self._model_error_codes or (
                 status == 404 and self._is_model_error(msg, code, err_type)
-            ):
+            ) or is_pinned_model_not_found(provider_code, msg):  # MAP-15
                 return self._provider_error(
                     UnsupportedModelError,
                     msg,
@@ -868,6 +892,7 @@ class OpenAILM(BaseProviderLM):
         return "auto"
 
     def _payload(self, request: Request, stream: bool) -> dict[str, Any]:
+        check_message_media(request, dialect="openai", provider=self.provider)
         compat = self._compat(request)
         breakpoint_index = _cache_breakpoint_index(request, compat.cache_control)  # once: it may record
         payload: dict[str, Any] = {
@@ -929,10 +954,10 @@ class OpenAILM(BaseProviderLM):
             tools_wire: list[dict[str, Any]] = []
             for tool in request.tools:
                 if isinstance(tool, FunctionTool):
-                    tool_payload = {
+                    tool_payload: dict[str, Any] = {
                         "type": "function",
                         "name": tool.name,
-                        "description": tool.description,
+                        **tool_description(tool.description),
                         "parameters": tool.parameters,
                     }
                     if compat.strict_tools == "include":
@@ -1044,7 +1069,21 @@ class OpenAILM(BaseProviderLM):
         if self._codex:
             # Backend facts (live 2026-08-31): the Codex backend is
             # streaming-only, rejects store=true and every max-token knob,
-            # and expects instructions to be present.
+            # and expects instructions to be present.  An explicit cap or
+            # store=True is refused, never stripped: dropping a cap means
+            # unbounded spend (MAP-13 rule 4; Rust and R refuse the same).
+            if request.config.max_tokens is not None:
+                raise UnsupportedFeatureError(
+                    f"{self.provider}: config.max_tokens: this backend has no output cap; "
+                    "dropping it risks unbounded paid generation",
+                    provider=self.provider, feature="config.max_tokens",
+                )
+            if request.config.store is True:
+                raise UnsupportedFeatureError(
+                    f"{self.provider}: config.store: this backend cannot store a retrievable "
+                    "response; the program may depend on retrieval",
+                    provider=self.provider, feature="config.store",
+                )
             if self.access.system_prefix:
                 payload.setdefault("instructions", self.access.system_prefix)
             payload["store"] = False
@@ -1074,9 +1113,12 @@ class OpenAILM(BaseProviderLM):
 
         resp_error = data.get("error") if isinstance(data, dict) else None
         if isinstance(resp_error, dict):
-            raise self._response_error(
-                str(resp_error.get("code") or ""),
-                str(resp_error.get("message") or resp_error),
+            raise with_partial_usage(
+                self._response_error(
+                    str(resp_error.get("code") or ""),
+                    str(resp_error.get("message") or resp_error),
+                ),
+                data, model=request.model, parse_usage=usage_from_responses,
             )
 
         parts: list[Any] = []
@@ -1121,7 +1163,10 @@ class OpenAILM(BaseProviderLM):
                         _record_unmapped(unmapped, f"output[{item_index}].content[{content_index}]", ctype)
             elif item_type == "function_call":
                 if not item.get("name"):
-                    raise unnamed_tool_call_error(self.provider, f"output[{item_index}]")
+                    raise with_partial_usage(
+                        unnamed_tool_call_error(self.provider, f"output[{item_index}]"),
+                        data, model=request.model, parse_usage=usage_from_responses,
+                    )
                 parts.append(
                     ToolCallPart(
                         id=str(item.get("call_id") or item.get("id") or f"call_{len(parts)}"),
@@ -1156,19 +1201,7 @@ class OpenAILM(BaseProviderLM):
         if not parts:
             parts = [TextPart(text=str(data.get("output_text") or ""))]
 
-        usage_data = data.get("usage", {}) or {}
-        input_details = usage_data.get("input_tokens_details") or {}
-        output_details = usage_data.get("output_tokens_details") or {}
-        usage = Usage(
-            input_tokens=usage_data.get("input_tokens"),
-            output_tokens=usage_data.get("output_tokens"),
-            total_tokens=usage_data.get("total_tokens"),
-            reasoning_tokens=output_details.get("reasoning_tokens"),
-            cache_read_tokens=input_details.get("cached_tokens"),
-            cache_write_tokens=input_details.get("cache_write_tokens"),
-            input_audio_tokens=input_details.get("audio_tokens"),
-            output_audio_tokens=output_details.get("audio_tokens"),
-        )
+        usage = usage_from_responses(data.get("usage"))
 
         has_tool = any(isinstance(part, ToolCallPart) for part in parts)
         # D8 (2026-09-06): Response.id carries the response id; no
@@ -1298,19 +1331,7 @@ class OpenAILM(BaseProviderLM):
 
         if et == "response.completed":
             response = payload.get("response", {}) if isinstance(payload.get("response"), dict) else {}
-            usage_data = response.get("usage", {}) if isinstance(response, dict) else {}
-            input_details = usage_data.get("input_tokens_details") or {}
-            output_details = usage_data.get("output_tokens_details") or {}
-            usage = Usage(
-                input_tokens=usage_data.get("input_tokens"),
-                output_tokens=usage_data.get("output_tokens"),
-                total_tokens=usage_data.get("total_tokens"),
-                reasoning_tokens=output_details.get("reasoning_tokens"),
-                cache_read_tokens=input_details.get("cached_tokens"),
-                cache_write_tokens=input_details.get("cache_write_tokens"),
-                input_audio_tokens=input_details.get("audio_tokens"),
-                output_audio_tokens=output_details.get("audio_tokens"),
-            )
+            usage = usage_from_responses(response.get("usage") if isinstance(response, dict) else None)
             output = response.get("output", []) if isinstance(response, dict) else []
             has_tool = any(isinstance(item, dict) and item.get("type") == "function_call" for item in output)
             return StreamEndEvent(
@@ -1333,6 +1354,7 @@ class OpenAILM(BaseProviderLM):
 
     # ─── Streaming over OpenAI Realtime for live models ──────────────
 
+    @operation
     def complete(self, request: Request) -> Response:
         if self._codex:
             # Streaming-first backend: materialize the stream so callers get
@@ -1340,6 +1362,7 @@ class OpenAILM(BaseProviderLM):
             return materialize_response(self.stream(request), request)
         return BaseProviderLM.complete(self, request)
 
+    @operation
     def stream(self, request: Request) -> Iterator[StreamEvent]:
         wire = self._wire_request(request)
         if not self._codex and self._should_use_live_completion(wire):
@@ -1359,6 +1382,7 @@ class OpenAILM(BaseProviderLM):
         return "realtime" in model_name or "-live" in model_name
 
     def _stream_via_live_completion(self, request: Request) -> Iterator[StreamEvent]:
+        require_unmanaged_live(self)
         ws = self._live_connect(self._live_url(request.model), self._live_headers())
         saw_tool_call = False
         usage = Usage()
@@ -1461,19 +1485,7 @@ class OpenAILM(BaseProviderLM):
             return [StreamDeltaEvent(delta=ToolCallDelta(input=arguments if isinstance(arguments, str) else json.dumps(arguments or {}), id=call_id or None, name=name))]
         if et in {"response.done", "response.completed"}:
             response = payload.get("response", {}) if isinstance(payload.get("response"), dict) else {}
-            usage_data = response.get("usage", {}) if isinstance(response, dict) else {}
-            u_in = usage_data.get("input_token_details") or usage_data.get("input_tokens_details") or {}
-            u_out = usage_data.get("output_token_details") or usage_data.get("output_tokens_details") or {}
-            usage = Usage(
-                input_tokens=usage_data.get("input_tokens"),
-                output_tokens=usage_data.get("output_tokens"),
-                total_tokens=usage_data.get("total_tokens"),
-                reasoning_tokens=u_out.get("reasoning_tokens"),
-                cache_read_tokens=u_in.get("cached_tokens"),
-                cache_write_tokens=u_in.get("cache_write_tokens"),
-                input_audio_tokens=u_in.get("audio_tokens"),
-                output_audio_tokens=u_out.get("audio_tokens"),
-            )
+            usage = usage_from_responses(response.get("usage") if isinstance(response, dict) else None)
             return [StreamEndEvent(finish_reason="stop", usage=usage, provider_data=response if isinstance(response, dict) else None)]
         if et in {"error", "response.error"}:
             err = payload.get("error")
@@ -1489,6 +1501,7 @@ class OpenAILM(BaseProviderLM):
     # ─── Live sessions ──────────────────────────────────────────────
 
     def live(self, config: LiveConfig):
+        require_unmanaged_live(self)
         self._require("live")
         ws = self._live_connect(self._live_url(config.model), self._live_headers())
         for frame in self._live_setup_frames(config):
@@ -1570,7 +1583,7 @@ class OpenAILM(BaseProviderLM):
             session["audio"] = audio
         if config.tools:
             session["tools"] = [
-                {"type": "function", "name": t.name, "description": t.description, "parameters": t.parameters}
+                {"type": "function", "name": t.name, **tool_description(t.description), "parameters": t.parameters}
                 for t in config.tools
                 if isinstance(t, FunctionTool)
             ]
@@ -2096,12 +2109,7 @@ class OpenAILM(BaseProviderLM):
                 images.append(ImagePart(media_type=media_type or "application/octet-stream", data=str(item["b64_json"])))
             elif item.get("url"):
                 images.append(ImagePart(media_type=media_type or "application/octet-stream", url=str(item["url"])))
-        usage_obj = data.get("usage") if isinstance(data.get("usage"), dict) else {}
-        usage = Usage(
-            input_tokens=usage_obj.get("input_tokens"),
-            output_tokens=usage_obj.get("output_tokens"),
-            total_tokens=usage_obj.get("total_tokens"),
-        )
+        usage = usage_from_responses(data.get("usage"))
         # Captured: the images response carries no id and no model echo.
         return ImageGenerationResponse(images=tuple(images), usage=usage, provider_data=data)
 

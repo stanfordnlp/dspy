@@ -1,6 +1,8 @@
 import importlib
 import sys
 import threading
+import time
+import types
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -92,6 +94,123 @@ def test_require_is_safe_under_concurrent_first_use(tmp_path, monkeypatch):
     assert counter_path.read_text() == "1"
 
 
+def test_require_does_not_expose_module_accessed_during_its_own_initialization(tmp_path, monkeypatch):
+    module_name = "dspy_lazy_reentrant_module"
+    hooks = types.SimpleNamespace(started=threading.Event(), release=threading.Event())
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    monkeypatch.setitem(sys.modules, "dspy_lazy_test_hooks", hooks)
+    (tmp_path / f"{module_name}.py").write_text(
+        "import dspy_lazy_test_hooks as hooks\n"
+        "early = 1\n"
+        "assert hooks.proxy.early == 1\n"
+        "hooks.started.set()\n"
+        "assert hooks.release.wait(5)\n"
+        "value = 42\n"
+    )
+    hooks.proxy = require(module_name)
+
+    class ContentionLock:
+        """RLock that records when a thread has to wait for another thread's hold."""
+
+        def __init__(self):
+            self._lock = threading.RLock()
+            self.contended = threading.Event()
+
+        def __enter__(self):
+            if not self._lock.acquire(blocking=False):
+                self.contended.set()
+                self._lock.acquire()
+
+        def __exit__(self, *exc_info):
+            self._lock.release()
+
+    lock = ContentionLock()
+    hooks.proxy._dspy_lazy_lock = lock
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(lambda: hooks.proxy.value)
+        assert hooks.started.wait(5)
+        # The module is still initializing, so another thread must wait instead of seeing the partial module.
+        second = executor.submit(lambda: hooks.proxy.value)
+        # Release only after the second read has returned or is blocked on the proxy lock.
+        deadline = time.monotonic() + 5
+        while not (second.done() or lock.contended.is_set()) and time.monotonic() < deadline:
+            time.sleep(0.001)
+        hooks.release.set()
+
+        assert first.result() == 42
+        assert second.result() == 42
+
+
+def test_require_resolves_module_that_replaces_itself_during_initialization(tmp_path, monkeypatch):
+    module_name = "dspy_lazy_replacing_module"
+    hooks = types.SimpleNamespace()
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    monkeypatch.setitem(sys.modules, "dspy_lazy_test_hooks", hooks)
+    (tmp_path / f"{module_name}.py").write_text(
+        "import sys\n"
+        "import types\n"
+        "import dspy_lazy_test_hooks as hooks\n"
+        "early = 1\n"
+        "assert hooks.proxy.early == 1\n"
+        "sys.modules[__name__] = types.SimpleNamespace(value='replacement')\n"
+    )
+    hooks.proxy = require(module_name)
+
+    # A plain import, not the proxy, starts initialization, so the proxy only sees the partial module mid-import.
+    importlib.import_module(module_name)
+
+    assert hooks.proxy.value == "replacement"
+
+
+def test_require_reuses_loaded_module_until_sys_modules_changes(tmp_path, monkeypatch):
+    module_name = "dspy_lazy_cached_module"
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    (tmp_path / f"{module_name}.py").write_text("value = 1\n")
+    mod = require(module_name)
+    assert mod.value == 1
+
+    imports = []
+    import_module = importlib.import_module
+
+    def counting_import_module(name, *args, **kwargs):
+        imports.append(name)
+        return import_module(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib, "import_module", counting_import_module)
+
+    assert [mod.value for _ in range(3)] == [1, 1, 1]
+    assert imports == []
+
+    monkeypatch.setitem(sys.modules, module_name, types.SimpleNamespace(value=2))
+    assert mod.value == 2
+
+    del sys.modules[module_name]
+    assert mod.value == 1
+    assert imports == [module_name, module_name]
+
+
+def test_require_retries_after_failed_import(tmp_path, monkeypatch):
+    module_name = "dspy_lazy_flaky_module"
+    flag = tmp_path / "fail"
+    flag.touch()
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    (tmp_path / f"{module_name}.py").write_text(
+        f"import pathlib\nif pathlib.Path({str(flag)!r}).exists():\n    raise RuntimeError('boom')\nvalue = 42\n"
+    )
+
+    mod = require(module_name)
+    with pytest.raises(RuntimeError, match="boom"):
+        _ = mod.value
+
+    flag.unlink()
+    assert mod.value == 42
+
+
 def test_require_assignment_updates_materialized_module(tmp_path, monkeypatch):
     module_name = "dspy_lazy_assignment_module"
     monkeypatch.syspath_prepend(tmp_path)
@@ -109,29 +228,36 @@ def test_require_returns_stub_when_missing():
     assert isinstance(stub, _MissingModule)
 
 
-def test_require_stub_raises_on_access_with_install_hint():
+def test_require_stub_raises_on_access_with_install_hint(monkeypatch):
+    def unexpected_stack(*args, **kwargs):
+        pytest.fail("require() must not inspect the whole stack")
+
+    monkeypatch.setattr("dspy.utils.lazy_import.inspect.stack", unexpected_stack)
     dist = _detect_dspy_dist()
+    line = sys._getframe().f_lineno + 1
     stub = require("nonexistent_abc", feature="dspy.Test")
     with pytest.raises(ImportError) as exc_info:
         _ = stub.something
     msg = str(exc_info.value)
     assert f"{dist}[nonexistent_abc]" in msg, msg
     assert "dspy.Test" in msg
+    assert f"File {__file__}, line {line}, in test_require_stub_raises_on_access_with_install_hint" in msg
+    assert 'stub = require("nonexistent_abc", feature="dspy.Test")' in msg
 
 
-def test_require_stub_uses_install_hint_for_litellm(monkeypatch):
+def test_require_stub_uses_install_hint_for_optional_dependency(monkeypatch):
     import importlib.util
     import sys
 
     dist = _detect_dspy_dist()
     find_spec = importlib.util.find_spec
-    monkeypatch.delitem(sys.modules, "litellm", raising=False)
-    monkeypatch.setattr(importlib.util, "find_spec", lambda module: None if module == "litellm" else find_spec(module))
+    monkeypatch.delitem(sys.modules, "datasets", raising=False)
+    monkeypatch.setattr(importlib.util, "find_spec", lambda module: None if module == "datasets" else find_spec(module))
 
-    stub = require("litellm", feature="dspy.LM")
+    stub = require("datasets", feature="dspy.datasets")
     with pytest.raises(ImportError) as exc_info:
         _ = stub.something
-    assert f"{dist}[litellm]" in str(exc_info.value)
+    assert f"{dist}[datasets]" in str(exc_info.value)
 
 
 def test_require_stub_uses_explicit_extra():
@@ -165,3 +291,11 @@ def test_install_hints_match_pyproject_extras(pytestconfig):
             f"_INSTALL_HINTS[{module!r}] = {hint!r} is not a declared extra in "
             f"pyproject.toml (declared: {sorted(extras)})"
         )
+
+
+def test_import_dspy_leaves_optional_sdks_unimported():
+    import subprocess
+
+    code = "import sys, dspy; print(sorted({'openai', 'jiter', 'litellm'} & set(sys.modules)))"
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == "[]"

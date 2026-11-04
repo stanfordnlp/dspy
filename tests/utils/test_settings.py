@@ -5,9 +5,9 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
 import pytest
-from litellm import Choices, Message, ModelResponse
 
 import dspy
+from tests.test_utils.engines import make_response
 
 
 def test_basic_dspy_settings():
@@ -55,22 +55,22 @@ def test_dspy_context_parallel():
 
 
 def test_dspy_context_with_dspy_parallel():
-    dspy.configure(lm=dspy.LM("openai/gpt-4o", engine="litellm", cache=False), adapter=dspy.ChatAdapter())
+    dspy.configure(lm=dspy.LM("openai/gpt-4o", cache=False), adapter=dspy.ChatAdapter())
 
     class MyModule(dspy.Module):
         def __init__(self):
             self.predict = dspy.Predict("question -> answer")
 
         def forward(self, question: str) -> str:
-            lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False) if "France" in question else dspy.settings.lm
+            lm = dspy.LM("openai/gpt-4o-mini", cache=False) if "France" in question else dspy.settings.lm
             with dspy.context(lm=lm):
                 time.sleep(1)
                 assert dspy.settings.lm.model == lm.model
                 return self.predict(question=question)
 
-    with mock.patch("litellm.completion") as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content="[[ ## answer ## ]]\nParis"))],
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            "[[ ## answer ## ]]\nParis",
             model="openai/gpt-4o-mini",
         )
 
@@ -85,12 +85,13 @@ def test_dspy_context_with_dspy_parallel():
         # Verify mock was called correctly
         assert mock_completion.call_count == 2
         for call_args in mock_completion.call_args_list:
-            if "France" in call_args.kwargs["messages"][-1]["content"]:
+            request = call_args.args[0]
+            if "France" in request.messages[-1].text:
                 # France question uses gpt-4o-mini
-                assert call_args.kwargs["model"] == "openai/gpt-4o-mini"
+                assert request.model == "openai/gpt-4o-mini"
             else:
                 # Germany question uses gpt-4o
-                assert call_args.kwargs["model"] == "openai/gpt-4o"
+                assert request.model == "openai/gpt-4o"
 
         # The main thread is not affected by the context
         assert dspy.settings.lm.model == "openai/gpt-4o"
@@ -104,9 +105,9 @@ async def test_dspy_context_with_async_task_group():
 
         async def aforward(self, question: str) -> str:
             lm = (
-                dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+                dspy.LM("openai/gpt-4o-mini", cache=False)
                 if "France" in question
-                else dspy.LM("openai/gpt-4o", engine="litellm", cache=False)
+                else dspy.LM("openai/gpt-4o", cache=False)
             )
             with dspy.context(lm=lm, trace=[]):
                 await asyncio.sleep(1)
@@ -117,10 +118,10 @@ async def test_dspy_context_with_async_task_group():
 
     module = MyModule()
 
-    with dspy.context(lm=dspy.LM("openai/gpt-4.1", engine="litellm", cache=False), adapter=dspy.ChatAdapter()):
-        with mock.patch("litellm.acompletion") as mock_completion:
-            mock_completion.return_value = ModelResponse(
-                choices=[Choices(message=Message(content="[[ ## answer ## ]]\nParis"))],
+    with dspy.context(lm=dspy.LM("openai/gpt-4.1", cache=False), adapter=dspy.ChatAdapter()):
+        with mock.patch("dspy.clients.engines.AsyncLM15Engine.complete") as mock_completion:
+            mock_completion.return_value = make_response(
+                "[[ ## answer ## ]]\nParis",
                 model="openai/gpt-4o-mini",
             )
 
@@ -145,11 +146,12 @@ async def test_dspy_context_with_async_task_group():
         assert mock_completion.call_count == 4
         seen = {"France": 0, "Germany": 0}
         for call in mock_completion.call_args_list:
-            content = call.kwargs["messages"][-1]["content"]
+            request = call.args[0]
+            content = request.messages[-1].text
             country = "France" if "France" in content else "Germany"
             assert country in content
             expected = "openai/gpt-4o-mini" if country == "France" else "openai/gpt-4o"
-            assert call.kwargs["model"] == expected
+            assert request.model == expected
             seen[country] += 1
         assert seen == {"France": 2, "Germany": 2}
 

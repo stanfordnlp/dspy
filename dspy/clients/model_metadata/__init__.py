@@ -102,6 +102,7 @@ def _provider_names(provider):
         "moonshotai-responses": ("moonshot", "moonshotai"),
         "moonshotai-anthropic": ("moonshot", "moonshotai"),
         "vllm": ("hosted_vllm", "vllm"),
+        "fireworks": ("fireworks_ai",), "together": ("together_ai",),
     }.get(provider, (provider,))
 
 

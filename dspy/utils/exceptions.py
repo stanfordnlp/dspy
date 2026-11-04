@@ -281,8 +281,8 @@ def is_retryable_lm_error(error: Exception) -> bool:
 def format_error_for_lm(error: BaseException, *, traceback_frames: int = 0) -> str:
     """Format an exception as a string to be fed back to an LM.
 
-    Modules that surface execution failures to the LM (`ReAct`, `ProgramOfThought`,
-    `RLM`) share this formatter, keeping only their surrounding wrapper text
+    Modules that surface execution failures to the LM (`ReAct`, `RLM`)
+    share this formatter, keeping only their surrounding wrapper text
     (e.g. `"[Error] "` prefixes) at the call site.
 
     Args:

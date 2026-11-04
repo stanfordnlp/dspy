@@ -1,4 +1,4 @@
-# DSPy 3.4 LM migration
+# DSPy 3.5 LM migration
 
 DSPy's LM layer now uses the lm15 objects bundled inside DSPy. Import them from
 `dspy.lm15`; no separate installation is needed. They are the original lm15
@@ -6,33 +6,95 @@ classes, not DSPy wrappers or subclasses.
 
 ## The 3.5 cutoff
 
-**3.4 is the transition release; 3.5 removes the old LM integration interfaces.**
+**3.4 was the transition release; 3.5 removed the old LM integration interfaces.**
 
 | Interface | DSPy 3.4 | DSPy 3.5 |
 | --- | --- | --- |
 | `lm("Hello")` | List-returning convenience | Kept as a convenience over the canonical engine path |
 | `lm(Request(...))` / `await lm.acall(Request(...))` | Returns an lm15 `Response` | The adapter and integration contract |
-| OpenAI-style `lm(messages=[{"role": ..., "content": ...}])` | Deprecated; use an explicit lm15 request | Removed |
+| OpenAI-style `lm(messages=[{"role": ..., "content": ...}])` | Deprecated; use an explicit lm15 request | Removed; raises `TypeError` with this guide's link |
 | Custom `BaseLM.forward()` / `aforward()` implementations | Deprecated; migrate to an engine | Removed as an integration interface |
 | `LegacyEngine` / `AsyncLegacyEngine` wrappers | Deprecated transition tools | Removed |
 | Custom-engine `complete_legacy()` shortcuts | Deprecated | Removed |
+| `Adapter.format()` | Returned OpenAI message dictionaries | Returns a `Prompt` of lm15 messages |
+| `dspy.Type.format()` | Returned OpenAI content blocks | Returns lm15 content parts (or a string) |
+| `Type.parse_lm_response(...)` | Took an OpenAI-shaped output dictionary | Takes the lm15 `Response` |
+| `Tool.format_as_litellm_function_call()` | OpenAI function-tool dictionary | Renamed `Tool.as_function_tool()`, returns an lm15 `FunctionTool` |
 
-In 3.5, DSPy's adapters will build lm15 requests and consume lm15 responses directly,
-not use the list-returning convenience path. Provider-wire dictionaries belong
-inside engines. LiteLLM itself is **not** deprecated: a LiteLLM engine must follow
-that same request/response contract.
+In 3.5, DSPy's adapters build lm15 requests and consume lm15 responses directly,
+not the list-returning convenience path. Provider wire formats belong to engines.
+DSPy's built-in LM engines prefer native lm15. LiteLLM is no longer a required
+dependency, but its compatibility engine remains available with
+`pip install "dspy[litellm]"`. Native imports and calls do not require LiteLLM;
+attempting to use compatibility without it raises an actionable installation error.
+The `Request`/`Response` contract and one-call-per-candidate execution remain unchanged.
 
-These changes do not happen silently in 3.4. Deprecated interfaces still execute;
-`DeprecationWarning` announces the cutoff and links to the replacement. Python may
-hide these warnings by default. To review them during development, use:
+### Migrating from LiteLLM-backed DSPy
+
+- Install `dspy[litellm]` for compatibility routes. `engine="auto"` prefers native
+  lm15 and may select LiteLLM for unsupported routes, settings or representations
+  **before provider I/O**. `engine="lm15"` is strict native;
+  `engine="litellm"` explicitly selects compatibility. Provider failures never
+  trigger a backend switch.
+- `model_type="text"` uses the optional LiteLLM compatibility engine, not native
+  lm15. The public call still uses a string or canonical `Request`, not `messages=`.
+- Provider prefixes, credentials and options supported only by LiteLLM do not
+  become native integrations automatically. Use the optional compatibility engine
+  where supported. For an unlisted compatible HTTP
+  endpoint, [register a provider](../tutorials/custom_lm_engines/index.md#declaring-a-provider-instead-of-writing-an-engine).
+  A custom engine remains an option for other protocols or authentication flows.
+- For native calls, replace `cache_control_injection_points` with the
+  [`prompt_cache` policy](../tutorials/cache/index.md#using-provider-side-prompt-caching).
+  LiteLLM's provider-shaped caching options remain compatibility-engine options;
+  they do not establish native support.
+- `dspy.enable_litellm_logging()` and `dspy.disable_litellm_logging()` remain
+  available for the optional compatibility integration. `dspy.enable_logging()` /
+  `disable_logging()` control DSPy's own logging.
+- Hosted `dspy.Embedder` calls now use the OpenAI SDK against OpenAI, Azure
+  OpenAI, or an OpenAI-compatible embeddings endpoint. Other providers require a
+  callable; their old LiteLLM model prefixes no longer route automatically.
+  Installing `dspy[litellm]` does not restore embedding fallback.
+  See [Embedder](../api/models/Embedder.md).
+
+For OpenRouter cross-model fallback, move `models` and `route` out of the SDK's
+`extra_body` wrapper into generation options:
+
+```python
+lm = dspy.LM(
+    "openrouter/openai/gpt-4.1-mini",
+    models=["openai/gpt-4.1-mini", "anthropic/claude-haiku-4.5"],
+    route="fallback",
+)
+```
+
+DSPy sends this policy to OpenRouter; it does not implement the fallback itself.
+An invalid model ID can still be rejected by OpenRouter before fallback applies.
+These options are accepted only for the OpenRouter route. For OpenRouter privacy
+and provider restrictions, use predictor configuration, such as
+`dspy.Predict("question -> answer", provider={"data_collection": "deny"})`.
+The LM constructor's `provider=` argument selects a training/launch provider,
+not OpenRouter's inference routing policy.
+
+DSPy still uses **LiteLLM-derived model metadata** for capability and pricing
+hints, without importing the LiteLLM library. On first use it attempts to fetch
+the upstream catalog, falling back to the bundled snapshot. Set
+`LITELLM_LOCAL_MODEL_COST_MAP=True` to use only the snapshot;
+`LITELLM_MODEL_COST_MAP_URL` still overrides the catalog URL. These legacy
+environment names remain supported. A catalog entry does not establish a
+supported native route, and missing pricing is unknown, not zero cost.
+
+When preparing an upgrade from 3.4, expose its migration warnings with:
 
 ```sh
 python -W default::DeprecationWarning your_program.py
 ```
 
-Normal DSPy program calls do not warn merely because built-in adapters still use
-an internal dictionary boundary in 3.4. That implementation is DSPy's migration
-responsibility. Using a legacy custom LM still warns, including through a program.
+In 3.4, legacy custom LMs warn even through program calls; ordinary calls through
+built-in adapters do not warn about DSPy's own internal dictionary boundary.
+
+Signature syntax is untouched: `'context, image: dspy.Image, question -> reasoning: dspy.Reasoning, answer: str'`
+still declares the same fields. See [behaviour changes](#behaviour-changes-worth-knowing)
+for modality limitations.
 
 ## Ordinary programs
 
@@ -48,25 +110,37 @@ outputs = lm("Hello")
 Ordinary calls return lists of strings or dictionaries. `experimental=True` no
 longer changes that return type; it still controls other experimental features.
 For multi-turn calls, use [explicit requests](#explicit-requests) rather than
-OpenAI-style message dictionaries.
+OpenAI-style message dictionaries. A string call sends one user message using
+the LM's defaults. DSPy modules such as `dspy.ChainOfThought("question -> answer")`
+keep their usual interface.
+
+`lm("Hello", temperature=0.7, n=2)` still accepts generation options in the
+OpenAI vocabulary (`temperature`, `max_tokens`, `stop`, `reasoning_effort`,
+`response_format`, ...). Set predictor defaults with
+`predict = dspy.Predict("question -> answer", temperature=0.7)`; override them
+for one call with `predict(question="Why?", config={"temperature": 0.2})`.
+Those options are read with lm15's own Chat Completions reader into
+`Request.config`; DSPy keeps no second copy of that vocabulary.
 
 Engine selection:
 
 - `engine="auto"` (default): prefer native lm15 for supported routes and
   representable inputs. Unsupported routes and ordinary provider-specific inputs
-  that cannot be represented faithfully select LiteLLM **before execution**.
+  that cannot be represented faithfully may select optional LiteLLM **before
+  provider I/O**. Unmapped options such as `vertex_project` travel in `Config.extensions`.
 - `engine="lm15"`: require the native backend. Unsupported mappings raise.
-- `engine="litellm"`: explicitly use the compatibility backend.
+- `engine="litellm"`: explicitly use the optional compatibility backend.
 
 Authentication failures, timeouts and provider errors never cause a switch to
-another backend. Text completions and client settings not implemented by the
-native integration remain on LiteLLM. The `timeout` setting, a number of seconds
-or an `httpx.Timeout`, stays native: it bounds the wait for the next byte of the
-reply (headers first, then each streamed chunk), the send, and a free
-connection; the native default is 600 seconds, the same as LiteLLM's. An
+another backend. Compatibility use requires `pip install "dspy[litellm]"`;
+native use does not.
+
+The `timeout` setting, a number of seconds or an `httpx.Timeout`, bounds the wait
+for the next byte of the reply (headers first, then each streamed chunk), the
+send, and a free connection; the native default is 600 seconds. An
 `httpx.Timeout` component set to `None` means "wait forever", which the native
-engine cannot honour: under `engine="auto"` that call uses LiteLLM, and under
-`engine="lm15"` it raises `LMUnsupportedFeatureError` (feature `timeout`)
+engine cannot honour: under `engine="auto"` that call uses optional LiteLLM, and
+under `engine="lm15"` it raises `LMUnsupportedFeatureError` (feature `timeout`)
 rather than silently substituting a default.
 
 Text that no provider can receive (a lone surrogate character) raises a plain
@@ -84,11 +158,14 @@ left out, `temperature=1.5` on Anthropic becomes `1.0`, a thinking-summary
 level the wire lacks becomes `auto`. Each history entry carries the record
 under `"adaptations"` (`field`, `action`, `asked`, `applied`, `reason`); the
 lm15 `Response` in the entry carries the same. Nothing is printed. What lm15
-still refuses — an image inside a tool result on the Chat Completions wire, a
-stored cache object that does not exist on the provider, `n > 1` — is known
-before any request is sent, and under `engine="auto"` such a call goes to
-LiteLLM without a failed native attempt first; under `engine="lm15"` it raises,
-naming the field in `error.feature`.
+still refuses is known before any request is sent. Under `engine="auto"`, a
+representational refusal may select optional LiteLLM before inference, so Chat
+audio and file inputs can use its SDK bridge. Explicit native selection,
+declared-provider refusals and provider prompt-cache requests do not take this
+fallback; unsupported inputs raise `LMUnsupportedFeatureError`. Compatibility is
+not evidence of native modality parity. All engines still take `Request`,
+including the compatibility engine. DSPy implements
+`n > 1` by making separate requests, not by asking the native engine for `n`.
 
 For stop sequences on the Responses API, the engine matters:
 
@@ -107,17 +184,27 @@ stop sequences to the provider directly.
 ### Caching, retries, usage and streaming
 
 DSPy owns response caching, retries, candidate fan-out, callbacks and history.
-Ordinary calls retain the old cache-key format and can read existing SDK response
-entries. Cache reads happen before engine construction. New native entries store
-plain serialized data and work with restricted cache deserialization. No old
-cache rewrite is required. Explicit typed calls have a separate cache namespace.
+Every call is cached by its lm15 `Request`, model type, `rollout_id` and `n`.
+Sync and async calls keep separate cache entries, so one engine's answer cannot
+replace its counterpart's answer in a custom engine pair. Cache
+entries written by DSPy 3.4's ordinary calls used the old dictionary key and are
+**not** read anymore: after upgrading, previously cached answers are generated
+again once. Nothing errors; the cost is one regeneration per cached prompt.
 
-Native `n` answers use `n` separate requests in sequence; LiteLLM compatibility
-calls retain the backend's native `n` behavior. Separate requests can take longer
-and bill input tokens more than once. A failed candidate does not restart earlier
-successful candidates, and incomplete sets are not cached. Bounded parallel
-execution is a follow-up tracked beside the candidate loops; it can reduce latency,
-but does not remove the input-token charges for separate requests.
+Adapters produce `n` answers with `n` separate `lm(request)` calls in sequence
+(`await lm.acall(request)` for async). Each candidate has its own cache entry,
+callbacks, history and usage accounting. A single candidate keeps the caller's
+`rollout_id`; multiple candidates derive stable, separate identities from that
+rollout and the candidate index. For both `Predict` and convenience calls such as
+`lm("Hello", n=3)`, multiple candidates use an explicit sampling `seed` as
+`seed + candidate_index` (zero-based): the first seed is unchanged.
+`None` remains `None`, and `n=1` leaves the seed unchanged. Provider determinism
+is best effort; distinct seeds do not guarantee distinct outputs.
+Repeated predictions reuse the corresponding candidates, while adjacent caller
+rollouts do not overlap. A later failure or cancellation leaves earlier completed
+calls recorded and cached.
+
+Separate requests can take longer and bill input tokens more than once.
 
 `num_retries` counts additional attempts, with exponential delays of 1, 2, 4…
 seconds, capped at 60 seconds unless the provider specifies `retry_after`.
@@ -125,29 +212,32 @@ Backend retries are disabled on the managed LiteLLM path. A stream is not retrie
 once a chunk has been sent to the caller. Caching a completed stream does not
 replay fake token timing on a later ordinary cache hit.
 
-`dspy.streamify` continues to use the existing listeners. Native events are
-assembled into an lm15 response and adapted to listener-facing chunks without
-mixing reasoning into answer text. LiteLLM's ordinary streaming chunks retain
-their original shape. Custom chunk consumers should not assume every native
-chunk is a LiteLLM class; its common fields remain available.
+`dspy.streamify` keeps its listener-facing chunks (`chunk.choices[0].delta`),
+built from lm15 stream events. LiteLLM Chat streaming uses the same event mapping
+as native streaming. Predictions and direct calls to LiteLLM text and Responses
+models inside a streamified module complete without token chunks. Other calls
+in the module can still stream. Token streaming on these compatibility endpoints
+remains unsupported; use native lm15 for Responses token streaming. Custom
+engines must implement the canonical streaming interface to produce token chunks.
 
 `streamify` is the **program-level** API: it selects predictor fields, emits tool
 and module status messages, and delivers the final `Prediction`. lm15 events describe
-**one model call**, so they do not replace those responsibilities. The 3.5 migration
-will move the internal LM boundary to canonical requests/responses and events; it
-does not call for removing `streamify` or replacing its program-level role.
+**one model call**, so they do not replace those responsibilities.
 
 Token usage is recorded once per public call, and cache hits add no billed usage.
 Native response counters stay provider-verbatim in `Response.usage`; DSPy's
 legacy prompt/completion counters are derived separately. A native cost estimate
-is **unknown**, not zero, when no reliable pricing is available. Existing cached
-SDK responses retain their historical cost metadata.
+is **unknown**, not zero, when no reliable pricing is available.
+For adapter calls, `lm.history[-1]` holds the `Request` under `"request"`, one
+`Response` under `"response"`, and a display copy of the messages under
+`"messages"`. The string convenience `lm("text", n=...)` retains its existing
+grouped history and list-returning behavior.
 
 ## Migrating OpenAI-style messages
 
-The public `messages=` argument is deprecated, including provider SDK message
-objects as well as dictionaries. This does not deprecate `Request.messages`, which
-holds canonical lm15 `Message` objects. For example, this form still runs in 3.4:
+The public `messages=` argument is removed, including provider SDK message
+objects as well as dictionaries. This does not remove `Request.messages`, which
+holds canonical lm15 `Message` objects. This form ran in 3.4 but no longer runs:
 
 ```python
 outputs = lm(messages=[
@@ -182,14 +272,16 @@ LM generation defaults are not added. Client configuration still comes from the
 LM. `lm(request, cache=False, rollout_id=...)` controls DSPy's response cache.
 `Config.cache` instead controls provider-side prompt caching.
 
-One typed request returns one response containing one assistant message. Use
-ordinary calls for `n` answers. To continue a conversation, add `response.message`
-to the next request's messages. LiteLLM typed streaming currently supports Chat
-Completions only; the native Responses engine supports Responses streaming.
+Only these execution controls and client settings (`api_key`, `api_base`, ...)
+are accepted alongside a typed request. To continue a conversation, add
+`response.message` to the next request's messages. For several
+candidates, use `dspy.Predict("question -> answer", n=3)` and read
+`prediction.completions`. Direct `lm(request)` calls always return one response;
+they do not accept `n` or `num_generations`, or inherit the LM's candidate count.
 
 ## Errors and retry ownership
 
-**Engines report failures; DSPy owns retry and fallback policy.** New engines raise
+**Engines report failures; DSPy owns retries.** New engines raise
 specific errors from `dspy.lm15`, the same bundled vocabulary as their requests and
 responses. Use these imports, not a separately installed lm15 package whose Python
 classes have different identities.
@@ -203,7 +295,8 @@ raise RateLimitError("Provider rate limit", provider="my-backend", retry_after=2
 
 Do not return an error dictionary or a fake successful `Response`. LiteLLM engines
 translate their SDK's exception classes and documented provider codes into lm15
-errors. Native engines propagate lm15 errors. Arbitrary custom exceptions are not
+errors. Native engines propagate lm15 errors; custom engines should translate
+their backend's documented failures into those same errors. Arbitrary custom exceptions are not
 classified by words such as "network" or "timeout".
 
 At its owned engine/capability boundaries, DSPy translates canonical errors into its
@@ -250,9 +343,10 @@ additional JSON-format call for an `AdapterParseError`, but never after visible
 stream output. Unexpected parser bugs and engine/setup failures propagate. JSON
 schema fallback is decided **before** the model call, not after a failed execution.
 
-## Custom engines and legacy plugins
+## Custom LMs are engines
 
-New custom backends implement the small engine interface:
+A custom backend implements the small engine interface and is passed to
+`dspy.LM`:
 
 ```python
 from dspy.lm15 import Message, Response, Usage
@@ -267,11 +361,24 @@ class EchoEngine:
 lm = dspy.LM("custom/echo", engine=EchoEngine())
 ```
 
-Implement `stream(request)` yielding canonical lm15 events to support streaming.
-Supply `async_engine=` with `async complete(request)` and `stream(request)` returning
-an async iterator for async calls. DSPy does not silently run a sync backend on the
-async path. Engines must not add another DSPy cache or retry loop. Custom engines
-are caller-owned and are not closed by DSPy.
+Protocols live in `dspy.clients.engines`; inheritance is not required:
+
+- `Engine`: `complete(request: Request) -> Response`.
+- `AsyncEngine`: `async def complete(request: Request) -> Response`.
+- `StreamingEngine`: `Engine` plus `stream(request) -> Iterator[StreamEvent]`.
+- `AsyncStreamingEngine`: `AsyncEngine` plus `stream(request) -> AsyncIterator[StreamEvent]`.
+
+Streams yield canonical lm15 events; async iterators are consumed directly, not
+awaited first. Completion-only engines work for ordinary calls; requesting streaming
+from one raises `dspy.LMUnsupportedFeatureError`. Cleanup methods are optional.
+Custom engines are caller-owned: arrange their cleanup yourself. DSPy closes
+returned stream iterators with `close` / `aclose`, including on failure or
+cancellation, but not the borrowed engines. Engines must not add another DSPy
+cache or retry loop.
+
+An async-only custom LM uses `dspy.LM(model, engine=None, async_engine=...)`.
+Each call mode requires its own engine: `lm(...)` does not run an async engine,
+and `await lm.acall(...)` does not run a sync engine.
 
 A custom engine owns its connection: `api_key`, `api_base`, `timeout`,
 `extra_headers` and the other client settings are refused on `dspy.LM(engine=...)`,
@@ -281,34 +388,19 @@ An engine is saved by `dump_state()`/`load_state()` of its own, and loading one 
 gated by `allow_unsafe_lm_state=True` like a custom LM class. For an HTTP provider
 lm15 can speak to, declare it with `dspy.lm15.register_provider(...)` instead of
 writing an engine: each `dspy.LM` binds the registrations present at construction,
-and a fallback to LiteLLM keeps the declared address and credential. See the
+and any permitted compatibility fallback keeps the declared address and credential. See the
 [custom-engine tutorial](../tutorials/custom_lm_engines/index.md).
 
-Implementing custom LMs through `BaseLM.forward(prompt=None, messages=None, **kwargs)`
-or `aforward` is **deprecated**. Implement an engine instead, as shown above and in
-the [custom-engine tutorial](../tutorials/custom_lm_engines/index.md). The old subclass
-interface remains supported throughout DSPy **3.4** and is scheduled for removal in
-**3.5**, along with both legacy-engine wrappers and `complete_legacy()` shortcuts.
+An engine may declare `supports_function_calling`, `supports_reasoning`,
+`supports_response_schema` and `supported_params`; adapters read those to decide
+whether to use native tool calling, native reasoning, or structured outputs.
+The sync engine supplies these hints when present; otherwise the async engine
+does. Hints are not combined across engines, so a pair should support the
+features declared by its sync engine. Missing hints mean unsupported.
 
-Calls through that old interface emit a `DeprecationWarning`, subject to Python's
-normal warning filters. Existing plugins are still automatically wrapped by legacy
-engines in 3.4, preserving ordinary inputs and outputs. DSPy does not add caching or
-retries around automatically wrapped plugins because they may already own those
-behaviors. A legacy plugin's private streaming implementation remains its responsibility.
-
-The explicit `LegacyEngine` and `AsyncLegacyEngine` wrappers from
-`dspy.clients.engines` are **3.4 transition tools only**, not a permanent escape
-hatch. Constructing either wrapper emits a deprecation warning; both are scheduled
-for removal in 3.5. Migrate the underlying implementation, rather than only wrapping
-it. During the transition, when a plugin already handles caching or retries, disable
-those on the outer `dspy.LM` with `cache=False, num_retries=0` to avoid a second layer.
-
-Custom engines must implement `complete(Request) -> Response`, plus their declared
-async/streaming counterparts. If DSPy selects a custom engine's `complete_legacy()`
-shortcut for an ordinary call, it warns. That shortcut will not exist in 3.5.
-
-An existing `forward_contract="legacy"` declaration is harmless. The experimental
-`forward_contract="typed_lm"` contract is removed and rejected explicitly.
+If you subclass `dspy.BaseLM` for extra persistent state, pass your engine to
+`super().__init__(model, engine=..., async_engine=...)`. There is no `forward()`
+to override; a `BaseLM` without an engine raises when called.
 
 `DummyLM` now uses a canonical engine but retains its scripted answer modes,
 reasoning option, adapter formatting, and uncached consumption of repeated calls.
@@ -327,6 +419,76 @@ custom engines require custom `dump_state`/`load_state` methods instead of guess
 reconstruction. Whole-program pickle saving excludes native transport pools and
 locks; they are recreated lazily after loading. Existing trusted-loading safeguards
 remain in force.
+
+## Custom adapters and custom types
+
+`Adapter.format()` returns a `dspy.adapters.Prompt`, not provider dictionaries.
+Custom `Type.format()` methods return text or lm15 content parts. Inspect both
+boundaries together without calling an LM or downloading the image:
+
+```python
+import dspy
+from dspy.adapters import Prompt
+
+prompt = dspy.ChatAdapter().format(
+    dspy.Signature("image: dspy.Image -> answer"),
+    demos=[], inputs={"image": dspy.Image("https://example.org/photo.jpg")},
+)
+prompt = Prompt(system=prompt.system + "\nAnswer in French.", messages=prompt.messages)
+print(prompt.system)
+print(prompt.messages[0].parts)  # TextPart markers surround an ImagePart.
+```
+
+In an overridden `format`, return the modified `Prompt` shown above. The
+[adapter reference](../api/adapters/Adapter.md#dspy.Adapter.format) documents the
+message-list demo/history hooks, text content hooks and `build_request` boundary.
+Custom LM wrappers still intercept adapter calls through `__call__` and `acall`.
+
+Use [Image.format](../api/primitives/Image.md#dspy.Image.format) as a working
+custom-type template: for example, return `[ImagePart(url=self.url, media_type="image/jpeg")]`
+from your method, importing `ImagePart` from `dspy.lm15`. OpenAI-style dictionaries
+raise `dspy.adapters.types.base_type.TypeFormatError`, naming the type.
+`parse_lm_response(response)` now receives the lm15 `Response`; read
+`response.message.parts_of(ThinkingPart)` or `response.citations`.
+
+Fine-tuning data is still written in OpenAI's chat format because that is the
+file format providers accept: `ChatAdapter.format_finetune_data` uses lm15's own
+Chat Completions writer through `dspy.adapters.base.prompt_to_openai_messages`.
+
+### Behaviour changes worth knowing
+
+- **`dspy.File.filename` is not sent.** A file becomes one lm15 `DocumentPart`
+  (inline data or `file_id`); engines derive any file name a provider needs
+  from the media type. The name stays on the Python object for display.
+- **`dspy.experimental.Document` no longer enables Anthropic's native citations.**
+  lm15's `DocumentPart` has no citation opt-in yet. Plain-text documents are
+  sent as text framed by their title and context; PDFs as a document part. The
+  `Citations` output field stays in the prompt and is parsed from the answer;
+  when a provider returns `CitationPart`s anyway, those win. Restoring native
+  Anthropic document citations requires upstream opt-in support; it is not implemented.
+- **`Citations.Citation` fields other than `cited_text` are optional.** lm15
+  citations carry text, title and URL, but native document indexes and character
+  offsets are not preserved, even if the provider reports them. Prompt-parsed
+  citations may include these fields; they are model output, not native provenance.
+- **Audio and files on Chat Completions endpoints.** The optional LiteLLM engine
+  preserves `input_audio` and `file` blocks for `dspy.Audio`, inline `dspy.File`
+  data and uploaded file IDs. This is compatibility support, not native parity.
+  Native lm15 Chat carries text and images only and, with `engine="lm15"`, raises
+  `LMUnsupportedFeatureError` for these inputs. OpenAI Responses supports files,
+  **not audio**: switching `gpt-audio-mini` to `model_type="responses"` does not
+  fix audio support. Gemini supports native audio and files. Anthropic supports
+  documents but not audio. Compatibility text-completion endpoints reject image,
+  audio and file inputs rather than silently dropping them.
+- **Strict function tools.** The bundled lm15 `FunctionTool` cannot represent
+  per-tool `strict=True`. Both Chat Completions and flat Responses tool
+  dictionaries with this setting raise `LMUnsupportedFeatureError` rather than
+  silently dropping enforcement. `strict=False` remains accepted. This does
+  not affect strict structured outputs through `response_format`.
+- **Reasoning summaries.** When a Responses-API model runs with native
+  reasoning, DSPy asks for `summary="auto"` so `dspy.Reasoning` fields can be
+  filled from the response. `reasoning={"enabled": False}` and
+  `reasoning={"effort": "none"}` normalize to `Reasoning(effort="off")`;
+  explicitly disabled reasoning does not request a summary.
 
 ## Breaking replacement of the experimental 3.3 types
 
@@ -348,21 +510,16 @@ longer exported from `dspy` or `dspy.core`. This is not a drop-in rename:
 lm15 uses frozen dataclasses, not Pydantic models. Required identities, roles,
 nonempty messages, and media-source validation differ. File names, document
 citation settings and arbitrary part metadata do not all have direct canonical
-equivalents; ordinary compatibility calls retain those provider-specific inputs.
+equivalents; see [behaviour changes](#behaviour-changes-worth-knowing).
 
 Old pickled objects containing the removed classes are not automatically migrated.
 Load and export them in their original environment first. This is separate from
 ordinary provider-response caches and ordinary saved-program configuration.
 
-Custom adapters should migrate to `lm(request)` / `await lm.acall(request)` and
-parse the returned lm15 `Response`. In 3.5 this is the internal contract throughout
-DSPy: adapters must not pass OpenAI-style dictionaries or use the list-returning
-prompt convenience. Existing 3.4 adapters can continue running during migration,
-but must not depend on the removed `dspy.clients.openai_format` module.
-
-The full built-in adapter migration is scheduled for 3.5; the 3.4 implementation
-still renders dictionary messages and parses list outputs. The temporary internal
-warning marker is not a public API for custom adapters to use.
+Custom adapters must use `lm(request)` / `await lm.acall(request)` and parse the
+lm15 `Response`, not OpenAI-style dictionaries or list-returning convenience calls.
+The removed `dspy.clients.openai_format` module and temporary internal warning
+marker are not migration APIs.
 
 DSPy's signature types (`Image`, `Audio`, `File`, `Tool`, `ToolCalls`, `History`,
 `Reasoning`, etc.) and error classes are not removed.

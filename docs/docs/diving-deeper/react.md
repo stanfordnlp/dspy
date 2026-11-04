@@ -158,26 +158,29 @@ If the loop reaches `max_iters`, returns no calls, fails to parse, or exceeds th
 
 Unlike ReAct, ReActV2 does not currently truncate old history events on context overflow.
 
+### Turn budget
+
+ReActV2 always tells the model how many turns it has. Every LM call contains a `turn_budget` input that details the current turn and how many turns remain before the model must submit. Its value reads, for example, `Turn 3 of 10 (7 more after this one).`. The count follows the effective `max_iters`, including a per-call override. The forced final call shows ``No turns remain. Call `submit` now with your final outputs.``
+
+Showing an agent its remaining budget follows [Budget-Aware Tool-Use Enables Effective Agent Scaling](https://arxiv.org/abs/2511.17006), where a per-step budget status let ReAct agents keep improving with larger tool budgets at lower cost.
+
 ### Prompt-caching behavior
 
 Structured history makes each completed turn an append-only message group. On the next request, the system instructions and all earlier user/assistant/tool messages remain a stable prefix; only the newest result and request are appended. Providers with prompt caching can therefore reuse more of the prior request instead of reprocessing one ever-growing, newly formatted trajectory value.
 
-For Anthropic models, enable provider-side prompt caching on the LM with LiteLLM's cache-control injection points:
+For Anthropic models, request provider-side prompt caching with lm15's history-prefix policy:
 
 ```python
 lm = dspy.LM(
     "anthropic/claude-sonnet-4-5-20250929",
-    cache_control_injection_points=[
-        {"location": "message", "role": "system"},
-        {"location": "message", "index": -1},
-    ],
+    prompt_cache=dspy.lm15.CacheConfig(prefix="history"),
 )
 
 with dspy.context(lm=lm):
     result = agent(question="What is DSPy?")
 ```
 
-The first injection point caches the stable system instructions. The second places a checkpoint on the trailing turn, allowing Anthropic to reuse the preceding conversation prefix as ReActV2 appends history. Anthropic only caches prefixes that meet the model's minimum token count, and its default ephemeral cache has a limited lifetime. See [Using Provider-Side Prompt Caching](../tutorials/cache/index.md#using-provider-side-prompt-caching) for the general DSPy setup and the [LiteLLM prompt-caching documentation](https://docs.litellm.ai/docs/tutorials/prompt_caching#configuration) for provider details.
+The history policy asks lm15 to mark the reusable conversation prefix as ReActV2 appends history. It does not enable DSPy's answer cache or guarantee a provider cache hit. Anthropic only caches prefixes that meet the model's minimum token count, and its default ephemeral cache has a limited lifetime. See [Using Provider-Side Prompt Caching](../tutorials/cache/index.md#using-provider-side-prompt-caching) for native configuration and the optional LiteLLM engine's provider-specific injection options.
 
 Native tool replay gives the cleanest provider-visible structure, but non-native mode still benefits from stable multi-turn history. Internal testing has seen cost reductions of up to 50% on some tasks. Actual savings depend on the provider's cache policy, model, request shape, and the size of tool results; they are not guaranteed for every workload.
 

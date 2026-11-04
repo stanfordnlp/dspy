@@ -4,6 +4,36 @@
 
 This implements the approach described in ["Recursive Language Models" (Zhang, Kraska, Khattab, 2025)](https://arxiv.org/abs/2512.24601).
 
+## Migrating from CodeAct or ProgramOfThought
+
+`dspy.CodeAct` and `dspy.ProgramOfThought` were deprecated in DSPy 3.4 and removed in DSPy 3.5, including their `dspy.predict` imports. Use `dspy.RLM` for code-executing programs. RLM remains experimental; it is a replacement, not a compatibility alias.
+
+Keep your task signature and named inputs, and replace the module constructor:
+
+```python
+import dspy
+
+# After configuring dspy.settings.lm:
+solve = dspy.RLM("question -> answer")
+result = solve(question="What is 12 factorial divided by the sum of primes below 30?")
+print(result.answer)
+
+def add(a: int, b: int) -> int:
+    """Add two integers."""
+    return a + b
+
+# For programs that previously supplied tools:
+agent = dspy.RLM("question -> answer", tools=[add])
+```
+
+- RLM runs an iterative Python REPL and submits the signature's output fields with `SUBMIT(...)`. It does not use the old `generated_code` / `finished` protocol or the three code-generation, regeneration, and answer predictors. Custom prompts and code that accessed those internal predictors must be rewritten.
+- `max_iters` now limits REPL iterations, not just code-repair attempts. Review your iteration budget rather than assuming the old value has identical semantics. `max_llm_calls` separately limits sub-LM calls.
+- Pass tools with `tools=[...]`. RLM exposes them as host-side callables through the interpreter, rather than copying their source definitions into the sandbox. Host tools retain their own dependencies and privileges; sandbox restrictions do not apply to their host-side execution.
+- `interpreter_factory=...` and `dspy.configure(interpreter_factory=...)` remain supported. RLM requires an interpreter that supports its mutable tools dictionary and sandbox DSPy facade; see [interpreter factories](../../diving-deeper/rlm.md#extending-the-sandbox-with-tools-and-inputs). RLM does not accept a caller-owned interpreter as a positional override.
+- Rebuild and re-optimize programs that used the removed modules. Their saved predictor states and internal trajectory formats are not interchangeable with RLM's.
+
+See the [RLM deep dive](../../diving-deeper/rlm.md) for execution, outputs, and interpreter lifecycle details, and the installation instructions below for the default sandbox runtime.
+
 ## When to Use RLM
 
 As contexts grow, LLM performance degrades — a phenomenon known as [context rot](https://research.trychroma.com/context-rot). RLMs address this by separating the _variable space_ (information stored in the REPL) from the _token space_ (what the LLM actually processes). The LLM dynamically loads only the context it needs, when it needs it.

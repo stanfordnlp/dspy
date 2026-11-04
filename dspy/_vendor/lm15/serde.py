@@ -8,12 +8,14 @@ in memory.  No name translation (no "arguments" vs "input" split).
 
 from __future__ import annotations
 
+from pathlib import PurePath, PureWindowsPath
 from typing import Any
 
 from .adaptation import adaptation_from_dict, adaptation_to_dict
 from .models import (
     InferenceModelInfo,
     InferencePricing,
+    PricingTier,
     ModelInfo,
     ModelOrigin,
 )
@@ -192,7 +194,7 @@ def part_to_dict(part: Part) -> dict[str, Any]:
         if part.file_id is not None:
             d["file_id"] = part.file_id
         if part.path is not None:
-            d["path"] = str(part.path)
+            d["path"] = _wire_path(part.path)
         if hasattr(part, "detail") and part.detail is not None:
             d["detail"] = part.detail
 
@@ -925,6 +927,18 @@ def batch_entry_from_dict(d: dict[str, Any]) -> BatchEntry:
 
 # ─── Files ─────────────────────────────────────────────────────────
 
+def _wire_path(path: PurePath | str) -> str:
+    """A local path on the wire: ``/`` as the separator on every OS (INV-009,
+    clarified 2026-09-24), so the same request serializes identically on
+    Windows, where ``str(Path("/data/x"))`` is ``\\data\\x``; Windows reads
+    ``/`` back (``C:/Users/...``). Only a Windows path's ``\\`` is replaced: on
+    POSIX a backslash is an ordinary character in a name. (Not
+    ``as_posix()``: Python 3.10 turns ``\\data\\x`` into ``\\/data/x``.)"""
+    p = PurePath(path) if isinstance(path, str) else path
+    text = str(p)
+    return text.replace("\\", "/") if isinstance(p, PureWindowsPath) else text
+
+
 def file_upload_request_to_dict(r: FileUploadRequest) -> dict[str, Any]:
     """Bytes travel as base64 (the media-part precedent); a path-backed
     request serializes its path as a plain string, exactly like
@@ -937,7 +951,7 @@ def file_upload_request_to_dict(r: FileUploadRequest) -> dict[str, Any]:
         "bytes_data": base64.b64encode(r.bytes_data).decode("ascii") if r.bytes_data is not None else None,
         "media_type": r.media_type,
         "extensions": r.extensions,
-        "path": str(r.path) if r.path is not None else None,
+        "path": _wire_path(r.path) if r.path is not None else None,
     })
 
 
@@ -1126,6 +1140,30 @@ def video_job_from_dict(d: dict[str, Any]) -> VideoJobInfo:
 
 # ─── ModelInfo ───────────────────────────────────────────────────────
 
+def _pricing_tier_to_dict(t: PricingTier) -> dict[str, Any]:
+    return _clean_mapping({
+        "above_input_tokens": t.above_input_tokens,
+        "input_per_million": t.input_per_million,
+        "output_per_million": t.output_per_million,
+        "cache_read_per_million": t.cache_read_per_million,
+        "cache_write_per_million": t.cache_write_per_million,
+    })
+
+
+def _pricing_tier_from_dict(d: Any) -> PricingTier:
+    if not isinstance(d, dict):
+        raise TypeError("a pricing tier is a JSON object")
+    if "above_input_tokens" not in d:
+        raise ValueError("a pricing tier requires above_input_tokens")
+    return PricingTier(
+        above_input_tokens=d["above_input_tokens"],
+        input_per_million=d.get("input_per_million"),
+        output_per_million=d.get("output_per_million"),
+        cache_read_per_million=d.get("cache_read_per_million"),
+        cache_write_per_million=d.get("cache_write_per_million"),
+    )
+
+
 def _inference_pricing_to_dict(p: InferencePricing) -> dict[str, Any]:
     return _clean_mapping({
         "input_per_million": p.input_per_million,
@@ -1134,10 +1172,14 @@ def _inference_pricing_to_dict(p: InferencePricing) -> dict[str, Any]:
         "cache_write_per_million": p.cache_write_per_million,
         "currency": p.currency,
         "dimensions": p.dimensions,
+        "tiers": [_pricing_tier_to_dict(t) for t in p.tiers],
     })
 
 
 def _inference_pricing_from_dict(d: dict[str, Any]) -> InferencePricing:
+    tiers = d.get("tiers") or []
+    if not isinstance(tiers, list):
+        raise TypeError("pricing tiers is a JSON array")
     return InferencePricing(
         input_per_million=d.get("input_per_million"),
         output_per_million=d.get("output_per_million"),
@@ -1145,7 +1187,20 @@ def _inference_pricing_from_dict(d: dict[str, Any]) -> InferencePricing:
         cache_write_per_million=d.get("cache_write_per_million"),
         currency=d.get("currency", "USD"),
         dimensions=d.get("dimensions"),
+        tiers=tuple(_pricing_tier_from_dict(t) for t in tiers),
     )
+
+
+def inference_pricing_to_dict(p: InferencePricing) -> dict[str, Any]:
+    """Canonical JSON for InferencePricing (spec/types.md)."""
+    return _inference_pricing_to_dict(p)
+
+
+def inference_pricing_from_dict(d: dict[str, Any]) -> InferencePricing:
+    """InferencePricing from its canonical JSON; raises on an invalid value."""
+    if not isinstance(d, dict):
+        raise TypeError("InferencePricing is a JSON object")
+    return _inference_pricing_from_dict(d)
 
 
 def _inference_model_info_to_dict(i: InferenceModelInfo) -> dict[str, Any]:

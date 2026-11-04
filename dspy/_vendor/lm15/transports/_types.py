@@ -8,7 +8,7 @@ HTTP transport.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Iterator
+from typing import AsyncIterable, AsyncIterator, Awaitable, Callable, Iterable, Iterator
 
 
 @dataclass(slots=True)
@@ -21,6 +21,66 @@ class TransportRequest:
     connect_timeout: float | None = None
     read_timeout: float | None = None
     write_timeout: float | None = None
+    _admit: Callable[[], None] | None = field(default=None, repr=False, compare=False)
+
+
+class LineSplitter:
+    """Split body chunks into newline-terminated lines in linear time.
+
+    A provider can send one line of tens of megabytes (Gemini streams a 4K
+    image as a single 29.7 MB SSE line, lm15-contract INV-056) in thousands
+    of reads.  Searching the whole buffer for ``\\n`` after every read is
+    quadratic in that line's length; this searches only the bytes that have
+    not been searched yet, and copies a line once, when it is complete.
+    Lines keep their ``\\n``; a last line without one is yielded at the end.
+    """
+
+    __slots__ = ("_buf", "_searched")
+
+    def __init__(self) -> None:
+        self._buf = bytearray()
+        self._searched = 0
+
+    def feed(self, chunk: bytes) -> list[bytes]:
+        """Take one chunk; return the lines it completed, in order."""
+        buf = self._buf
+        buf += chunk
+        lines: list[bytes] = []
+        start = 0
+        idx = buf.find(b"\n", self._searched)
+        while idx >= 0:
+            lines.append(bytes(buf[start : idx + 1]))
+            start = idx + 1
+            idx = buf.find(b"\n", start)
+        if start:
+            del buf[:start]
+        self._searched = len(buf)
+        return lines
+
+    def finish(self) -> list[bytes]:
+        """End of body: the unterminated last line, if any."""
+        rest = bytes(self._buf)
+        self._buf.clear()
+        self._searched = 0
+        return [rest] if rest else []
+
+    @classmethod
+    def iterate(cls, chunks: Iterable[bytes]) -> Iterator[bytes]:
+        splitter = cls()
+        for chunk in chunks:
+            if chunk:
+                yield from splitter.feed(chunk)
+        yield from splitter.finish()
+
+    @classmethod
+    async def aiterate(cls, chunks: AsyncIterable[bytes]) -> AsyncIterator[bytes]:
+        splitter = cls()
+        async for chunk in chunks:
+            if chunk:
+                for line in splitter.feed(chunk):
+                    yield line
+        for line in splitter.finish():
+            yield line
 
 
 class TransportResponse:
@@ -44,7 +104,7 @@ class TransportResponse:
         headers: list[tuple[str, str]],
         http_version: str,
         chunks: Iterator[bytes],
-        release: "callable",
+        release: Callable[[bool], None],
     ) -> None:
         self.status = status
         self.reason = reason
@@ -79,21 +139,11 @@ class TransportResponse:
         return b"".join(self)
 
     def iter_lines(self) -> Iterator[bytes]:
-        """Yield newline-terminated byte lines from arbitrary body chunks."""
-        buf = bytearray()
-        for chunk in self:
-            if not chunk:
-                continue
-            buf.extend(chunk)
-            while True:
-                idx = buf.find(b"\n")
-                if idx < 0:
-                    break
-                line = bytes(buf[: idx + 1])
-                del buf[: idx + 1]
-                yield line
-        if buf:
-            yield bytes(buf)
+        """Yield newline-terminated byte lines from arbitrary body chunks.
+
+        Linear in the bytes received, however long a line is (see
+        :class:`LineSplitter`)."""
+        return LineSplitter.iterate(self)
 
     def close(self) -> None:
         self._release_once(body_consumed=self._complete)
@@ -130,7 +180,7 @@ class AsyncTransportResponse:
         headers: list[tuple[str, str]],
         http_version: str,
         chunks: AsyncIterator[bytes],
-        release: "callable",
+        release: Callable[[bool], Awaitable[None]],
     ) -> None:
         self.status = status
         self.reason = reason
@@ -170,22 +220,12 @@ class AsyncTransportResponse:
             buf.extend(c)
         return bytes(buf)
 
-    async def aiter_lines(self) -> AsyncIterator[bytes]:
-        """Yield newline-terminated byte lines from arbitrary body chunks."""
-        buf = bytearray()
-        async for chunk in self:
-            if not chunk:
-                continue
-            buf.extend(chunk)
-            while True:
-                idx = buf.find(b"\n")
-                if idx < 0:
-                    break
-                line = bytes(buf[: idx + 1])
-                del buf[: idx + 1]
-                yield line
-        if buf:
-            yield bytes(buf)
+    def aiter_lines(self) -> AsyncIterator[bytes]:
+        """Yield newline-terminated byte lines from arbitrary body chunks.
+
+        Linear in the bytes received, however long a line is (see
+        :class:`LineSplitter`)."""
+        return LineSplitter.aiterate(self)
 
     async def aclose(self) -> None:
         await self._release_once(body_consumed=self._complete)

@@ -53,7 +53,6 @@ nav:
             - Decision-Making with Jev Types: tutorials/jev_decisions/index.md
             - Multi-Hop RAG: tutorials/multihop_search/index.md
             - Privacy-Conscious Delegation: tutorials/papillon/index.md
-            - Program Of Thought: tutorials/program_of_thought/index.md
             - Image Generation Prompt iteration: tutorials/image_generation_prompting/index.md
             - Audio: tutorials/audio/index.md
         - Optimize AI Programs with DSPy:
@@ -124,13 +123,11 @@ nav:
             - api/modules/index.md
             - BestOfN: api/modules/BestOfN.md
             - ChainOfThought: api/modules/ChainOfThought.md
-            - CodeAct: api/modules/CodeAct.md
             - Flex: api/modules/Flex.md
             - Module: api/modules/Module.md
             - MultiChainComparison: api/modules/MultiChainComparison.md
             - Parallel: api/modules/Parallel.md
             - Predict: api/modules/Predict.md
-            - ProgramOfThought: api/modules/ProgramOfThought.md
             - ReAct: api/modules/ReAct.md
             - ReActV2: api/modules/ReActV2.md
             - Refine: api/modules/Refine.md
@@ -156,6 +153,7 @@ nav:
         - Primitives:
             - api/primitives/index.md
             - Audio: api/primitives/Audio.md
+            - BoundingBox: api/primitives/BoundingBox.md
             - Code: api/primitives/Code.md
             - Example: api/primitives/Example.md
             - History: api/primitives/History.md
@@ -196,7 +194,7 @@ nav:
         - Built with DSPy: community/built-with-dspy.md
         - Resources: community/community-resources.md
         - Contributing: community/how-to-contribute.md
-        - Normalized LM API Migration: community/normalized-lm-api-migration.md
+        - The LM Contract (lm15): community/normalized-lm-api-migration.md
     - FAQ:
         - FAQ: faqs.md
         - Cheatsheet: cheatsheet.md
@@ -282,6 +280,10 @@ plugins:
             "deep-dive/optimizers/miprov2.md": "api/optimizers/MIPROv2.md"
             "api/optimizers/GEPA/index.md": "api/optimizers/GEPA/overview.md"
             "diving-deeper/tools-react-and-mcp.md": "diving-deeper/react.md"
+            # Code-executing APIs removed in 3.5; keep old links useful.
+            "api/modules/CodeAct.md": "api/modules/RLM.md"
+            "api/modules/ProgramOfThought.md": "api/modules/RLM.md"
+            "tutorials/program_of_thought/index.md": "api/modules/RLM.md"
             "docs/quick-start/getting-started-01.md": "tutorials/rag/index.md"
             "docs/quick-start/getting-started-02.md": "tutorials/rag/index.md"
             "quick-start/getting-started-01.md": "tutorials/rag/index.md"

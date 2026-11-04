@@ -82,8 +82,8 @@ def with_capability_planning(fn):
 async def prepare_async(lm):
     """Resolve built-in capability hints off-loop, including LiteLLM lookup.
 
-    Native calls still never import LiteLLM. Custom/legacy LM capability hooks
-    keep their own contract and are not moved to worker threads.
+    Native calls still never import LiteLLM. Custom engines declare their own
+    capabilities and are not moved to worker threads.
     """
     scope = _planning.get()
     if scope is not None and scope.lm is lm and scope.value is not None:
@@ -103,9 +103,9 @@ def capabilities(lm):
 
 
 def _litellm_capabilities(lm, selection):
-    from dspy.clients.lm import _get_litellm
+    from dspy.clients._litellm import get_litellm
 
-    litellm = _get_litellm()
+    litellm = get_litellm(feature="dspy.LM")
     provider = selection.clients.get("custom_llm_provider")
     kwargs = {"custom_llm_provider": provider} if provider is not None else {}
     with litellm_errors(model=lm.model, provider=provider or lm._provider_name):
@@ -119,7 +119,7 @@ def _litellm_capabilities(lm, selection):
 
 
 def _capabilities(lm, options=None):
-    spec = lm.engine
+    spec = lm._capability_engine
     if not isinstance(spec, str):
         # A custom engine can declare the same hints as BaseLM. Missing
         # declarations remain false; do not consult an unrelated model catalog.

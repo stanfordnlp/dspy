@@ -38,3 +38,20 @@ def test_basic_example():
 
     assert final_pred.rationale == "my rationale"
     assert final_pred.answer == "blue"
+
+
+def test_comparing_native_completions_without_summaries():
+    class NativeLM(DummyLM):
+        @property
+        def supports_reasoning(self):
+            return True
+
+    lm = NativeLM([{"answer": "blue"}, {"answer": "green"}, {"rationale": "Choose blue", "answer": "blue"}])
+    with dspy.context(lm=lm):
+        candidates = dspy.ChainOfThought(BasicQA, n=2)(question="Sky color?").completions
+        assert candidates.reasoning == [None, None]
+        result = dspy.MultiChainComparison(BasicQA, M=2)(candidates, question="Sky color?")
+    assert result.answer == "blue"
+    prompt = lm.history[-1]["messages"][-1]["content"]
+    assert "blue" in prompt and "green" in prompt
+    assert "None" not in prompt

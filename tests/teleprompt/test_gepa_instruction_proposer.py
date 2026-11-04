@@ -10,8 +10,8 @@ from dspy.utils.dummies import DummyLM
 
 
 def count_messages_with_image_url_pattern(messages):
-    """Helper to count image URLs in messages - borrowed from image adapter tests"""
-    pattern = {"type": "image_url", "image_url": {"url": lambda x: isinstance(x, str)}}
+    """Count lm15 image parts as recorded in LM history - borrowed from image adapter tests"""
+    pattern = {"type": "image", "media_type": lambda x: isinstance(x, str)}
 
     try:
 
@@ -149,7 +149,7 @@ def test_custom_proposer_without_reflection_lm():
             # This proposer manages its own external reflection LM
             with dspy.context(lm=external_reflection_lm):
                 # Use external LM for reflection (optional - could be any custom logic)
-                external_reflection_lm([{"role": "user", "content": "Improve this instruction"}])
+                external_reflection_lm("Improve this instruction")
                 return {name: f"Externally-improved: {candidate[name]}" for name in components_to_update}
 
     student = dspy.Predict("text -> label")
@@ -228,17 +228,19 @@ def test_image_serialization_into_strings():
                     feedback_analysis += f"  Outputs: {outputs}\n"
                     feedback_analysis += f"  Feedback: {feedback}\n\n"
 
-                context_lm = dspy.settings.lm
-                messages = [
-                    {"role": "system", "content": "You are an instruction improvement assistant."},
-                    {
-                        "role": "user",
-                        "content": f"Current instruction: {current_instruction}\n\nFeedback: {feedback_analysis}\n\nProvide an improved instruction:",
-                    },
-                ]
+                from dspy.lm15 import Message, Request
 
-                result = context_lm(messages=messages)
-                updated_components[component_name] = result[0]
+                context_lm = dspy.settings.lm
+                request = Request(
+                    model=context_lm.model,
+                    system="You are an instruction improvement assistant.",
+                    messages=(Message.user(
+                        f"Current instruction: {current_instruction}\n\nFeedback: {feedback_analysis}\n\nProvide an improved instruction:"
+                    ),),
+                )
+
+                result = context_lm(request)
+                updated_components[component_name] = result.text
 
             return updated_components
 
@@ -331,13 +333,14 @@ def test_default_proposer(reasoning: bool, caplog):
 
     reflection_lm = DummyLM(
         [
-            {"improved_instruction": "Be more specific about image analysis"},
-            {"improved_instruction": "Focus on visual features when classifying"},
-            {"improved_instruction": "Consider contextual clues in the image"},
-            {"improved_instruction": "Analyze shape, color, and texture patterns"},
-            {"improved_instruction": "Look for distinguishing characteristics"},
+            {"new_instruction": "Be more specific about image analysis"},
+            {"new_instruction": "Focus on visual features when classifying"},
+            {"new_instruction": "Consider contextual clues in the image"},
+            {"new_instruction": "Analyze shape, color, and texture patterns"},
+            {"new_instruction": "Look for distinguishing characteristics"},
         ],
         reasoning=reasoning,
+        adapter=dspy.JSONAdapter(),
     )
 
     gepa = dspy.GEPA(
@@ -363,8 +366,10 @@ def test_default_proposer(reasoning: bool, caplog):
     assert len(lm.history) > 0, "LM should have been called"
     assert len(reflection_lm.history) > 0, "Reflection LM should have been called"
 
+    # The default InstructionProposer sends images to the reflection LM as structured content.
     images_in_history = check_images_in_history(reflection_lm.history)
 
-    assert images_in_history.has_text_serialized_images, (
-        "Expected to find serialized images (CUSTOM-TYPE-START-IDENTIFIER)"
+    assert images_in_history.has_structured_images, "Expected structured image_url parts in the reflection prompt"
+    assert not images_in_history.has_text_serialized_images, (
+        "Expected no serialized images (CUSTOM-TYPE-START-IDENTIFIER) in the reflection prompt"
     )

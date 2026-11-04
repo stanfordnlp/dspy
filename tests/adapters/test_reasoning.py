@@ -93,7 +93,7 @@ def test_reasoning_with_chain_of_thought():
     lm = DummyLM([{"reasoning": "Let me think step by step", "answer": "42"}])
     dspy.configure(lm=lm)
 
-    cot = dspy.ChainOfThought("question -> answer")
+    cot = dspy.ChainOfThought("question -> answer", rationale_field_type=str)
     result = cot(question="What is the answer?")
 
     # Test that we can use string methods on result.reasoning
@@ -121,9 +121,11 @@ def test_native_reasoning_default_survives_provider_omission():
     # Native reasoning strips the field from the signature the LM formats against; the provider
     # then omits native reasoning entirely.
     processed = Sig.delete("reasoning")
-    outputs = [{"text": "[[ ## answer ## ]]\n42\n\n[[ ## completed ## ]]"}]
+    from tests.test_utils.engines import make_response
 
-    value = adapter._call_postprocess(processed, Sig, outputs, None, {})[0]
+    responses = [make_response("[[ ## answer ## ]]\n42\n\n[[ ## completed ## ]]")]
+
+    value = adapter._call_postprocess(processed, Sig, responses)[0]
 
     assert value["answer"] == "42"
     assert value["reasoning"] == dspy.Reasoning(content="(omitted)")
@@ -133,7 +135,7 @@ def test_gemini_native_reasoning_sets_include_thoughts_and_thinking_level():
     from dataclasses import replace
 
     from dspy._vendor.lm15.providers.gemini import GeminiLM
-    from dspy.clients.execution import _canonical, prepare
+    from dspy.clients.execution import prepare
 
     class Sig(dspy.Signature):
         question: str = dspy.InputField()
@@ -146,20 +148,22 @@ def test_gemini_native_reasoning_sets_include_thoughts_and_thinking_level():
     assert "reasoning" not in adapted.output_fields
     assert lm_kwargs["reasoning_effort"] == "low"
 
-    call = prepare(lm, "What is 2+2?", None, lm_kwargs)
-    req = _canonical(call)
+    call = prepare(lm, "What is 2+2?", dict(lm_kwargs))
+    req = call.request
     provider_lm = GeminiLM(api_key="fake")
     payload = provider_lm._payload(replace(req, model="au.gemini-3.5-flash"))
     thinking_cfg = payload["generationConfig"]["thinkingConfig"]
-    assert thinking_cfg == {"thinkingLevel": "low"}
+    assert thinking_cfg == {
+        "includeThoughts": True,
+        "thinkingLevel": "low",
+    }
 
-    req_with_summary = replace(
+    req_without_summary = replace(
         req,
         model="au.gemini-3.5-flash",
-        config=replace(req.config, reasoning=replace(req.config.reasoning, summary="auto")),
+        config=replace(req.config, reasoning=replace(req.config.reasoning, summary=None)),
     )
-    payload_with_summary = provider_lm._payload(req_with_summary)
-    assert payload_with_summary["generationConfig"]["thinkingConfig"] == {
-        "includeThoughts": True,
+    payload_without_summary = provider_lm._payload(req_without_summary)
+    assert payload_without_summary["generationConfig"]["thinkingConfig"] == {
         "thinkingLevel": "low",
     }
