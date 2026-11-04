@@ -8,7 +8,6 @@ import pydantic
 import pytest
 
 import dspy
-from dspy.primitives import facade
 from dspy.primitives.code_interpreter import CodeExecutionError
 from dspy.utils.dummies import DummyLM
 
@@ -67,21 +66,6 @@ class GradeModule(dspy.Module):
 '''
 
 
-@pytest.fixture
-def built_signatures(monkeypatch):
-    """Signatures of the predictors the host builds for sandboxed code."""
-    signatures = []
-    build = facade.FacadeInvocation._build_predictor
-
-    def spy(self, kind, signature, kwargs):
-        predictor = build(self, kind, signature, kwargs)
-        signatures.append(predictor.signature)
-        return predictor
-
-    monkeypatch.setattr(facade.FacadeInvocation, "_build_predictor", spy)
-    return signatures
-
-
 def assert_same_fields(actual, expected):
     assert actual.instructions == expected.instructions
     assert list(actual.input_fields) == list(expected.input_fields)
@@ -102,26 +86,28 @@ def assert_graded(lm, prediction):
 
 
 @pytest.mark.parametrize("factory", INTERPRETERS)
-def test_flex_class_signature_keeps_field_metadata(factory, built_signatures):
+def test_flex_class_signature_keeps_field_metadata(factory):
     flex = dspy.Flex(Grade, interpreter_factory=factory)
     lm = DummyLM([ANSWER])
-    with dspy.context(lm=lm):
+    with dspy.context(lm=lm, trace=[]):
         prediction = flex(essay="An essay.")
+        [(predictor, _, _)] = dspy.settings.trace
 
     assert_graded(lm, prediction)
-    assert_same_fields(built_signatures[-1], Grade)
+    assert_same_fields(predictor.signature, Grade)
 
 
 @pytest.mark.parametrize("factory", INTERPRETERS)
-def test_sandboxed_class_signature(factory, built_signatures):
+def test_sandboxed_class_signature(factory):
     flex = dspy.Flex(Grade, interpreter_factory=factory)
     flex.load_state({"module_src": SANDBOX_SIGNATURE_SRC})
     lm = DummyLM([ANSWER])
-    with dspy.context(lm=lm):
+    with dspy.context(lm=lm, trace=[]):
         prediction = flex(essay="An essay.")
+        [(predictor, _, _)] = dspy.settings.trace
 
     assert_graded(lm, prediction)
-    assert_same_fields(built_signatures[-1], Grade)
+    assert_same_fields(predictor.signature, Grade)
 
 
 @pytest.mark.parametrize("factory", INTERPRETERS)
@@ -130,7 +116,7 @@ def test_sandboxed_class_signature_requires_input_or_output_field(factory):
     flex.load_state({"module_src": SANDBOX_SIGNATURE_SRC.replace(' = dspy.InputField(desc="the student\'s essay, verbatim")', "")})
 
     with dspy.context(lm=DummyLM([ANSWER])):
-        with pytest.raises(CodeExecutionError, match=r"\['essay'\] in SubGrade must be declared with InputField"):
+        with pytest.raises(CodeExecutionError, match=r"essay.*must be declared with InputField or OutputField"):
             flex(essay="An essay.")
 
 
@@ -143,7 +129,7 @@ def test_flex_baseline_skips_constraints_that_are_not_plain_numbers(factory):
         amount: Decimal = dspy.OutputField(gt=Decimal("0"), le=1000)
 
     flex = dspy.Flex(Pay, interpreter_factory=factory)
-    assert "amount: 'Decimal' = dspy.OutputField(le=1000)" in flex.module_src
+    assert "amount: Decimal = dspy.OutputField(le=1000)" in flex.module_src
     with dspy.context(lm=DummyLM([{"amount": "12.50"}])):
         assert flex(text="Total: 12.50").amount == Decimal("12.50")
 

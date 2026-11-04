@@ -99,7 +99,7 @@ def test_baseline_omits_a_type_the_signature_parser_cannot_read_back() -> None:
 
 @deno_required
 def test_custom_type_resolves_when_it_is_not_on_the_calling_stack() -> None:
-    """The regression `bridge._resolve_signature` exists for.
+    """The regression the explicit custom-type handoff exists for.
 
     dspy resolves a type named in a signature string by walking caller frames for the bare name,
     so `from myapp.models import Contact` accidentally works while `import myapp.models as models`
@@ -125,16 +125,18 @@ def test_custom_type_resolves_when_it_is_not_on_the_calling_stack() -> None:
     out = program(text="Ada is 36")  # raised `Unknown name: Contact` before the handoff
     assert out.contact == _offstack_types.Contact(name="Ada", age=36)
 
-    # And the host-built sub-predictor resolved `Contact` to the module's class, not a lookalike:
-    inv = program._bridge.invocation()
-    inv.construct("Predict", "text: str -> contact: Contact", "p", {})
-    assert inv._predictors["p"].signature.output_fields["contact"].annotation is _offstack_types.Contact
+    # And the host trace names `Contact` as the module's class, not a lookalike, and holds a `Contact`:
+    with dspy.context(trace=[]):
+        program(text="Ada is 36")
+        [(predictor, _, traced)] = dspy.settings.trace
+    assert predictor.signature.output_fields["contact"].annotation is _offstack_types.Contact
+    assert traced.contact == _offstack_types.Contact(name="Ada", age=36)
 
 
 @deno_required
 def test_sub_signature_naming_a_custom_type_resolves_on_the_host() -> None:
-    # The sandbox sends a signature as text; the host resolves `Person` from the Flex's own
-    # signature, since dspy's usual caller-frame lookup runs inside dspy and cannot see it.
+    # The sandbox gets `Person` rebuilt from its schema; the host resolves the trace's `Person` from the
+    # Flex's own signature, since dspy's usual caller-frame lookup runs inside dspy and cannot see it.
     source = textwrap.dedent(
         """
         class M(dspy.Module):
@@ -149,10 +151,10 @@ def test_sub_signature_naming_a_custom_type_resolves_on_the_host() -> None:
     program = Flex(Extract, interpreter_factory=_sandbox)
     program._bind_code(source)
     dspy.configure(lm=DummyLM([{"person": json.dumps({"name": "Ada", "age": 36})}] * 2))
-    program(text="Ada is 36")  # would raise `Unknown name: Person` if resolution failed
-    inv = program._bridge.invocation()
-    inv.construct("Predict", "text: str -> person: Person", "p", {})
-    assert inv._predictors["p"].signature.output_fields["person"].annotation is Person
+    with dspy.context(trace=[]):
+        program(text="Ada is 36")  # would raise `Unknown name: Person` if resolution failed
+        [(predictor, _, _)] = dspy.settings.trace
+    assert predictor.signature.output_fields["person"].annotation is Person
 
 
 # =============================================================================

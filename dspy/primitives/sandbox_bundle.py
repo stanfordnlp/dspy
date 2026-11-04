@@ -108,6 +108,12 @@ def prepare_bundle(deno_command: list[str], deno_dir: str | None, runner: str, r
         return _guarded(_prepare_bundle, tuple(deno_command), deno_dir, runner, root or bundle_root())
 
 
+@functools.cache
+def sandbox_modules() -> frozenset[str]:
+    """The top-level modules the dspy bundle provides, by this environment's metadata."""
+    return frozenset(top for dist in _distributions() for top in _top_level(dist))
+
+
 def _guarded(prepare, *args):
     # The archives are checked on every call, so a cleared cache gets rebuilt. A failed build is retried only after
     # _RETRY_AFTER seconds: callers in between fail fast (or fall back) instead of each paying for another attempt,
