@@ -251,6 +251,7 @@ class PythonInterpreter:
         tools: dict[str, Callable[..., str]] | None = None,
         output_fields: list[dict] | None = None,
         callbacks: list[BaseCallback] | None = None,
+        large_var_threshold: int = LARGE_VAR_THRESHOLD,
     ) -> None:
         """
         Args:
@@ -267,9 +268,19 @@ class PythonInterpreter:
             output_fields: List of output field definitions for typed SUBMIT signature.
                    Each dict should have 'name' and optionally 'type' keys.
             callbacks: Optional instance-level callback handlers.
+            large_var_threshold: Serialized size in characters above which a variable is passed to the
+                   sandbox as a JSON file instead of being inlined into the executed code as a literal.
+                   Inlining costs many times the payload size in peak memory, so lowering this (e.g. to
+                   1 MiB) helps with multi-megabyte inputs. Values on the file path round-trip through
+                   JSON, so non-string dict keys become strings. Must be between 0 and the default,
+                   which stays below Pyodide's 128 MB FFI limit.
         """
         if isinstance(deno_command, dict):
             raise TypeError("deno_command must be a list of strings, not a dict")
+        if isinstance(large_var_threshold, bool) or not isinstance(large_var_threshold, int):
+            raise TypeError("large_var_threshold must be an int")
+        if not 0 <= large_var_threshold <= LARGE_VAR_THRESHOLD:
+            raise ValueError(f"large_var_threshold must be between 0 and {LARGE_VAR_THRESHOLD}")
 
         self.enable_read_paths = enable_read_paths or []
         self.enable_write_paths = enable_write_paths or []
@@ -287,6 +298,7 @@ class PythonInterpreter:
         self.tools = dict(tools) if tools else {}
         self.output_fields = output_fields
         self.callbacks = list(callbacks or [])
+        self.large_var_threshold = large_var_threshold
         self._tools_registered = False
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
@@ -699,7 +711,7 @@ class PythonInterpreter:
         small_assignments = []
         for k, v in variables.items():
             serialized = self._serialize_value(v)
-            if len(serialized) > LARGE_VAR_THRESHOLD:
+            if len(serialized) > self.large_var_threshold:
                 large_vars[k] = json.dumps(self._to_json_compatible(v))
             else:
                 small_assignments.append(f"{k} = {serialized}")

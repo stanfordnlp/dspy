@@ -393,7 +393,7 @@ def test_serialize_pydantic_in_list_variable(pooled_interpreter):
     assert result == 3
 
 
-def test_pydantic_json_values_are_compatible_with_large_variable_injection(monkeypatch):
+def test_pydantic_json_values_are_compatible_with_large_variable_injection():
     """The large-variable path should serialize Pydantic's JSON-mode values."""
     value = _TimestampedHit(
         document_id=7,
@@ -405,11 +405,10 @@ def test_pydantic_json_values_are_compatible_with_large_variable_injection(monke
         "title": "dated",
         "created_at": "2026-05-14T08:07:27",
     }
-    interpreter = PythonInterpreter()
+    interpreter = PythonInterpreter(large_var_threshold=0)
 
     assert interpreter._to_json_compatible(value) == expected
 
-    monkeypatch.setattr("dspy.primitives.python_interpreter.LARGE_VAR_THRESHOLD", 0)
     code = interpreter._inject_variables("hit", {"hit": value})
     assert "hit = json.loads" in code
     assert json.loads(interpreter._pending_large_vars["hit"]) == expected
@@ -1498,6 +1497,45 @@ def test_large_variable_threshold_boundary():
     interpreter._pending_large_vars = {}
     interpreter._inject_variables("print(x)", {"x": over_threshold})
     assert "x" in interpreter._pending_large_vars, "Serialized size over threshold should use filesystem"
+
+
+def test_large_var_threshold_is_configurable():
+    """A lowered threshold routes multi-megabyte values through the filesystem path (#10689)."""
+    payload = "x" * (2 * 1024 * 1024)
+
+    default = PythonInterpreter()
+    default._inject_variables("print(x)", {"x": payload})
+    assert default._pending_large_vars == {}
+
+    lowered = PythonInterpreter(large_var_threshold=1024 * 1024)
+    code = lowered._inject_variables("print(x)", {"x": payload, "y": "small"})
+    assert json.loads(lowered._pending_large_vars["x"]) == payload
+    assert "y" not in lowered._pending_large_vars
+    assert "x = json.loads(open('/tmp/dspy_vars/x.json').read())" in code
+    assert payload not in code
+
+
+@pytest.mark.parametrize("bad_threshold", [-1, LARGE_VAR_THRESHOLD + 1])
+def test_large_var_threshold_out_of_range(bad_threshold):
+    with pytest.raises(ValueError, match="large_var_threshold"):
+        PythonInterpreter(large_var_threshold=bad_threshold)
+
+
+@pytest.mark.parametrize("bad_threshold", [1.5, "1024", True])
+def test_large_var_threshold_wrong_type(bad_threshold):
+    with pytest.raises(TypeError, match="large_var_threshold"):
+        PythonInterpreter(large_var_threshold=bad_threshold)
+
+
+def test_lowered_large_var_threshold_executes(pooled_interpreter):
+    """Values below the default threshold still reach the sandbox intact via the file path."""
+    data = {"text": "hello\x00world" * 10, "nums": [1, 2, 3]}
+    pooled_interpreter.large_var_threshold = 16
+    try:
+        assert pooled_interpreter.execute("data", variables={"data": data}) == data
+        assert "data" in pooled_interpreter._pending_large_vars
+    finally:
+        pooled_interpreter.large_var_threshold = LARGE_VAR_THRESHOLD
 
 
 def test_enable_read_paths_symlink(tmp_path):
