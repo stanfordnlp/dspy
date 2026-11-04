@@ -15,6 +15,7 @@ import threading
 import time
 from pathlib import Path
 
+from dspy.primitives.deno_utils import deno_subprocess_env
 from dspy.utils.caching import DSPY_CACHEDIR
 from dspy.utils.exceptions import DSPyError
 
@@ -39,7 +40,7 @@ class SandboxBundleError(DSPyError):
     """A sandbox archive could not be prepared."""
 
 
-def cache_enabled() -> bool:
+def sandbox_cache_env_enabled() -> bool:
     """Whether interpreters may write the sandbox cache, unless ``DSPY_SANDBOX_CACHE`` turns it off (``0``,
     ``false``, ``no`` or ``off``)."""
     return os.environ.get("DSPY_SANDBOX_CACHE", "").strip().lower() not in ("0", "false", "no", "off")
@@ -78,8 +79,6 @@ def _guarded(prepare, *args):
 def _build(deno_command: tuple[str, ...], deno_dir: str | None, runner: str, read: list[str], write: Path,
            flags: list[str]) -> None:
     """Run the runner in a build mode, which runs no sandboxed code and may write only ``write``."""
-    from dspy.primitives.python_interpreter import _deno_subprocess_env
-
     args = [
         *deno_command,
         f"--allow-read={','.join(p for p in (deno_dir, runner, *read) if p)}",
@@ -89,7 +88,7 @@ def _build(deno_command: tuple[str, ...], deno_dir: str | None, runner: str, rea
         *([f"--dspy-deno-dir={deno_dir}"] if deno_dir else []),
         *flags,
     ]
-    result = subprocess.run(args, capture_output=True, text=True, check=False, timeout=600, env=_deno_subprocess_env())
+    result = subprocess.run(args, capture_output=True, text=True, check=False, timeout=600, env=deno_subprocess_env())
     if result.returncode != 0:
         raise SandboxBundleError(f"Building a Pyodide sandbox archive failed:\n{result.stdout}\n{result.stderr}")
 

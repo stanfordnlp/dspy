@@ -20,10 +20,10 @@ from pydantic import BaseModel, ConfigDict
 
 import dspy.primitives.python_interpreter as python_interpreter
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.primitives.deno_utils import deno_subprocess_env
 from dspy.primitives.python_interpreter import (
     LARGE_VAR_THRESHOLD,
     PythonInterpreter,
-    _deno_subprocess_env,
     _find_deno_executable,
     _make_jsonable,
     _validate_deno_version,
@@ -318,7 +318,7 @@ result"""
 def test_default_runner_starts_offline_from_warm_shared_cache(monkeypatch, tmp_path):
     shared_cache = tmp_path / "deno"
     runner = str(Path(python_interpreter.__file__).with_name("runner.js"))
-    env = {**_deno_subprocess_env(), "DENO_DIR": str(shared_cache)}
+    env = {**deno_subprocess_env(), "DENO_DIR": str(shared_cache)}
     subprocess.run([_find_deno_executable(), "cache", "--no-config", "--no-lock", runner], env=env, check=True)
     monkeypatch.setenv("DENO_DIR", str(shared_cache))
 
@@ -525,7 +525,7 @@ def test_deno_subprocess_env_disables_package_json(monkeypatch):
     monkeypatch.setenv("DENO_NO_PACKAGE_JSON", "0")
     monkeypatch.setenv("DSPY_DENO_TEST_VALUE", "preserved")
 
-    env = _deno_subprocess_env()
+    env = deno_subprocess_env()
 
     assert env["DENO_NO_PACKAGE_JSON"] == "1"
     assert env["DSPY_DENO_TEST_VALUE"] == "preserved"

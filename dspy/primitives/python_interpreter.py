@@ -27,7 +27,8 @@ from pydantic import BaseModel
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeExecutionError, CodeInterpreterError, FinalOutput
-from dspy.primitives.sandbox_bundle import bundle_root, cache_enabled
+from dspy.primitives.deno_utils import deno_subprocess_env
+from dspy.primitives.sandbox_bundle import bundle_root, sandbox_cache_env_enabled
 from dspy.utils.callback import BaseCallback, with_callbacks
 
 __all__ = ["PythonInterpreter", "FinalOutput", "CodeExecutionError", "CodeInterpreterError"]
@@ -95,13 +96,6 @@ def _find_deno_executable() -> str:
         return shutil.which("deno") or "deno"
 
 
-def _deno_subprocess_env() -> dict[str, str]:
-    """Build an environment that prevents ambient package.json discovery."""
-    env = os.environ.copy()
-    env["DENO_NO_PACKAGE_JSON"] = "1"
-    return env
-
-
 def _get_deno_version(deno_executable: str) -> tuple[int, int, int] | None:
     try:
         result = subprocess.run(
@@ -109,7 +103,7 @@ def _get_deno_version(deno_executable: str) -> tuple[int, int, int] | None:
             capture_output=True,
             text=True,
             check=False,
-            env=_deno_subprocess_env(),
+            env=deno_subprocess_env(),
             timeout=DENO_PROBE_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -293,7 +287,7 @@ class PythonInterpreter:
         self.tools = dict(tools) if tools else {}
         self.output_fields = output_fields
         self.callbacks = list(callbacks or [])
-        self.sandbox_cache = cache_enabled() if sandbox_cache is None else sandbox_cache
+        self.sandbox_cache = sandbox_cache_env_enabled() if sandbox_cache is None else sandbox_cache
         self._tools_registered = False
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
@@ -444,7 +438,7 @@ class PythonInterpreter:
                 capture_output=True,
                 text=True,
                 check=False,
-                env=_deno_subprocess_env(),
+                env=deno_subprocess_env(),
                 timeout=DENO_PROBE_TIMEOUT_SECONDS,
             )
             if result.returncode == 0:
@@ -600,7 +594,7 @@ class PythonInterpreter:
                 stderr=subprocess.PIPE,
                 text=True,
                 encoding="UTF-8",
-                env=_deno_subprocess_env() if self._uses_default_deno_command else os.environ.copy(),
+                env=deno_subprocess_env() if self._uses_default_deno_command else os.environ.copy(),
             )
         except FileNotFoundError as e:
             install_instructions = (
