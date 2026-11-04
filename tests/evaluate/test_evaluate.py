@@ -1,10 +1,13 @@
 import csv
+import datetime
+import enum
 import json
 import signal
 import tempfile
 import threading
 from unittest.mock import patch
 
+import pydantic
 import pytest
 
 import dspy
@@ -566,6 +569,39 @@ def test_evaluate_save_as_csv_with_later_prediction_fields(tmp_path):
     assert reader.fieldnames == ["x", "example_answer", "pred_answer", "graded", "explanation"]
     assert rows[0]["explanation"] == ""
     assert rows[1]["explanation"] == "later field"
+
+
+def test_evaluate_save_as_json_with_non_json_output_types(tmp_path):
+    class Color(enum.Enum):
+        RED = "red"
+
+    class Invoice(pydantic.BaseModel):
+        vendor: str
+        issued: datetime.date
+
+    class Program(dspy.Module):
+        def forward(self, x):
+            return dspy.Prediction(
+                day=datetime.date(2026, 11, 4),
+                color=Color.RED,
+                invoice=Invoice(vendor="ACME", issued=datetime.date(2026, 11, 3)),
+            )
+
+    json_path = tmp_path / "results.json"
+    evaluator = Evaluate(
+        devset=[dspy.Example(x=1).with_inputs("x")],
+        metric=lambda example, prediction: 1.0,
+        display_progress=False,
+        save_as_json=str(json_path),
+    )
+
+    result = evaluator(Program())
+
+    assert result.score == 100.0
+    rows = json.loads(json_path.read_text())
+    assert rows[0]["day"] == "2026-11-04"
+    assert rows[0]["color"] == "red"
+    assert rows[0]["invoice"] == {"vendor": "ACME", "issued": "2026-11-03"}
 
 
 def test_evaluate_raises_on_empty_devset():

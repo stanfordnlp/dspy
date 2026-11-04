@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
 import tqdm
+from pydantic_core import to_jsonable_python
 
 import dspy
 from dspy.primitives.prediction import Prediction
@@ -221,7 +222,7 @@ class Evaluate:
                     save_as_json,
                     "w",
             ) as f:
-                json.dump(data, f)
+                json.dump(data, f, default=_json_default)
 
         return EvaluationResult(
             score=round(100 * ncorrect / ntotal, 2),
@@ -328,6 +329,12 @@ def merge_dicts(d1, d2) -> dict:
             merged[k] = v
 
     return merged
+
+
+def _json_default(value):
+    # Program outputs can be dates, enums or Pydantic models holding them, which json can't encode.
+    # Encode those like Pydantic does, and only stringify the values it can't encode either.
+    return to_jsonable_python(value, fallback=str)
 
 
 def truncate_cell(content) -> str:
