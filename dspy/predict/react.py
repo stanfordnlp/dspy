@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import dspy
 from dspy.adapters.types.tool import Tool
+from dspy.adapters.utils import _get_adapter
 from dspy.primitives.module import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.exceptions import ContextWindowExceededError, format_error_for_lm
@@ -25,7 +26,7 @@ class ReAct(Module):
         Args:
             signature: The signature of the module, which defines the input and output of the react module.
             tools (list[Callable]): A list of functions, callable objects, or `dspy.Tool` instances.
-            max_iters (Optional[int]): The maximum number of iterations to run. Defaults to 10.
+            max_iters (Optional[int]): The maximum number of iterations to run. Defaults to 20.
 
         Examples:
 
@@ -88,7 +89,7 @@ class ReAct(Module):
         self.extract = dspy.ChainOfThought(fallback_signature)
 
     def _format_trajectory(self, trajectory: dict[str, Any]):
-        adapter = dspy.settings.adapter or dspy.ChatAdapter()
+        adapter = _get_adapter()
         trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 

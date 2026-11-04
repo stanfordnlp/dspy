@@ -4,7 +4,7 @@ Provides a RestrictedDisk subclass that overrides diskcache's fetch to use
 a restricted unpickler.
 
 Trust model:
-- litellm.types.* and openai.types.* are trusted by module prefix (pydantic
+- openai.types.* is trusted by module prefix (pydantic
   data models only, forward-compatible with library upgrades)
 - numpy reconstruction helpers are trusted by exact (module, name) pairs
 - user safe_types are trusted by exact (module, qualname) pairs
@@ -21,7 +21,6 @@ from diskcache import Disk
 from diskcache.core import MODE_PICKLE
 
 _TRUSTED_MODULE_PREFIXES = (
-    "litellm.types.",
     "openai.types.",
 )
 

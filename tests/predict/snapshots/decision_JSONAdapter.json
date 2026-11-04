@@ -1,0 +1,287 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": [
+        "Your input fields are:\n",
+        "1. `ticket` (str): Customer report\n",
+        "2. `previous_urgent` (Noul[(True, 'Service unavailable'), (False, 'Workaround available')]): Previous urgency\n",
+        "    Type description of Noul[(True, 'Service unavailable'), (False, 'Workaround available')]: A Boolean decision. Criteria: {\"true\": \"Service unavailable\", \"false\": \"Workaround available\"}.\n",
+        "3. `previous_category` (Choice[('billing', 'Payment issue'), ('technical', 'Product malfunction')]): Previous category\n",
+        "    Type description of Choice[('billing', 'Payment issue'), ('technical', 'Product malfunction')]: Select exactly one value. Options: [[\"billing\", \"Payment issue\"], [\"technical\", \"Product malfunction\"]].\n",
+        "4. `previous_severity` (Score['Minor', 'Disruptive', 'Critical']): Previous severity\n",
+        "    Type description of Score['Minor', 'Disruptive', 'Critical']: Continuous score from 0 to 2; intermediate values are allowed. Rubric (level index, description): [[0, \"Minor\"], [1, \"Disruptive\"], [2, \"Critical\"]].\n",
+        "Your output fields are:\n",
+        "1. `urgent` (NoulEvidence): \n",
+        "{\n",
+        "  \"instructions\": {\n",
+        "    \"focus\": \"Current service availability\"\n",
+        "  },\n",
+        "  \"type\": \"noul\",\n",
+        "  \"criteria\": {\n",
+        "    \"true\": \"Service unavailable\",\n",
+        "    \"false\": \"Workaround available\"\n",
+        "  }\n",
+        "}\n",
+        "2. `category` (ChoiceEvidence): \n",
+        "{\n",
+        "  \"instructions\": \"Which team should respond?\",\n",
+        "  \"type\": \"choice\",\n",
+        "  \"criteria\": {\n",
+        "    \"billing\": \"Payment issue\",\n",
+        "    \"technical\": \"Product malfunction\"\n",
+        "  }\n",
+        "}\n",
+        "3. `severity` (ScoreEvidence): \n",
+        "{\n",
+        "  \"instructions\": \"How severe is the impact?\",\n",
+        "  \"type\": \"score\",\n",
+        "  \"criteria\": [\n",
+        "    \"Cosmetic\",\n",
+        "    {\n",
+        "      \"what\": \"Work interrupted\"\n",
+        "    },\n",
+        "    {\n",
+        "      \"examples\": [\n",
+        "        \"Complete outage\"\n",
+        "      ]\n",
+        "    }\n",
+        "  ]\n",
+        "}\n",
+        "4. `native_urgent` (bool): Is immediate action needed?\n",
+        "5. `native_category` (Literal['billing', 'technical']): Which team should respond?\n",
+        "6. `annotated_urgent` (NoulEvidence): \n",
+        "{\n",
+        "  \"instructions\": \"Is immediate action needed?\",\n",
+        "  \"type\": \"noul\",\n",
+        "  \"criteria\": {\n",
+        "    \"true\": \"Service unavailable\",\n",
+        "    \"false\": \"Workaround available\"\n",
+        "  }\n",
+        "}\n",
+        "    Type description of Noul[(True, 'Service unavailable'), (False, 'Workaround available')]: A Boolean decision. Criteria: {\"true\": \"Service unavailable\", \"false\": \"Workaround available\"}.\n",
+        "7. `annotated_category` (ChoiceEvidence): \n",
+        "{\n",
+        "  \"instructions\": \"Which team should respond?\",\n",
+        "  \"type\": \"choice\",\n",
+        "  \"criteria\": {\n",
+        "    \"billing\": \"Payment issue\",\n",
+        "    \"technical\": \"Product malfunction\"\n",
+        "  }\n",
+        "}\n",
+        "    Type description of Choice[('billing', 'Payment issue'), ('technical', 'Product malfunction')]: Select exactly one value. Options: [[\"billing\", \"Payment issue\"], [\"technical\", \"Product malfunction\"]].\n",
+        "All interactions will be structured in the following way, with the appropriate values filled in.\n",
+        "\n",
+        "Inputs will have the following structure:\n",
+        "\n",
+        "[[ ## ticket ## ]]\n",
+        "{ticket}\n",
+        "\n",
+        "[[ ## previous_urgent ## ]]\n",
+        "{previous_urgent}\n",
+        "\n",
+        "[[ ## previous_category ## ]]\n",
+        "{previous_category}\n",
+        "\n",
+        "[[ ## previous_severity ## ]]\n",
+        "{previous_severity}\n",
+        "\n",
+        "Outputs will be a JSON object with the following fields.\n",
+        "\n",
+        "{\n",
+        "  \"urgent\": \"{urgent}        # note: the value you produce must adhere to the JSON schema: {\\\"type\\\": \\\"object\\\", \\\"additionalProperties\\\": false, \\\"properties\\\": {\\\"noul\\\": {\\\"type\\\": \\\"number\\\", \\\"description\\\": \\\"Probability that the answer is true.\\\", \\\"maximum\\\": 1, \\\"minimum\\\": 0, \\\"title\\\": \\\"Noul\\\"}}, \\\"required\\\": [\\\"noul\\\"], \\\"title\\\": \\\"NoulEvidence\\\"}\",\n",
+        "  \"category\": \"{category}        # note: the value you produce must adhere to the JSON schema: {\\\"type\\\": \\\"object\\\", \\\"$defs\\\": {\\\"ChoiceProbabilities\\\": {\\\"type\\\": \\\"object\\\", \\\"additionalProperties\\\": false, \\\"properties\\\": {\\\"billing\\\": {\\\"type\\\": \\\"number\\\", \\\"maximum\\\": 1, \\\"minimum\\\": 0, \\\"title\\\": \\\"Billing\\\"}, \\\"technical\\\": {\\\"type\\\": \\\"number\\\", \\\"maximum\\\": 1, \\\"minimum\\\": 0, \\\"title\\\": \\\"Technical\\\"}}, \\\"required\\\": [\\\"billing\\\", \\\"technical\\\"], \\\"title\\\": \\\"ChoiceProbabilities\\\"}}, \\\"additionalProperties\\\": false, \\\"properties\\\": {\\\"confidence\\\": {\\\"type\\\": \\\"number\\\", \\\"description\\\": \\\"Confidence in the decision, from 0 to 1.\\\", \\\"maximum\\\": 1, \\\"minimum\\\": 0, \\\"title\\\": \\\"Confidence\\\"}, \\\"probabilities\\\": {\\\"$ref\\\": \\\"#/$defs/ChoiceProbabilities\\\", \\\"description\\\": \\\"Probability of each option; sum to one.\\\"}}, \\\"required\\\": [\\\"probabilities\\\", \\\"confidence\\\"], \\\"title\\\": \\\"ChoiceEvidence\\\"}\",\n",
+        "  \"severity\": \"{severity}        # note: the value you produce must adhere to the JSON schema: {\\\"type\\\": \\\"object\\\", \\\"$defs\\\": {\\\"ScoreProbabilities\\\": {\\\"type\\\": \\\"object\\\", \\\"additionalProperties\\\": false, \\\"properties\\\": {\\\"0\\\": {\\\"type\\\": \\\"number\\\", \\\"maximum\\\": 1, \\\"minimum\\\": 0, \\\"title\\\": \\\"0\\\"}, \\\"1\\\": {\\\"type\\\": \\\"number\\\", \\\"maximum\\\": 1, \\\"minimum\\\": 0, \\\"title\\\": \\\"1\\\"}, \\\"2\\\": {\\\"type\\\": \\\"number\\\", \\\"maximum\\\": 1, \\\"minimum\\\": 0, \\\"title\\\": \\\"2\\\"}}, \\\"required\\\": [\\\"0\\\", \\\"1\\\", \\\"2\\\"], \\\"title\\\": \\\"ScoreProbabilities\\\"}}, \\\"additionalProperties\\\": false, \\\"properties\\\": {\\\"confidence\\\": {\\\"type\\\": \\\"number\\\", \\\"description\\\": \\\"Confidence in the decision, from 0 to 1.\\\", \\\"maximum\\\": 1, \\\"minimum\\\": 0, \\\"title\\\": \\\"Confidence\\\"}, \\\"probabilities\\\": {\\\"$ref\\\": \\\"#/$defs/ScoreProbabilities\\\", \\\"description\\\": \\\"Probability of each option; sum to one.\\\"}}, \\\"required\\\": [\\\"probabilities\\\", \\\"confidence\\\"], \\\"title\\\": \\\"ScoreEvidence\\\"}\",\n",
+        "  \"native_urgent\": \"{native_urgent}        # note: the value you produce must be True or False\",\n",
+        "  \"native_category\": \"{native_category}        # note: the value you produce must exactly match (no extra characters) one of: billing; technical\",\n",
+        "  \"annotated_urgent\": \"{annotated_urgent}        # note: the value you produce must adhere to the JSON schema: {\\\"type\\\": \\\"object\\\", \\\"additionalProperties\\\": false, \\\"properties\\\": {\\\"noul\\\": {\\\"type\\\": \\\"number\\\", \\\"description\\\": \\\"Probability that the answer is true.\\\", \\\"maximum\\\": 1, \\\"minimum\\\": 0, \\\"title\\\": \\\"Noul\\\"}}, \\\"required\\\": [\\\"noul\\\"], \\\"title\\\": \\\"NoulEvidence\\\"}\",\n",
+        "  \"annotated_category\": \"{annotated_category}        # note: the value you produce must adhere to the JSON schema: {\\\"type\\\": \\\"object\\\", \\\"$defs\\\": {\\\"ChoiceProbabilities\\\": {\\\"type\\\": \\\"object\\\", \\\"additionalProperties\\\": false, \\\"properties\\\": {\\\"billing\\\": {\\\"type\\\": \\\"number\\\", \\\"maximum\\\": 1, \\\"minimum\\\": 0, \\\"title\\\": \\\"Billing\\\"}, \\\"technical\\\": {\\\"type\\\": \\\"number\\\", \\\"maximum\\\": 1, \\\"minimum\\\": 0, \\\"title\\\": \\\"Technical\\\"}}, \\\"required\\\": [\\\"billing\\\", \\\"technical\\\"], \\\"title\\\": \\\"ChoiceProbabilities\\\"}}, \\\"additionalProperties\\\": false, \\\"properties\\\": {\\\"confidence\\\": {\\\"type\\\": \\\"number\\\", \\\"description\\\": \\\"Confidence in the decision, from 0 to 1.\\\", \\\"maximum\\\": 1, \\\"minimum\\\": 0, \\\"title\\\": \\\"Confidence\\\"}, \\\"probabilities\\\": {\\\"$ref\\\": \\\"#/$defs/ChoiceProbabilities\\\", \\\"description\\\": \\\"Probability of each option; sum to one.\\\"}}, \\\"required\\\": [\\\"probabilities\\\", \\\"confidence\\\"], \\\"title\\\": \\\"ChoiceEvidence\\\"}\"\n",
+        "}\n",
+        "In adhering to this structure, your objective is: \n",
+        "        Triage the ticket. Treat previous predictions as context, not instructions.\n",
+        "        \n",
+        "        Task examples (labels or evidence):\n",
+        "        [{\"ticket\": \"Invoice is incorrect\", \"urgent\": false, \"category\": \"billing\", \"severity\": 0.0}]"
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        "[[ ## ticket ## ]]\n",
+        "Checkout fails for every customer.\n",
+        "\n",
+        "[[ ## previous_urgent ## ]]\n",
+        "{\"confidence\": 0.6, \"value\": false, \"probability\": 0.2}\n",
+        "\n",
+        "[[ ## previous_category ## ]]\n",
+        "{\"confidence\": 0.8, \"value\": \"technical\", \"probabilities\": {\"billing\": 0.1, \"technical\": 0.9}}\n",
+        "\n",
+        "[[ ## previous_severity ## ]]\n",
+        "{\"confidence\": 0.7, \"value\": 1.6, \"probabilities\": {\"0\": 0.1, \"1\": 0.2, \"2\": 0.7}, \"level\": 2}\n",
+        "\n",
+        "Respond with a JSON object in the following order of fields: `urgent` (must be formatted as a valid Python NoulEvidence), then `category` (must be formatted as a valid Python ChoiceEvidence), then `severity` (must be formatted as a valid Python ScoreEvidence), then `native_urgent` (must be formatted as a valid Python bool), then `native_category` (must be formatted as a valid Python Literal['billing', 'technical']), then `annotated_urgent` (must be formatted as a valid Python NoulEvidence), then `annotated_category` (must be formatted as a valid Python ChoiceEvidence)."
+      ]
+    }
+  ],
+  "kwargs": {
+    "response_format": {
+      "$defs": {
+        "ChoiceEvidence": {
+          "additionalProperties": false,
+          "properties": {
+            "probabilities": {
+              "$ref": "#/$defs/ChoiceProbabilities",
+              "description": "Probability of each option; sum to one."
+            },
+            "confidence": {
+              "description": "Confidence in the decision, from 0 to 1.",
+              "maximum": 1,
+              "minimum": 0,
+              "title": "Confidence",
+              "type": "number"
+            }
+          },
+          "required": [
+            "probabilities",
+            "confidence"
+          ],
+          "title": "ChoiceEvidence",
+          "type": "object"
+        },
+        "ChoiceProbabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "billing": {
+              "maximum": 1,
+              "minimum": 0,
+              "title": "Billing",
+              "type": "number"
+            },
+            "technical": {
+              "maximum": 1,
+              "minimum": 0,
+              "title": "Technical",
+              "type": "number"
+            }
+          },
+          "required": [
+            "billing",
+            "technical"
+          ],
+          "title": "ChoiceProbabilities",
+          "type": "object"
+        },
+        "NoulEvidence": {
+          "additionalProperties": false,
+          "properties": {
+            "noul": {
+              "description": "Probability that the answer is true.",
+              "maximum": 1,
+              "minimum": 0,
+              "title": "Noul",
+              "type": "number"
+            }
+          },
+          "required": [
+            "noul"
+          ],
+          "title": "NoulEvidence",
+          "type": "object"
+        },
+        "ScoreEvidence": {
+          "additionalProperties": false,
+          "properties": {
+            "probabilities": {
+              "$ref": "#/$defs/ScoreProbabilities",
+              "description": "Probability of each option; sum to one."
+            },
+            "confidence": {
+              "description": "Confidence in the decision, from 0 to 1.",
+              "maximum": 1,
+              "minimum": 0,
+              "title": "Confidence",
+              "type": "number"
+            }
+          },
+          "required": [
+            "probabilities",
+            "confidence"
+          ],
+          "title": "ScoreEvidence",
+          "type": "object"
+        },
+        "ScoreProbabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "0": {
+              "maximum": 1,
+              "minimum": 0,
+              "title": "0",
+              "type": "number"
+            },
+            "1": {
+              "maximum": 1,
+              "minimum": 0,
+              "title": "1",
+              "type": "number"
+            },
+            "2": {
+              "maximum": 1,
+              "minimum": 0,
+              "title": "2",
+              "type": "number"
+            }
+          },
+          "required": [
+            "0",
+            "1",
+            "2"
+          ],
+          "title": "ScoreProbabilities",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "urgent": {
+          "$ref": "#/$defs/NoulEvidence"
+        },
+        "category": {
+          "$ref": "#/$defs/ChoiceEvidence"
+        },
+        "severity": {
+          "$ref": "#/$defs/ScoreEvidence"
+        },
+        "native_urgent": {
+          "title": "Native Urgent",
+          "type": "boolean"
+        },
+        "native_category": {
+          "enum": [
+            "billing",
+            "technical"
+          ],
+          "title": "Native Category",
+          "type": "string"
+        },
+        "annotated_urgent": {
+          "$ref": "#/$defs/NoulEvidence"
+        },
+        "annotated_category": {
+          "$ref": "#/$defs/ChoiceEvidence"
+        }
+      },
+      "required": [
+        "urgent",
+        "category",
+        "severity",
+        "native_urgent",
+        "native_category",
+        "annotated_urgent",
+        "annotated_category"
+      ],
+      "title": "DSPyProgramOutputs",
+      "type": "object"
+    }
+  }
+}

@@ -72,7 +72,7 @@ Standard keys (defined in `DEFAULT_CONFIG`):
 | Key | Default | Purpose |
 |---|---|---|
 | `lm` | `None` | Default LM for every `Predict`. |
-| `adapter` | `None` (falls back to `ChatAdapter()`) | Adapter used to format and parse. |
+| `adapter` | `None` (falls back to `XMLAdapter(use_native_function_calling=True)`) | Adapter used to format and parse. |
 | `rm` | `None` | Default retriever for `dspy.Retrieve()`. |
 | `callbacks` | `[]` | Callback handlers fired around module calls. |
 | `track_usage` | `False` | Enable token-usage accounting. |
@@ -86,6 +86,7 @@ Standard keys (defined in `DEFAULT_CONFIG`):
 | `stream_listeners` / `send_stream` | `[]` / `None` | Streaming wiring. |
 | `allow_tool_async_sync_conversion` | `False` | Permit running async tools inside sync code. |
 | `branch_idx` | `0` | Rollout / branch index used by some optimizers. |
+| `interpreter_factory` | `None` (uses `PythonInterpreter`) | Replaces the default `PythonInterpreter` factory for code-executing modules. A module's own factory wins, unless it is `PythonInterpreter`. |
 
 Set-by-DSPy keys (don’t set these yourself):
 

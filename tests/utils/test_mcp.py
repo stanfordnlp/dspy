@@ -2,40 +2,111 @@ import asyncio
 import importlib
 import sys
 from importlib.metadata import version
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+import dspy
 from dspy import Tool
 from dspy.utils.mcp import _convert_mcp_tool_result, convert_mcp_tool
 
 if importlib.util.find_spec("mcp") is None:
     pytest.skip(reason="mcp is not installed", allow_module_level=True)
 
+_UNSET = object()
 
-def make_call_tool_result(field_style, texts=(), is_error=False):
+
+def make_call_tool_result(field_style, texts=(), structured=_UNSET, is_error=False):
     from mcp.types import TextContent
 
     fields = {
         "content": [TextContent(type="text", text=text) for text in texts],
-        "structured_content" if field_style == "snake" else "structuredContent": {"result": "ignored"},
         "is_error" if field_style == "snake" else "isError": is_error,
     }
+    if structured is not _UNSET:
+        fields["structured_content" if field_style == "snake" else "structuredContent"] = structured
     return SimpleNamespace(**fields)
 
 
 @pytest.mark.extra
 def test_convert_mcp_tool_result_supports_both_field_styles_without_changing_results():
-    assert _convert_mcp_tool_result(make_call_tool_result("camel", texts=["hi"])) == "hi"
-    assert _convert_mcp_tool_result(make_call_tool_result("snake", texts=["a", "b"])) == ["a", "b"]
+    camel_result = make_call_tool_result("camel", texts=["hi"], structured={"result": "ignored"})
+    snake_result = make_call_tool_result("snake", texts=["a", "b"], structured={"result": "ignored"})
+
+    assert _convert_mcp_tool_result(camel_result) == "hi"
+    assert _convert_mcp_tool_result(snake_result) == ["a", "b"]
 
 
 @pytest.mark.extra
 @pytest.mark.parametrize("field_style", ["camel", "snake"])
-def test_error_result_raises(field_style):
-    result = make_call_tool_result(field_style, texts=["boom"], is_error=True)
+@pytest.mark.parametrize(
+    "structured",
+    [
+        pytest.param({"answer": 42}, id="object"),
+        pytest.param([1, 2], id="array"),
+        pytest.param("answer", id="string"),
+        pytest.param(3.5, id="number"),
+        pytest.param(False, id="boolean"),
+        pytest.param(None, id="null"),
+        pytest.param({}, id="empty-object"),
+        pytest.param([], id="empty-array"),
+        pytest.param("", id="empty-string"),
+        pytest.param(0, id="zero"),
+    ],
+)
+def test_structured_result_mode_returns_every_json_value_exactly(field_style, structured):
+    result = make_call_tool_result(field_style, texts=["fallback"], structured=structured)
+
+    converted = _convert_mcp_tool_result(result, result_mode="structured")
+    assert converted == structured
+    assert type(converted) is type(structured)
+
+
+@pytest.mark.extra
+@pytest.mark.parametrize("field_style", ["camel", "snake"])
+def test_structured_result_mode_falls_back_when_field_is_absent(field_style):
+    result = make_call_tool_result(field_style, texts=["fallback"])
+
+    assert _convert_mcp_tool_result(result, result_mode="structured") == "fallback"
+
+
+@pytest.mark.extra
+def test_structured_result_mode_distinguishes_explicit_null_from_omission():
+    from mcp.types import CallToolResult
+
+    model_fields = getattr(CallToolResult, "model_fields", None)
+    if model_fields is None:
+        model_fields = getattr(CallToolResult, "__fields__", {})
+    field_name = next(
+        (name for name in ("structured_content", "structuredContent") if name in model_fields),
+        None,
+    )
+    if field_name is None:
+        pytest.skip("This MCP version predates structured content")
+
+    omitted = CallToolResult(content=[])
+    explicit_null = CallToolResult(content=[], **{field_name: None})
+
+    assert _convert_mcp_tool_result(omitted, result_mode="structured") == []
+    assert _convert_mcp_tool_result(explicit_null, result_mode="structured") is None
+
+
+@pytest.mark.extra
+@pytest.mark.parametrize("field_style", ["camel", "snake"])
+@pytest.mark.parametrize("result_mode", ["text", "structured"])
+def test_error_result_raises_before_conversion(field_style, result_mode):
+    result = make_call_tool_result(field_style, texts=["boom"], structured={"result": "ignored"}, is_error=True)
     with pytest.raises(RuntimeError, match="Failed to call a MCP tool: boom"):
-        _convert_mcp_tool_result(result)
+        _convert_mcp_tool_result(result, result_mode=result_mode)
+
+
+@pytest.mark.extra
+def test_convert_mcp_tool_rejects_unknown_result_mode():
+    tool = SimpleNamespace(name="test", description="test", input_schema={})
+
+    with pytest.raises(ValueError, match="Unsupported MCP result mode: 'invalid'"):
+        convert_mcp_tool(SimpleNamespace(), tool, result_mode="invalid")
 
 
 @pytest.mark.asyncio
@@ -56,7 +127,10 @@ async def test_convert_mcp_tool_with_v2_client():
     async with Client(server) as client:
         response = await client.list_tools()
         increment_tool = Tool.from_mcp_tool(client, response.tools[0])
+        structured_increment_tool = Tool.from_mcp_tool(client, response.tools[0], result_mode="structured")
+
         assert await increment_tool.acall(value=1) == "2"
+        assert await structured_increment_tool.acall(value=1) == {"result": 2}
 
 
 @pytest.mark.asyncio
@@ -148,3 +222,70 @@ async def test_convert_mcp_tool():
             assert current_datetime_tool.arg_types == {}
             assert current_datetime_tool.arg_desc == {}
             assert await current_datetime_tool.acall() == "2025-07-23T09:10:10.0+00:00"
+
+
+@pytest.mark.asyncio
+@pytest.mark.extra
+async def test_react_v2_native_mcp_end_to_end():
+    """Exercise native messages and a real stdio MCP server without an API key."""
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    from dspy.lm15 import ToolResultPart
+    from tests.test_utils.engines import make_response
+
+    class SyncRefused:
+        supports_function_calling = True
+
+        def complete(self, request):
+            pytest.fail("ReActV2 must use the async LM path")
+
+    class NativeMCPEngine:
+        def __init__(self):
+            self.requests = []
+
+        async def complete(self, request):
+            self.requests.append(request)
+            if len(self.requests) == 1:
+                calls = [
+                    ("mcp_error", "wrong_tool", {}),
+                    ("mcp_add", "add", {"a": 25, "b": 17}),
+                ]
+            else:
+                observations = {
+                    part.id: "".join(p.text for p in part.content)
+                    for message in request.messages if message.role == "tool"
+                    for part in message.parts_of(ToolResultPart)
+                }
+                assert "error!" in observations["mcp_error"]
+                assert observations["mcp_add"] == "42"
+                calls = [("final", "submit", {"answer": int(observations["mcp_add"])})]
+            return make_response(tool_calls=calls, model=request.model)
+
+    def native_mcp_lm():
+        return dspy.LM("native-mcp-test", engine=SyncRefused(), async_engine=NativeMCPEngine(), cache=False)
+
+    server_params = StdioServerParameters(
+        command=sys.executable,
+        args=[str(Path(__file__).parent / "resources" / "mcp_server.py")],
+    )
+    lm = native_mcp_lm()
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await asyncio.wait_for(session.initialize(), timeout=5)
+            response = await session.list_tools()
+            tools = [Tool.from_mcp_tool(session, tool) for tool in response.tools]
+            with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=True)):
+                pred = await asyncio.wait_for(
+                    dspy.ReActV2("question -> answer: int", tools=tools).acall(question="What is 25 + 17?"),
+                    timeout=15,
+                )
+
+    assert pred.answer == 42
+    assert pred.termination_reason == "submit"
+    requests = lm.async_engine.requests
+    assert len(requests) == 2
+    assert {t.name for t in requests[0].tools} == {tool.name for tool in tools} | {"submit"}
+    results = pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results
+    assert [(r.call_id, r.is_error) for r in results] == [("mcp_error", True), ("mcp_add", False)]
+    assert results[1].value == "42"

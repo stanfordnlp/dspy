@@ -18,6 +18,17 @@ COMMENT_SYMBOL = "#"
 INDENTATION = "  "
 
 
+def _render_literal_member(member: Any) -> str:
+    """Render a Literal member as the JSON value the model is expected to emit."""
+    if isinstance(member, str):
+        return f'"{member}"'
+    if isinstance(member, bool):
+        return "true" if member else "false"
+    if member is None:
+        return "null"
+    return str(member)
+
+
 def _render_type_str(
     annotation: Any,
     depth: int = 0,
@@ -61,7 +72,7 @@ def _render_type_str(
 
     # Literal[T1, T2, ...]
     if origin is Literal:
-        return " or ".join(f'"{arg}"' for arg in args)
+        return " or ".join(_render_literal_member(arg) for arg in args)
 
     # list[T]
     if origin is list:
@@ -175,7 +186,7 @@ class BAMLAdapter(JSONAdapter):
     import dspy
     from pydantic import BaseModel, Field
     from typing import Literal
-    from baml_adapter import BAMLAdapter  # Import from your module
+    from dspy.adapters.baml_adapter import BAMLAdapter
 
     # 1. Define your Pydantic models
     class PatientAddress(BaseModel):
@@ -195,7 +206,7 @@ class BAMLAdapter(JSONAdapter):
         patient_info: PatientDetails = dspy.OutputField()
 
     # 3. Configure dspy to use the new adapter
-    llm = dspy.OpenAI(model="gpt-4.1-mini")
+    llm = dspy.LM("openai/gpt-4.1-mini")
     dspy.configure(lm=llm, adapter=BAMLAdapter())
 
     # 4. Run your program

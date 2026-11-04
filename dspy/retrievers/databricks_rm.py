@@ -40,6 +40,7 @@ class DatabricksRM(dspy.Retrieve):
 
         ```python
         from databricks.vector_search.client import VectorSearchClient
+        from dspy.retrievers.databricks_rm import DatabricksRM
 
         # Create a Databricks Vector Search Endpoint
         client = VectorSearchClient()
@@ -77,7 +78,7 @@ class DatabricksRM(dspy.Retrieve):
         Search Index using the DatabricksRM retriever module:
 
         ```python
-        retrieved_results = DatabricksRM(query="Example query text"))
+        retrieved_results = retriever(query="Example query text")
         ```
     """
 

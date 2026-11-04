@@ -4,6 +4,36 @@
 
 This implements the approach described in ["Recursive Language Models" (Zhang, Kraska, Khattab, 2025)](https://arxiv.org/abs/2512.24601).
 
+## Migrating from CodeAct or ProgramOfThought
+
+`dspy.CodeAct` and `dspy.ProgramOfThought` were deprecated in DSPy 3.4 and removed in DSPy 3.5, including their `dspy.predict` imports. Use `dspy.RLM` for code-executing programs. RLM remains experimental; it is a replacement, not a compatibility alias.
+
+Keep your task signature and named inputs, and replace the module constructor:
+
+```python
+import dspy
+
+# After configuring dspy.settings.lm:
+solve = dspy.RLM("question -> answer")
+result = solve(question="What is 12 factorial divided by the sum of primes below 30?")
+print(result.answer)
+
+def add(a: int, b: int) -> int:
+    """Add two integers."""
+    return a + b
+
+# For programs that previously supplied tools:
+agent = dspy.RLM("question -> answer", tools=[add])
+```
+
+- RLM runs an iterative Python REPL and submits the signature's output fields with `SUBMIT(...)`. It does not use the old `generated_code` / `finished` protocol or the three code-generation, regeneration, and answer predictors. Custom prompts and code that accessed those internal predictors must be rewritten.
+- `max_iters` now limits REPL iterations, not just code-repair attempts. Review your iteration budget rather than assuming the old value has identical semantics. `max_llm_calls` separately limits sub-LM calls.
+- Pass tools with `tools=[...]`. RLM exposes them as host-side callables through the interpreter, rather than copying their source definitions into the sandbox. Host tools retain their own dependencies and privileges; sandbox restrictions do not apply to their host-side execution.
+- `interpreter_factory=...` and `dspy.configure(interpreter_factory=...)` remain supported. RLM requires an interpreter that supports its mutable tools dictionary and sandbox DSPy facade; see [interpreter factories](../../diving-deeper/rlm.md#extending-the-sandbox-with-tools-and-inputs). RLM does not accept a caller-owned interpreter as a positional override.
+- Rebuild and re-optimize programs that used the removed modules. Their saved predictor states and internal trajectory formats are not interchangeable with RLM's.
+
+See the [RLM deep dive](../../diving-deeper/rlm.md) for execution, outputs, and interpreter lifecycle details, and the installation instructions below for the default sandbox runtime.
+
 ## When to Use RLM
 
 As contexts grow, LLM performance degrades — a phenomenon known as [context rot](https://research.trychroma.com/context-rot). RLMs address this by separating the _variable space_ (information stored in the REPL) from the _token space_ (what the LLM actually processes). The LLM dynamically loads only the context it needs, when it needs it.
@@ -111,7 +141,7 @@ $20,000,000
 | `verbose` | `bool` | `False` | Log detailed execution info |
 | `tools` | `list[Union[Callable, dspy.Tool]]` | `None` | Additional tool functions callable from interpreter code |
 | `sub_lm` | `dspy.LM` | `None` | LM for sub-queries. Defaults to `dspy.settings.lm`. Use a cheaper model here. |
-| `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Creates one interpreter per invocation. RLM shuts down each returned interpreter. May expose an optional `execution_instructions` string for the action prompt. |
+| `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Creates one interpreter per invocation. RLM shuts down each returned interpreter. `dspy.configure(interpreter_factory=...)` replaces the default. A factory passed to the constructor wins, unless it is `PythonInterpreter`. May expose an optional `execution_instructions` string for the action prompt. |
 
 ## Built-in Tools
 
@@ -199,12 +229,29 @@ rlm = dspy.RLM(
 )
 ```
 
-RLM creates and shuts down one interpreter from this factory per invocation. It adds invocation-scoped tools to the returned interpreter's mutable `tools` dictionary, so remote sandboxes need a `CodeInterpreter` adapter that supports that protocol. To reuse a caller-owned interpreter, pass it as the first positional argument when calling the module: `rlm(interpreter, context=data, query=query)`. RLM updates its tools and output metadata but does not shut down or restore it. Reuse is supported only for sequential calls to the same RLM instance; use the factory path for concurrency.
+One call puts the same interpreter behind every code-executing module in the program. Each invocation reads the setting, so `dspy.context(interpreter_factory=...)` scopes the choice and `dspy.configure(...)` reaches modules built before the call. A factory passed to a constructor still wins, unless it is `PythonInterpreter`:
+
+```python
+dspy.configure(interpreter_factory=MyInterpreter)
+```
+
+RLM creates and shuts down one interpreter from this factory per invocation. It adds invocation-scoped tools to the returned interpreter's mutable `tools` dictionary, so remote sandboxes need a `CodeInterpreter` adapter that supports that protocol.
+
+To override the factory for a single invocation, pass a zero-argument callable via the `interpreter_factory` keyword:
+
+```python
+result = rlm(context=data, query=query, interpreter_factory=MyInterpreter)
+result = await rlm.acall(context=data, query=query, interpreter_factory=MyInterpreter)
+```
+
+The call-time factory takes precedence over constructor and global/context factories, including when explicitly passing `PythonInterpreter`. RLM calls it once and shuts down the returned interpreter on success or failure. The factory must return a fresh interpreter each time. Passing a live interpreter at call time is no longer supported; migrate `rlm(interpreter, ...)` to `rlm(..., interpreter_factory=factory)`. The option is keyword-only, and `interpreter_factory` is reserved for runtime configuration rather than signature inputs.
 
 If the factory exposes an `execution_instructions` string, RLM adds it to the action predictor's task instructions,
 which DSPy adapters place in the system prompt. Optimizers such as GEPA may therefore adapt the execution guidance
 along with the rest of the action policy. Factory classes and configured callable provider objects can expose this
-metadata; anonymous factories without it continue to use the generic action prompt.
+metadata; anonymous factories without it continue to use the generic action prompt. RLM refreshes these instructions
+for each action call, so a `dspy.context(interpreter_factory=...)` override keeps the prompt aligned with the runtime
+that executes the generated code.
 
 ### Custom Sandbox-Serializable Inputs
 
@@ -266,10 +313,13 @@ RLM returns a `Prediction` with:
     RLM is marked as experimental. The API may change in future releases.
 
 !!! note "Thread Safety"
-    `interpreter_factory` may be called concurrently and must return a fresh interpreter each time. An interpreter passed as the first positional argument to `rlm(...)` or `rlm.acall(...)` is caller-owned and may be reused only for sequential calls to the same RLM instance. `PythonInterpreter` must also stay on the thread where it was first used.
+    Constructor and call-time factories may be called concurrently and must return a fresh interpreter each time. RLM retains that interpreter throughout one invocation and shuts it down afterward. `PythonInterpreter` must stay on the thread where it was first used.
 
 !!! note "Interpreter Requirements"
-    The default `PythonInterpreter` requires [Deno](https://deno.land/) to be installed for the Pyodide WASM sandbox.
+    RLM defaults to `PythonInterpreter`, which requires [Deno](https://deno.land/) to be installed for the Pyodide WASM sandbox.
+    `LocalInterpreter` requires no additional runtime and provides a separate CPython process, but it is not a
+    security sandbox: generated code retains the host user's files, environment, credentials, network, and process
+    authority.
 
 ## API Reference
 

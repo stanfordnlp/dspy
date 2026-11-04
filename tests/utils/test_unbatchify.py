@@ -1,7 +1,12 @@
+import queue
+import threading
 import time
+from collections import deque
 from concurrent.futures import Future
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import dspy.utils.unbatchify as unbatchify_module
 from dspy.utils.unbatchify import Unbatchify
 
 
@@ -70,3 +75,41 @@ def test_unbatchify_timeout_trigger():
     assert results == [101, 201]
 
     unbatcher.close()
+
+
+def test_unbatchify_honors_max_wait_time_under_trickling_input(monkeypatch):
+    """Later arrivals must not extend the batch's timeout window."""
+    clock = SimpleNamespace(now=0.0)
+    arrivals = deque([0.0, 8.0, 16.0])
+    ready = threading.Event()
+    batches = []
+
+    class ScheduledQueue(queue.Queue):
+        def get(self, block=True, timeout=None):
+            if not block:  # Preserve get_nowait() for shutdown cleanup.
+                return super().get(block=False)
+            if not ready.wait(timeout=2):
+                raise queue.Empty
+            deadline = clock.now + timeout
+            if arrivals and arrivals[0] <= deadline:
+                clock.now = arrivals.popleft()
+                return super().get(block=False)
+            clock.now = deadline
+            raise queue.Empty
+
+    def process(batch):
+        batches.append((batch, clock.now))
+        return simple_batch_processor(batch)
+
+    # Patch only this module's clock and queue, not threading's real timeouts.
+    monkeypatch.setattr(unbatchify_module, "time", SimpleNamespace(time=lambda: clock.now, sleep=time.sleep))
+    monkeypatch.setattr(unbatchify_module, "queue", SimpleNamespace(Queue=ScheduledQueue, Empty=queue.Empty))
+
+    with Unbatchify(batch_fn=process, max_batch_size=10, max_wait_time=10.0) as unbatcher:
+        futures = [unbatcher.submit(item) for item in (1, 2, 3)]
+        ready.set()
+        assert [future.result(timeout=2) for future in futures] == [2, 3, 4]
+
+    # The arrival at 16 belongs to the next window. Re-arming the full timeout
+    # would instead include it in the first batch and flush that batch at 16.
+    assert batches == [([1, 2], 10.0), ([3], 20.0)]

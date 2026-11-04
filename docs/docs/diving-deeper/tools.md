@@ -68,7 +68,7 @@ with dspy.context(adapter=adapter):
     result = agent(question="What changed in DSPy 3.3?")
 ```
 
-When native calling is active and the LM supports it, the adapter converts each tool with `Tool.format_as_litellm_function_call()` and sends the resulting descriptors in the LM request. Otherwise, it keeps tool selection in DSPy's normal adapter-formatted fields. The same `Tool` works in either mode.
+When native calling is active and the LM supports it, the adapter converts each tool with `Tool.as_function_tool()` into an lm15 `FunctionTool` and sends it in the LM request. Otherwise, it keeps tool selection in DSPy's normal adapter-formatted fields. The same `Tool` works in either mode.
 
 ## Structured tool calls and results
 
@@ -99,7 +99,7 @@ The bridge:
 3. Unpacks MCP text content into a string or list and preserves non-text content.
 4. Raises an execution error when the MCP response has `isError=True`.
 
-The bridge supports both the camelCase result fields in MCP SDK v1 and their snake_case replacements in v2 without changing text or non-text result behavior.
+The bridge supports both the camelCase result fields in MCP SDK v1 and their snake_case replacements in v2 without changing text or non-text result behavior. Pass `result_mode="structured"` to return `structuredContent` when available, falling back to the default conversion when it is absent.
 
 MCP tools are asynchronous because `mcp.ClientSession` is asynchronous. Use a module's async entry point, such as `acall`, or explicitly enable async-to-sync conversion when appropriate.
 
@@ -113,11 +113,11 @@ Wraps a callable and infers any metadata not supplied explicitly.
 **`Tool.__call__(**kwargs)` / `Tool.acall(**kwargs)`**
 Validates, coerces, and executes tool arguments through synchronous or asynchronous entry points.
 
-**`Tool.format_as_litellm_function_call()`** → `dict`
-Returns the OpenAI/LiteLLM-style function descriptor used by adapters for native calling.
+**`Tool.as_function_tool()`** → `dspy.lm15.FunctionTool`
+Returns the provider-neutral function declaration adapters send for native calling.
 
-**`Tool.from_mcp_tool(session, tool)`** → `Tool`
-Wraps a remote MCP tool as an asynchronous DSPy tool.
+**`Tool.from_mcp_tool(session, tool, *, result_mode="text")`** → `Tool`
+Wraps a remote MCP tool as an asynchronous DSPy tool. Set `result_mode="structured"` to return structured MCP results when available.
 
 **`Tool.from_langchain(tool)`** → `Tool`
 Wraps a LangChain tool in the same DSPy interface.

@@ -1,13 +1,453 @@
-import logging
-from typing import Any
+import re
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Annotated, Any, TypedDict
 
+import yaml
 from gepa.core.adapter import ProposalFn
+from pydantic import StringConstraints, TypeAdapter, ValidationError
 
 import dspy
+from dspy.adapters.base import Adapter
+from dspy.adapters.json_adapter import JSONAdapter
+from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
-from dspy.teleprompt.gepa.gepa_utils import ReflectiveExample
+from dspy.adapters.types.tool import ToolCallResults, ToolCalls
+from dspy.primitives.repl_types import REPLHistory
+from dspy.utils.annotation import experimental
 
-logger = logging.getLogger(__name__)
+ReflectiveExample = TypedDict(
+    "ReflectiveExample",
+    {
+        "Inputs": dict[str, Any],
+        "Generated Outputs": dict[str, Any] | str,
+        "Feedback": str,
+    },
+)
+ReflectiveExample.__doc__ = "An example's predictor inputs, generated outputs, and evaluation feedback."
+
+
+# --------------------------------------------------------------------------- #
+# Skills: reference material for the reflection LM
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True)
+class _Skill:
+    name: str
+    content: str
+    description: str | None = None
+
+
+class _SkillLoader:
+    """Resolve a skill source (a directory, a file, or inline text) into a `_Skill`.
+
+    Resolution order for `load`:
+
+    1. A `Path` is always a path (`~` is expanded). A missing path raises `FileNotFoundError`.
+    2. A `str` naming an existing file or directory (after `~` expansion) is a path.
+    3. A `str` that does not exist but looks like a path raises `FileNotFoundError`. Text spanning
+       more than one line never looks like a path. A single line without whitespace looks like a
+       path when it contains a path separator, starts with `.` or `~`, or ends with `.md`,
+       `.markdown`, or `.txt`. A single line with whitespace looks like a path only when it starts
+       like one (`./`, `../`, `~/`, `/`, or a drive letter) or names an entry inside a directory that
+       exists, so `./skills/my skill` and `skills/my skill` are caught while prose such as
+       `Consult the file report.txt` stays inline.
+    4. Any other `str` is inline skill content. Empty content raises `ValueError`.
+
+    A directory must contain `SKILL.md` (the Agent Skills layout); only that file is read. A file is
+    read as UTF-8. A leading YAML frontmatter block supplies `name` and `description` and is
+    stripped from the content. The fallback name is the directory name, the file stem, or the first
+    line of an inline skill.
+
+    Note: a single line of inline content can be mistaken for a path when it matches one of the rules
+    above; write it on more than one line, or pass a `Path` for strict path checking.
+    """
+
+    SKILL_FILE = "SKILL.md"
+    FILE_SUFFIXES = (".md", ".markdown", ".txt")
+    # `./`, `../`, `~/`, `/`, `\`, or a Windows drive letter, with either separator.
+    _PATH_PREFIX_RE = re.compile(r"^(?:\.{1,2}[\\/]|~[\\/]|[\\/]|[A-Za-z]:[\\/])")
+
+    @classmethod
+    def load(cls, source: "str | Path") -> _Skill:
+        if isinstance(source, Path):
+            return cls._from_path(source.expanduser())
+        if not isinstance(source, str):
+            raise TypeError(f"A skill must be a str or a Path, not {type(source).__name__}.")
+
+        if not source.strip():
+            raise ValueError("Empty skill content.")
+        path = cls._existing_path(source)
+        if path is not None:
+            return cls._from_path(path)
+        if cls._looks_like_path(source):
+            raise FileNotFoundError(
+                f"Skill {source!r} looks like a path, but no such file or directory exists. "
+                "Pass the path to an existing skill file or directory. Inline skill content that "
+                "resembles a path must span more than one line."
+            )
+        return cls._from_text(source, fallback_name=None)
+
+    @classmethod
+    def _from_path(cls, path: Path) -> _Skill:
+        if not path.exists():
+            raise FileNotFoundError(f"Skill path {path} does not exist.")
+        if path.is_dir():
+            skill_md = path / cls.SKILL_FILE
+            if not skill_md.exists():
+                raise FileNotFoundError(f"Skill directory {path} has no {cls.SKILL_FILE}.")
+            return cls._from_text(skill_md.read_text(encoding="utf-8"), fallback_name=path.name)
+        return cls._from_text(path.read_text(encoding="utf-8"), fallback_name=path.stem)
+
+    @classmethod
+    def _from_text(cls, text: str, fallback_name: str | None) -> _Skill:
+        text = text.strip()
+        if not text:
+            raise ValueError("Empty skill content.")
+
+        meta, content = cls._parse_frontmatter(text)
+        content = content.strip()
+        if not content:
+            raise ValueError("Empty skill content after removing frontmatter.")
+
+        if fallback_name is None:
+            # The first non-empty line doubles as a display name for inline skills.
+            first_line = content.splitlines()[0].lstrip("# ").strip() if content else ""
+            fallback_name = ((first_line[:60] + "…") if len(first_line) > 60 else first_line) or "inline-skill"
+
+        return _Skill(name=meta.get("name") or fallback_name, content=content, description=meta.get("description"))
+
+    @staticmethod
+    def _existing_path(source: str) -> Path | None:
+        try:
+            path = Path(source).expanduser()
+            return path if path.exists() else None
+        except (OSError, ValueError):  # e.g. an inline string too long to be a valid path
+            return None
+
+    @classmethod
+    def _looks_like_path(cls, source: str) -> bool:
+        """Whether a string that names nothing on disk was meant as a path rather than inline content."""
+        if "\n" in source or "\r" in source:
+            return False
+        source = source.strip()
+        has_separator = "/" in source or "\\" in source
+        if not re.search(r"\s", source):
+            return has_separator or source.startswith((".", "~")) or source.lower().endswith(cls.FILE_SUFFIXES)
+        # Paths may contain spaces ("./skills/my skill"), so a single line with whitespace is still a path
+        # when it carries a stronger signal than a bare separator or suffix: prose such as
+        # "Consult the file report.txt" must stay inline.
+        if cls._PATH_PREFIX_RE.match(source):
+            return True
+        return has_separator and cls._parent_exists(source)
+
+    @staticmethod
+    def _parent_exists(source: str) -> bool:
+        try:
+            return Path(source).expanduser().parent.exists()
+        except (OSError, ValueError):
+            return False
+
+    @staticmethod
+    def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
+        """Read YAML frontmatter, retaining string name/description metadata."""
+        lines = text.splitlines()
+        if not lines or lines[0].strip() != "---":
+            return {}, text
+        for end, line in enumerate(lines[1:], start=1):
+            if line.rstrip() == "---":
+                try:
+                    meta = yaml.safe_load("\n".join(lines[1:end]) + "\n")
+                except yaml.YAMLError as exc:
+                    raise ValueError("Invalid YAML skill frontmatter.") from exc
+                if meta is None:
+                    meta = {}
+                if not isinstance(meta, dict):
+                    raise ValueError("Skill frontmatter must be a YAML mapping.")
+                for key in ("name", "description"):
+                    if key in meta and not isinstance(meta[key], str):
+                        raise ValueError(f"Skill frontmatter {key!r} must be a string.")
+                return {key: meta[key] for key in ("name", "description") if key in meta}, "\n".join(lines[end + 1 :])
+        raise ValueError("Skill frontmatter is missing its closing '---'.")
+
+
+def _render_skill(skill: _Skill) -> str:
+    """Render a skill as one `<skill>` block for the reflection prompt."""
+    attrs = f"name={skill.name!r}"
+    if skill.description:
+        attrs += f" description={skill.description!r}"
+    return f"<skill {attrs}>\n{skill.content.strip()}\n</skill>"
+
+
+# --------------------------------------------------------------------------- #
+# Signatures
+# --------------------------------------------------------------------------- #
+
+
+class ProposeInstruction(dspy.Signature):
+    """I provided an assistant with instructions to perform a task for me. You are given those instructions, along with examples of different task inputs provided to the assistant, the assistant's response for each of them, and some feedback on how the assistant's response could be better.
+
+    Your task is to write a new instruction for the assistant.
+
+    Read the inputs carefully and identify the input format and infer detailed task description about the task I wish to solve with the assistant.
+
+    Read all the assistant responses and the corresponding feedback. Identify all niche and domain specific factual information about the task and include it in the instruction, as a lot of it may not be available to the assistant in the future. The assistant may have utilized a generalizable strategy to solve the task, if so, include that in the instruction as well."""
+
+    current_instruction: str = dspy.InputField(desc="The instructions I provided to the assistant.")
+    examples_with_feedback: list[dict[str, Any]] = dspy.InputField(
+        desc="Task inputs provided to the assistant, the assistant's response for each, "
+        "and feedback on how the response could be better."
+    )
+    new_instruction: str = dspy.OutputField(desc="The new instruction for the assistant.")
+
+
+class CompressInstruction(dspy.Signature):
+    """Shorten the instruction to fit within the stated limit. Preserve every
+    strategy, rule, and constraint; cut redundancy and verbosity. Do not add
+    new content. Output only the shortened instruction."""
+
+    instruction: str = dspy.InputField()
+    length_limit: str = dspy.InputField()
+    shortened_instruction: str = dspy.OutputField()
+
+
+# --------------------------------------------------------------------------- #
+# Compaction of long inputs
+# --------------------------------------------------------------------------- #
+
+_COMPACTED_CHARS = 500
+
+
+def compact_history(history: History, max_chars: int = _COMPACTED_CHARS) -> History:
+    """Return a copy of `history` with every tool result longer than `max_chars` cut to that length.
+
+    Only the `value` of each `ToolCallResult` attached to a `ToolCalls` message value is shortened; a cut
+    value ends with a marker naming how many characters were removed. Thoughts, tool names, tool
+    arguments, user inputs, and error flags are untouched. The input is never mutated: `dspy.ReActV2`
+    appends to its `History` in place and the trace shares that object.
+    """
+    messages = []
+    for message in history.messages:
+        new_message = dict(message)
+        for key, value in message.items():
+            if isinstance(value, ToolCalls) and isinstance(value.tool_call_results, ToolCallResults):
+                new_message[key] = _compact_tool_calls(value, max_chars)
+        messages.append(new_message)
+    return history.model_copy(update={"messages": messages})
+
+
+def _compact_tool_calls(tool_calls: ToolCalls, max_chars: int) -> ToolCalls:
+    results = tool_calls.tool_call_results
+    new_results = []
+    for result in results.tool_call_results:
+        text = result.value if isinstance(result.value, str) else str(result.value)
+        if len(text) > max_chars:
+            cut = len(text) - max_chars
+            marker = f" [{cut:,} of {len(text):,} characters cut]"
+            result = result.model_copy(update={"value": text[:max_chars] + marker})
+        new_results.append(result)
+    new_results = results.model_copy(update={"tool_call_results": new_results})
+    return tool_calls.model_copy(update={"tool_call_results": new_results})
+
+
+def compact_repl_history(history: REPLHistory, max_chars: int = _COMPACTED_CHARS) -> REPLHistory:
+    """Return a copy of `history` whose rendered REPL outputs are capped at `max_chars` characters.
+
+    `REPLHistory.format()` already cuts each output to its head and tail and reports the omitted count, so
+    only `max_output_chars` changes, and only downwards.
+    """
+    return history.model_copy(update={"max_output_chars": min(history.max_output_chars, max_chars)})
+
+
+# --------------------------------------------------------------------------- #
+# The proposer
+# --------------------------------------------------------------------------- #
+
+
+@experimental(version="3.4.1")
+class InstructionProposer(ProposalFn):
+    """GEPA's default instruction proposer.
+
+    `dspy.GEPA` builds `InstructionProposer()` when no `instruction_proposer` is passed. The proposer
+    passes each component's reflective examples as structured values and asks the reflection LM, through
+    `dspy.Predict` and a `JSONAdapter`, for a new instruction. Inputs that are `dspy.Type` instances
+    (for example `dspy.Image`) reach the reflection LM as structured content.
+
+    Args:
+        skills: Reference material for the reflection LM, as a single source or a sequence of sources.
+            Each source is a path to a skill file, a directory holding `SKILL.md`, or an inline string.
+            Loaded once, at construction; a path that does not exist raises.
+        additional_instructions: Guidance applied to every proposal, for example "Write instructions in
+            imperative voice."
+        base_instructions: Replaces the proposal prompt (the `ProposeInstruction` docstring). The input and
+            output fields are unchanged.
+        max_chars: Maximum number of Unicode characters in each proposed instruction, after stripping
+            outer whitespace. Enforced with Pydantic validation; None means no limit.
+        truncate_history_outputs: When True, long tool results inside `dspy.History` inputs and long outputs inside
+            `REPLHistory` inputs are cut before the examples are rendered. Nothing else is shortened.
+        adapter: The adapter for the proposer's own LM calls. Defaults to `JSONAdapter()`.
+
+    When a proposal exceeds max_chars, the proposer makes one call asking the reflection LM to
+    shorten the draft. Pydantic rejects an empty or still oversized result with ValidationError.
+    The proposer never truncates an instruction. Exceptions propagate to GEPA for proposal failure handling.
+
+    Example:
+        ```python
+        from dspy.teleprompt.gepa import InstructionProposer
+
+        dspy.GEPA(
+            metric=metric,
+            reflection_lm=lm,
+            instruction_proposer=InstructionProposer(
+                skills=["./skills/prompt-engineering"],
+                additional_instructions="Write instructions in imperative voice.",
+                max_chars=1500,
+                truncate_history_outputs=True,
+            ),
+            auto="medium",
+        )
+        ```
+    """
+
+    def __init__(
+        self,
+        skills: str | Path | Sequence[str | Path] | None = None,
+        additional_instructions: str | None = None,
+        base_instructions: str | None = None,
+        max_chars: int | None = None,
+        truncate_history_outputs: bool = False,
+        adapter: Adapter | None = None,
+    ):
+        if max_chars is not None and (isinstance(max_chars, bool) or not isinstance(max_chars, int) or max_chars <= 0):
+            raise ValueError(f"max_chars must be a positive int or None, got {max_chars!r}.")
+        if not isinstance(truncate_history_outputs, bool):
+            raise TypeError(f"truncate_history_outputs must be a bool, got {type(truncate_history_outputs).__name__}.")
+        if adapter is not None and not isinstance(adapter, Adapter):
+            raise TypeError(f"adapter must be a dspy.Adapter or None, got {type(adapter).__name__}.")
+
+        if isinstance(skills, str | Path):
+            skills = [skills]
+        self.skills: tuple[_Skill, ...] = tuple(_SkillLoader.load(skill) for skill in (skills or ()))
+        self.additional_instructions = _clean_text("additional_instructions", additional_instructions)
+        self.base_instructions = _clean_text("base_instructions", base_instructions)
+        self.max_chars = max_chars
+        # Adapter parsing currently drops top-level field constraints. Validate here so the
+        # same Pydantic contract holds with JSONAdapter and custom adapters alike.
+        self._instruction_validator = TypeAdapter(
+            Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=max_chars)]
+        )
+        self.truncate_history_outputs = truncate_history_outputs
+        self.adapter = adapter if adapter is not None else JSONAdapter()
+
+        # Static fields come first so provider-side prompt caching can reuse them across calls. Each
+        # prepend lands at index 0, so they are added in reverse order of their final position.
+        signature = ProposeInstruction
+        if self._length_limit_text():
+            signature = signature.prepend(
+                "length_limit", dspy.InputField(desc="Hard limit on the length of the new instruction."), str
+            )
+        if self.additional_instructions:
+            signature = signature.prepend(
+                "additional_instructions",
+                dspy.InputField(desc="Additional requirements from the user for the new instruction. Follow them."),
+                str,
+            )
+        if self.skills:
+            signature = signature.prepend(
+                "reference_skills",
+                dspy.InputField(
+                    desc="Trusted reference material chosen by the user. Draw on it when writing the new instruction."
+                ),
+                str,
+            )
+        if self.base_instructions:
+            signature = signature.with_instructions(self.base_instructions)
+
+        self.propose = dspy.Predict(signature)
+        self.compress = dspy.Predict(CompressInstruction) if self._length_limit_text() else None
+
+    def __call__(
+        self,
+        candidate: dict[str, str],
+        reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
+        components_to_update: list[str],
+    ) -> dict[str, str]:
+        """Propose a new instruction for each component in `components_to_update`.
+
+        A component missing from `candidate` or from `reflective_dataset` is left out of the result.
+        """
+        results: dict[str, str] = {}
+        for name in components_to_update:
+            if name not in candidate or name not in reflective_dataset:
+                continue
+
+            kwargs: dict[str, Any] = {}
+            if self.skills:
+                kwargs["reference_skills"] = "\n\n".join(_render_skill(skill) for skill in self.skills)
+            if self.additional_instructions:
+                kwargs["additional_instructions"] = self.additional_instructions
+            if self.compress is not None:
+                kwargs["length_limit"] = self._length_limit_text()
+            kwargs["current_instruction"] = candidate[name]
+            kwargs["examples_with_feedback"] = self._prepare_examples(reflective_dataset[name])
+
+            with dspy.context(adapter=self.adapter):
+                pred = self.propose(**kwargs)
+
+            draft = pred.new_instruction.strip()
+            if not draft:
+                raise ValueError(f"The reflection LM returned an empty instruction for component {name!r}.")
+
+            results[name] = self._enforce_length(draft)
+
+        return results
+
+    def _prepare_examples(self, examples: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        """Optionally shorten history outputs, leaving rendering to the adapter."""
+
+        def prepare(value: Any) -> Any:
+            if isinstance(value, History):
+                return compact_history(value)
+            if isinstance(value, REPLHistory):
+                return compact_repl_history(value)
+            if isinstance(value, Mapping):
+                return {key: prepare(item) for key, item in value.items()}
+            if isinstance(value, list | tuple):
+                return [prepare(item) for item in value]
+            return value
+
+        if self.truncate_history_outputs:
+            return [prepare(example) for example in examples]
+        return [dict(example) for example in examples]
+
+    def _length_limit_text(self) -> str:
+        return f"The new instruction must be at most {self.max_chars} characters." if self.max_chars is not None else ""
+
+    def _enforce_length(self, draft: str) -> str:
+        """Validate with Pydantic, allowing one attempt to compress an oversized draft."""
+        try:
+            return self._instruction_validator.validate_python(draft)
+        except ValidationError:
+            if self.compress is None:
+                raise
+        with dspy.context(adapter=self.adapter):
+            shortened = self.compress(instruction=draft, length_limit=self._length_limit_text()).shortened_instruction
+        return self._instruction_validator.validate_python(shortened)
+
+
+def _clean_text(label: str, value: str | None) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError(f"{label} must be a str or None, got {type(value).__name__}.")
+    return value.strip() or None
+
+
+# --------------------------------------------------------------------------- #
+# Multimodal proposer
+# --------------------------------------------------------------------------- #
 
 
 class GenerateEnhancedMultimodalInstructionFromFeedback(dspy.Signature):
@@ -206,7 +646,7 @@ class SingleComponentMultiModalProposer(dspy.Module):
                 if not value:
                     s += "\n"
                 return s
-            elif isinstance(value, (list, tuple)):
+            elif isinstance(value, list | tuple):
                 s = ""
                 for i, item in enumerate(value):
                     s += f"{'#' * level} Item {i + 1}\n"
@@ -269,6 +709,9 @@ class SingleComponentMultiModalProposer(dspy.Module):
         return multimodal_content
 
 
+# TODO: InstructionProposer now delivers images to the reflection LM as structured content.
+# Compare quality on a vision task before considering deprecation:
+# https://github.com/stanfordnlp/dspy/issues/10591
 class MultiModalInstructionProposer(ProposalFn):
     """GEPA-compatible multimodal instruction proposer.
 

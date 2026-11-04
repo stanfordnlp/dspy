@@ -4,7 +4,7 @@ from typing import Any, NamedTuple
 
 from pydantic.fields import FieldInfo
 
-from dspy.adapters.base import Adapter
+from dspy.adapters.base import Adapter, prompt_to_openai_messages
 from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
     apply_output_field_defaults,
@@ -15,9 +15,10 @@ from dspy.adapters.utils import (
     translate_field_type,
 )
 from dspy.clients.base_lm import BaseLM
+from dspy.clients.call_context import adapter_fallback_scope
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
-from dspy.utils.exceptions import AdapterParseError, LMError
+from dspy.utils.exceptions import AdapterParseError
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
 
@@ -28,7 +29,7 @@ class FieldInfoWithName(NamedTuple):
 
 
 class ChatAdapter(Adapter):
-    """Default Adapter for most language models.
+    """Formats and parses fields using `[[ ## field_name ## ]]` markers.
 
     The ChatAdapter formats DSPy signatures into a format compatible with most language models.
     It uses delimiter patterns like `[[ ## field_name ## ]]` to clearly separate input and output fields in
@@ -52,9 +53,9 @@ class ChatAdapter(Adapter):
             callbacks: List of callback functions to execute during adapter methods.
             use_native_function_calling: Whether to enable native function calling capabilities.
             native_response_types: List of output field types handled by native LM features.
-            use_json_adapter_fallback: Whether to automatically fallback to JSONAdapter if the ChatAdapter fails.
-                If True, when an error occurs (except ContextWindowExceededError), the adapter will retry using
-                JSONAdapter. Defaults to True.
+            use_json_adapter_fallback: Whether to try JSONAdapter after an AdapterParseError.
+                Only invalid model output can trigger this extra call, and never after visible stream output.
+                Configuration errors, engine failures and programming bugs propagate. Defaults to True.
             parallel_tool_calls: Whether to request provider-side parallel tool-call generation when native function
                 calling is active. If None, the adapter does not set the provider option.
         """
@@ -82,17 +83,15 @@ class ChatAdapter(Adapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        try:
-            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-        except Exception as e:
-            # fallback to JSONAdapter
-            from dspy.adapters.json_adapter import JSONAdapter
+        with adapter_fallback_scope() as progress:
+            try:
+                return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+            except AdapterParseError:
+                from dspy.adapters.json_adapter import JSONAdapter
 
-            if isinstance(e, LMError) or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
-                # On LM errors, already using JSONAdapter, or use_json_adapter_fallback is False, we don't want to
-                # retry with a different adapter. Raise the original error instead of the fallback error.
-                raise
-            return self._make_json_adapter_fallback()(lm, lm_kwargs, signature, demos, inputs)
+                if progress.emitted or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
+                    raise
+                return self._make_json_adapter_fallback()(lm, lm_kwargs, signature, demos, inputs)
 
     async def acall(
         self,
@@ -102,17 +101,15 @@ class ChatAdapter(Adapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        try:
-            return await super().acall(lm, lm_kwargs, signature, demos, inputs)
-        except Exception as e:
-            # fallback to JSONAdapter
-            from dspy.adapters.json_adapter import JSONAdapter
+        with adapter_fallback_scope() as progress:
+            try:
+                return await super().acall(lm, lm_kwargs, signature, demos, inputs)
+            except AdapterParseError:
+                from dspy.adapters.json_adapter import JSONAdapter
 
-            if isinstance(e, LMError) or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
-                # On LM errors, already using JSONAdapter, or use_json_adapter_fallback is False, we don't want to
-                # retry with a different adapter. Raise the original error instead of the fallback error.
-                raise
-            return await self._make_json_adapter_fallback().acall(lm, lm_kwargs, signature, demos, inputs)
+                if progress.emitted or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
+                    raise
+                return await self._make_json_adapter_fallback().acall(lm, lm_kwargs, signature, demos, inputs)
 
     def format_field_description(self, signature: type[Signature]) -> str:
         return (
@@ -236,7 +233,7 @@ class ChatAdapter(Adapter):
             if (k not in fields) and (k in signature.output_fields):
                 try:
                     fields[k] = parse_value(v, signature.output_fields[k].annotation)
-                except Exception as e:
+                except ValueError as e:
                     raise AdapterParseError(
                         adapter_name="ChatAdapter",
                         signature=signature,
@@ -284,16 +281,12 @@ class ChatAdapter(Adapter):
         """
         Format the call data into finetuning data according to the OpenAI API specifications.
 
-        For the chat adapter, this means formatting the data as a list of messages, where each message is a dictionary
-        with a "role" and "content" key. The role can be "system", "user", or "assistant". Then, the messages are
-        wrapped in a dictionary with a "messages" key.
+        Fine-tuning files are a provider format: the rendered prompt is written as OpenAI chat messages (each a
+        dictionary with "role" and "content"), followed by the assistant answer, wrapped in a "messages" key.
         """
-        system_user_messages = self.format(  # returns a list of dicts with the keys "role" and "content"
-            signature=signature, demos=demos, inputs=inputs
-        )
+        prompt = self.format(signature=signature, demos=demos, inputs=inputs)
         assistant_message_content = self.format_assistant_message_content(  # returns a string, without the role
             signature=signature, outputs=outputs
         )
-        assistant_message = {"role": "assistant", "content": assistant_message_content}
-        messages = system_user_messages + [assistant_message]
+        messages = prompt_to_openai_messages(prompt) + [{"role": "assistant", "content": assistant_message_content}]
         return {"messages": messages}

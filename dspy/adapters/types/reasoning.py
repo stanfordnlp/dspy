@@ -4,6 +4,7 @@ import pydantic
 
 from dspy.adapters.types.base_type import Type
 from dspy.clients.base_lm import BaseLM
+from dspy.lm15 import Response, ThinkingPart
 
 if TYPE_CHECKING:
     from dspy.signatures.signature import Signature
@@ -23,6 +24,20 @@ class Reasoning(Type):
 
     def format(self):
         return f"{self.content}"
+
+    @staticmethod
+    def _fallback_field_name(signature: type["Signature"], field_name: str) -> str:
+        """Resolve the default CoT/RLM wire name without colliding with task fields."""
+        field = signature.output_fields[field_name]
+        name = field.json_schema_extra.get("__dspy_reasoning_fallback") if field.annotation is Reasoning else None
+        if not name:
+            return field_name
+        candidate = name
+        suffix = 2
+        while candidate in signature.fields:
+            candidate = f"{name}_{suffix}"
+            suffix += 1
+        return candidate
 
     @pydantic.model_validator(mode="before")
     @classmethod
@@ -50,6 +65,15 @@ class Reasoning(Type):
         lm: BaseLM,
         lm_kwargs: dict[str, Any],
     ) -> type["Signature"]:
+        thinking = lm_kwargs.get("thinking", lm.kwargs.get("thinking"))
+        if isinstance(thinking, dict) and thinking.get("type") in ("disabled", "enabled", "adaptive"):
+            # An explicit provider control already decides whether thinking is on.
+            # Do not inject a competing default effort; the request builder still
+            # validates any reasoning controls the caller explicitly supplied.
+            if thinking["type"] == "disabled" or not lm.supports_reasoning:
+                return signature
+            return signature.delete(field_name)
+
         if "reasoning_effort" in lm_kwargs:
             # `lm_kwargs` overrides `lm.kwargs`.
             reasoning_effort = lm_kwargs["reasoning_effort"]
@@ -60,28 +84,20 @@ class Reasoning(Type):
             # reasoning effort is set in `lm_kwargs` or `lm.kwargs`.
             reasoning_effort = "low"
 
-        if reasoning_effort is None or not lm.supports_reasoning:
-            # If users explicitly set `reasoning_effort` to None or the LM doesn't support reasoning, we don't enable
-            # native reasoning.
+        if reasoning_effort in (None, "none") or not lm.supports_reasoning:
+            # Respect explicit disabling as well as models without native reasoning.
             return signature
 
-        if "gpt-5" in lm.model and lm.model_type == "chat":
-            # There is a caveat of Litellm as 1.79.0 that when using the chat completion API on GPT-5 family models,
-            # the reasoning content is not available in the response. As a workaround, we don't enable the native
-            # reasoning feature for GPT-5 family models when using the chat completion API.
-            # Litellm issue: https://github.com/BerriAI/litellm/issues/14748
-            return signature
-
+        # Native reasoning need not expose a summary (including GPT-5 chat).
         lm_kwargs["reasoning_effort"] = reasoning_effort
         # Delete the reasoning field from the signature to use the native reasoning feature.
         return signature.delete(field_name)
 
     @classmethod
-    def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["Reasoning"]:
-        """Parse the LM response into a Reasoning object."""
-        if "reasoning_content" in response:
-            return Reasoning(content=response["reasoning_content"])
-        return None
+    def parse_lm_response(cls, response: Response) -> Optional["Reasoning"]:
+        """Read the model's native thinking parts into a Reasoning object."""
+        thinking = "".join(part.text for part in response.message.parts_of(ThinkingPart))
+        return Reasoning(content=thinking) if thinking else None
 
     @classmethod
     def parse_stream_chunk(cls, chunk) -> str | None:
