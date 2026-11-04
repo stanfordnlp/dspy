@@ -32,7 +32,11 @@ a quarter of the time. If that cache can't be written, interpreters start from P
 
 Where writing files is unwelcome, turn the cache off with `PythonInterpreter(sandbox_cache=False)`, or for every
 interpreter, including those Flex and RLM make, with the environment variable `DSPY_SANDBOX_CACHE=0`. DSPy then
-writes nothing to `$DSPY_CACHEDIR/sandbox`, and Pyodide starts from its own standard library.
+writes nothing to `$DSPY_CACHEDIR/sandbox`, and Pyodide starts from its own standard library. Sandboxes that import
+dspy still need its bundle (below): each process builds its own in a temporary directory, removed when it exits.
+
+`provide_dspy()` lets sandboxed code `import dspy`, with the host's dspy source and Pyodide builds of its
+dependencies.
 
 ## Execution Instructions
 
@@ -50,6 +54,7 @@ factory without it remains valid and uses RLM's generic action prompt.
         members:
             - __call__
             - execute
+            - provide_dspy
             - shutdown
             - start
         show_source: true

@@ -266,6 +266,7 @@ class PythonInterpreter:
             sandbox_cache: Whether the interpreter may write DSPy's sandbox cache in ``$DSPY_CACHEDIR/sandbox``: a
                    byte-compiled copy of Pyodide's standard library, which interpreters start from about four times
                    faster. With ``False`` nothing is written there, and Pyodide starts from its own standard library.
+                   A sandbox that imports dspy (``provide_dspy``) then gets its bundle built in a temporary directory.
                    Defaults to the ``DSPY_SANDBOX_CACHE`` environment variable, where ``0`` turns it off.
         """
         if isinstance(deno_command, dict):
@@ -351,6 +352,31 @@ class PythonInterpreter:
         self._handling_tool_call = False
         self._pending_large_vars = {}
         self._session_ended = False
+
+    def provide_dspy(self) -> None:
+        """Make ``import dspy`` work in the sandbox, with the host's dspy and Pyodide builds of its dependencies.
+
+        The first call for a dspy source tree fetches the dependencies and byte-compiles the bundle (see
+        ``dspy.primitives.sandbox_bundle``), which the sandbox installs when it starts. Call before the
+        interpreter starts; a second call does nothing. With ``sandbox_cache=False`` the bundle is built in a
+        temporary directory of the process instead of the cache, once per process.
+        """
+        from dspy.primitives.sandbox_bundle import SandboxBundleError, prepare_bundle, scratch_root
+
+        if any(arg.startswith("--dspy-bundle=") for arg in self.deno_command):
+            return
+        if self.deno_process is not None:
+            raise SandboxBundleError("provide_dspy() must be called before the interpreter starts.")
+        if not self._uses_default_deno_command:
+            raise SandboxBundleError("provide_dspy() needs the default deno_command.")
+        root = None
+        if not self.sandbox_cache:  # nothing in the cache: a bundle of this process's own
+            root = scratch_root()
+            if any(_paths_overlap(_canonicalize_path(path), _canonicalize_path(root)) for path in self.enable_write_paths):
+                raise CodeInterpreterError("Write paths cannot overlap PythonInterpreter runtime files.")
+        bundle = _canonicalize_path(prepare_bundle(self._deno_run, self._deno_dir, self._runner, root))
+        self._allow_read(bundle)
+        self.deno_command.append(f"--dspy-bundle={bundle}")
 
     def _start_from_compiled_stdlib(self) -> None:
         """Have Pyodide start from its byte-compiled standard library, built once per Pyodide release (see
