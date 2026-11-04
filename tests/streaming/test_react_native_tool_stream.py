@@ -1,4 +1,4 @@
-"""ReActV2 under streamify with a backend that streams native tool calls.
+"""ReAct under streamify with a backend that streams native tool calls.
 
 Pinned after cmpnd-ai/breaka-your-lm reported the streamed run failing on
 Fireworks (2026-09-16). These tests establish what DSPy's streaming path does
@@ -69,7 +69,7 @@ def multiply(a: int, b: int) -> int:
 
 
 def _program():
-    return dspy.ReActV2("question -> answer: int", tools=[add, multiply], max_iters=5)
+    return dspy.ReAct("question -> answer: int", tools=[add, multiply], max_iters=5)
 
 
 def _drain(stream):
@@ -80,7 +80,7 @@ def _drain(stream):
     return final
 
 
-def test_react_v2_streams_native_tool_calls_like_the_plain_run():
+def test_react_streams_native_tool_calls_like_the_plain_run():
     plain_engine = ScriptedToolEngine()
     with dspy.context(lm=dspy.LM("scripted/tools", engine=plain_engine, cache=False, num_retries=0)):
         plain = _program()(question="What is (3 + 4) * 5?")

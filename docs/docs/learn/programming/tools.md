@@ -41,16 +41,18 @@ react_agent = dspy.ReAct(
 # Use the agent
 result = react_agent(question="What's the weather like in Tokyo?")
 print(result.answer)
-print("Tool calls made:", result.trajectory)
+print("Agent history:", result.history.messages)
 ```
 
 ### ReAct Features
 
 - **Automatic reasoning**: The model thinks through the problem step by step
 - **Tool selection**: Automatically chooses which tool to use based on the situation
-- **Iterative execution**: Can make multiple tool calls to gather information
+- **Iterative execution**: Can request multiple tool calls per model turn, executed sequentially
 - **Error handling**: Built-in error recovery for failed tool calls
-- **Trajectory tracking**: Complete history of reasoning and tool calls
+- **Structured history**: `result.history` records reasoning, tool calls, and results
+- **Typed submission**: `submit` returns the declared output fields; failed forced submission raises
+- **Async support**: Use `await react_agent.acall(...)` with async tools
 
 ### ReAct Parameters
 
@@ -58,7 +60,7 @@ print("Tool calls made:", result.trajectory)
 react_agent = dspy.ReAct(
     signature="question -> answer",  # Input/output specification
     tools=[tool1, tool2, tool3],     # List of available tools
-    max_iters=10                     # Maximum number of tool call iterations
+    max_iters=10                     # Maximum number of model turns
 )
 ```
 
