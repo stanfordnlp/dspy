@@ -147,6 +147,9 @@ class Evaluate:
             display_table (Union[bool, int]): Whether to display the evaluation results in a table. if not provided, use
                 `self.display_table`. If a number is passed, the evaluation results will be truncated to that number before displayed.
             callback_metadata (dict): Metadata to be used for evaluate callback handlers.
+            timeout (Optional[float]): Override the straggler timeout configured on the ``Evaluate`` instance.
+                Set to 0 to disable straggler resubmission for long-running items.
+            straggler_limit (Optional[int]): Override the straggler limit configured on the ``Evaluate`` instance.
 
         Returns:
             The evaluation results are returned as a dspy.EvaluationResult object containing the following attributes:
@@ -154,9 +157,6 @@ class Evaluate:
             - score: A float percentage score (e.g., 67.30) representing overall performance
 
             - results: a list of (example, prediction, score) tuples for each example in devset
-            timeout (Optional[float]): Override the straggler timeout configured on the ``Evaluate`` instance.
-                Set to 0 to disable straggler resubmission for long-running items.
-            straggler_limit (Optional[int]): Override the straggler limit configured on the ``Evaluate`` instance.
         """
         metric = metric if metric is not None else self.metric
         devset = devset if devset is not None else self.devset
