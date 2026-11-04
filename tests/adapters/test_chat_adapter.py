@@ -3076,8 +3076,8 @@ def test_field_markers_false_multi_output_field_raises():
         answer: str = dspy.OutputField()
         confidence: float = dspy.OutputField()
 
-            with pytest.raises(ValueError, match="single output field"):
-            adapter._validate_field_markers(MultiOutputSignature)
+    with pytest.raises(ValueError, match="single output field"):
+        adapter._validate_field_markers(MultiOutputSignature)
 
 def test_chat_adapter_formats_pep604_union_like_typing_union():
     class QA(dspy.Signature):
