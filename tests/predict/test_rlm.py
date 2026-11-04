@@ -8,15 +8,17 @@ Test organization:
 
 import base64
 import io
+import logging
 import sys
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 import dspy
 from dspy.adapters.types.tool import Tool
-from dspy.predict.rlm import RLM, _LLMCallBudget, _strip_code_fences
+from dspy.predict.rlm import RLM, _apply_history_processor, _LLMCallBudget, _strip_code_fences
 from dspy.primitives.code_interpreter import (
     CodeExecutionError,
     CodeInterpreterError,
@@ -25,7 +27,18 @@ from dspy.primitives.code_interpreter import (
 )
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
-from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
+from dspy.primitives.repl_types import (
+    EXTRACT_FALLBACK,
+    REPL_ENTRY_KEY,
+    ExtractFallbackMarker,
+    REPLEntry,
+    REPLHistory,
+    REPLVariable,
+    build_repl_event,
+    is_repl_event,
+    restore_repl_events,
+    split_repl_event,
+)
 from dspy.primitives.sandbox_serializable import SandboxSerializable
 from dspy.utils.dummies import DummyLM
 from tests.mock_interpreter import MockInterpreter, MockInterpreterFactory
@@ -62,7 +75,7 @@ def make_mock_predictor(responses: list[dict], async_mode: bool = False):
 
 
 @contextmanager
-def dummy_lm_context(responses: list[dict]):
+def dummy_lm_context(responses: list[dict[str, Any]]):
     """Context manager for DummyLM setup."""
     import dspy
     from dspy.utils.dummies import DummyLM
@@ -70,6 +83,11 @@ def dummy_lm_context(responses: list[dict]):
     lm = DummyLM(responses)
     with dspy.context(lm=lm):
         yield lm
+
+
+def as_chat_dicts(messages):
+    """lm15 messages as role/content dicts, for assertions on the formatted text."""
+    return [{"role": m.role, "content": m.text} for m in messages]
 
 
 # Common test tools
@@ -86,6 +104,7 @@ def add_tool(a: int = 0, b: int = 0) -> str:
 def multiply_tool(a: int = 0, b: int = 0) -> str:
     """Multiply two numbers."""
     return str(a * b)
+
 
 # ============================================================================
 # Unit Tests: MockInterpreter
@@ -143,17 +162,23 @@ async def test_default_reasoning_trajectory(mode, async_mode):
         for response in responses:
             response["plan"] = "Check the value before submitting."
     lm = Model(responses, reasoning=mode == "native")
-    factory = MockInterpreterFactory(responses=[
-        "13", CodeExecutionError("name 'missing' is not defined"), FinalOutput({"answer": 13}),
-    ])
+    factory = MockInterpreterFactory(
+        responses=[
+            "13",
+            CodeExecutionError("name 'missing' is not defined"),
+            FinalOutput({"answer": 13}),
+        ]
+    )
     program = RLM("query -> answer: int", max_iters=3, interpreter_factory=factory)
     with dspy.context(lm=lm):
         result = await program.acall(query="Return thirteen") if async_mode else program(query="Return thirteen")
     expected = "Some reasoning" if mode == "native" else "" if mode == "omitted" else responses[0]["plan"]
     assert result.answer == 13
     assert result.final_reasoning == expected
-    assert len(result.trajectory) == 3
-    assert all(entry["reasoning"] == expected and isinstance(entry["reasoning"], str) for entry in result.trajectory)
+    assert len(result.repl_trajectory) == 3
+    assert all(
+        entry["reasoning"] == expected and isinstance(entry["reasoning"], str) for entry in result.repl_trajectory
+    )
 
 
 class TestRLMInitialization:
@@ -180,6 +205,7 @@ class TestRLMInitialization:
 
     def test_custom_tools(self):
         """Test RLM with custom tools."""
+
         def custom_tool(x: str = "") -> str:
             return x.upper()
 
@@ -190,6 +216,7 @@ class TestRLMInitialization:
     @pytest.mark.parametrize("tool_name", ["invalid-name", "123start"])
     def test_tool_validation_invalid_identifier(self, tool_name):
         """Test RLM rejects tool names that aren't valid Python identifiers."""
+
         def my_tool() -> str:
             return "result"
 
@@ -208,6 +235,7 @@ class TestRLMInitialization:
     @pytest.mark.parametrize("tool_name", ["llm_query", "llm_query_batched", "SUBMIT", "print"])
     def test_tool_validation_reserved_names(self, tool_name):
         """Test RLM rejects tool names that conflict with built-in functions."""
+
         def my_tool() -> str:
             return "result"
 
@@ -223,6 +251,7 @@ class TestRLMInitialization:
 
     def test_tools_dict_rejected(self):
         """Test RLM rejects dict format for tools with helpful error."""
+
         def my_tool() -> str:
             return "result"
 
@@ -251,10 +280,29 @@ class TestRLMInitialization:
         with pytest.raises(ValueError, match="Input fields conflict with user tools: \\['lookup'\\]"):
             RLM("lookup -> answer", tools=[lookup])
 
-    @pytest.mark.parametrize("output_name", ["trajectory", "final_reasoning"])
+    @pytest.mark.parametrize(
+        "output_name", ["history", "final_reasoning", "repl_trajectory", REPL_ENTRY_KEY, "variables_info", "iteration"]
+    )
     def test_output_names_cannot_shadow_result_metadata(self, output_name):
         with pytest.raises(ValueError, match=f"Output fields conflict with RLM result metadata: \\['{output_name}'\\]"):
             RLM(f"context -> {output_name}")
+
+    @pytest.mark.parametrize("input_name", ["history", REPL_ENTRY_KEY, "variables_info", "iteration"])
+    def test_input_names_cannot_shadow_reserved_inputs(self, input_name):
+        # Single input
+        with pytest.raises(ValueError, match=f"Input fields conflict with reserved names: \\['{input_name}'\\]"):
+            RLM(f"{input_name} -> answer")
+
+        # Multiple inputs
+        with pytest.raises(ValueError, match=f"Input fields conflict with reserved names: \\['{input_name}'\\]"):
+            RLM(f"{input_name}, question -> answer")
+
+    def test_reserved_event_key_is_rejected_at_call_time(self):
+        rlm = RLM("question -> answer")
+        with pytest.raises(
+            ValueError, match=f"Unexpected inputs not declared in the signature: \\['{REPL_ENTRY_KEY}'\\]"
+        ):
+            rlm(question="q", **{REPL_ENTRY_KEY: "x"})
 
     def test_optional_parameters(self):
         """Test RLM optional parameters and their defaults."""
@@ -318,6 +366,12 @@ class TestRLMInitialization:
         with pytest.raises(TypeError):
             await rlm.acall(MockInterpreterFactory(), query="test")
 
+    def test_positional_history_processor_is_rejected(self):
+        rlm = RLM("query -> answer")
+
+        with pytest.raises(TypeError):
+            rlm(lambda h: h, query="test")
+
     def test_llm_query_returns_legacy_response_text(self):
         from dspy.utils.dummies import DummyLM
 
@@ -354,6 +408,7 @@ class TestRLMInitialization:
 
         with pytest.raises(TypeError, match="Sub-LM response must contain text, got NoneType"):
             tools["llm_query"]("test prompt")
+
     @pytest.mark.parametrize("unexpected_name", ["SUBMIT", "lookup", "tools"])
     def test_forward_rejects_undeclared_inputs_before_interpreter_execution(self, unexpected_name):
         def lookup() -> str:
@@ -361,11 +416,15 @@ class TestRLMInitialization:
 
         factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "done"})])
         rlm = RLM("context -> answer", tools=[lookup], interpreter_factory=factory)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return answer", "code": 'SUBMIT("done")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return answer", "code": 'SUBMIT("done")'},
+            ]
+        )
 
-        with pytest.raises(ValueError, match=f"Unexpected inputs not declared in the signature: \\['{unexpected_name}'\\]"):
+        with pytest.raises(
+            ValueError, match=f"Unexpected inputs not declared in the signature: \\['{unexpected_name}'\\]"
+        ):
             rlm(context="some context", **{unexpected_name: "shadowed value"})
 
         assert factory.instances == []
@@ -498,8 +557,8 @@ class TestRLMInterpreterLifecycle:
 
         with pytest.raises(StopLMCall), dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
             rlm.generate_action(
+                history=dspy.History(messages=[]),
                 variables_info=["query: str"],
-                repl_history=REPLHistory(),
                 iteration="1/20",
             )
 
@@ -517,9 +576,11 @@ class TestRLMInterpreterLifecycle:
     def test_interpreter_remains_available_as_signature_input(self):
         factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "CPython"})])
         rlm = RLM("interpreter -> answer", max_iters=1, interpreter_factory=factory)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return input", "code": "SUBMIT(interpreter)"},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return input", "code": "SUBMIT(interpreter)"},
+            ]
+        )
 
         result = rlm(interpreter="CPython")
 
@@ -530,9 +591,11 @@ class TestRLMInterpreterLifecycle:
     async def test_factory_creates_and_shuts_down_one_interpreter_per_call(self):
         factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
+            ]
+        )
 
         sync_result = rlm(query="sync")
         async_result = await rlm.acall(query="async")
@@ -591,9 +654,10 @@ class TestRLMInterpreterLifecycle:
         with pytest.raises(TypeError):
             await rlm.acall(query="async", interpreter_factory=factory)
 
-    def test_interpreter_factory_is_reserved_as_signature_input(self):
-        with pytest.raises(ValueError, match="'interpreter_factory' is reserved"):
-            RLM("interpreter_factory -> answer")
+    @pytest.mark.parametrize("name", ["interpreter_factory", "history_processor"])
+    def test_runtime_options_are_reserved_as_signature_inputs(self, name):
+        with pytest.raises(ValueError, match=f"'{name}' is reserved"):
+            RLM(f"{name} -> answer")
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("phase", ["setup", "prediction", "extraction", "cancellation"])
@@ -611,6 +675,7 @@ class TestRLMInterpreterLifecycle:
         rlm.generate_action = RaisingPredictor()
         rlm.extract = RaisingPredictor()
         if phase == "setup":
+
             def fail_setup(*args):
                 raise error
 
@@ -676,7 +741,7 @@ class TestRLMCodeFenceParsing:
 class TestRLMFormatting:
     """Tests for RLM formatting helpers."""
 
-    def test_format_history(self):
+    def test_format_repl_history(self):
         """Test history formatting using REPLHistory."""
         history = REPLHistory()
         history = history.append(reasoning="Need to check the data", code="print(1)", output="1")
@@ -687,7 +752,7 @@ class TestRLMFormatting:
         assert "print(1)" in formatted
         assert "Need to check" in formatted
 
-    def test_format_history_empty(self):
+    def test_format_repl_history_empty(self):
         """Test history formatting with empty history."""
         history = REPLHistory()
         formatted = history.format()
@@ -740,10 +805,7 @@ class TestRLMFormatting:
     def test_build_variables_multiple(self):
         """Test building multiple variables."""
         rlm = RLM("context, query -> answer")
-        variables = rlm._build_variables(
-            context="Hello world",
-            query="What is this?"
-        )
+        variables = rlm._build_variables(context="Hello world", query="What is this?")
         assert len(variables) == 2
         formatted = "\n\n".join(v.format() for v in variables)
         assert "Variable: `context`" in formatted
@@ -776,9 +838,19 @@ class TestREPLTypes:
         codes = [e.code for e in h]
         assert codes == ["x = 1", "x = 2"]
 
+    def test_repl_entry_coerces_reasoning_to_str(self):
+        import dspy
+
+        entry = REPLEntry(reasoning=dspy.Reasoning(content="think"), code="x = 1", output="", max_output_chars=100)
+        assert entry.reasoning == "think"
+        assert isinstance(entry.reasoning, str)
+
+        entry = REPLEntry(reasoning=None, code="x = 1", output="", max_output_chars=100)
+        assert entry.reasoning == ""
+
     def test_repl_entry_format(self):
         """Test REPLEntry formatting."""
-        entry = REPLEntry(reasoning="test reason", code="print(1)", output="1")
+        entry = REPLEntry(reasoning="test reason", code="print(1)", output="1", max_output_chars=100)
         formatted = entry.format(index=0)
         assert "Step 1" in formatted
         assert "test reason" in formatted
@@ -788,14 +860,12 @@ class TestREPLTypes:
     def test_repl_entry_format_truncation(self):
         """Test REPLEntry.format() truncates with head+tail and shows true length."""
         output = "a" * 100 + "b" * 100
-        entry = REPLEntry(code="print('a' + 'b')", output=output)
-        formatted = entry.format(index=0, max_output_chars=100)
+        entry = REPLEntry(code="print('a' + 'b')", output=output, max_output_chars=100)
+        formatted = entry.format(index=0)
         # Head and tail preserved
         assert "a" * 50 in formatted
         assert "b" * 50 in formatted
         assert "100 characters omitted" in formatted
-        # True original length shown in header
-        assert "200 chars" in formatted
 
     @pytest.mark.parametrize(
         ("limit", "head", "tail"),
@@ -804,13 +874,13 @@ class TestREPLTypes:
     def test_repl_entry_truncation_limits(self, limit, head, tail):
         formatted = REPLEntry.format_output("abcdef", max_output_chars=limit)
 
-        assert formatted == f"Output (6 chars):\n{head}\n\n... ({6 - limit} characters omitted) ...\n\n{tail}"
+        assert formatted == f"{head}\n\n... ({6 - limit} characters omitted) ...\n\n{tail}"
 
     def test_repl_entry_format_no_truncation(self):
         """Test REPLEntry.format() passes short output through without truncation."""
         output = "a" * 50
-        entry = REPLEntry(code="print('a')", output=output)
-        formatted = entry.format(index=0, max_output_chars=100)
+        entry = REPLEntry(code="print('a')", output=output, max_output_chars=100)
+        formatted = entry.format(index=0)
         assert output in formatted
         assert "omitted" not in formatted
 
@@ -880,6 +950,7 @@ class TestREPLTypes:
 
         class QASig(dspy.Signature):
             """Answer questions."""
+
             context: str = dspy.InputField(desc="Background information")
             question: str = dspy.InputField(desc="The question to answer")
             answer: str = dspy.OutputField()
@@ -902,9 +973,11 @@ class TestRLMCallMethod:
         """Test that __call__ is an alias for forward()."""
         mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
+            ]
+        )
 
         result = rlm(query="What is the answer?", interpreter_factory=lambda: mock)
         assert result.answer == "42"
@@ -915,21 +988,27 @@ class TestRLMMaxIterationsFallback:
 
     def test_max_iters_triggers_extract(self):
         """Test that reaching max_iters uses extract fallback."""
-        mock = MockInterpreter(responses=[
-            "exploring...",
-            "still exploring...",
-            "more exploring...",
-        ])
+        mock = MockInterpreter(
+            responses=[
+                "exploring...",
+                "still exploring...",
+                "more exploring...",
+            ]
+        )
         rlm = RLM("query -> answer", max_iters=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Explore 1", "code": "print('exploring')"},
-            {"reasoning": "Explore 2", "code": "print('exploring')"},
-            {"reasoning": "Explore 3", "code": "print('exploring')"},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Explore 1", "code": "print('exploring')"},
+                {"reasoning": "Explore 2", "code": "print('exploring')"},
+                {"reasoning": "Explore 3", "code": "print('exploring')"},
+            ]
+        )
         # Mock the extract predictor to return a value
-        rlm.extract = make_mock_predictor([
-            {"answer": "extracted_answer"},
-        ])
+        rlm.extract = make_mock_predictor(
+            [
+                {"answer": "extracted_answer"},
+            ]
+        )
 
         result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "extracted_answer"
@@ -941,72 +1020,91 @@ class TestRLMToolExceptions:
 
     def test_tool_exception_returns_error_in_output(self):
         """Test that tool exceptions are caught and returned as errors."""
+
         def failing_tool() -> str:
             raise RuntimeError("Tool failed!")
 
-        mock = MockInterpreter(responses=[
-            CodeExecutionError("RuntimeError: Tool failed!"),
-            FinalOutput({"answer": "recovered"}),
-        ])
+        mock = MockInterpreter(
+            responses=[
+                CodeExecutionError("RuntimeError: Tool failed!"),
+                FinalOutput({"answer": "recovered"}),
+            ]
+        )
         rlm = RLM("query -> answer", max_iters=5, tools=[failing_tool])
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Call tool", "code": "failing_tool()"},
-            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Call tool", "code": "failing_tool()"},
+                {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+            ]
+        )
 
         result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "recovered"
 
     def test_runtime_error_history_uses_stripped_code(self):
         """Runtime execution failures should preserve stripped code in history."""
-        mock = MockInterpreter(responses=[
-            CodeExecutionError("NameError: name 'x' is not defined"),
-            FinalOutput({"answer": "recovered"}),
-        ])
+        mock = MockInterpreter(
+            responses=[
+                CodeExecutionError("NameError: name 'x' is not defined"),
+                FinalOutput({"answer": "recovered"}),
+            ]
+        )
         rlm = RLM("query -> answer", max_iters=5)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Will fail", "code": "```python\nprint(x)\n```"},
-            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Will fail", "code": "```python\nprint(x)\n```"},
+                {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+            ]
+        )
 
         result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "recovered"
-        first_step = result.trajectory[0]
-        assert first_step["code"] == "print(x)"
+        first_step = result.history.messages[0]
+        first_step_repl_entry = first_step["repl_entry"]
+        assert first_step_repl_entry.code == "print(x)"
 
     def test_syntax_error_from_execute_is_recoverable(self):
         """SyntaxError from interpreter.execute should be surfaced as an iteration error."""
-        mock = MockInterpreter(responses=[
-            SyntaxError("invalid syntax"),
-            FinalOutput({"answer": "recovered"}),
-        ])
+        mock = MockInterpreter(
+            responses=[
+                SyntaxError("invalid syntax"),
+                FinalOutput({"answer": "recovered"}),
+            ]
+        )
         rlm = RLM("query -> answer", max_iters=5)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Bad code", "code": "```python\ndef incomplete(\n```"},
-            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Bad code", "code": "```python\ndef incomplete(\n```"},
+                {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+            ]
+        )
 
         result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "recovered"
-        assert result.trajectory[0]["output"].startswith("[Error] invalid syntax")
+        assert result.history.messages[0]["repl_entry"].output.startswith("[Error] invalid syntax")
 
     def test_syntax_error_from_strip_code_fences_is_recoverable(self):
         """SyntaxError raised by _strip_code_fences (e.g. non-Python fence tag) should be recoverable."""
-        mock = MockInterpreter(responses=[
-            FinalOutput({"answer": "recovered"}),
-        ])
+        mock = MockInterpreter(
+            responses=[
+                FinalOutput({"answer": "recovered"}),
+            ]
+        )
         rlm = RLM("query -> answer", max_iters=5)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Wrong language", "code": "```bash\nls -la\n```"},
-            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Wrong language", "code": "```bash\nls -la\n```"},
+                {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+            ]
+        )
 
         result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "recovered"
-        assert result.trajectory[0]["output"].startswith("[Error]")
+        assert result.history.messages[0]["repl_entry"].output.startswith("[Error]")
 
     def test_interpreter_failure_propagates(self):
         """Process and protocol failures must not fall through to LM extraction."""
+
         def fail_generated_code(code, variables):
             if code == "pass":
                 return ""
@@ -1014,9 +1112,11 @@ class TestRLMToolExceptions:
 
         mock = MockInterpreter(execute_fn=fail_generated_code)
         rlm = RLM("query -> answer", max_iters=1)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Try code", "code": "print('test')"},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Try code", "code": "print('test')"},
+            ]
+        )
         rlm.extract = make_mock_predictor([{"answer": "hallucinated"}])
 
         with pytest.raises(CodeInterpreterError, match="protocol corrupt"):
@@ -1026,6 +1126,7 @@ class TestRLMToolExceptions:
     @pytest.mark.asyncio
     async def test_interpreter_failure_propagates_async(self):
         """Async process and protocol failures must not fall through to LM extraction."""
+
         def fail_generated_code(code, variables):
             if code == "pass":
                 return ""
@@ -1033,9 +1134,11 @@ class TestRLMToolExceptions:
 
         mock = MockInterpreter(execute_fn=fail_generated_code)
         rlm = RLM("query -> answer", max_iters=1)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Try code", "code": "print('test')"},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Try code", "code": "print('test')"},
+            ]
+        )
         rlm.extract = make_mock_predictor([{"answer": "hallucinated"}])
 
         with pytest.raises(CodeInterpreterError, match="protocol corrupt"):
@@ -1052,8 +1155,9 @@ class TestRLMDynamicSignature:
         action_sig = rlm.generate_action.signature
 
         # Required input/output fields
+        assert "history" in action_sig.input_fields
         assert "variables_info" in action_sig.input_fields
-        assert "repl_history" in action_sig.input_fields
+        assert "repl_history" not in action_sig.input_fields  # the turn is fed through `history`
         assert "reasoning" in action_sig.output_fields
         assert "code" in action_sig.output_fields
 
@@ -1067,12 +1171,16 @@ class TestRLMDynamicSignature:
         assert "`summary`" in instructions
         assert "`answer`" in instructions
 
+        # `history` input field should NOT be in the instructions
+        assert "`history`" not in instructions
+
     def test_extract_signature_structure(self):
         """Test extract signature has required fields for all outputs."""
         rlm = RLM("document, question -> summary, key_facts, confidence")
         extract_sig = rlm.extract.signature
+        assert "history" not in extract_sig.input_fields
         assert "variables_info" in extract_sig.input_fields
-        assert "repl_history" in extract_sig.input_fields
+        assert "repl_history" in extract_sig.input_fields  # the current turn as text, as on main
         assert "summary" in extract_sig.output_fields
         assert "key_facts" in extract_sig.output_fields
         assert "confidence" in extract_sig.output_fields
@@ -1123,38 +1231,29 @@ class TestPythonInterpreter:
     def test_variable_injection(self, pooled_interpreter):
         """Test variable injection."""
         interp = pooled_interpreter
-        result = interp.execute(
-            "print(x + y)",
-            variables={"x": 10, "y": 5}
-        )
+        result = interp.execute("print(x + y)", variables={"x": 10, "y": 5})
         assert "15" in result
 
     def test_variable_injection_with_none_values(self, pooled_interpreter):
         """Test variable injection with None values in dicts/lists (JSON null -> Python None)."""
         interp = pooled_interpreter
         # Test None in dict
-        result = interp.execute(
-            "print(data['key'] is None)",
-            variables={"data": {"key": None, "other": "value"}}
-        )
+        result = interp.execute("print(data['key'] is None)", variables={"data": {"key": None, "other": "value"}})
         assert "True" in result
 
         # Test None in list
-        result = interp.execute(
-            "print(items[1] is None)",
-            variables={"items": [1, None, 3]}
-        )
+        result = interp.execute("print(items[1] is None)", variables={"items": [1, None, 3]})
         assert "True" in result
 
         # Test nested None
         result = interp.execute(
-            "print(nested['inner']['value'] is None)",
-            variables={"nested": {"inner": {"value": None}}}
+            "print(nested['inner']['value'] is None)", variables={"nested": {"inner": {"value": None}}}
         )
         assert "True" in result
 
     def test_tool_call_kwargs(self, configure_pooled_interpreter):
         """Test tool call with keyword arguments."""
+
         def echo(message: str = "") -> str:
             return f"Echo: {message}"
 
@@ -1164,6 +1263,7 @@ class TestPythonInterpreter:
 
     def test_tool_call_positional(self, configure_pooled_interpreter):
         """Test tool call with positional arguments."""
+
         def greet(name: str) -> str:
             return f"Hello: {name}"
 
@@ -1173,6 +1273,7 @@ class TestPythonInterpreter:
 
     def test_multiple_tools(self, configure_pooled_interpreter):
         """Test multiple tools."""
+
         def add(a: int = 0, b: int = 0) -> str:
             return str(a + b)
 
@@ -1190,6 +1291,7 @@ print(f"Sum: {sum_result}, Product: {prod_result}")
 
     def test_tool_returns_list(self, configure_pooled_interpreter):
         """Test tool that returns a list (like llm_query_batched)."""
+
         def batch_process(items: list | None = None) -> list:
             items = items or []
             return [f"processed_{item}" for item in items]
@@ -1208,6 +1310,7 @@ print(f"All: {results}")
 
     def test_tool_returns_dict(self, configure_pooled_interpreter):
         """Test tool that returns a dict."""
+
         def get_info() -> dict:
             return {"name": "test", "count": 42}
 
@@ -1282,9 +1385,11 @@ class TestRLMAsyncMock:
     async def test_aforward_rejects_undeclared_inputs_before_interpreter_execution(self):
         factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "done"})])
         rlm = RLM("context -> answer", interpreter_factory=factory)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return answer", "code": 'SUBMIT("done")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return answer", "code": 'SUBMIT("done")'},
+            ]
+        )
 
         with pytest.raises(ValueError, match="Unexpected inputs not declared in the signature: \\['SUBMIT'\\]"):
             await rlm.acall(context="some context", SUBMIT="shadowed value")
@@ -1296,9 +1401,11 @@ class TestRLMAsyncMock:
         """Test aforward() returns Prediction with expected output (MockInterpreter)."""
         mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
+            ]
+        )
 
         result = await rlm.aforward(query="What is the answer?", interpreter_factory=lambda: mock)
         assert result.answer == "42"
@@ -1308,9 +1415,11 @@ class TestRLMAsyncMock:
         """Test aforward() returns int when signature expects int (MockInterpreter)."""
         mock = MockInterpreter(responses=[FinalOutput({"count": 42})])
         rlm = RLM("query -> count: int", max_iters=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return count", "code": "SUBMIT(42)"},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return count", "code": "SUBMIT(42)"},
+            ]
+        )
 
         result = await rlm.aforward(query="count items", interpreter_factory=lambda: mock)
         assert result.count == 42
@@ -1319,15 +1428,19 @@ class TestRLMAsyncMock:
     @pytest.mark.asyncio
     async def test_aforward_multi_iteration_mock(self):
         """Test aforward() handles multiple iterations before SUBMIT (MockInterpreter)."""
-        mock = MockInterpreter(responses=[
-            "explored data",
-            FinalOutput({"answer": "done"}),
-        ])
+        mock = MockInterpreter(
+            responses=[
+                "explored data",
+                FinalOutput({"answer": "done"}),
+            ]
+        )
         rlm = RLM("query -> answer", max_iters=5)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Explore first", "code": "print('exploring')"},
-            {"reasoning": "Now finish", "code": 'SUBMIT("done")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Explore first", "code": "print('exploring')"},
+                {"reasoning": "Now finish", "code": 'SUBMIT("done")'},
+            ]
+        )
 
         result = await rlm.aforward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "done"
@@ -1336,35 +1449,44 @@ class TestRLMAsyncMock:
 class TestRLMTypeCoercionMock:
     """Unit tests for RLM type coercion using MockInterpreter (no Deno required)."""
 
-    @pytest.mark.parametrize("output_field,output_type,final_value,code,expected", [
-        ("count", "int", 42, "SUBMIT(42)", 42),
-        ("score", "float", 3.14, "SUBMIT(3.14)", 3.14),
-        ("valid", "bool", True, "SUBMIT(True)", True),
-        ("numbers", "list[int]", [1, 2, 3], "SUBMIT([1, 2, 3])", [1, 2, 3]),
-        ("answer", "Literal['yes', 'no']", "yes", 'SUBMIT("yes")', "yes"),
-    ])
+    @pytest.mark.parametrize(
+        "output_field,output_type,final_value,code,expected",
+        [
+            ("count", "int", 42, "SUBMIT(42)", 42),
+            ("score", "float", 3.14, "SUBMIT(3.14)", 3.14),
+            ("valid", "bool", True, "SUBMIT(True)", True),
+            ("numbers", "list[int]", [1, 2, 3], "SUBMIT([1, 2, 3])", [1, 2, 3]),
+            ("answer", "Literal['yes', 'no']", "yes", 'SUBMIT("yes")', "yes"),
+        ],
+    )
     def test_type_coercion(self, output_field, output_type, final_value, code, expected):
         """Test RLM type coercion for various types (MockInterpreter)."""
         mock = MockInterpreter(responses=[FinalOutput({output_field: final_value})])
         rlm = RLM(f"query -> {output_field}: {output_type}", max_iters=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return value", "code": code},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return value", "code": code},
+            ]
+        )
 
         result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert getattr(result, output_field) == expected
 
     def test_type_error_retries(self):
         """Test RLM retries when type validation fails (MockInterpreter)."""
-        mock = MockInterpreter(responses=[
-            FinalOutput({"answer": "maybe"}),  # Invalid for Literal
-            FinalOutput({"answer": "yes"}),    # Valid
-        ])
+        mock = MockInterpreter(
+            responses=[
+                FinalOutput({"answer": "maybe"}),  # Invalid for Literal
+                FinalOutput({"answer": "yes"}),  # Valid
+            ]
+        )
         rlm = RLM("query -> answer: Literal['yes', 'no']", max_iters=5)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Try maybe", "code": 'SUBMIT("maybe")'},
-            {"reasoning": "Try yes", "code": 'SUBMIT("yes")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Try maybe", "code": 'SUBMIT("maybe")'},
+                {"reasoning": "Try yes", "code": 'SUBMIT("yes")'},
+            ]
+        )
 
         result = rlm.forward(query="is it yes?", interpreter_factory=lambda: mock)
         assert result.answer == "yes"
@@ -1383,20 +1505,25 @@ class TestRLMTypeCoercion:
     typed output_fields for SUBMIT based on the signature.
     """
 
-    @pytest.mark.parametrize("output_field,output_type,code,expected,expected_type", [
-        ("count", "int", "SUBMIT(42)", 42, int),
-        ("score", "float", "SUBMIT(3.14)", 3.14, float),
-        ("valid", "bool", "SUBMIT(True)", True, bool),
-        ("numbers", "list[int]", "SUBMIT([1, 2, 3])", [1, 2, 3], list),
-        ("data", "dict[str, str]", 'SUBMIT({"key": "value"})', {"key": "value"}, dict),
-        ("answer", "Literal['yes', 'no']", 'SUBMIT("yes")', "yes", str),
-    ])
+    @pytest.mark.parametrize(
+        "output_field,output_type,code,expected,expected_type",
+        [
+            ("count", "int", "SUBMIT(42)", 42, int),
+            ("score", "float", "SUBMIT(3.14)", 3.14, float),
+            ("valid", "bool", "SUBMIT(True)", True, bool),
+            ("numbers", "list[int]", "SUBMIT([1, 2, 3])", [1, 2, 3], list),
+            ("data", "dict[str, str]", 'SUBMIT({"key": "value"})', {"key": "value"}, dict),
+            ("answer", "Literal['yes', 'no']", 'SUBMIT("yes")', "yes", str),
+        ],
+    )
     def test_type_coercion(self, output_field, output_type, code, expected, expected_type):
         """Test RLM type coercion for various types with PythonInterpreter."""
         rlm = RLM(f"query -> {output_field}: {output_type}", max_iters=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return value", "code": code},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return value", "code": code},
+            ]
+        )
 
         result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert getattr(result, output_field) == expected
@@ -1405,9 +1532,11 @@ class TestRLMTypeCoercion:
     def test_submit_extracts_typed_value(self):
         """Test RLM SUBMIT correctly extracts typed value."""
         rlm = RLM("query -> count: int", max_iters=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Compute and return", "code": "result = 42\nSUBMIT(result)"},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Compute and return", "code": "result = 42\nSUBMIT(result)"},
+            ]
+        )
 
         result = rlm.forward(query="count items", interpreter_factory=PythonInterpreter)
         assert result.count == 42
@@ -1429,9 +1558,11 @@ class TestRLMMultipleOutputs:
     def test_multi_output_final_kwargs(self):
         """SUBMIT(field1=val1, field2=val2) with keyword args."""
         rlm = RLM("query -> name: str, count: int", max_iters=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return both outputs", "code": 'SUBMIT(name="alice", count=5)'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return both outputs", "code": 'SUBMIT(name="alice", count=5)'},
+            ]
+        )
 
         result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.name == "alice"
@@ -1441,9 +1572,11 @@ class TestRLMMultipleOutputs:
     def test_multi_output_final_positional(self):
         """SUBMIT(val1, val2) with positional args mapped to field order."""
         rlm = RLM("query -> name: str, count: int", max_iters=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return both outputs positionally", "code": 'SUBMIT("bob", 10)'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return both outputs positionally", "code": 'SUBMIT("bob", 10)'},
+            ]
+        )
 
         result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.name == "bob"
@@ -1452,9 +1585,11 @@ class TestRLMMultipleOutputs:
     def test_multi_output_three_fields(self):
         """Signature with 3+ output fields of different types."""
         rlm = RLM("query -> name: str, age: int, active: bool", max_iters=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return all three", "code": 'SUBMIT(name="carol", age=30, active=True)'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return all three", "code": 'SUBMIT(name="carol", age=30, active=True)'},
+            ]
+        )
 
         result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.name == "carol"
@@ -1464,10 +1599,12 @@ class TestRLMMultipleOutputs:
     def test_multi_output_final_missing_field_errors(self):
         """SUBMIT() with missing field should return error in output."""
         rlm = RLM("query -> name: str, count: int", max_iters=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Missing count field", "code": 'SUBMIT(name="alice")'},
-            {"reasoning": "Now provide both", "code": 'SUBMIT(name="alice", count=5)'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Missing count field", "code": 'SUBMIT(name="alice")'},
+                {"reasoning": "Now provide both", "code": 'SUBMIT(name="alice", count=5)'},
+            ]
+        )
 
         # RLM should retry after getting error for missing field
         result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
@@ -1477,9 +1614,11 @@ class TestRLMMultipleOutputs:
     def test_multi_output_submit_vars(self):
         """SUBMIT can pass variables directly for multiple outputs."""
         rlm = RLM("query -> name: str, count: int", max_iters=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Use SUBMIT", "code": 'n = "dave"\nc = 15\nSUBMIT(n, c)'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Use SUBMIT", "code": 'n = "dave"\nc = 15\nSUBMIT(n, c)'},
+            ]
+        )
 
         result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.name == "dave"
@@ -1488,9 +1627,11 @@ class TestRLMMultipleOutputs:
     def test_multi_output_type_coercion(self):
         """Each output field is coerced to its declared type."""
         rlm = RLM("query -> count: int, ratio: float, flag: bool", max_iters=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return mixed types", "code": "SUBMIT(count=42, ratio=3.14, flag=True)"},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return mixed types", "code": "SUBMIT(count=42, ratio=3.14, flag=True)"},
+            ]
+        )
 
         result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.count == 42
@@ -1517,34 +1658,55 @@ class TestRLMWithDummyLM:
     def test_simple_computation_e2e(self):
         """Test full RLM pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
         configured = MockInterpreterFactory()
-        with dummy_lm_context([
-            {"plan": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
-        ]):
+        with dummy_lm_context(
+            [
+                {"plan": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
+            ]
+        ):
             rlm = RLM("query -> answer: int", max_iters=3)
             with dspy.context(interpreter_factory=configured):
                 result = rlm(query="What is 2 + 3?", interpreter_factory=PythonInterpreter)
 
             assert result.answer == 5
             assert isinstance(result.answer, int)
+            assert result.final_reasoning == "I need to compute 2 + 3"
+            assert isinstance(result.final_reasoning, str)
             assert configured.instances == []
 
     def test_multi_turn_computation_e2e(self):
         """Test RLM with multiple turns before SUBMIT."""
-        with dummy_lm_context([
-            {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-            {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
-        ]):
+        with dummy_lm_context(
+            [
+                {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            ]
+        ):
             rlm = RLM("query -> answer: int", max_iters=5)
             result = rlm.forward(query="Double ten", interpreter_factory=PythonInterpreter)
 
             assert result.answer == 20
-            assert len(result.trajectory) == 2
+            assert len(result.history.messages) == 2
+            assert len(result.repl_trajectory) == 2
+
+            # Make sure history and repl_trajectory agree
+            history_repl_entries = [message["repl_entry"] for message in result.history.messages]
+            assert len(history_repl_entries) == len(result.repl_trajectory)
+            assert all(
+                (
+                    hist_entry.reasoning == traj_entry["reasoning"]
+                    and hist_entry.code == traj_entry["code"]
+                    and hist_entry.output == traj_entry["output"]
+                )
+                for hist_entry, traj_entry in zip(history_repl_entries, result.repl_trajectory, strict=True)
+            )
 
     def test_with_input_variables_e2e(self):
         """Test RLM with input variables passed to sandbox."""
-        with dummy_lm_context([
-            {"plan": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
-        ]):
+        with dummy_lm_context(
+            [
+                {"plan": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
+            ]
+        ):
             rlm = RLM("numbers: list[int] -> total: int", max_iters=3)
             result = rlm.forward(numbers=[1, 2, 3, 4, 5], interpreter_factory=PythonInterpreter)
 
@@ -1552,12 +1714,15 @@ class TestRLMWithDummyLM:
 
     def test_with_tool_e2e(self):
         """Test RLM calling a host-side tool through the sandbox."""
+
         def lookup(key: str) -> str:
             return {"apple": "red", "banana": "yellow"}.get(key, "unknown")
 
-        with dummy_lm_context([
-            {"plan": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
-        ]):
+        with dummy_lm_context(
+            [
+                {"plan": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
+            ]
+        ):
             rlm = RLM("fruit -> color: str", max_iters=3, tools=[lookup])
             result = rlm.forward(fruit="apple", interpreter_factory=PythonInterpreter)
 
@@ -1595,12 +1760,14 @@ class TestRLMWithDummyLM:
         assert execution_tool.__name__ == score.__name__
         assert inspect.signature(execution_tool) == inspect.signature(score)
 
-        with dummy_lm_context([
-            {
-                "plan": "Call the tool",
-                "code": 'result = score_payload({"value": 3})\nSUBMIT(result)',
-            },
-        ]):
+        with dummy_lm_context(
+            [
+                {
+                    "plan": "Call the tool",
+                    "code": 'result = score_payload({"value": 3})\nSUBMIT(result)',
+                },
+            ]
+        ):
             with dspy.context(callbacks=[Recorder()]):
                 result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
 
@@ -1614,9 +1781,11 @@ class TestRLMWithDummyLM:
     @pytest.mark.asyncio
     async def test_aforward_simple_computation_e2e(self):
         """Test aforward() full pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
-        with dummy_lm_context([
-            {"plan": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
-        ]):
+        with dummy_lm_context(
+            [
+                {"plan": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
+            ]
+        ):
             rlm = RLM("query -> answer: int", max_iters=3)
             result = await rlm.aforward(query="What is 2 + 3?")
 
@@ -1626,26 +1795,686 @@ class TestRLMWithDummyLM:
     @pytest.mark.asyncio
     async def test_aforward_multi_turn_e2e(self):
         """Test aforward() with multiple turns before SUBMIT."""
-        with dummy_lm_context([
-            {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-            {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
-        ]):
+        with dummy_lm_context(
+            [
+                {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            ]
+        ):
             rlm = RLM("query -> answer: int", max_iters=5)
             result = await rlm.aforward(query="Double ten")
 
             assert result.answer == 20
-            assert len(result.trajectory) == 2
+            assert len(result.history.messages) == 2
+            assert len(result.repl_trajectory) == 2
+
+            # Make sure history and repl_trajectory agree
+            history_repl_entries = [message["repl_entry"] for message in result.history.messages]
+            assert len(history_repl_entries) == len(result.repl_trajectory)
+            assert all(
+                (
+                    hist_entry.reasoning == traj_entry["reasoning"]
+                    and hist_entry.code == traj_entry["code"]
+                    and hist_entry.output == traj_entry["output"]
+                )
+                for hist_entry, traj_entry in zip(history_repl_entries, result.repl_trajectory, strict=True)
+            )
 
     @pytest.mark.asyncio
     async def test_aforward_with_input_variables_e2e(self):
         """Test aforward() with input variables passed to sandbox."""
-        with dummy_lm_context([
-            {"plan": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
-        ]):
+        with dummy_lm_context(
+            [
+                {"plan": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
+            ]
+        ):
             rlm = RLM("numbers: list[int] -> total: int", max_iters=3)
             result = await rlm.aforward(numbers=[1, 2, 3, 4, 5])
 
             assert result.total == 15
+
+
+@pytest.mark.deno
+class TestRLMHistoryWithDummyLM:
+    """End-to-end tests of RLM History using DummyLM with RLM and PythonInterpreter.
+
+    Note: These tests let RLM create its own PythonInterpreter.
+    """
+
+    @staticmethod
+    def _history_aligns_with_repl_trajectory(
+        history_repl_entries: list[REPLEntry], repl_trajectory: list[dict[str, Any]]
+    ) -> bool:
+        return all(
+            (
+                hist_entry.reasoning == traj_entry["reasoning"]
+                and hist_entry.code == traj_entry["code"]
+                and hist_entry.output == traj_entry["output"]
+            )
+            for hist_entry, traj_entry in zip(history_repl_entries, repl_trajectory, strict=True)
+        )
+
+    def test_history_records_inputs_and_outputs_once(self):
+        with dummy_lm_context(
+            [
+                {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"plan": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"plan": "Now add five and return", "code": "z = y + 5\nSUBMIT(z)"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=5)
+            result = rlm.forward(query="Double ten, then add 5", interpreter_factory=PythonInterpreter)
+
+        assert result.answer == 25
+        assert isinstance(result.answer, int)
+
+        history_events = result.history.messages
+        assert sum("query" in event for event in history_events) == 1
+        assert sum("answer" in event for event in history_events) == 1
+
+        assert len(history_events) == 3
+        assert history_events[0]["query"] == "Double ten, then add 5"
+        assert history_events[-1]["answer"] == 25
+
+        repl_entries = [event["repl_entry"] for event in history_events]
+        assert len(repl_entries) == 3
+        assert all(isinstance(entry, REPLEntry) for entry in repl_entries)
+        assert repl_entries[-1].output == "FINAL: {'answer': 25}"
+
+    def test_accepts_serialized_history(self):
+
+        old_history = {"messages": [{"query": "Double ten"}]}
+
+        with dummy_lm_context(
+            [
+                {"plan": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=5)
+            result = rlm.forward(query="Double twenty", history=old_history, interpreter_factory=PythonInterpreter)
+
+        assert result.answer == 40
+        assert isinstance(result.answer, int)
+
+        history_events = result.history.messages
+        assert history_events[0] == {"query": "Double ten"}
+        assert history_events[1]["query"] == "Double twenty"
+        assert history_events[1]["repl_entry"].reasoning == "First explore the data"
+        assert history_events[1]["repl_entry"].code == "x = 20\nprint(f'x = {x}')"
+        assert history_events[1]["repl_entry"].output == "x = 20\n"
+
+        assert sum("query" in event for event in history_events) == 2
+        assert sum("answer" in event for event in history_events) == 1
+
+        assert len(history_events) == 3
+        assert history_events[0]["query"] == "Double ten"
+        assert history_events[1]["query"] == "Double twenty"
+        assert history_events[-1]["answer"] == 40
+
+    def test_input_history_is_not_mutated(self):
+        """RLM treats the passed-in history as read-only and returns a new one on the Prediction."""
+        seed = {"query": "earlier", "answer": 1}
+        history = dspy.History(messages=[dict(seed)])
+
+        with dummy_lm_context([{"plan": "r", "code": "SUBMIT(2)"}]):
+            rlm = RLM("query -> answer: int", max_iters=3)
+            result = rlm.forward(query="now", history=history, interpreter_factory=PythonInterpreter)
+
+        assert result.answer == 2
+        assert history.messages == [seed]
+        assert result.history is not history
+        assert len(result.history.messages) == 2
+        assert result.history.messages[0] == seed
+        assert result.history.messages[1]["query"] == "now"
+        assert result.history.messages[1]["answer"] == 2
+
+    def test_repl_trajectory_resets_but_not_history(self):
+
+        rlm = RLM("query -> answer: int", max_iters=5)
+
+        history = dspy.History(messages=[])
+
+        with dummy_lm_context(
+            [
+                {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"plan": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"plan": "Now add five and return", "code": "z = y + 5\nSUBMIT(z)"},
+            ]
+        ):
+            first_result = rlm.forward(
+                query="Double ten, then add 5", history=history, interpreter_factory=PythonInterpreter
+            )
+
+        with dummy_lm_context(
+            [
+                {"plan": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            ]
+        ):
+            second_result = rlm.forward(
+                query="Double twenty", history=first_result.history, interpreter_factory=PythonInterpreter
+            )
+
+        assert first_result.answer == 25
+        assert second_result.answer == 40
+
+        # The passed-in history is input only and is never mutated; `result.history` is the continuation.
+        assert len(history.messages) == 0
+        assert len(first_result.history.messages) == 3
+        assert len(second_result.history.messages) == 5
+        assert first_result.history is not history
+        assert second_result.history is not first_result.history
+
+        history = second_result.history
+
+        assert sum("query" in msg for msg in history.messages) == 2
+        assert sum("answer" in msg for msg in history.messages) == 2
+
+        assert history.messages[0]["query"] == "Double ten, then add 5"
+        assert history.messages[3]["query"] == "Double twenty"
+        assert history.messages[2]["answer"] == 25
+        assert history.messages[4]["answer"] == 40
+
+        first_traj = first_result.repl_trajectory
+        second_traj = second_result.repl_trajectory
+
+        assert len(first_traj) == 3
+        assert len(second_traj) == 2
+
+        assert first_traj != second_traj
+
+        # The history's repl entries should be equal to the combined repl trajectories
+        combined_trajs = first_traj + second_traj
+        history_entries = [msg["repl_entry"] for msg in history.messages]
+
+        assert all(
+            (
+                hist_entry.reasoning == traj_entry["reasoning"]
+                and hist_entry.code == traj_entry["code"]
+                and hist_entry.output == traj_entry["output"]
+            )
+            for hist_entry, traj_entry in zip(history_entries, combined_trajs, strict=True)
+        )
+
+    def test_reused_history_replays_inner_transcript(self):
+        """A reused history replays what the action LM saw: the variable previews, then each iteration as an
+        assistant turn followed by its REPL output. Raw outer inputs/outputs are recorded but not rendered."""
+        with dummy_lm_context(
+            [
+                {"plan": "explore", "code": "x = 1\nprint(x)"},
+                {"plan": "done", "code": "SUBMIT(7)"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=3)
+            result = rlm.forward(query="What is seven?", interpreter_factory=PythonInterpreter)
+
+        # Every event records the action inputs the LM saw at that step; event 0 also records the outer input
+        first_event, second_event = result.history.messages
+        assert first_event["query"] == "What is seven?"
+        assert list(second_event) == ["variables_info", "iteration", "repl_entry", "answer"]
+        for event, label in ((first_event, "1/3"), (second_event, "2/3")):
+            assert any("Variable: `query`" in line for line in event["variables_info"])
+            assert event["iteration"] == label
+
+        messages = as_chat_dicts(
+            dspy.ChatAdapter().format_conversation_history(
+                rlm.generate_action.signature, "history", {"history": result.history}
+            )
+        )
+        assert [m["role"] for m in messages] == ["user", "assistant", "user", "user", "assistant", "user"]
+
+        # Each step's replayed user message is the live one: preview + iteration, never the raw query
+        for step_message, label in ((messages[0], "1/3"), (messages[3], "2/3")):
+            assert "[[ ## variables_info ## ]]" in step_message["content"]
+            assert "Variable: `query`" in step_message["content"]
+            assert f"[[ ## iteration ## ]]\n{label}" in step_message["content"]
+            assert "[[ ## query ## ]]" not in step_message["content"]
+        # Trajectory
+        assert "[[ ## code ## ]]\nx = 1\nprint(x)" in messages[1]["content"]
+        assert "[[ ## repl_output ## ]]\n1" in messages[2]["content"]
+        assert "SUBMIT(7)" in messages[4]["content"]
+        # The answer reaches the LM the way it did originally: through the final REPL output
+        assert "FINAL: {'answer': 7}" in messages[5]["content"]
+        assert "[[ ## answer ## ]]" not in messages[5]["content"]
+        assert "None" not in "".join(m["content"] for m in messages)
+
+    @pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter(), dspy.XMLAdapter()], ids=type)
+    @pytest.mark.parametrize("max_iters", [1, 2], ids=["extract-fallback", "submit"])
+    def test_json_restored_history_replays_like_the_original(self, adapter, max_iters):
+        responses = [{"plan": "explore", "code": "x = 1\nprint(x)"}, {"plan": "done", "code": "SUBMIT(7)"}]
+        with dummy_lm_context(responses[:max_iters] + [{"answer": "7"}]):
+            rlm = RLM("query -> answer: int", max_iters=max_iters)
+            result = rlm(query="What is seven?", interpreter_factory=PythonInterpreter)
+        restored = dspy.History.model_validate_json(result.history.model_dump_json())
+
+        signature = rlm.generate_action.signature
+        inputs = dict.fromkeys(signature.input_fields, "probe")
+        original = adapter.format(signature, [], {**inputs, "history": result.history})
+        replayed = adapter.format(signature, [], {**inputs, "history": restored})
+        assert replayed == original
+        assert any("x = 1" in (m.text or "") for m in original.messages)
+
+    def test_rlm_accepts_a_json_restored_history(self):
+        with dummy_lm_context([{"plan": "done", "code": "SUBMIT(7)"}, {"plan": "again", "code": "SUBMIT(8)"}]):
+            rlm = RLM("query -> answer: int", max_iters=2)
+            first = rlm(query="What is seven?", interpreter_factory=PythonInterpreter)
+            restored = dspy.History.model_validate_json(first.history.model_dump_json())
+            second = rlm(query="And eight?", history=restored, interpreter_factory=PythonInterpreter)
+
+        assert second.answer == 8
+        assert all(isinstance(m["repl_entry"], REPLEntry) for m in second.history.messages)
+        assert second.history.messages[0]["repl_entry"] == first.history.messages[0]["repl_entry"]
+
+    def test_in_place_processor_edit_is_adopted_without_leaking(self):
+        caller = dspy.History(messages=[])
+
+        def edit_private_copy(history):
+            history.messages.append({"note": "private-marker"})
+
+        with dummy_lm_context([{"plan": "done", "code": "SUBMIT(7)"}]):
+            rlm = RLM("query -> answer: int", max_iters=1, history_processor=edit_private_copy)
+            result = rlm(query="What is seven?", history=caller, interpreter_factory=PythonInterpreter)
+
+        assert caller.messages == []
+        assert result.history.messages[0] == {"note": "private-marker"}
+
+    def test_external_history_returned_by_processor_is_not_mutated(self):
+        """A processor that returns an object its caller holds must not have RLM's events appended to it."""
+        external = dspy.History(messages=[])
+        with dummy_lm_context([{"plan": "done", "code": "SUBMIT(7)"}]):
+            rlm = RLM("query -> answer: int", max_iters=2, history_processor=lambda _: external)
+            result = rlm(query="What is seven?", history=external, interpreter_factory=PythonInterpreter)
+
+        assert result.answer == 7
+        assert external.messages == []
+        assert result.history is not external
+        assert len(result.history.messages) == 1
+
+    def test_replayed_actions_use_the_live_reasoning_field_name(self):
+        """Without native reasoning the action LM writes its reasoning as `plan`; replay must not drop or rename it."""
+        with (
+            dummy_lm_context(
+                [
+                    {"plan": "explore the data", "code": "x = 1\nprint(x)"},
+                    {"plan": "done", "code": "SUBMIT(7)"},
+                    {"plan": "answer again", "code": "SUBMIT(8)"},
+                ]
+            ) as lm,
+            dspy.context(adapter=dspy.ChatAdapter()),
+        ):
+            rlm = RLM("query -> answer: int", max_iters=3)
+            first = rlm(query="What is seven?", interpreter_factory=PythonInterpreter)
+            rlm(query="And eight?", history=first.history, interpreter_factory=PythonInterpreter)
+            next_turn_request = lm.history[-1]["messages"]
+
+        replayed_actions = [m["content"] for m in next_turn_request if m["role"] == "assistant"]
+        assert replayed_actions[0] == (
+            "[[ ## plan ## ]]\nexplore the data\n\n[[ ## code ## ]]\nx = 1\nprint(x)\n\n[[ ## completed ## ]]\n"
+        )
+        assert all("[[ ## reasoning ## ]]" not in m for m in replayed_actions)
+
+    def test_replayed_step_message_matches_the_live_one(self):
+        """On a later turn, each prior step's user message is sent byte-identical to the one sent live."""
+        with (
+            dummy_lm_context(
+                [
+                    {"plan": "explore", "code": "x = 1\nprint(x)"},
+                    {"plan": "done", "code": "SUBMIT(7)"},
+                    {"plan": "answer again", "code": "SUBMIT(8)"},
+                ]
+            ) as lm,
+            dspy.context(adapter=dspy.ChatAdapter()),
+        ):
+            rlm = RLM("query -> answer: int", max_iters=3)
+            first = rlm(query="What is seven?", interpreter_factory=PythonInterpreter)
+            live_step_messages = [call["messages"][-1]["content"] for call in lm.history]
+            rlm(query="And eight?", history=first.history, interpreter_factory=PythonInterpreter)
+            next_turn_request = lm.history[-1]["messages"]
+
+        replayed_user_messages = [m["content"] for m in next_turn_request[1:-1] if m["role"] == "user"]
+        assert [m for m in replayed_user_messages if "[[ ## variables_info ## ]]" in m] == live_step_messages
+
+    def test_reused_history_ignores_outer_fields_named_like_inner_fields(self):
+        """Outer RLM fields named `code`/`reasoning` are never confused with the action signature's own."""
+        with dummy_lm_context([{"plan": "inner reasoning", "code": "SUBMIT(reasoning='outer reasoning out')"}]):
+            rlm = RLM("code: str -> reasoning: str", max_iters=2)
+            result = rlm.forward(code="print('outer code in')", interpreter_factory=PythonInterpreter)
+
+        assert result.reasoning == "outer reasoning out"
+        assert result.history.messages[0]["code"] == "print('outer code in')"  # recorded for callers
+
+        messages = as_chat_dicts(
+            dspy.ChatAdapter().format_conversation_history(
+                rlm.generate_action.signature, "history", {"history": result.history}
+            )
+        )
+        assert [m["role"] for m in messages] == ["user", "assistant", "user"]
+        # Outer `code` input appears only via its preview, never as a `[[ ## code ## ]]` user section
+        # (the replayed format reminder names the field, so match on the section plus its value)
+        assert "[[ ## variables_info ## ]]" in messages[0]["content"]
+        assert "[[ ## code ## ]]\nprint('outer code in')" not in messages[0]["content"]
+        # Assistant turn carries the *inner* reasoning/code from the REPL entry
+        assert "[[ ## reasoning ## ]]\ninner reasoning" in messages[1]["content"]
+        assert "SUBMIT(reasoning='outer reasoning out')" in messages[1]["content"]
+        # Outer `reasoning` output is not rendered as a section; it is visible in the FINAL output
+        assert "[[ ## reasoning ## ]]" not in messages[2]["content"]
+        assert "FINAL: {'reasoning': 'outer reasoning out'}" in messages[2]["content"]
+
+    def test_input_shaped_like_tool_calls_does_not_break_replay(self):
+        """An outer input recorded on a history event is user data, never parsed as ToolCalls during replay."""
+        with dummy_lm_context([{"plan": "look", "code": "print(1)"}, {"plan": "done", "code": "SUBMIT('ok')"}]):
+            rlm = RLM("data: dict -> answer", max_iters=2)
+            result = rlm(data={"tool_calls": "metadata text"}, interpreter_factory=PythonInterpreter)
+
+        assert result.answer == "ok"
+        assert result.history.messages[0]["data"] == {"tool_calls": "metadata text"}
+
+    def test_reused_history_extract_fallback_with_outer_field_named_reasoning(self):
+        """A fallback event whose outer output is named like an inner action field replays from its own fields,
+        never as a partial action."""
+        with dummy_lm_context(
+            [
+                {"plan": "inner reasoning", "code": "x = 1\nprint(x)"},
+                {"reasoning": "the extracted answer"},  # extract call fills the outer `reasoning` output
+            ]
+        ):
+            rlm = RLM("query -> reasoning: str", max_iters=1)
+            result = rlm.forward(query="What is seven?", interpreter_factory=PythonInterpreter)
+
+        assert result.reasoning == "the extracted answer"
+        adapter = dspy.ChatAdapter()
+
+        # Under the action signature the fallback replays from its own fields: an assistant turn with just the
+        # outer `reasoning` output -- never a partial action with `code: None`
+        action_messages = as_chat_dicts(
+            adapter.format_conversation_history(rlm.generate_action.signature, "history", {"history": result.history})
+        )
+        assert [m["role"] for m in action_messages] == ["user", "assistant", "user", "assistant"]
+        assert "[[ ## reasoning ## ]]\ninner reasoning" in action_messages[1]["content"]
+        assert action_messages[3]["content"] == "[[ ## reasoning ## ]]\nthe extracted answer\n\n[[ ## completed ## ]]\n"
+        assert "code" not in action_messages[3]["content"]
+        assert "None" not in "".join(m["content"] for m in action_messages)
+
+    def test_reused_history_renders_extract_fallback_answer(self):
+        """The extract-fallback event replays its outputs as an assistant turn under the action signature."""
+        with dummy_lm_context(
+            [
+                {"plan": "explore", "code": "x = 1\nprint(x)"},
+                {"answer": "7"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=1)
+            result = rlm.forward(query="What is seven?", interpreter_factory=PythonInterpreter)
+
+        adapter = dspy.ChatAdapter()
+
+        # The assistant turn is rendered from the event's own output fields, so a continuation still sees how
+        # the prior turn concluded
+        action_messages = as_chat_dicts(
+            adapter.format_conversation_history(rlm.generate_action.signature, "history", {"history": result.history})
+        )
+        assert [m["role"] for m in action_messages] == ["user", "assistant", "user", "assistant"]
+        assert action_messages[3]["content"] == "[[ ## answer ## ]]\n7\n\n[[ ## completed ## ]]\n"
+        assert "None" not in "".join(m["content"] for m in action_messages)
+
+    def test_extract_request_gives_the_current_turn_as_text(self):
+        """Extract gets this turn's steps as `repl_history` text in a single request, with no replayed turns."""
+        with (
+            dummy_lm_context(
+                [
+                    {"plan": "earlier turn", "code": "SUBMIT(1)"},
+                    {"plan": "explore", "code": "x = 7\nprint(x)"},
+                    {"answer": "7"},
+                ]
+            ) as lm,
+            dspy.context(adapter=dspy.ChatAdapter()),
+        ):
+            rlm = RLM("query -> answer: int", max_iters=1)
+            first = rlm(query="What is one?", interpreter_factory=PythonInterpreter)
+            rlm(query="What is seven?", history=first.history, interpreter_factory=PythonInterpreter)
+            extract_request = lm.history[-1]["messages"]
+
+        assert [m["role"] for m in extract_request] == ["system", "user"]
+        current = extract_request[-1]
+        assert (
+            "[[ ## repl_history ## ]]\n=== Step 1 ===\nReasoning: explore\nCode:\n```python\nx = 7\nprint(x)\n```\n7"
+            in (current["content"])
+        )
+        assert current["content"].rstrip().endswith("`[[ ## completed ## ]]`.")
+        # Only this turn's steps: earlier turns are not shown to extract
+        assert "earlier turn" not in "".join(m["content"] for m in extract_request)
+
+    def test_history_records_extract_fallback(self):
+        with dummy_lm_context(
+            [
+                {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"plan": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"answer": "25"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=2)
+            result = rlm.forward(query="Double ten, then add 5", interpreter_factory=PythonInterpreter)
+
+        assert result.answer == 25
+        assert isinstance(result.answer, int)
+        assert result.final_reasoning == "Extract forced final output"
+
+        history_events = result.history.messages
+
+        assert len(history_events) == 3  # Two repl iterations plus 1 fallback
+        assert history_events[0]["query"] == "Double ten, then add 5"
+        assert isinstance(history_events[0]["repl_entry"], REPLEntry)
+        assert isinstance(history_events[1]["repl_entry"], REPLEntry)
+
+        # Extract fallback history event has no REPL entry and just contains the output fields
+        final_event = history_events[-1]
+        assert final_event == {"repl_entry": EXTRACT_FALLBACK, "answer": 25}
+
+        assert len(result.repl_trajectory) == 2
+
+        history_repl_entries = [
+            msg["repl_entry"] for msg in result.history.messages if isinstance(msg["repl_entry"], REPLEntry)
+        ]
+
+        assert all(
+            (
+                hist_entry.reasoning == traj_entry["reasoning"]
+                and hist_entry.code == traj_entry["code"]
+                and hist_entry.output == traj_entry["output"]
+            )
+            for hist_entry, traj_entry in zip(history_repl_entries, result.repl_trajectory, strict=True)
+        )
+
+    @pytest.mark.asyncio
+    async def test_async_history_records_inputs_and_outputs_once(self):
+        with dummy_lm_context(
+            [
+                {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"plan": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"plan": "Now add five and return", "code": "z = y + 5\nSUBMIT(z)"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=5)
+            result = await rlm.aforward(query="Double ten, then add 5", interpreter_factory=PythonInterpreter)
+
+        assert result.answer == 25
+        assert isinstance(result.answer, int)
+
+        history_events = result.history.messages
+        assert sum("query" in event for event in history_events) == 1
+        assert sum("answer" in event for event in history_events) == 1
+
+        assert len(history_events) == 3
+        assert history_events[0]["query"] == "Double ten, then add 5"
+        assert history_events[-1]["answer"] == 25
+
+        repl_entries = [event["repl_entry"] for event in history_events]
+        assert len(repl_entries) == 3
+        assert all(isinstance(entry, REPLEntry) for entry in repl_entries)
+
+    @pytest.mark.asyncio
+    async def test_async_accepts_serialized_history(self):
+
+        old_history = {"messages": [{"query": "Double ten"}]}
+
+        with dummy_lm_context(
+            [
+                {"plan": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=5)
+            result = await rlm.aforward(
+                query="Double twenty", history=old_history, interpreter_factory=PythonInterpreter
+            )
+
+        assert result.answer == 40
+        assert isinstance(result.answer, int)
+
+        history_events = result.history.messages
+        assert history_events[0] == {"query": "Double ten"}
+        assert history_events[1]["query"] == "Double twenty"
+        assert history_events[1]["repl_entry"].reasoning == "First explore the data"
+        assert history_events[1]["repl_entry"].code == "x = 20\nprint(f'x = {x}')"
+        assert history_events[1]["repl_entry"].output == "x = 20\n"
+
+        assert sum("query" in event for event in history_events) == 2
+        assert sum("answer" in event for event in history_events) == 1
+
+        assert len(history_events) == 3
+        assert history_events[0]["query"] == "Double ten"
+        assert history_events[1]["query"] == "Double twenty"
+        assert history_events[-1]["answer"] == 40
+
+    @pytest.mark.asyncio
+    async def test_async_input_history_is_not_mutated(self):
+        """RLM treats the passed-in history as read-only and returns a new one on the Prediction."""
+        seed = {"query": "earlier", "answer": 1}
+        history = dspy.History(messages=[dict(seed)])
+
+        with dummy_lm_context([{"plan": "r", "code": "SUBMIT(2)"}]):
+            rlm = RLM("query -> answer: int", max_iters=3)
+            result = await rlm.aforward(query="now", history=history, interpreter_factory=PythonInterpreter)
+
+        assert result.answer == 2
+        assert history.messages == [seed]
+        assert result.history is not history
+        assert len(result.history.messages) == 2
+        assert result.history.messages[0] == seed
+        assert result.history.messages[1]["query"] == "now"
+        assert result.history.messages[1]["answer"] == 2
+
+    @pytest.mark.asyncio
+    async def test_async_repl_trajectory_resets_but_not_history(self):
+
+        rlm = RLM("query -> answer: int", max_iters=5)
+
+        history = dspy.History(messages=[])
+
+        with dummy_lm_context(
+            [
+                {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"plan": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"plan": "Now add five and return", "code": "z = y + 5\nSUBMIT(z)"},
+            ]
+        ):
+            first_result = await rlm.aforward(
+                query="Double ten, then add 5", history=history, interpreter_factory=PythonInterpreter
+            )
+
+        with dummy_lm_context(
+            [
+                {"plan": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            ]
+        ):
+            second_result = await rlm.aforward(
+                query="Double twenty", history=first_result.history, interpreter_factory=PythonInterpreter
+            )
+
+        assert first_result.answer == 25
+        assert second_result.answer == 40
+
+        # The passed-in history is input only and is never mutated; `result.history` is the continuation.
+        assert len(history.messages) == 0
+        assert len(first_result.history.messages) == 3
+        assert len(second_result.history.messages) == 5
+        assert first_result.history is not history
+        assert second_result.history is not first_result.history
+
+        history = second_result.history
+
+        assert sum("query" in msg for msg in history.messages) == 2
+        assert sum("answer" in msg for msg in history.messages) == 2
+
+        assert history.messages[0]["query"] == "Double ten, then add 5"
+        assert history.messages[3]["query"] == "Double twenty"
+        assert history.messages[2]["answer"] == 25
+        assert history.messages[4]["answer"] == 40
+
+        first_traj = first_result.repl_trajectory
+        second_traj = second_result.repl_trajectory
+
+        assert len(first_traj) == 3
+        assert len(second_traj) == 2
+
+        assert first_traj != second_traj
+
+        # The history's repl entries should be equal to the combined repl trajectories
+        combined_trajs = first_traj + second_traj
+        history_entries = [msg["repl_entry"] for msg in history.messages]
+
+        assert all(
+            (
+                hist_entry.reasoning == traj_entry["reasoning"]
+                and hist_entry.code == traj_entry["code"]
+                and hist_entry.output == traj_entry["output"]
+            )
+            for hist_entry, traj_entry in zip(history_entries, combined_trajs, strict=True)
+        )
+
+    @pytest.mark.asyncio
+    async def test_async_history_records_extract_fallback(self):
+        with dummy_lm_context(
+            [
+                {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"plan": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"answer": "25"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=2)
+            result = await rlm.aforward(query="Double ten, then add 5", interpreter_factory=PythonInterpreter)
+
+        assert result.answer == 25
+        assert isinstance(result.answer, int)
+        assert result.final_reasoning == "Extract forced final output"
+
+        history_events = result.history.messages
+
+        assert len(history_events) == 3  # Two repl iterations plus 1 fallback
+        assert history_events[0]["query"] == "Double ten, then add 5"
+        assert isinstance(history_events[0]["repl_entry"], REPLEntry)
+        assert isinstance(history_events[1]["repl_entry"], REPLEntry)
+
+        # Extract fallback history event has no REPL entry and just contains the output fields
+        final_event = history_events[-1]
+        assert final_event == {"repl_entry": EXTRACT_FALLBACK, "answer": 25}
+
+        assert len(result.repl_trajectory) == 2
+
+        history_repl_entries = [
+            msg["repl_entry"] for msg in result.history.messages if isinstance(msg["repl_entry"], REPLEntry)
+        ]
+
+        assert all(
+            (
+                hist_entry.reasoning == traj_entry["reasoning"]
+                and hist_entry.code == traj_entry["code"]
+                and hist_entry.output == traj_entry["output"]
+            )
+            for hist_entry, traj_entry in zip(history_repl_entries, result.repl_trajectory, strict=True)
+        )
 
 
 # ============================================================================
@@ -1660,24 +2489,23 @@ class TestRLMIntegration:
     def test_simple_computation(self):
         """Test RLM on simple computation."""
         import dspy
+
         dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
         rlm = RLM("context, query -> answer", max_iters=5)
-        result = rlm(
-            context={"numbers": [1, 2, 3, 4, 5]},
-            query="What is the sum of the numbers?"
-        )
+        result = rlm(context={"numbers": [1, 2, 3, 4, 5]}, query="What is the sum of the numbers?")
         assert "15" in result.answer
 
     def test_with_llm_query(self):
         """Test RLM using the llm_query tool."""
         import dspy
+
         dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
         rlm = RLM("context, query -> answer", max_iters=5)
         result = rlm(
             context="The quick brown fox jumps over the lazy dog.",
-            query="Use llm_query to describe what animal is mentioned as lazy."
+            query="Use llm_query to describe what animal is mentioned as lazy.",
         )
         assert "dog" in result.answer.lower()
 
@@ -1836,14 +2664,18 @@ class TestPrepareSerializableVars:
 
     def test_forward_with_serializable(self):
         """Full forward() pass with a SandboxSerializable input."""
-        mock = MockInterpreter(responses=[
-            "",  # setup execution for _prepare_serializable_vars
-            FinalOutput({"answer": "done"}),
-        ])
+        mock = MockInterpreter(
+            responses=[
+                "",  # setup execution for _prepare_serializable_vars
+                FinalOutput({"answer": "done"}),
+            ]
+        )
         rlm = RLM("data, query -> answer", max_iters=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Done", "code": 'SUBMIT("done")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Done", "code": 'SUBMIT("done")'},
+            ]
+        )
 
         stub = _StubSerializable("test_payload")
         result = rlm.forward(data=stub, query="test", interpreter_factory=lambda: mock)
@@ -1882,6 +2714,498 @@ class TestLargeSerializableRoundTrip:
 
         assert str(len(large_text)) in result
         assert "abc123" in result
+
+
+class TestREPLEventContract:
+    """`build_repl_event` and `split_repl_event` are the single definition of RLM's history event layout."""
+
+    @staticmethod
+    def _entry() -> REPLEntry:
+        return REPLEntry(reasoning="r", code="x = 1", output="1", max_output_chars=100)
+
+    def test_round_trip_inputs_entry_outputs(self):
+        entry = self._entry()
+        event = build_repl_event({"query": "q"}, entry, {"answer": 7})
+        assert list(event) == ["query", "repl_entry", "answer"]
+
+        inputs, repl_entry, outputs = split_repl_event(event)
+        assert inputs == {"query": "q"}
+        assert repl_entry is entry
+        assert outputs == {"answer": 7}
+
+    def test_outputs_added_later_via_update_are_still_outputs(self):
+        # RLM adds final outputs to the last event with dict.update after the fact
+        event = build_repl_event({"query": "q"}, self._entry())
+        event.update({"answer": 7})
+        inputs, _, outputs = split_repl_event(event)
+        assert inputs == {"query": "q"}
+        assert outputs == {"answer": 7}
+
+    def test_intermediate_event_has_no_inputs_or_outputs(self):
+        inputs, repl_entry, outputs = split_repl_event(build_repl_event(None, self._entry()))
+        assert inputs == {} and outputs == {}
+        assert repl_entry is not None
+
+    def test_fallback_event_has_marker_entry_and_only_outputs(self):
+        # Extract-fallback event: no REPL execution, only the final output fields
+        event = build_repl_event(None, EXTRACT_FALLBACK, {"answer": 7})
+        assert event == {"repl_entry": EXTRACT_FALLBACK, "answer": 7}
+        assert is_repl_event(event)
+
+        inputs, repl_entry, outputs = split_repl_event(event)
+        assert inputs == {}
+        assert isinstance(repl_entry, ExtractFallbackMarker)
+        assert outputs == {"answer": 7}
+
+    @pytest.mark.parametrize("dump", ["json", "python"])
+    def test_events_survive_a_serialization_round_trip(self, dump):
+        entry = self._entry()
+        history = dspy.History(
+            messages=[
+                build_repl_event({"query": "q"}, entry, {"answer": 7}),
+                build_repl_event(None, EXTRACT_FALLBACK, {"answer": 8}),
+            ]
+        )
+        if dump == "json":
+            restored = dspy.History.model_validate_json(history.model_dump_json())
+        else:
+            restored = dspy.History.model_validate(history.model_dump())
+
+        assert all(is_repl_event(m) for m in restored.messages)
+        assert split_repl_event(restored.messages[0]) == ({"query": "q"}, entry, {"answer": 7})
+        assert split_repl_event(restored.messages[1]) == ({}, EXTRACT_FALLBACK, {"answer": 8})
+
+    def test_restore_repl_events_types_restored_values_and_leaves_others(self):
+        entry = self._entry()
+        application = {"question": "q", "repl_entry": {"code": "application data"}}
+        restored = dspy.History.model_validate_json(
+            dspy.History(messages=[build_repl_event({"query": "q"}, entry), application]).model_dump_json()
+        )
+
+        messages = restore_repl_events(restored.messages)
+
+        assert messages[0] == {"query": "q", "repl_entry": entry}
+        assert list(messages[0]) == ["query", "repl_entry"]
+        assert messages[1] == application
+
+    def test_trajectory_dict_has_no_serialization_tag(self):
+        assert self._entry().to_trajectory_dict() == {
+            "reasoning": "r",
+            "code": "x = 1",
+            "output": "1",
+            "max_output_chars": 100,
+        }
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            {"question": "q", "answer": "a"},
+            {"question": "q", "repl_entry": "application data", "answer": "a"},
+            {"question": "q", "repl_entry": {"code": "serialized"}, "answer": "a"},
+            {"question": "q", "repl_entry": None, "answer": "a"},
+        ],
+    )
+    def test_non_repl_event_is_recognized_and_rejected(self, message):
+        assert not is_repl_event(message)
+        with pytest.raises(ValueError, match="Not an RLM history event"):
+            split_repl_event(message)
+
+
+class TestApplyHistoryProcessor:
+    """Unit tests for `_apply_history_processor` isolation and return semantics."""
+
+    @staticmethod
+    def _history() -> dspy.History:
+        return dspy.History(messages=[{"query": "a", "code": "x = 1"}, {"query": "b", "code": "x = 2"}])
+
+    def test_none_processor_returns_same_object(self):
+        history = self._history()
+        assert _apply_history_processor(None, history) is history
+
+    def test_returned_history_is_adopted(self):
+        history = self._history()
+
+        def keep_last(h: dspy.History) -> dspy.History:
+            return dspy.History(messages=h.messages[-1:])
+
+        result = _apply_history_processor(keep_last, history)
+        assert len(result.messages) == 1
+        assert result.messages[0]["query"] == "b"
+        # Original untouched
+        assert len(history.messages) == 2
+
+    def test_none_return_means_in_place_edit(self):
+        history = self._history()
+
+        def pop_first(h: dspy.History) -> None:
+            h.messages.pop(0)
+
+        result = _apply_history_processor(pop_first, history)
+        assert len(result.messages) == 1
+        assert result.messages[0]["query"] == "b"
+        # Processor operated on a copy; caller's history is unchanged
+        assert len(history.messages) == 2
+
+    def test_raise_after_partial_mutation_does_not_leak(self, caplog):
+        history = self._history()
+
+        def mutate_then_raise(h: dspy.History) -> None:
+            h.messages.clear()
+            h.messages.append({"query": "corrupt"})
+            raise RuntimeError("boom")
+
+        with caplog.at_level(logging.ERROR, logger="dspy.predict.rlm"):
+            result = _apply_history_processor(mutate_then_raise, history)
+
+        # Exception is swallowed, the unprocessed original is returned, and nothing leaked into it
+        assert result is history
+        assert [m["query"] for m in history.messages] == ["a", "b"]
+
+        errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert len(errors) == 1
+        assert "history_processor raised" in errors[0].getMessage()
+        assert "boom" in errors[0].getMessage()
+
+    def test_nested_mutation_is_isolated(self):
+        history = self._history()
+
+        def edit_nested(h: dspy.History) -> None:
+            h.messages[0]["code"] = "changed"
+
+        result = _apply_history_processor(edit_nested, history)
+        assert result.messages[0]["code"] == "changed"
+        assert history.messages[0]["code"] == "x = 1"
+
+    def test_returned_external_history_is_copied(self):
+        external = dspy.History(messages=[{"query": "kept by caller"}])
+
+        result = _apply_history_processor(lambda h: external, self._history())
+        result.messages.append({"query": "appended by RLM"})
+
+        assert result is not external
+        assert external.messages == [{"query": "kept by caller"}]
+
+    def test_returned_messages_shared_with_caller_are_copied(self):
+        shared = {"query": "shared"}
+
+        result = _apply_history_processor(lambda h: {"messages": [shared]}, self._history())
+        result.messages[0]["query"] = "edited by RLM"
+
+        assert shared == {"query": "shared"}
+
+    def test_returned_private_copy_is_adopted_as_is(self):
+        seen = []
+
+        def keep(h):
+            seen.append(h)
+            return h
+
+        assert _apply_history_processor(keep, self._history()) is seen[0]
+
+    def test_non_history_return_is_coerced(self):
+        history = self._history()
+        result = _apply_history_processor(lambda h: {"messages": h.messages[:1]}, history)
+        assert isinstance(result, dspy.History)
+        assert len(result.messages) == 1
+
+
+@pytest.mark.deno
+class TestHistoryProcessorHook:
+    """End-to-end tests for history processing in RLM with DummyLM and a PythonInterpreter.
+
+    Note: These tests let RLM create its own PythonInterpreter.
+    """
+
+    @staticmethod
+    def _double_twenty_responses() -> list[dict[str, Any]]:
+        return [
+            {"plan": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+            {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+        ]
+
+    def test_per_call_processor_overrides_module_processor(self):
+        module_called = False
+        per_call_called = False
+
+        def module_hook(h):
+            nonlocal module_called
+            module_called = True
+            return h
+
+        def per_call_hook(h):
+            nonlocal per_call_called
+            per_call_called = True
+            return h
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=module_hook)
+            _ = rlm.forward(
+                history_processor=per_call_hook, query="Double twenty", interpreter_factory=PythonInterpreter
+            )
+
+        assert not module_called
+        assert per_call_called
+
+    def test_module_processor_used_as_default_when_set(self):
+        module_called = False
+
+        def module_hook(h):
+            nonlocal module_called
+            module_called = True
+            return h
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=module_hook)
+            _ = rlm.forward(query="Double twenty", interpreter_factory=PythonInterpreter)
+
+        assert module_called
+
+    def test_none_processor_is_byte_identical(self):
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()) as lm_no_hook:
+            rlm = RLM("query -> answer: int", max_iters=5)
+            no_hook = rlm.forward(query="Double twenty", interpreter_factory=PythonInterpreter)
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()) as lm_with_hook:
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=None)
+            with_hook = rlm.forward(query="Double twenty", interpreter_factory=PythonInterpreter)
+
+        assert no_hook.answer == with_hook.answer
+        assert [call["messages"] for call in lm_no_hook.history] == [call["messages"] for call in lm_with_hook.history]
+
+    def test_identity_processor_is_byte_identical(self):
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()) as lm_no_hook:
+            rlm = RLM("query -> answer: int", max_iters=5)
+            no_hook = rlm.forward(query="Double twenty", interpreter_factory=PythonInterpreter)
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()) as lm_with_hook:
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=lambda h: h)
+            with_hook = rlm.forward(query="Double twenty", interpreter_factory=PythonInterpreter)
+
+        assert no_hook.answer == with_hook.answer
+        assert [call["messages"] for call in lm_no_hook.history] == [call["messages"] for call in lm_with_hook.history]
+
+    def test_history_processor_invoked_per_iteration_with_ratchet_adoption(self):
+        received = []
+        returned = []
+
+        def process(history):
+            received.append(history)
+            fresh = dspy.History(messages=list(history.messages))
+            returned.append(fresh)
+            return fresh
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=process)
+            result = rlm.forward(query="Double twenty", interpreter_factory=PythonInterpreter)
+
+        assert result.answer == 40
+        assert len(received) == 2
+        assert received[0].messages == []
+
+        # Each call builds on the previous call's result: the second sees what the first returned plus that
+        # iteration's event
+        assert len(received[1].messages) == 1
+
+        # RLM appends to its own copy of what the processor returns, never to the processor's objects
+        assert returned[0].messages == []
+        assert len(returned[1].messages) == 1
+        assert result.history is not returned[1]
+        assert len(result.history.messages) == 2
+
+    def test_history_processor_skips_extract_fallback(self):
+        calls = []
+
+        def process(history):
+            calls.append(len(history.messages))
+            return history
+
+        with dummy_lm_context(
+            [
+                {"plan": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"answer": "40"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=1, history_processor=process)
+            result = rlm.forward(query="Double twenty", interpreter_factory=PythonInterpreter)
+
+        assert result.answer == 40
+        assert result.final_reasoning == "Extract forced final output"
+
+        # Processor called for the loop iteration only; extract does not read history
+        assert calls == [0]
+        assert len(result.history.messages) == 2
+
+    def test_raising_history_processor_degrades_to_unprocessed_history(self, caplog):
+        def process(history):
+            raise RuntimeError("Compaction error")
+
+        # The `propagate_dspy_logs` fixture in tests/conftest.py makes these records reach caplog.
+        with caplog.at_level(logging.ERROR, logger="dspy.predict.rlm"):
+            with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+                rlm = RLM("query -> answer: int", max_iters=5, history_processor=process)
+                result = rlm.forward(query="Double twenty", interpreter_factory=PythonInterpreter)
+
+        assert result.answer == 40
+        assert result.final_reasoning == "Now compute and return"
+
+        assert len(result.history.messages) == 2
+
+        assert "history_processor raised" in caplog.text
+
+    def test_in_place_history_processor(self):
+        count = 0
+
+        # Mutates in-place, no return
+        def process(history):
+            nonlocal count
+            history.messages.append({f"appended_{count}": f"value_{count}"})
+            count += 1
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=process)
+            result = rlm.forward(query="Double twenty", interpreter_factory=PythonInterpreter)
+
+        assert result.answer == 40
+        assert result.final_reasoning == "Now compute and return"
+        assert len(result.history.messages) == 4  # Two iteration messages plus two appended in-place
+        assert result.history.messages[0]["appended_0"] == "value_0"
+        assert result.history.messages[1]["query"] == "Double twenty"
+        assert result.history.messages[2]["appended_1"] == "value_1"
+        assert result.history.messages[3]["answer"] == 40
+
+    def test_module_history_processor_is_discoverable_for_optimization(self):
+
+        class Summarizer(dspy.Module):
+            def __init__(self):
+                super().__init__()
+                self.summarize = dspy.Predict("text -> summary")
+
+            def forward(self, history):
+                return history
+
+        rlm = RLM("query -> answer: int", max_iters=5, history_processor=Summarizer())
+
+        predictor_names = [name for name, _ in rlm.named_predictors()]
+
+        assert any("history_processor" in name for name in predictor_names)
+
+    @pytest.mark.asyncio
+    async def test_async_processor_passed_to_forward_supersedes_module_processor(self):
+        module_called = False
+        forward_called = False
+
+        def module_hook(h):
+            nonlocal module_called
+            module_called = True
+            return h
+
+        def forward_hook(h):
+            nonlocal forward_called
+            forward_called = True
+            return h
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=module_hook)
+            _ = await rlm.aforward(
+                history_processor=forward_hook, query="Double twenty", interpreter_factory=PythonInterpreter
+            )
+
+        assert not module_called
+        assert forward_called
+
+    @pytest.mark.asyncio
+    async def test_async_module_processor_used_as_default_when_set(self):
+        module_called = False
+
+        def module_hook(h):
+            nonlocal module_called
+            module_called = True
+            return h
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=module_hook)
+            _ = await rlm.aforward(query="Double twenty", interpreter_factory=PythonInterpreter)
+
+        assert module_called
+
+    @pytest.mark.asyncio
+    async def test_async_none_processor_is_byte_identical(self):
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()) as lm_no_hook:
+            rlm = RLM("query -> answer: int", max_iters=5)
+            no_hook = await rlm.aforward(query="Double twenty", interpreter_factory=PythonInterpreter)
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()) as lm_with_hook:
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=None)
+            with_hook = await rlm.aforward(query="Double twenty", interpreter_factory=PythonInterpreter)
+
+        assert no_hook.answer == with_hook.answer
+        assert [call["messages"] for call in lm_no_hook.history] == [call["messages"] for call in lm_with_hook.history]
+
+    @pytest.mark.asyncio
+    async def test_async_identity_processor_is_byte_identical(self):
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()) as lm_no_hook:
+            rlm = RLM("query -> answer: int", max_iters=5)
+            no_hook = await rlm.aforward(query="Double twenty", interpreter_factory=PythonInterpreter)
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()) as lm_with_hook:
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=lambda h: h)
+            with_hook = await rlm.aforward(query="Double twenty", interpreter_factory=PythonInterpreter)
+
+        assert no_hook.answer == with_hook.answer
+        assert [call["messages"] for call in lm_no_hook.history] == [call["messages"] for call in lm_with_hook.history]
+
+    @pytest.mark.asyncio
+    async def test_async_history_processor_invoked_per_iteration_with_ratchet_adoption(self):
+        received = []
+        returned = []
+
+        def process(history):
+            received.append(history)
+            fresh = dspy.History(messages=list(history.messages))
+            returned.append(fresh)
+            return fresh
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=process)
+            result = await rlm.aforward(query="Double twenty", interpreter_factory=PythonInterpreter)
+
+        assert result.answer == 40
+        assert len(received) == 2
+        assert received[0].messages == []
+
+        # Each call builds on the previous call's result: the second sees what the first returned plus that
+        # iteration's event
+        assert len(received[1].messages) == 1
+
+        # RLM appends to its own copy of what the processor returns, never to the processor's objects
+        assert returned[0].messages == []
+        assert len(returned[1].messages) == 1
+        assert result.history is not returned[1]
+        assert len(result.history.messages) == 2
+
+    @pytest.mark.asyncio
+    async def test_async_history_processor_skips_extract_fallback(self):
+        calls = []
+
+        def process(history):
+            calls.append(len(history.messages))
+            return history
+
+        with dummy_lm_context(
+            [
+                {"plan": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"answer": "40"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=1, history_processor=process)
+            result = await rlm.aforward(query="Double twenty", interpreter_factory=PythonInterpreter)
+
+        assert result.answer == 40
+        assert result.final_reasoning == "Extract forced final output"
+
+        # Processor called for the loop iteration only; extract does not read history
+        assert calls == [0]
+        assert len(result.history.messages) == 2
 
 
 # ============================================================================
@@ -1957,7 +3281,9 @@ def _facade_invocation(rlm: RLM, interpreter_factory=None):
 
 class TestRLMSubAgents:
     def test_prompt_offers_sub_agents(self):
-        instructions = RLM("query -> answer", interpreter_factory=MockInterpreterFactory()).generate_action.signature.instructions
+        instructions = RLM(
+            "query -> answer", interpreter_factory=MockInterpreterFactory()
+        ).generate_action.signature.instructions
 
         assert "Sub-agents (dspy)" in instructions
         assert 'dspy.RLM("context, query -> answer")' in instructions
@@ -2165,17 +3491,15 @@ class TestRLMFacadeDeno:
     def test_facade_runs_on_the_default_sandbox(self):
         # The facade needs no dspy inside the sandbox.
         rlm = RLM("query -> answer", max_iters=2, interpreter_factory=PythonInterpreter)
-        rlm.generate_action = make_mock_predictor([
-            {
-                "reasoning": "Run a sub-agent through the facade",
-                "code": (
-                    "sub = dspy.Predict('question -> answer')\n"
-                    "res = sub(question='ping')\n"
-                    "print(res.answer)"
-                ),
-            },
-            {"reasoning": "Submit", "code": "SUBMIT(res.answer)"},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {
+                    "reasoning": "Run a sub-agent through the facade",
+                    "code": ("sub = dspy.Predict('question -> answer')\nres = sub(question='ping')\nprint(res.answer)"),
+                },
+                {"reasoning": "Submit", "code": "SUBMIT(res.answer)"},
+            ]
+        )
 
         with dummy_lm_context([{"answer": "facade on pyodide"}]):
             result = rlm(query="q")
@@ -2184,43 +3508,47 @@ class TestRLMFacadeDeno:
 
     def test_facade_lm_calls_share_the_llm_query_budget_on_the_default_sandbox(self):
         rlm = RLM("query -> answer", max_iters=2, max_llm_calls=1, interpreter_factory=PythonInterpreter)
-        rlm.generate_action = make_mock_predictor([
-            {
-                "reasoning": "Spend the budget with llm_query, then try a bridged sub-agent",
-                "code": (
-                    "first = llm_query('a')\n"
-                    "try:\n"
-                    "    dspy.Predict('question -> answer')(question='b')\n"
-                    "except Exception as e:\n"
-                    "    print('sub-agent:', e)\n"
-                ),
-            },
-            {"reasoning": "Submit", "code": "SUBMIT(first)"},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {
+                    "reasoning": "Spend the budget with llm_query, then try a bridged sub-agent",
+                    "code": (
+                        "first = llm_query('a')\n"
+                        "try:\n"
+                        "    dspy.Predict('question -> answer')(question='b')\n"
+                        "except Exception as e:\n"
+                        "    print('sub-agent:', e)\n"
+                    ),
+                },
+                {"reasoning": "Submit", "code": "SUBMIT(first)"},
+            ]
+        )
 
         with dummy_lm_context([{"answer": "one"}, {"answer": "two"}]):
             result = rlm(query="q")
 
-        assert "LLM call limit exceeded: 1 + 1 > 1" in result.trajectory[0]["output"]
+        assert "LLM call limit exceeded: 1 + 1 > 1" in result.repl_trajectory[0]["output"]
         assert "one" in result.answer
 
     def test_facade_survives_serializable_inputs_on_the_default_sandbox(self):
         # PythonInterpreter registers tools once, so the facade must be installed before serializable setup.
         rlm = RLM("data, query -> answer", max_iters=2, interpreter_factory=PythonInterpreter)
-        rlm.generate_action = make_mock_predictor([
-            {
-                "reasoning": "Run a sub-agent through the facade",
-                "code": "res = dspy.Predict('question -> answer')(question='ping')\nprint(res.answer)",
-            },
-            {"reasoning": "Submit", "code": "SUBMIT(res.answer)"},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {
+                    "reasoning": "Run a sub-agent through the facade",
+                    "code": "res = dspy.Predict('question -> answer')(question='ping')\nprint(res.answer)",
+                },
+                {"reasoning": "Submit", "code": "SUBMIT(res.answer)"},
+            ]
+        )
 
         with dummy_lm_context([{"answer": "facade with serializable input"}]):
             result = rlm(data=_StubSerializable("payload"), query="q")
 
         # The block's own output: a dead facade would fall back to extract and still yield the answer.
-        assert "facade with serializable input" in result.trajectory[0]["output"]
-        assert len(result.trajectory) == 2
+        assert "facade with serializable input" in result.repl_trajectory[0]["output"]
+        assert len(result.repl_trajectory) == 2
 
 
 if __name__ == "__main__":
