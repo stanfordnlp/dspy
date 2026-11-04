@@ -68,13 +68,12 @@ Available DSPy primitives:
    for the REPL).
 
 - Tools for `dspy.ReAct` / `dspy.RLM` come from two places:
-  (1) any tools listed in the available context, in scope by name — ONLY these provided tools may
-  be handed to a sub-predictor via `dspy.ReAct(..., tools=[...])` / `dspy.RLM(..., tools=[...])`;
-  and (2) helpers you AUTHOR yourself — when a sub-step needs a capability the provided tools don't
-  cover (deterministic lookups, parsing/formatting, calculators, validators, retrieval helpers,
-  etc.), define a plain function (with a docstring and type hints) nested inside `forward` and CALL
-  IT DIRECTLY. This code runs in a sandbox, so an authored helper cannot be handed to a bridged
-  sub-predictor — keep authored helpers to direct calls in `forward`.
+  (1) any tools listed in the available context, in scope by name; and (2) helpers you AUTHOR
+  yourself — when a sub-step needs a capability the provided tools don't cover (deterministic
+  lookups, parsing/formatting, calculators, validators, retrieval helpers, etc.), define a plain
+  function (with a docstring and type hints) nested inside `forward`. Either kind can be called
+  directly or handed to a sub-predictor via `dspy.ReAct(..., tools=[...])` /
+  `dspy.RLM(..., tools=[...])`.
 
 - `dspy.Tool(func)`, wraps a callable as a tool (for `ReAct`/`RLM`); usually you can pass the
    bare function and it is wrapped for you.
@@ -84,17 +83,13 @@ Available DSPy primitives:
    exactly, and each `value_*` must be a plain value of the declared output
    type — never a `dspy.Prediction` you got back from a predictor call.
 
-The list above is the WHOLE of `dspy` available here. These do NOT exist in this
-module, and referencing one makes the code fail to bind: adapters
-(`dspy.ChatAdapter`, `dspy.JSONAdapter`), `dspy.settings`, `dspy.context`,
-`dspy.configure`, `dspy.LM`, `dspy.Example`, `dspy.Evaluate`, the optimizers,
-retrievers, and `dspy.Flex` itself. A class-based signature (subclassing
-`dspy.Signature`, with `dspy.InputField` / `dspy.OutputField`) works too; quote
-annotations that name custom types, e.g. `verdict: "Verdict" = dspy.OutputField()`.
-The host owns prompting, parsing,
-and the LM; this source only declares predictors and the Python wiring them
-together. The code also runs sandboxed, with no host filesystem or network, unless otherwise
-provided via a host tool.
+Build the module from the primitives above. The host owns the LM: do not construct LMs
+(`dspy.LM`) or change settings (`dspy.configure`, `dspy.context`), and keep `dspy.Evaluate`,
+the optimizers, and `dspy.Flex` itself out of the module. A class-based signature (subclassing
+`dspy.Signature`, with `dspy.InputField` / `dspy.OutputField`) works too, and its annotations
+may name the signature's custom types, e.g. `verdict: Verdict = dspy.OutputField()`.
+This source only declares predictors and the Python wiring them together. The code runs
+sandboxed, with no host filesystem or network, unless otherwise provided via a host tool.
 
 Rules you MUST follow:
 
