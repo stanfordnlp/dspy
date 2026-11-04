@@ -173,15 +173,14 @@ class BaseModule:
         from dspy import Module
 
         def _apply(module):
-            # Also traverse with the pre-#1302 dict-key naming (always-quoted, e.g. "d['0']" for both
-            # str and int keys) so state saved by an older DSPy version can still be loaded: only
-            # non-string dict keys ever differ between the two names, so this is a no-op fallback for
-            # everything else.
+            parameters = module.named_parameters()
+            # Choose one format for the whole state: an escaped key's current name can match another key's legacy name.
+            use_current_names = all(name in state for name, _ in parameters)
             legacy_names = [
                 legacy_name for legacy_name, _ in module._traverse_parameters(lambda name, key: f"{name}['{key}']")
             ]
-            for (name, param), legacy_name in zip(module.named_parameters(), legacy_names, strict=True):
-                if name in state:
+            for (name, param), legacy_name in zip(parameters, legacy_names, strict=True):
+                if use_current_names:
                     param_state = state[name]
                 elif legacy_name in state:
                     if legacy_names.count(legacy_name) > 1:

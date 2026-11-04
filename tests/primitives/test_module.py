@@ -240,6 +240,45 @@ def test_load_state_rejects_ambiguous_pre_fix_dict_key_names():
         prog.load_state(legacy_state)
 
 
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("nested", [False, True])
+def test_load_state_keeps_escaped_dict_keys_distinct(legacy, nested):
+    source = Module()
+    container = Module() if nested else source
+    if nested:
+        source.child = container
+    container.dict_a = {"\n": dspy.Predict("question -> answer"), r"\n": dspy.Predict("question -> answer")}
+    instructions = ["Handle the newline key", "Handle the literal backslash key"]
+    for predictor, instruction in zip(container.dict_a.values(), instructions, strict=True):
+        predictor.signature = predictor.signature.with_instructions(instruction)
+
+    if legacy:
+        prefix = "child." if nested else ""
+        state = {f"{prefix}dict_a['{key}']": predictor.dump_state() for key, predictor in container.dict_a.items()}
+    else:
+        state = source.dump_state()
+
+    for predictor in container.dict_a.values():
+        predictor.signature = predictor.signature.with_instructions("Reset")
+    source.load_state(state)
+
+    assert [predictor.signature.instructions for predictor in container.dict_a.values()] == instructions
+
+
+def test_load_state_rejects_mixed_dict_key_formats_without_mutating():
+    module = Module()
+    module.dict_a = {key: dspy.Predict("question -> answer") for key in [0, "\n", r"\n"]}
+    original = module.dump_state()
+    state = module.dump_state()
+    state["dict_a['0']"] = state.pop("dict_a[0]")
+    state["dict_a['0']"]["signature"]["instructions"] = "Changed before the missing entry"
+
+    with pytest.raises(KeyError, match="issues/1302"):
+        module.load_state(state)
+
+    assert module.dump_state() == original
+
+
 def test_load_state_raises_clear_error_when_name_missing_in_both_formats():
     """
     A parameter missing under BOTH its current name and its pre-#1302 legacy name is a genuine
