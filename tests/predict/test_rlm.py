@@ -1840,6 +1840,44 @@ class TestRLMWithDummyLM:
             assert result.total == 15
 
 
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
+@pytest.mark.parametrize("serialized", [False, True])
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.asyncio
+async def test_extracted_media_history_replays_without_payloads(adapter_type, serialized, asynchronous):
+    adapter = adapter_type()
+    image = dspy.Image(url="data:image/png;base64,aGlzdG9yeS1tZWRpYS1wYXlsb2Fk")
+    program = RLM(
+        "query -> answer: str, crop: dspy.Image, crops: list[dspy.Image]",
+        max_iters=1,
+        interpreter_factory=MockInterpreter,
+    )
+
+    async def call(**kwargs):
+        return await program.acall(**kwargs) if asynchronous else program(**kwargs)
+
+    responses = [
+        {"plan": "Inspect", "code": "print('not submitted')"},
+        {"answer": "extracted", "crop": {"url": image.url}, "crops": [{"url": image.url}]},
+    ]
+    with dspy.context(lm=DummyLM(responses, adapter=adapter), adapter=adapter):
+        first = await call(query="Inspect the output")
+    assert first.final_reasoning == "Extract forced final output"
+    assert first.crop.url == image.url and first.crops[0].url == image.url
+    snapshot = first.history.model_dump_json()
+    history = dspy.History.model_validate_json(snapshot) if serialized else first.history
+    followup = DummyLM(responses, adapter=adapter)
+    with dspy.context(lm=followup, adapter=adapter):
+        second = await call(query="Continue", history=history)
+    assert second.crop.url == image.url and second.crops[0].url == image.url
+    assert history.model_dump_json() == first.history.model_dump_json() == snapshot
+    request = followup.history[0]["request"]
+    assert all(part.type == "text" for message in request.messages for part in message.parts)
+    text = "\n".join(message.text for message in request.messages)
+    assert "extracted" in text and "crops" in text
+    assert image.url.split(",", 1)[1] not in text
+
+
 @pytest.mark.deno
 class TestRLMHistoryWithDummyLM:
     """End-to-end tests of RLM History using DummyLM with RLM and PythonInterpreter.
