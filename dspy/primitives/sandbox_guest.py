@@ -390,7 +390,8 @@ def _field_type(field: dict[str, Any], module: types.ModuleType) -> Any:
 
 
 def _field_info(field: dict[str, Any]) -> Any:
-    settings = {key: field[key] for key in ("description", "alias", "serialization_alias", "exclude") if key in field}
+    settings = {key: field[key] for key in ("description", "alias", "serialization_alias", "exclude", "kw_only")
+                if key in field}
     if "validation_alias" in field:
         settings["validation_alias"] = _alias_from(field["validation_alias"])
     if "factory" in field:
@@ -402,7 +403,7 @@ def _field_info(field: dict[str, Any]) -> Any:
 
 def _has_default(field: dict[str, Any]) -> bool:
     return any(key in field for key in ("default", "factory", "host_default", "description", "alias",
-                                        "serialization_alias", "validation_alias", "exclude"))
+                                        "serialization_alias", "validation_alias", "exclude", "kw_only"))
 
 
 def _alias_from(alias: Any) -> Any:

@@ -623,6 +623,19 @@ class _Blob:
     data: bytes
 
 
+@dataclasses.dataclass(kw_only=True)
+class _Record:
+    a: int = 1  # a default before a required field, which keyword-only fields allow
+    b: str
+
+
+@dataclasses.dataclass
+class _Entry:
+    a: int = dataclasses.field(default=1, kw_only=True)
+    b: str = "b"
+    c: list = dataclasses.field(default_factory=list, kw_only=True)
+
+
 class _Level(pydantic.BaseModel):
     hue: typing.Literal[_Hue.RED] = _Hue.RED
 
@@ -659,6 +672,10 @@ def test_defaults_made_on_the_host_enum_literals_and_type_settings_keep_their_me
     assert (raw.root, back) == (b"hi", _Raw(b"hi"))
     blob, back = _cross(_Blob, _Blob(b"ab"))  # a pydantic dataclass keeps its settings, as a model does
     assert (blob.data, back) == (b"ab", _Blob(b"ab"))
+    record = rebuild_types(types_spec({"_Record": _Record}))["_Record"]
+    assert dataclasses.is_dataclass(record) and record(b="x").a == 1  # keyword-only fields stay keyword-only
+    entry = rebuild_types(types_spec({"_Entry": _Entry}))["_Entry"]
+    assert from_wire(encode_value(entry("y")), _Entry) == _Entry(b="y")  # also when only some fields are
 
 
 def test_the_host_builds_no_class_from_what_the_sandbox_sends():
