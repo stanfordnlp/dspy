@@ -1844,6 +1844,41 @@ def test_pruning_leaves_builds_in_progress_and_files_other_processes_replace(tmp
     assert (tmp_path / "dspy-b.zip").exists()
 
 
+def test_a_module_added_or_removed_after_the_first_bundle_makes_a_new_plan(tmp_path, monkeypatch):
+    import functools
+
+    from dspy.primitives import sandbox_bundle
+
+    package = tmp_path / "pkg"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "old.py").write_text("")
+    listed = []
+
+    @functools.cache
+    def plan(deno_dir):  # lists the package's modules once, until its cache is cleared, as _plan does
+        listed.append(deno_dir)
+        return {}, [], [(path, f"pkg/{path.name}") for path in sorted(package.glob("*.py"))]
+
+    def changed(step):  # the folder gets a new modification time, however coarse the file system's clock
+        os.utime(package, ns=(step, step))
+
+    def names():
+        return [name for _, name in sandbox_bundle._contents(tmp_path, None)[1]]
+
+    monkeypatch.setattr(sandbox_bundle, "_plan", plan)
+    monkeypatch.setattr(sandbox_bundle, "_planned_at", {})
+    changed(1)
+    assert names() == names() == ["pkg/__init__.py", "pkg/old.py"]
+    assert len(listed) == 1  # an unchanged folder keeps the plan
+    (package / "new.py").write_text("")
+    changed(2)
+    assert names() == ["pkg/__init__.py", "pkg/new.py", "pkg/old.py"]
+    (package / "old.py").unlink()
+    changed(3)
+    assert names() == ["pkg/__init__.py", "pkg/new.py"]
+
+
 def test_an_edited_source_file_makes_a_new_dspy_bundle(tmp_path, monkeypatch):
     from dspy.primitives import sandbox_bundle
 

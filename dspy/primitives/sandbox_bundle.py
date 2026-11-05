@@ -186,13 +186,35 @@ def _build(deno_command: tuple[str, ...], deno_dir: str | None, runner: str, tar
 def _contents(root: Path, deno_dir: str | None) -> tuple[list[str], list[tuple[Path, str]]]:
     """The Pyodide wheels and the files of this environment that make up the bundle."""
     lock, needed, files = _plan(deno_dir)
+    if _planned_at.setdefault(deno_dir, _folder_times(files)) != _folder_times(files):
+        # A file was added, removed or renamed in a folder the plan lists files from: list them again.
+        _plan.cache_clear()
+        lock, needed, files = _plan(deno_dir)
+        _planned_at[deno_dir] = _folder_times(files)
     return [_fetch_wheel(root, lock[name], deno_dir) for name in needed], files
+
+
+# The modification times of the folders each plan's files are in, when it was made.
+_planned_at: dict[str | None, list[int | None]] = {}
+
+
+def _folder_times(files: list[tuple[Path, str]]) -> list[int | None]:
+    """The modification times of the folders the files are in, from each file's up to its package's own."""
+    folders = {path.parents[level] for path, name in files for level in range(max(1, name.count("/")))}
+    times = []
+    for folder in sorted(folders):
+        try:
+            times.append(folder.stat().st_mtime_ns)
+        except OSError:  # removed
+            times.append(None)
+    return times
 
 
 @functools.cache
 def _plan(deno_dir: str | None) -> tuple[dict, list[str], list[tuple[Path, str]]]:
-    """Which packages come from Pyodide and which files from this environment, once per process. The files' sizes
-    and times are read on every call, so an edited file still makes a new bundle."""
+    """Which packages come from Pyodide and which files from this environment, once per process and again when the
+    files' folders change (see ``_contents``). The files' sizes and times are read on every call, so an edited file
+    still makes a new bundle."""
     lock = _pyodide_lock(deno_dir)
     shipped, files = [], []
     for dist in _distributions():
