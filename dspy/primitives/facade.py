@@ -770,8 +770,9 @@ class _Shapes:
     def _key(self, cls: type) -> str:
         if cls not in self._keys:
             key = base = re.sub(r"\W", "_", cls.__name__)
-            while key in self.out:  # another class of the same name
-                key = f"{base}_{len(self.out)}"
+            suffix = 2
+            while key in self.out:  # another class of the same name, or one named like this suffix
+                key, suffix = f"{base}_{suffix}", suffix + 1
             self._keys[cls] = key
             self.out[key] = {}  # taken, for a type that holds itself
             owner, self._owner = self._owner, cls
