@@ -29,9 +29,9 @@ class _MCPToolClient(Protocol):
 def _warn_inferred_var_positional(function_name: str, parameter_name: str) -> None:
     """Warn that an inferred schema omitted *args.
 
-    Walk frames whose module name starts with ``dspy`` so the warning is attributed
-    to the caller that built the tool, whether that call is direct or goes through
-    another dspy module such as ReAct.
+    Skip frames in the ``dspy`` package (module name ``dspy`` or ``dspy.*``) so the
+    warning is attributed to the caller that built the tool, including calls that
+    pass through another dspy module such as ReAct.
     """
     message = (
         f"Tool function {function_name!r} accepts *{parameter_name}, which can't be represented as named "
@@ -44,7 +44,7 @@ def _warn_inferred_var_positional(function_name: str, parameter_name: str) -> No
     try:
         while frame is not None:
             module_name = frame.f_globals.get("__name__")
-            if not (isinstance(module_name, str) and module_name.startswith("dspy")):
+            if not (isinstance(module_name, str) and (module_name == "dspy" or module_name.startswith("dspy."))):
                 break
             parent = frame.f_back
             if parent is None:

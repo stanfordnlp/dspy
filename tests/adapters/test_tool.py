@@ -1,4 +1,6 @@
 import asyncio
+import importlib.util
+import sys
 import warnings
 from pathlib import Path
 from typing import Any
@@ -420,6 +422,42 @@ def test_var_positional_warning_points_past_dspy_frames():
     line = Path(__file__).read_text().splitlines()[warning.lineno - 1]
     assert "dspy.ReAct(" in line
     assert "tools=[star]" in line
+
+
+def test_var_positional_warning_points_at_user_module_named_like_dspy(tmp_path, monkeypatch):
+    helper_path = tmp_path / "dspy_helpers.py"
+    helper_path.write_text(
+        "\n".join(
+            [
+                "import dspy",
+                "",
+                "def star(*args: int):",
+                "    return sum(args)",
+                "",
+                "def build():",
+                "    return dspy.Tool(star)",
+                "",
+            ]
+        )
+    )
+    spec = importlib.util.spec_from_file_location("dspy_helpers", helper_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, "dspy_helpers", module)
+    spec.loader.exec_module(module)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        module.build()
+
+    positional = [
+        item for item in caught if issubclass(item.category, UserWarning) and "accepts *args" in str(item.message)
+    ]
+    assert len(positional) == 1
+    warning = positional[0]
+    assert Path(warning.filename).resolve() == helper_path.resolve()
+    line = helper_path.read_text().splitlines()[warning.lineno - 1]
+    assert "dspy.Tool(star)" in line
 
 
 def test_explicit_schema_keeps_varargs_wrapper_and_stays_closed():
