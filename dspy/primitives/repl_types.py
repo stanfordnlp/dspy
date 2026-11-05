@@ -20,6 +20,10 @@ from dspy.adapters.utils import serialize_for_json
 if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
 
+    from dspy.adapters.base import Adapter
+    from dspy.lm15 import Message
+    from dspy.signatures.signature import Signature
+
 __all__ = ["REPLVariable", "REPLEntry", "REPLHistory"]
 
 
@@ -128,7 +132,7 @@ class REPLEntry(pydantic.BaseModel):
         return data
 
     def to_trajectory_dict(self) -> dict[str, Any]:
-        """The entry's fields without the serialization tag, as reported in `repl_trajectory`."""
+        """The entry's fields without the serialization tag, as reported in `trajectory`."""
         return {key: value for key, value in self.model_dump().items() if key != REPL_TYPE_KEY}
 
     @pydantic.field_validator("reasoning", mode="before")
@@ -247,6 +251,55 @@ def split_repl_event(
     inputs = {name: message[name] for name in names[:entry_index]}
     outputs = {name: message[name] for name in names[entry_index + 1 :]}
     return inputs, repl_value, outputs
+
+
+def format_repl_event(adapter: Adapter, signature: type[Signature], message: dict[str, Any]) -> list[Message]:
+    """Replay an RLM event as its original action/observation turns, using the adapter's field syntax."""
+    from dspy.adapters.base import user_message
+    from dspy.lm15 import Message
+    from dspy.signatures.field import InputField, OutputField
+    from dspy.signatures.signature import Signature
+
+    repl_inputs, repl_entry, repl_outputs = split_repl_event(message)
+    if isinstance(repl_entry, ExtractFallbackMarker):
+        if not repl_outputs:
+            return []
+        fallback_signature = Signature({name: (str, OutputField()) for name in repl_outputs})
+        return [Message.assistant(adapter.format_assistant_message_content(fallback_signature, repl_outputs))]
+
+    messages = []
+    user_content = adapter.format_user_message_content(
+        signature, repl_inputs, main_request=any(name in repl_inputs for name in signature.input_fields)
+    )
+    if user_content:
+        messages.append(user_message(user_content))
+
+    reasoning_name = _repl_reasoning_field_name(signature)
+    assistant_values: dict[str, Any] = {"code": repl_entry.code}
+    action_fields: dict[str, Any] = {"code": (str, OutputField())}
+    if reasoning_name is not None:
+        assistant_values[reasoning_name] = repl_entry.reasoning
+        action_fields = {reasoning_name: (str, OutputField()), **action_fields}
+    messages.append(Message.assistant(adapter.format_assistant_message_content(Signature(action_fields), assistant_values)))
+
+    content = adapter.format_user_message_content(
+        Signature({"repl_output": (str, InputField())}),
+        {"repl_output": REPLEntry.format_output(repl_entry.output, repl_entry.max_output_chars)},
+    )
+    messages.append(user_message(content))
+    return messages
+
+
+def _repl_reasoning_field_name(signature: type[Signature]) -> str | None:
+    """Use the live action's textual reasoning name; native reasoning has no text output field."""
+    for name, field in signature.output_fields.items():
+        if (field.json_schema_extra or {}).get("__dspy_reasoning_field") == "reasoning":
+            return name
+    if "reasoning" in signature.output_fields:
+        return "reasoning"
+    if "code" in signature.output_fields:
+        return None
+    return "reasoning"
 
 
 def restore_repl_events(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
