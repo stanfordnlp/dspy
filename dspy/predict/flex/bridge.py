@@ -17,7 +17,6 @@ the Flex signature's declared output types on the way out (``BridgeRuntime._to_p
 from __future__ import annotations
 
 import ast
-import contextlib
 import functools
 import json
 import logging
@@ -28,9 +27,8 @@ from pydantic import TypeAdapter
 import dspy
 from dspy.adapters.types.base_type import Type as _CustomType
 from dspy.adapters.utils import annotation_allows_none
-from dspy.predict.flex.ctx import render_annotation
 from dspy.primitives.code_interpreter import CodeInterpreterError, _create_interpreter
-from dspy.primitives.facade import SandboxSession, from_wire
+from dspy.primitives.facade import SandboxSession, from_wire, tool_entrypoint
 from dspy.primitives.sandbox_guest import encode_value
 
 logger = logging.getLogger(__name__)
@@ -50,19 +48,6 @@ def parse_module_class_name(module_src: str) -> str:
     if not chosen:
         raise CodeInterpreterError("module_src must define a dspy.Module subclass with a `forward` method")
     return chosen[0].name
-
-
-def _tool_entrypoint(tool: Any) -> Callable[..., Any]:
-    """A callable for the interpreter's tool registry."""
-    func = getattr(tool, "func", None)
-    if func is None:
-        return tool
-
-    @functools.wraps(func)
-    def entrypoint(**kwargs: Any) -> Any:
-        return tool(**kwargs)
-
-    return entrypoint
 
 
 def _key(value: Any) -> str:
@@ -145,15 +130,10 @@ class BridgeRuntime:
     def session(self) -> SandboxSession:
         """A fresh per-forward session over tools, custom types, and the LM-call budget."""
         ctx = self._flex._flex_ctx
-        custom = ctx.custom_types()
-        inputs = {}
-        for name, field in self._flex.signature.input_fields.items():
-            with contextlib.suppress(ValueError):
-                inputs[name] = render_annotation(field.annotation, custom)
         return SandboxSession(
             ctx.context_names(),
-            custom_types=custom,
-            inputs=inputs,
+            custom_types=ctx.custom_types(),
+            inputs=ctx.input_annotations(),
             reserve=_Budget(self._max_predictor_calls).reserve,
             interpreter_factory=self._factory,
         )
@@ -237,4 +217,4 @@ class BridgeRuntime:
 
     def _tool_callables(self) -> dict[str, Callable[..., Any]]:
         """User tools as ``name -> callable`` to register so sandbox code can call them."""
-        return {name: _tool_entrypoint(tool) for name, tool in self._flex._flex_ctx.context_names().items()}
+        return {name: tool_entrypoint(tool) for name, tool in self._flex._flex_ctx.context_names().items()}

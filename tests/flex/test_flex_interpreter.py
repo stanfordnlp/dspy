@@ -108,7 +108,8 @@ def test_tools_plus_interpreter_is_supported() -> None:
     flex = Flex(Doubler, tools=[shout], interpreter_factory=lambda: MockInterpreter())
     assert flex._bridge is not None
     # the user tool is registered (name -> callable) so sandbox glue can call it by name
-    assert flex._bridge._tool_callables()["shout"] is shout
+    registered = flex._bridge._tool_callables()["shout"]
+    assert registered.__name__ == "shout" and registered(text="hi") == shout(text="hi")
 
 
 # =============================================================================

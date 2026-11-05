@@ -10,11 +10,11 @@ Reference: "Recursive Language Models" (Zhang, Kraska, Khattab, 2025)
 
 from __future__ import annotations
 
+import ast
 import base64
 import contextlib
 import contextvars
-import functools
-import inspect
+import json
 import keyword
 import logging
 import threading
@@ -27,9 +27,10 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator
 import pydantic
 
 import dspy
+from dspy.adapters.types.base_type import annotation_holds_dspy_type, holds_dspy_type
 from dspy.adapters.types.decision import Choice, Noul, Score
 from dspy.adapters.types.tool import Tool
-from dspy.adapters.utils import parse_value, translate_field_type
+from dspy.adapters.utils import translate_field_type
 from dspy.primitives.code_interpreter import (
     SIMPLE_TYPES,
     CodeExecutionError,
@@ -39,7 +40,14 @@ from dspy.primitives.code_interpreter import (
     _validate_interpreter_factory,
     resolve_interpreter_factory,
 )
-from dspy.primitives.facade import SandboxLM, SandboxSession, is_reserved_sandbox_name
+from dspy.primitives.facade import (
+    SandboxLM,
+    SandboxSession,
+    from_wire,
+    is_reserved_sandbox_name,
+    tool_entrypoint,
+    tool_returns,
+)
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -53,7 +61,7 @@ from dspy.primitives.repl_types import (
     restore_repl_events,
 )
 from dspy.primitives.sandbox_bundle import SandboxBundleError
-from dspy.primitives.sandbox_guest import INTERPRETER_TOOL, LM_TOOL
+from dspy.primitives.sandbox_guest import INTERPRETER_TOOL, LM_TOOL, encode_value
 from dspy.primitives.sandbox_serializable import SandboxSerializable, build_repl_variable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
@@ -108,6 +116,31 @@ _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
 
 # The sandbox session scope of the RLM call running in this context (see ``RLM._setup_facade``).
 _repl_scope: contextvars.ContextVar[Callable[[], Any] | None] = contextvars.ContextVar("dspy_rlm_repl_scope", default=None)
+# Code run before each REPL execution of the RLM call running in this context (see ``RLM._setup_facade``).
+_repl_prelude: contextvars.ContextVar[str] = contextvars.ContextVar("dspy_rlm_repl_prelude", default="")
+# Once the REPL has imported dspy, binds the provided tools and SUBMIT to read and send dspy types
+# (``sandbox_guest.bind``) before each execution, as the Flex driver does before it runs: some interpreters, like
+# LocalInterpreter, define them anew for each execution.
+_REBIND = (
+    'if "dspy.primitives.sandbox_guest" in __import__("sys").modules: '
+    '__import__("sys").modules["dspy.primitives.sandbox_guest"].bind(globals())\n'
+)
+
+
+def _with_prelude(prelude: str, code: str) -> str:
+    """``code`` with ``prelude`` run first: after its ``from __future__`` imports, which must come first."""
+    if not prelude:
+        return code
+    try:
+        body = ast.parse(code).body
+    except SyntaxError:
+        return prelude + code
+    futures = [node for node in body if isinstance(node, ast.ImportFrom) and node.module == "__future__"]
+    if not futures:
+        return prelude + code
+    lines = code.splitlines(keepends=True)
+    end = futures[-1].end_lineno or 0
+    return "".join(lines[:end]) + ("" if lines[end - 1].endswith("\n") else "\n") + prelude + "".join(lines[end:])
 
 
 class _LLMCallBudget:
@@ -176,6 +209,47 @@ class _FinalExecution:
 @dataclass
 class _FinalExecutionWithError:
     repl_entry: REPLEntry
+
+
+class _TypeValues(SandboxSerializable):
+    """The built-in SandboxSerializable for an input holding dspy.Type values (itself, or in lists, dicts and models).
+
+    The value crosses in the sandbox wire form (``encode_value``). Where the REPL runs the real dspy, it is read back
+    as the input's declared type, as Flex reads its inputs (``sandbox_guest.read_input``): a ``dspy.Image`` input is a
+    ``dspy.Image`` there. Elsewhere it is the JSON of its fields.
+    """
+
+    def __init__(self, value: Any, typed: bool = True):
+        self.value = value
+        self.typed = typed
+
+    def sandbox_setup(self) -> str:
+        return ""
+
+    def to_sandbox(self) -> bytes:
+        return json.dumps(encode_value(self.value)).encode()
+
+    def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
+        loaded = f'__import__("json").loads({data_expr})'
+        if not self.typed:
+            return f"{var_name} = {loaded}"
+        guest = '__import__("dspy.primitives.sandbox_guest", fromlist=["read_input"])'
+        return f"{var_name} = {guest}.read_input(globals(), {var_name!r}, {loaded})"
+
+    def rlm_preview(self, max_chars: int = 1000) -> str:
+        # Its repr, not its str: a dspy type's str is its prompt rendering, whose base64 a cut preview would split.
+        return REPLVariable.from_value("", repr(self.value), preview_chars=max_chars).preview
+
+    def to_repl_variable(self, name: str, field_info: Any = None) -> REPLVariable:
+        var = build_repl_variable(self, name, field_info=field_info)
+        return var.model_copy(update={"type_name": type(self.value).__name__})
+
+
+def _sandbox_serializable(value: Any, typed: bool = True) -> SandboxSerializable | None:
+    """How ``value`` enters the sandbox: its own SandboxSerializable implementation, else the dspy.Type default."""
+    if isinstance(value, SandboxSerializable):
+        return value
+    return _TypeValues(value, typed) if holds_dspy_type(value) else None
 
 
 @experimental
@@ -592,8 +666,9 @@ class RLM(Module):
         variables = []
         for name, value in input_args.items():
             field_info = self.signature.input_fields.get(name)
-            if isinstance(value, SandboxSerializable):
-                var = build_repl_variable(value, name, field_info=field_info)
+            serializable = _sandbox_serializable(value)
+            if serializable is not None:
+                var = serializable.to_repl_variable(name, field_info=field_info)
             else:
                 var = REPLVariable.from_value(name, value, field_info=field_info)
             variables.append(var)
@@ -620,23 +695,25 @@ class RLM(Module):
         input_args: dict[str, Any],
         repl: CodeInterpreter,
     ) -> dict[str, Any]:
-        """Inject SandboxSerializable values into the interpreter.
+        """Inject SandboxSerializable values into the interpreter once.
 
-        For each SandboxSerializable value in input_args, serializes it and
-        executes setup + assignment code in the interpreter. Returns the
-        remaining non-serializable args (for per-iteration use).
+        For each input with a SandboxSerializable form (its own, or the built-in one for
+        dspy.Type values), serializes it and executes setup + assignment code in the
+        interpreter. Returns the remaining args (for per-iteration use).
         """
         repl.start()
         regular_args = {}
+        typed = LM_TOOL in repl.tools  # the REPL runs the real dspy (see _setup_facade)
         for name, value in input_args.items():
-            if not isinstance(value, SandboxSerializable):
+            serializable = _sandbox_serializable(value, typed)
+            if serializable is None:
                 regular_args[name] = value
                 continue
 
-            payload = value.to_sandbox()
-            setup = value.sandbox_setup()
+            payload = serializable.to_sandbox()
+            setup = serializable.sandbox_setup()
             raw_var_name = f"_raw_{name}"
-            assignment = value.sandbox_assignment(name, raw_var_name)
+            assignment = serializable.sandbox_assignment(name, raw_var_name)
             code_lines = []
             payload_vars: dict[str, str] = {}
             if isinstance(payload, bytes):
@@ -663,19 +740,33 @@ class RLM(Module):
 
     @contextmanager
     def _setup_facade(
-        self, repl: CodeInterpreter, budget: _LLMCallBudget, interpreter_factory: Callable[[], CodeInterpreter]
+        self,
+        repl: CodeInterpreter,
+        budget: _LLMCallBudget,
+        interpreter_factory: Callable[[], CodeInterpreter],
+        input_args: dict[str, Any],
     ) -> Iterator[str]:
         """Bridge the real dspy into this invocation's interpreter; yield its sub-agent guidance.
 
         REPL code that imports dspy calls the host's LM: ``sub_lm`` (else ``dspy.settings.lm``) per call, like
         ``llm_query``, charged against ``max_llm_calls``. Each code-executing sub-agent it builds gets a fresh
-        interpreter from ``interpreter_factory``, shut down on exit.
+        interpreter from ``interpreter_factory``, shut down on exit. When dspy types cross (inputs, outputs, or
+        tool results), dspy is imported right away, so they are dspy types in the REPL too.
         """
+        from dspy.predict.flex.ctx import FlexContext
+
+        ctx = FlexContext(signature_cls=self.signature)
         session = SandboxSession(
-            self._user_tools, lm=self.sub_lm, reserve=budget.reserve, interpreter_factory=interpreter_factory
+            self._user_tools,
+            custom_types=ctx.custom_types(),
+            inputs=ctx.input_annotations(),
+            lm=self.sub_lm,
+            reserve=budget.reserve,
+            interpreter_factory=interpreter_factory,
         )
+        typed = self._crosses_dspy_types(input_args)
         try:
-            session.install(repl, import_dspy=False)
+            session.install(repl, import_dspy=typed)
         except (CodeExecutionError, SyntaxError, SandboxBundleError) as e:
             # The runtime cannot host dspy (e.g. a restricted compiler, or no bundle offline): no sub-agents this call.
             repl.tools.pop(LM_TOOL, None)
@@ -686,11 +777,20 @@ class RLM(Module):
         # An interpreter in the host's memory runs sub-agents on the host's dspy: scope its executions on the
         # metered sub-agent LM.
         token = _repl_scope.set(session.scope)
+        prelude = _repl_prelude.set("" if session.in_host else _REBIND)
         try:
             yield SUB_AGENT_INSTRUCTIONS
         finally:
+            _repl_prelude.reset(prelude)
             _repl_scope.reset(token)
             session.close()
+
+    def _crosses_dspy_types(self, input_args: dict[str, Any]) -> bool:
+        annotations = [field.annotation for field in self.signature.output_fields.values()]
+        annotations += [tool_returns(tool) for tool in self._user_tools.values()]
+        return any(holds_dspy_type(value) for value in input_args.values()) or any(
+            annotation_holds_dspy_type(annotation) for annotation in annotations
+        )
 
     # =========================================================================
     # CodeInterpreter Lifecycle
@@ -698,18 +798,7 @@ class RLM(Module):
 
     def _make_interpreter_tool(self, tool: Tool) -> Callable:
         """Preserve function metadata while routing execution through Tool."""
-        if inspect.iscoroutinefunction(tool.func) or inspect.iscoroutinefunction(getattr(tool.func, "__call__", None)):
-
-            async def invoke(**kwargs):
-                return await tool.acall(**kwargs)
-        else:
-
-            def invoke(**kwargs):
-                return tool(**kwargs)
-
-        functools.update_wrapper(invoke, tool.func)
-        invoke.__signature__ = inspect.signature(tool.func)
-        return invoke
+        return tool_entrypoint(tool)
 
     def _prepare_execution_tools(self, budget: _LLMCallBudget | None = None) -> dict[str, Callable]:
         """Create the LLM tools on ``budget`` (fresh by default) and merge with user-provided tools."""
@@ -810,7 +899,8 @@ class RLM(Module):
             field = self.signature.output_fields[name]
             annotation = getattr(field, "annotation", str)
             try:
-                parsed_outputs[name] = parse_value(raw_output[name], annotation)
+                # SUBMIT sends dspy types and models by field name (see sandbox_guest.bind), which from_wire reads.
+                parsed_outputs[name] = from_wire(raw_output[name], annotation)
             except (ValueError, pydantic.ValidationError) as e:
                 type_errors.append(
                     f"{name}: expected {annotation.__name__ if hasattr(annotation, '__name__') else annotation}, "
@@ -891,7 +981,7 @@ class RLM(Module):
         scope = _repl_scope.get()
         try:
             with scope() if scope is not None else contextlib.nullcontext():
-                return repl.execute(code, variables=dict(input_args))
+                return repl.execute(_with_prelude(_repl_prelude.get(), code), variables=dict(input_args))
         except (CodeExecutionError, SyntaxError) as e:
             return f"[Error] {format_error_for_lm(e)}"
 
@@ -981,7 +1071,7 @@ class RLM(Module):
 
         with (
             self._interpreter_context(execution_tools, interpreter_factory) as repl,
-            self._setup_facade(repl, budget, interpreter_factory) as sub_agent_rules,
+            self._setup_facade(repl, budget, interpreter_factory, input_args) as sub_agent_rules,
         ):
             regular_args = self._prepare_serializable_vars(input_args, repl)
             turn_entries: list[REPLEntry] = []
@@ -1135,7 +1225,7 @@ class RLM(Module):
 
         with (
             self._interpreter_context(execution_tools, interpreter_factory) as repl,
-            self._setup_facade(repl, budget, interpreter_factory) as sub_agent_rules,
+            self._setup_facade(repl, budget, interpreter_factory, input_args) as sub_agent_rules,
         ):
             regular_args = self._prepare_serializable_vars(input_args, repl)
             turn_entries: list[REPLEntry] = []

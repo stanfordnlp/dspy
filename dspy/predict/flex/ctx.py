@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 import math
 import types
 import typing
@@ -115,6 +116,15 @@ class FlexContext:
         out: dict[str, type] = {}
         for finfo in {**cls.input_fields, **cls.output_fields}.values():
             _collect_custom_types(finfo.annotation, out)
+        return out
+
+    def input_annotations(self) -> dict[str, str]:
+        """Each input's type, by name, as the sandbox reads the input (``sandbox_guest.read_input``). One that has no
+        name there is left out, and its value is passed as it came."""
+        custom, out = self.custom_types(), {}
+        for name, finfo in self.signature_cls.input_fields.items():
+            with contextlib.suppress(ValueError):
+                out[name] = render_annotation(finfo.annotation, custom)
         return out
 
     def render_context_blurb(self, sandboxed: bool = False) -> str:
