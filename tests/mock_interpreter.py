@@ -16,9 +16,9 @@ __all__ = ["MockInterpreter", "MockInterpreterFactory"]
 
 
 def _is_facade_setup(code: str) -> bool:
-    from dspy.primitives.facade import SHIM_SETUP
+    from dspy.primitives.facade import BOOTSTRAP
 
-    return code == SHIM_SETUP
+    return code in (BOOTSTRAP, "import dspy")
 
 
 class MockInterpreter:
@@ -68,7 +68,7 @@ class MockInterpreter:
         self.tools = tools or {}
         self.call_count = 0
         self.call_history: list[tuple[str, dict[str, Any]]] = []
-        # Sandbox dspy facade installs (RLM and Flex set one up per interpreter); kept out of the script.
+        # Sandbox dspy bridge setup (RLM and Flex run it per interpreter); kept out of the script.
         self.setup_history: list[tuple[str, dict[str, Any]]] = []
         self._shutdown = False
 
