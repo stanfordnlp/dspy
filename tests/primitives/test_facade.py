@@ -618,6 +618,11 @@ class _Raw(pydantic.RootModel[bytes]):
     model_config = pydantic.ConfigDict(ser_json_bytes="hex", val_json_bytes="hex")
 
 
+@pydantic.dataclasses.dataclass(config=pydantic.ConfigDict(ser_json_bytes="hex", val_json_bytes="hex"))
+class _Blob:
+    data: bytes
+
+
 class _Level(pydantic.BaseModel):
     hue: typing.Literal[_Hue.RED] = _Hue.RED
 
@@ -631,7 +636,7 @@ class _Draft:
     text: str | None = dataclasses.field(default_factory=lambda: "made")
 
 
-def test_defaults_made_on_the_host_enum_literals_and_root_settings_keep_their_meaning():
+def test_defaults_made_on_the_host_enum_literals_and_type_settings_keep_their_meaning():
     inside = rebuild_types(types_spec({"_Ticket": _Ticket}))["_Ticket"]
     assert from_wire(encode_value(inside(title="t")), _Ticket) == _Ticket("t", "made")  # the host made the id
     for host in (_Note, _Draft):
@@ -652,6 +657,8 @@ def test_defaults_made_on_the_host_enum_literals_and_root_settings_keep_their_me
     assert level.hue.name == "RED"  # a member of the enum, not its value
     raw, back = _cross(_Raw, _Raw(b"hi"))
     assert (raw.root, back) == (b"hi", _Raw(b"hi"))
+    blob, back = _cross(_Blob, _Blob(b"ab"))  # a pydantic dataclass keeps its settings, as a model does
+    assert (blob.data, back) == (b"ab", _Blob(b"ab"))
 
 
 def test_the_host_builds_no_class_from_what_the_sandbox_sends():

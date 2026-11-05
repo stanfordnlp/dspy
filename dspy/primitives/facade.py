@@ -799,10 +799,10 @@ class _Shapes:
             return {"kind": "flag" if issubclass(cls, enum.Flag) else "enum", "base": base, "members": members}
         if issubclass(cls, pydantic.BaseModel):
             doc = vars(cls).get("__doc__")
-            config = {key: value for key in _CONFIG_KEYS if _is_literal(value := cls.model_config.get(key)) and value is not None}
             fields = {name: self._field(f.annotation, f) for name, f in cls.model_fields.items()}
             kind = "root" if issubclass(cls, pydantic.RootModel) else "model"
-            return {"kind": kind, "doc": doc if isinstance(doc, str) else None, "config": config, "fields": fields}
+            return {"kind": kind, "doc": doc if isinstance(doc, str) else None, "config": _config(cls.model_config),
+                    "fields": fields}
         hints = _hints(cls)
         if dataclasses.is_dataclass(cls):
             infos = getattr(cls, "__pydantic_fields__", None) or {}  # a pydantic dataclass's, as complete as a model's
@@ -810,7 +810,8 @@ class _Shapes:
             for f in dataclasses.fields(cls):
                 info = infos.get(f.name) or (f.default if isinstance(f.default, pydantic.fields.FieldInfo) else None)
                 fields[f.name] = self._field(hints.get(f.name, Any), info, f.default, f.default_factory)
-            return {"kind": "dataclass", "frozen": cls.__dataclass_params__.frozen, "fields": fields}
+            config = _config(getattr(cls, "__pydantic_config__", {}))  # a pydantic dataclass's settings, as a model's
+            return {"kind": "dataclass", "frozen": cls.__dataclass_params__.frozen, "config": config, "fields": fields}
         if issubclass(cls, tuple) and hasattr(cls, "_fields"):
             defaults = getattr(cls, "_field_defaults", {})
             fields = {name: self._field(hints.get(name, Any), None, defaults.get(name, _ABSENT)) for name in cls._fields}
@@ -868,6 +869,11 @@ class _Shapes:
         if path is None or not all(_is_literal(value) for value in values.values()):
             return None
         return {"import": path, "values": values}
+
+
+def _config(settings: Any) -> dict[str, Any]:
+    """The settings of a pydantic model or dataclass that decide what its values look like on the wire."""
+    return {key: value for key in _CONFIG_KEYS if _is_literal(value := settings.get(key)) and value is not None}
 
 
 def _alias(alias: Any) -> Any:
