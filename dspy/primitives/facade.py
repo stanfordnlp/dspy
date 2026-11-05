@@ -49,6 +49,7 @@ import typing_extensions
 
 import dspy
 from dspy._vendor.lm15 import serde
+from dspy.adapters.types.base_type import annotation_holds_dspy_type, holds_dspy_type
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value
 from dspy.clients.base_lm import BaseLM
@@ -69,6 +70,7 @@ from dspy.primitives.sandbox_guest import (
     TRACE_TOOL,
     TYPING_NAMES,
     HostInterpreter,
+    HostTool,
     decode_options,
     decode_prompt,
     encode_options,
@@ -287,6 +289,10 @@ class SandboxLM(BaseLM):
     def supported_params(self) -> set[str]:
         return getattr(self._lm, "supported_params", set())
 
+    @property
+    def supported_tool_result_media(self) -> set[str]:
+        return getattr(self._lm, "supported_tool_result_media", set())
+
 
 def _host_owned(config: Any) -> dict[str, Any]:
     return {f.name: getattr(config, f.name) for f in dataclasses.fields(config) if f.name not in _SANDBOX_CONFIG_FIELDS}
@@ -393,16 +399,61 @@ _SIMPLE_ANNOTATIONS = {"str": str, "int": int, "float": float, "bool": bool, "li
 _PARAMETER_KINDS = {kind.name: kind for kind in type(inspect.Parameter.POSITIONAL_ONLY)}
 
 
-def _entrypoint(tool: Any) -> Callable[..., Any]:
-    """A provided tool as an interpreter tool: called through its ``dspy.Tool``, with its function's signature."""
-    if not isinstance(tool, Tool):
-        return tool
+def tool_entrypoint(tool: Any, wire: bool = True) -> Callable[..., Any]:
+    """A provided tool as an interpreter tool, with its function's signature: called through its ``dspy.Tool``, which
+    reads the arguments the sandbox sends as their declared types, and returning a result fit to cross back
+    (``tool_result``), or as it is for an interpreter in the host's memory (``wire=False``)."""
+    tool = tool if isinstance(tool, Tool) else Tool(tool)
+    result = tool_result if wire else (lambda value: value)
 
-    @functools.wraps(tool.func)
-    def entrypoint(**kwargs: Any) -> Any:
-        return tool(**kwargs)
+    def args(kwargs: dict[str, Any]) -> dict[str, Any]:
+        # The sandbox sends a model or a tuple as encode_value does (fields by name, a list), so it is read back as
+        # SUBMIT's values are; ``Tool`` then checks what it read, and checks scalars and unreadable values as sent.
+        def read(value: Any, annotation: Any) -> Any:
+            if not wire or annotation in (None, Any) or not isinstance(value, (dict, list)):
+                return value
+            try:
+                return from_wire(value, annotation)
+            except Exception:
+                return value
 
+        return {key: read(value, tool.arg_types.get(key)) for key, value in kwargs.items()}
+
+    if inspect.iscoroutinefunction(tool.func) or inspect.iscoroutinefunction(type(tool.func).__call__):
+
+        async def entrypoint(**kwargs: Any) -> Any:  # the interpreter awaits it
+            return result(await tool.acall(**args(kwargs)))
+    else:
+
+        def entrypoint(**kwargs: Any) -> Any:
+            return result(tool(**args(kwargs)))
+
+    functools.update_wrapper(entrypoint, tool.func)
+    entrypoint.__signature__ = inspect.signature(tool.func)
     return entrypoint
+
+
+def tool_result(value: Any) -> Any:
+    """A provided tool's result as it crosses to the sandbox. One holding dspy types crosses in their wire form
+    (``encode_value``), which the sandbox reads back as the tool's return type (``HostTool``); the interpreter's own
+    encoding would render them as prompts."""
+    return encode_value(value) if holds_dspy_type(value) else value
+
+
+def tool_returns(tool: Any) -> Any:
+    """The return type a provided tool's function declares, or ``Any``."""
+    if isinstance(tool, HostTool):  # a host tool, in a sandbox that builds an RLM
+        return tool._returns
+    func = getattr(tool, "func", tool)
+    try:  # resolves quoted and postponed annotations fully, as Tool does for arguments
+        return typing.get_type_hints(func)["return"]
+    except Exception:
+        pass  # a callable object, say, whose return type its __call__ declares
+    try:
+        annotation = inspect.signature(func, eval_str=True).return_annotation
+    except Exception:
+        return Any
+    return Any if annotation is inspect.Signature.empty else annotation
 
 
 class SandboxSession:
@@ -455,6 +506,9 @@ class SandboxSession:
         namespace = _in_host.pop(session, None)
         if namespace is not None:
             self.in_host = True
+            # Its tools share the host's memory too: their results needn't cross as the wire form.
+            interpreter.tools.update({name: tool_entrypoint(tool, wire=False) for name, tool in self._tools.items()
+                                      if name in interpreter.tools})
             namespace["__dspy_guest_spec"] = spec
             namespace["__dspy_types"] = dict(self._custom_types)
             namespace.update({**{k: v for k, v in TYPING_NAMES.items() if k not in namespace}, **self._custom_types})
@@ -493,7 +547,7 @@ class SandboxSession:
             interpreter = _create_interpreter(self._interpreter_factory)
             interpreter.tools[INTERPRETER_TOOL] = self._serve_interpreter  # for the modules its own code builds
             handle = secrets.token_hex(8)
-            host_tools = {name: _entrypoint(tool) for name, tool in self._tools.items()}
+            host_tools = {name: tool_entrypoint(tool) for name, tool in self._tools.items()}
             self._nested[handle] = _NestedInterpreter(interpreter, host_tools)
             return handle
         nested = self._nested.get(id)
@@ -561,11 +615,17 @@ class SandboxSession:
             "lm": _lm_spec(lm) if lm is not None else None,
             "adapter": adapter,
             "tools": {name: _tool_spec(name, tool) for name, tool in self._tools.items()},
-            "types": types_spec({**adapter_types, **self._custom_types}),
+            "types": types_spec({**adapter_types, **self._custom_types}, self._dspy_type_returns()),
             "inputs": self._inputs,
             "execution_instructions": self._execution_instructions(),
             "trace": dspy.settings.trace is not None and dspy.settings.max_trace_size > 0,
         }
+
+    def _dspy_type_returns(self) -> dict[str, Any]:
+        """The provided tools' return types that involve dspy types, which the sandbox reads results as (other results
+        come as the interpreter sends them, as they did before dspy types crossed typed)."""
+        returns = {name: tool_returns(tool) for name, tool in self._tools.items()}
+        return {name: t for name, t in returns.items() if annotation_holds_dspy_type(t)}
 
     def _execution_instructions(self) -> str:
         if self._interpreter_factory is None:
@@ -707,17 +767,20 @@ def _typed(value: Any, field: Any) -> Any:
 # -- custom types ---------------------------------------------------------------------------------------------------
 
 
-def types_spec(custom_types: dict[str, type]) -> dict[str, Any]:
+def types_spec(custom_types: dict[str, type], returns: dict[str, Any] | None = None) -> dict[str, Any]:
     """How the sandbox gets the signature's custom types: as their shape, never their code.
 
     dspy's and the standard library's types are imported there. A pydantic model, dataclass, ``NamedTuple`` or
     ``TypedDict`` of the user's crosses as its fields, with their types, defaults and constraints, and an enum as its
     members, all read off the live class. The sandbox builds plain classes of the
     same names and shapes from that, so sandboxed code can read and build them. Their methods and validators stay on
-    the host, which validates with the real types whatever the sandbox sends back.
+    the host, which validates with the real types whatever the sandbox sends back. ``returns`` are the provided
+    tools' return types, by tool name, which the sandbox reads their results as.
     """
     shapes = _Shapes()
-    return {"types": {name: shapes.ref(t) for name, t in custom_types.items()}, "shapes": shapes.out}
+    named = {name: shapes.ref(t) for name, t in custom_types.items()}
+    returned = {name: shapes.ref(t) for name, t in (returns or {}).items() if t is not Any}
+    return {"types": named, "returns": returned, "shapes": shapes.out}
 
 
 _ABSENT = object()
@@ -983,6 +1046,7 @@ def _lm_spec(lm: Any) -> dict[str, Any]:
             "supports_reasoning": bool(proxy.supports_reasoning),
             "supports_response_schema": bool(proxy.supports_response_schema),
             "supported_params": sorted(proxy.supported_params or ()),
+            "supported_tool_result_media": sorted(proxy.supported_tool_result_media or ()),
         },
     }
 

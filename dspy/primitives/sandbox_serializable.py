@@ -52,6 +52,11 @@ class SandboxSerializable(ABC):
       a data expression.
     - ``rlm_preview``: a short, LLM-friendly description of the value.
 
+    ``dspy.Type`` values, and containers holding them, need no subclass: RLM
+    gives them a built-in implementation that reads them in the sandbox as
+    the input's declared type. A ``dspy.Type`` that also subclasses
+    ``SandboxSerializable`` uses its own implementation.
+
     Example::
 
         class DataFrame(SandboxSerializable):

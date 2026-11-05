@@ -284,3 +284,82 @@ def test_direct_tool_calls_receive_restored_custom_type_inputs() -> None:
     image = dspy.Image(url="https://example.com/x.png")
     assert program(image=image).a == "a cat"
     assert seen["img"] is image  # the original object, not the serialized tag string
+
+
+_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+
+
+class Photo(dspy.Signature):
+    """Describe the photo."""
+
+    photo: dspy.Image = dspy.InputField()
+    a: str = dspy.OutputField()
+
+
+@deno_required
+def test_images_stay_images_across_typed_tools() -> None:
+    """An image input and an async tool's image result are dspy.Images in the sandbox, and typed tools take them."""
+    seen: list = []
+
+    async def snap() -> dspy.Image:
+        """Take a screenshot."""
+        return dspy.Image(_PNG)
+
+    def measure(image: dspy.Image) -> str:
+        """Measure an image."""
+        seen.append(image)
+        return "measured"
+
+    src = textwrap.dedent(
+        """
+        class PhotoModule(dspy.Module):
+            def forward(self, photo):
+                shot = snap()
+                kinds = f"{type(photo).__name__} {type(shot).__name__}"
+                return dspy.Prediction(a=f"{kinds} {measure(image=photo)} {measure(shot)}")
+        """
+    ).strip()
+
+    program = Flex(Photo, tools=[snap, measure], interpreter_factory=lambda: dspy.PythonInterpreter())
+    program._bind_code(src)
+    photo = dspy.Image("https://example.com/x.png")
+    assert program(photo=photo).a == "Image Image measured measured"
+    assert seen == [photo, dspy.Image(_PNG)]
+
+
+def test_image_inputs_have_their_methods_in_the_sandbox() -> None:
+    pytest.importorskip("PIL")
+    src = textwrap.dedent(
+        """
+        class PhotoModule(dspy.Module):
+            def forward(self, photo):
+                return dspy.Prediction(a=str(photo.to_pil().size))
+        """
+    ).strip()
+
+    program = Flex(Photo, interpreter_factory=lambda: dspy.LocalInterpreter())
+    program._bind_code(src)
+    assert program(photo=dspy.Image(_PNG)).a == "(1, 1)"
+
+
+@deno_required
+def test_sandboxed_lm_reports_the_host_lms_tool_result_media() -> None:
+    """Adapters in the sandbox place tool-result media by the host LM's route, as they would on the host."""
+
+    class ImageToolResultsLM(DummyLM):
+        supported_tool_result_media = {"image"}
+
+    src = textwrap.dedent(
+        """
+        class MediaModule(dspy.Module):
+            def forward(self, q):
+                return dspy.Prediction(a=",".join(sorted(dspy.settings.lm.supported_tool_result_media)))
+        """
+    ).strip()
+
+    program = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())
+    program._bind_code(src)
+    with dspy.context(lm=ImageToolResultsLM([])):
+        assert program(q="q").a == "image"
+    with dspy.context(lm=DummyLM([])):
+        assert program(q="q").a == ""

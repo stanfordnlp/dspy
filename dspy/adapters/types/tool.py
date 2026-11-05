@@ -25,6 +25,55 @@ class _MCPToolClient(Protocol):
     async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any: ...
 
 
+def _json_schema_instance(value: Any) -> Any:
+    """``value`` as the JSON its schema describes, for JSON-schema validation. A model is checked as its fields, keyed
+    by the names its validation schema uses (its dump would key them by serialization alias, and a custom type's dump
+    is a prompt)."""
+    if isinstance(value, pydantic.RootModel):
+        return _json_schema_instance(value.root)
+    if isinstance(value, BaseModel):
+        # Only the fields its JSON schema shows; e.g. Score's provider-evidence fields are hidden from it.
+        shown = type(value).model_json_schema().get("properties")
+        # A plain model's round-trip dump is the input its schema describes (a `Json` field as text). Python mode keeps
+        # JSON-only serializers, which may change a field's type, out of the check. A custom type's dump is a prompt,
+        # and a field holding a model is checked through that model, keyed as its schema is.
+        own = {} if isinstance(value, Type) else value.model_dump(round_trip=True)
+        # The schema describes bytes as a string in every mode, so encode them as the model's JSON does.
+        bytes_mode = type(value).model_config.get("ser_json_bytes", "utf8")
+        fields = {}
+        for name, info in type(value).model_fields.items():
+            # Key each field by the name its validation schema uses: a validation alias (or one of its choices), else the name.
+            alias = info.validation_alias
+            choices = alias.choices if isinstance(alias, pydantic.AliasChoices) else [alias]
+            keys = [key for key in (*choices, info.alias, name) if isinstance(key, str)]
+            key = next((key for key in keys if shown is None or key in shown), None)
+            if key is not None:
+                item = getattr(value, name)
+                fields[key] = _json_field_value(own[name] if name in own and not _holds_model(item) else _json_schema_instance(item), bytes_mode)
+        extra = {key: _json_field_value(_json_schema_instance(item), bytes_mode) for key, item in (value.model_extra or {}).items()}
+        return fields | extra
+    if isinstance(value, dict):
+        return {k: _json_schema_instance(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_json_schema_instance(v) for v in value]
+    return value
+
+
+def _holds_model(value: Any) -> bool:
+    if isinstance(value, BaseModel):
+        return True
+    items = value.values() if isinstance(value, dict) else value if isinstance(value, (list, tuple, set, frozenset)) else ()
+    return any(_holds_model(item) for item in items)
+
+
+def _json_field_value(value: Any, bytes_mode: Literal["utf8", "base64", "hex"]) -> Any:
+    """A model's field value in the JSON form its schema describes, e.g. a date as an ISO string."""
+    try:
+        return pydantic_core.to_jsonable_python(value, bytes_mode=bytes_mode)
+    except (pydantic_core.PydanticSerializationError, ValueError):
+        return value  # e.g. an arbitrary object, which the schema leaves unchecked
+
+
 class Tool(Type):
     """Tool class.
 
@@ -133,7 +182,7 @@ class Tool(Type):
                 else:
                     raise ValueError(f"Arg {k} is not in the tool's args.")
             try:
-                instance = v.model_dump() if hasattr(v, "model_dump") else v
+                instance = _json_schema_instance(v)
                 type_str = self.args[k].get("type")
                 if type_str is not None and type_str != "Any":
                     validate(instance=instance, schema=self.args[k])

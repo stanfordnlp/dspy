@@ -97,6 +97,9 @@ A zero-argument callable that returns a fresh `CodeInterpreter` for one invocati
 **`__call__(**inputs, interpreter_factory=...)` / `acall(**inputs, interpreter_factory=...)`**
 A per-invocation factory override, supplied by keyword. For example, `rlm(query=query, interpreter_factory=dspy.PythonInterpreter)` explicitly chooses PythonInterpreter even when another factory is configured. The factory must return a fresh interpreter; RLM injects tools and output metadata and always shuts it down. Its `execution_instructions` metadata controls the runtime guidance for that invocation without changing the shared predictor. Code-executing sub-agents that REPL code builds get fresh interpreters from this factory too. Live interpreter instances are no longer accepted at call time. The factory option is keyword-only, and `interpreter_factory` is reserved for runtime configuration rather than signature inputs.
 
+**DSPy types (`dspy.Image`, `dspy.Audio`, custom `dspy.Type` subclasses)**
+These keep their type across the sandbox boundary: inputs, tool arguments and results, `SUBMIT` values, and sub-agent inputs and outputs. The REPL runs dspy itself, so dspy's own types are the real classes there; custom types arrive as plain classes of their fields. Inputs are read as their declared type and need no `SandboxSerializable` subclass.
+
 **`dspy.SandboxSerializable`**
 The base class for inputs that need custom loading. Implement `sandbox_setup`, `to_sandbox`, `sandbox_assignment`, and `rlm_preview`. It also defines a Pydantic schema hook, so a subclass can be a typed field in a signature, as in `data: DataFrame = dspy.InputField()`.
 

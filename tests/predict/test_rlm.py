@@ -14,6 +14,7 @@ from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from typing import Any
 
+import pydantic
 import pytest
 
 import dspy
@@ -3623,6 +3624,249 @@ class TestRLMFacadeDeno:
 
         assert result.trajectory[0]["output"].startswith("FINAL"), result.trajectory[0]["output"]  # not a NameError
         assert result.answer == "pong"
+
+
+def _png(width: int, height: int, noisy: bool = False) -> dspy.Image:
+    import random
+
+    from PIL import Image as PILImage
+
+    buffer = io.BytesIO()
+    if noisy:  # incompressible, so its base64 is long
+        PILImage.frombytes("RGB", (width, height), random.Random(0).randbytes(width * height * 3)).save(buffer, "PNG")
+    else:
+        PILImage.new("RGB", (width, height), (255, 0, 0)).save(buffer, format="PNG")
+    return dspy.Image(buffer.getvalue())
+
+
+def _png_size(image: dspy.Image) -> tuple[int, int]:
+    from PIL import Image as PILImage
+
+    return PILImage.open(io.BytesIO(base64.b64decode(image.url.split(",", 1)[1]))).size
+
+
+_TYPED_FACTORIES = [
+    pytest.param(LocalInterpreter, id="local"),
+    pytest.param(PythonInterpreter, id="deno", marks=pytest.mark.deno),
+]
+
+
+class TestRLMDspyTypes:
+    @pytest.mark.parametrize("factory", _TYPED_FACTORIES)
+    def test_images_cross_the_sandbox_as_images(self, factory):
+        pytest.importorskip("PIL")
+        received = {}
+
+        def screenshot() -> dspy.Image:
+            """Take a screenshot."""
+            return _png(3, 5)
+
+        def inspect_images(image: dspy.Image, images: list[dspy.Image]) -> str:
+            """Inspect images."""
+            received.update(image=image, images=images)
+            return "ok"
+
+        rlm = RLM(
+            "photo: dspy.Image -> same: dspy.Image, shot: dspy.Image",
+            tools=[screenshot, inspect_images],
+            max_iters=2,
+            interpreter_factory=factory,
+        )
+        rlm.generate_action = make_mock_predictor([
+            {
+                "reasoning": "Pass an input and a tool result to a tool",
+                "code": "shot = screenshot()\n"
+                "print(type(photo).__name__, type(shot).__name__, inspect_images(image=shot, images=[photo, shot]))",
+            },
+            # A second execution: some interpreters define the tools and SUBMIT anew for each one.
+            {"reasoning": "Submit", "code": "SUBMIT(photo, screenshot())"},
+        ])
+
+        result = rlm(photo=_png(6, 4))
+
+        assert result.trajectory[0]["output"].strip() == "Image Image ok"
+        assert _png_size(received["image"]) == (3, 5)
+        assert [_png_size(image) for image in received["images"]] == [(6, 4), (3, 5)]
+        assert (_png_size(result.same), _png_size(result.shot)) == ((6, 4), (3, 5))
+
+    @pytest.mark.parametrize("factory", _TYPED_FACTORIES)
+    def test_repl_code_keeps_working_once_dspy_types_are_bound(self, factory):
+        """The tools and SUBMIT are rebound before each execution; code that shadows a tool, starts with a
+        __future__ import, or reads a plain model a tool returns behaves as it did before."""
+
+        def search(q: str) -> str:
+            """Search."""
+            return q.upper()
+
+        def row() -> dict:
+            """A row, as a dict."""
+            return {"name": "a"}
+
+        rlm = RLM("photo: dspy.Image -> answer", tools=[search, row], max_iters=4, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Shadow a tool", "code": "search = search('x')\nprint(search, row()['name'])"},
+            {"reasoning": "Run another cell", "code": "print('next')"},
+            {"reasoning": "Future import", "code": "from __future__ import annotations\nprint(type(photo).__name__)"},
+            {"reasoning": "Submit", "code": "SUBMIT('ok')"},
+        ])
+
+        result = rlm(photo=dspy.Image("https://example.com/x.png"))
+
+        outputs = [step["output"].strip() for step in result.trajectory]
+        assert outputs[:2] == ["X a", "next"] and result.answer == "ok"
+        if factory is LocalInterpreter:  # Pyodide rejects __future__ imports that don't open a file
+            assert outputs[2] == "Image"
+
+    @pytest.mark.deno
+    def test_plain_model_tool_results_stay_as_the_interpreter_sends_them(self):
+        class Row(pydantic.BaseModel):
+            name: str
+
+        def row() -> Row:
+            """A row."""
+            return Row(name="a")
+
+        rlm = RLM("photo: dspy.Image -> answer", tools=[row], max_iters=1, interpreter_factory=PythonInterpreter)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Read it", "code": "SUBMIT(row()['name'])"}])
+        assert rlm(photo=dspy.Image("https://example.com/x.png")).answer == "a"
+
+    @pytest.mark.parametrize("factory", _TYPED_FACTORIES)
+    def test_tools_with_quoted_postponed_return_annotations_return_typed_values(self, factory):
+        namespace = {"dspy": dspy, "shot": dspy.Image("https://example.com/x.png")}
+        exec(  # a module with postponed annotations whose tool also quotes its return type
+            "from __future__ import annotations\n"
+            "def snap() -> 'dspy.Image':\n"
+            '    """Take a snapshot."""\n'
+            "    return shot\n",
+            namespace,
+        )
+        rlm = RLM("q -> answer", tools=[namespace["snap"]], max_iters=1, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Use it", "code": "SUBMIT(type(snap()).__name__)"}])
+        assert rlm(q="x").answer == "Image"
+
+    def test_in_process_interpreters_get_tool_results_as_themselves(self):
+        shot = dspy.Image("https://example.com/x.png")
+
+        def screenshot() -> dspy.Image:
+            """Take a screenshot."""
+            return shot
+
+        rlm = RLM("q -> answer", tools=[screenshot], max_iters=1, interpreter_factory=_InProcessInterpreter)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Use it", "code": "SUBMIT(type(screenshot()).__name__)"}])
+        assert rlm(q="x").answer == "Image"
+
+    def test_input_image_longer_than_the_variable_preview(self):
+        pytest.importorskip("PIL")
+        photo = _png(32, 32, noisy=True)
+        assert len(photo.url) > 1000  # longer than REPLVariable's preview, which used to cut its base64 in two
+
+        rlm = RLM("photo: dspy.Image -> rotated: dspy.Image", max_iters=1, interpreter_factory=LocalInterpreter)
+        code = "SUBMIT(dspy.Image(photo.to_pil().rotate(90, expand=True).crop((0, 0, 32, 8))))"
+        with dummy_lm_context([{"plan": "Crop it", "code": code}]) as lm:
+            assert _png_size(rlm(photo=photo).rotated) == (32, 8)
+
+        # The root prompt previews the image's sandbox form as text; the image itself stays in the sandbox.
+        assert not any(part.type == "image" for message in lm.history[0]["request"].messages for part in message.parts)
+
+    def test_types_inside_ordinary_models_keep_their_type(self):
+        pytest.importorskip("PIL")
+
+        class Album(pydantic.BaseModel):
+            cover: dspy.Image
+
+        class Post(dspy.Type):
+            album: Album
+
+        def cover_size(post: Post) -> str:
+            """Measure a post's cover."""
+            return str(_png_size(post.album.cover))
+
+        rlm = RLM(
+            "post: Post -> size: str, same: Post", tools=[cover_size], max_iters=1, interpreter_factory=LocalInterpreter
+        )
+        code = "SUBMIT(str(post.album.cover.to_pil().size) + ' ' + cover_size(post=post), post)"
+        with dummy_lm_context([{"plan": "Measure", "code": code}]):
+            result = rlm(post=Post(album=Album(cover=_png(6, 4))))
+
+        assert result.size == "(6, 4) (6, 4)"
+        assert _png_size(result.same.album.cover) == (6, 4)
+
+    @pytest.mark.parametrize("factory", _TYPED_FACTORIES)
+    def test_plain_models_holding_images_keep_their_type_and_settings(self, factory):
+        class Album(pydantic.BaseModel):
+            cover: dspy.Image
+            counts: pydantic.Json[list[int]]
+            extras: frozenset[dspy.Image]
+
+        extra = dspy.Image("https://example.com/y.png")
+        album = Album(cover=dspy.Image("https://example.com/x.png"), counts="[1, 2]", extras=frozenset({extra}))
+
+        def latest() -> Album:
+            """The latest album."""
+            return album
+
+        rlm = RLM("album: Album -> answer", tools=[latest], max_iters=1, interpreter_factory=factory)
+        code = (
+            "kinds = lambda a: f'{type(a).__name__} {a.counts} {type(a.cover).__name__} {type(next(iter(a.extras))).__name__}'\n"
+            "SUBMIT(kinds(album) + ' | ' + kinds(latest()))"
+        )
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Read both", "code": code}])
+
+        assert rlm(album=album).answer == "Album [1, 2] Image Image | Album [1, 2] Image Image"
+
+    @pytest.mark.parametrize("factory", _TYPED_FACTORIES)
+    def test_submitted_custom_types_are_read_by_field_name(self, factory):
+        class Tag(dspy.Type):
+            label: str = pydantic.Field(alias="wire_label")
+            box: tuple[int, int]
+
+            model_config = pydantic.ConfigDict(strict=True)
+
+        rlm = RLM("tag: Tag, photo: dspy.Image -> same: Tag", max_iters=1, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Return it", "code": "SUBMIT(tag)"}])
+
+        tag = Tag(wire_label="gold", box=(1, 2))
+        assert rlm(tag=tag, photo=dspy.Image("https://example.com/x.png")).same == tag
+
+    @pytest.mark.parametrize("factory", _TYPED_FACTORIES)
+    def test_tools_take_custom_types_with_aliases_and_tuples(self, factory):
+        class Tag(dspy.Type):
+            label: str = pydantic.Field(alias="wire_label")
+            box: tuple[int, int]
+
+        def describe(tag: Tag, colors: set[str]) -> str:
+            """Describe a tag."""
+            return f"{tag.label} {tag.box} {sorted(colors)}"
+
+        rlm = RLM("tag: Tag, photo: dspy.Image -> answer", tools=[describe], max_iters=1, interpreter_factory=factory)
+        code = "SUBMIT(describe(tag=tag, colors=['red']))"
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Describe it", "code": code}])
+
+        assert rlm(tag=Tag(wire_label="gold", box=(1, 2)), photo=dspy.Image("https://example.com/x.png")).answer == (
+            "gold (1, 2) ['red']"
+        )
+
+    def test_explicit_sandbox_serializable_wins_over_the_type_default(self):
+        class Rows(dspy.Type, SandboxSerializable):
+            rows: list[int]
+
+            def sandbox_setup(self):
+                return ""
+
+            def to_sandbox(self):
+                return ",".join(map(str, self.rows)).encode()
+
+            def sandbox_assignment(self, var_name, data_expr):
+                return f'{var_name} = ("native", [int(x) for x in {data_expr}.split(",")])'
+
+            def rlm_preview(self, max_chars=500):
+                return "Rows as a ('native', list) tuple"
+
+        rlm = RLM("rows: Rows -> answer", max_iters=1, interpreter_factory=LocalInterpreter)
+        with dummy_lm_context([{"plan": "Show it", "code": "SUBMIT(repr(rows))"}]) as lm:
+            assert rlm(rows=Rows(rows=[1, 2])).answer == "('native', [1, 2])"
+
+        assert "Rows as a ('native', list) tuple" in lm.history[0]["messages"][-1]["content"]
 
 
 if __name__ == "__main__":

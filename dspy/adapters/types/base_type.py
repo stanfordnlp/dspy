@@ -146,6 +146,38 @@ class Type(pydantic.BaseModel):
         return None
 
 
+def model_fields(value: pydantic.BaseModel) -> dict[str, Any]:
+    """A model's field values by name, including extra fields it allows (`extra="allow"`)."""
+    return {name: getattr(value, name) for name in type(value).model_fields} | (value.model_extra or {})
+
+
+def holds_dspy_type(value: Any) -> bool:
+    """Whether ``value`` is a ``dspy.Type`` value or holds one in its lists, sets, dicts or model fields."""
+    if isinstance(value, Type):
+        return True
+    if isinstance(value, pydantic.BaseModel):
+        items = model_fields(value).values()
+    elif isinstance(value, dict):
+        items = value.values()
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        items = value
+    else:
+        return False
+    return any(not isinstance(item, (str, int, float)) and holds_dspy_type(item) for item in items)
+
+
+def annotation_holds_dspy_type(annotation: Any, _seen: frozenset = frozenset()) -> bool:
+    """Whether ``annotation`` involves a ``dspy.Type``, in its type arguments or a plain model's fields: the types
+    whose values ``holds_dspy_type`` finds."""
+    if Type.extract_custom_type_from_annotation(annotation):
+        return True
+    # On Python 3.10, a generic alias such as list[int] passes isinstance(..., type) but not issubclass.
+    model = get_origin(annotation) is None and isinstance(annotation, type) and issubclass(annotation, pydantic.BaseModel)
+    if model and annotation not in _seen:
+        return any(annotation_holds_dspy_type(f.annotation, _seen | {annotation}) for f in annotation.model_fields.values())
+    return any(annotation_holds_dspy_type(arg, _seen) for arg in get_args(annotation))
+
+
 def parts_from_text(text: str) -> tuple[Part, ...]:
     """Expand the custom-type markers in rendered text into lm15 content parts.
 

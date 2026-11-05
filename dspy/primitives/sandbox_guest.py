@@ -23,6 +23,7 @@ import base64
 import builtins
 import contextlib
 import enum
+import functools
 import importlib
 import inspect
 import io
@@ -41,7 +42,7 @@ import dspy
 from dspy._vendor.lm15 import serde
 from dspy.adapters.base import Prompt
 from dspy.adapters.chat_adapter import ChatAdapter
-from dspy.adapters.types.base_type import Type
+from dspy.adapters.types.base_type import Type, holds_dspy_type, model_fields
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value
 from dspy.clients.base_lm import BaseLM
@@ -66,8 +67,18 @@ def encode_value(value: Any) -> Any:
     raises rather than crossing some other way. A dspy type crosses as its fields, not its prompt rendering, so an
     ``Image`` still validates as an ``Image``. A value with no JSON form (a function, say) crosses as its string form.
     """
+    if isinstance(value, pydantic.RootModel) and holds_dspy_type(value):
+        return encode_value(value.root)
     if isinstance(value, Type):
-        return {name: encode_value(getattr(value, name)) for name, f in type(value).model_fields.items() if not f.exclude}
+        fields = {name: getattr(value, name) for name, f in type(value).model_fields.items() if not f.exclude}
+        return {name: encode_value(item) for name, item in (fields | (value.model_extra or {})).items()}
+    if isinstance(value, pydantic.BaseModel) and holds_dspy_type(value):
+        # A plain model's own encoding would render the dspy types it holds as prompts, so those fields cross as their
+        # fields too; the rest keep the model's own encoding (a ``Json`` field as its JSON text, say).
+        typed = {name for name, item in model_fields(value).items() if holds_dspy_type(item)}
+        own = value.model_dump(mode="json", by_alias=False, round_trip=True, exclude=typed, fallback=str)
+        excluded = {name for name, f in type(value).model_fields.items() if f.exclude}
+        return own | {name: encode_value(getattr(value, name)) for name in typed - excluded}
     if isinstance(value, dict):
         out, seen = {}, set()
         for key, item in value.items():
@@ -166,6 +177,7 @@ class HostLM(BaseLM):
     supports_reasoning = property(lambda self: self._capabilities["supports_reasoning"])
     supports_response_schema = property(lambda self: self._capabilities["supports_response_schema"])
     supported_params = property(lambda self: set(self._capabilities["supported_params"]))
+    supported_tool_result_media = property(lambda self: set(self._capabilities["supported_tool_result_media"]))
 
     def _send(self, op: str, prompt: Any, options: dict[str, Any]) -> Any:
         return _raise_lm_error(self._host(op=op, prompt=encode_prompt(prompt), options=encode_options(options),
@@ -245,16 +257,24 @@ def _read(value: Any, annotation: Any) -> Any:
 
 
 class HostTool(Tool):
-    """A provided tool as sandboxed code sees it: a ``dspy.Tool`` that calls the host tool by name."""
+    """A provided tool as sandboxed code sees it: a ``dspy.Tool`` that calls the host tool by name. Its results are
+    read back as the host tool's return type, so a ``dspy.Image`` it returns is a ``dspy.Image`` here too."""
 
-    def __init__(self, func: Any, spec: dict[str, Any]) -> None:
+    def __init__(self, func: Any, spec: dict[str, Any], returns: Any = Any) -> None:
         super().__init__(func, name=spec["name"], desc=spec["desc"], args=spec["args"],
                          arg_types=dict.fromkeys(spec["args"], Any))
         self.has_kwargs = spec["has_kwargs"]
+        self._returns = returns
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         # Generated code may call a tool positionally, in the order the host declares its arguments.
-        return super().__call__(**dict(zip(self.args, args, strict=False)), **kwargs)
+        return self._result(super().__call__(**dict(zip(self.args, args, strict=False)), **kwargs))
+
+    async def acall(self, **kwargs: Any) -> Any:
+        return self._result(await super().acall(**kwargs))
+
+    def _result(self, value: Any) -> Any:
+        return value if self._returns is Any else _read(value, self._returns)
 
     def _validate_and_parse_args(self, **kwargs: Any) -> dict[str, Any]:
         return {key: encode_value(value) for key, value in super()._validate_and_parse_args(**kwargs).items()}
@@ -613,32 +633,49 @@ def bind(namespace: dict[str, Any]) -> None:
     Interpreters may rebind their tools before each execution, so the Flex driver binds again before it runs.
     """
     spec = namespace["__dspy_guest_spec"]
-    for name, tool in spec["tools"].items():
-        func = namespace.get(name)
-        if func is not None and not isinstance(func, HostTool):
-            func.__dspy_host_tool__ = name  # so a nested interpreter calls the host tool directly
-            namespace[name] = HostTool(func, tool)
     if "__dspy_types" not in namespace:
         namespace["__dspy_types"] = rebuild_types(spec["types"])
+    module = sys.modules.get("__dspy_types") or types.ModuleType("__dspy_types")  # none in the host's own memory
+    for name, tool in spec["tools"].items():
+        func = namespace.get(name)
+        if callable(func) and not isinstance(func, HostTool):  # code may have reused the name for a value
+            with contextlib.suppress(AttributeError, TypeError):
+                func.__dspy_host_tool__ = name  # so a nested interpreter calls the host tool directly
+            returns = spec["types"].get("returns", {}).get(name)
+            namespace[name] = HostTool(func, tool, _annotation(returns, module) if returns else Any)
+    submit = namespace.get("SUBMIT")
+    if callable(submit) and not hasattr(submit, "__wrapped__"):
+        # The interpreter's own encoding would render dspy types as prompts, so SUBMIT sends their wire form.
+        @functools.wraps(submit)
+        def encoding_submit(*args: Any, **kwargs: Any) -> Any:
+            return submit(*map(encode_value, args), **{key: encode_value(value) for key, value in kwargs.items()})
+
+        namespace["SUBMIT"] = encoding_submit
     for name, value in TYPING_NAMES.items():
         namespace.setdefault(name, value)
     namespace.update(namespace["__dspy_types"])
 
 
+def read_input(namespace: dict[str, Any], name: str, value: Any) -> Any:
+    """An input from the host, as the type the host signature declares for it, or as it came if that type can't be
+    built here or rejects it. Flex reads its inputs so, and RLM those holding dspy types."""
+    annotation = namespace["__dspy_guest_spec"].get("inputs", {}).get(name)
+    if annotation is None:
+        return value
+    try:
+        parsed = eval(annotation, {**vars(builtins), **vars(__import__("typing")), "dspy": dspy}, namespace["__dspy_types"])
+        adapter = pydantic.TypeAdapter(parsed)
+    except Exception:
+        return value
+    with contextlib.suppress(pydantic.ValidationError):
+        return validate_wire(adapter, value)
+    return value
+
+
 def run_forward(namespace: dict[str, Any], class_name: str, inputs: dict[str, Any]) -> str:
     """Run one Flex forward in the sandbox; return its output fields as JSON."""
     bind(namespace)
-    spec = namespace["__dspy_guest_spec"]
-    types = namespace["__dspy_types"]
-    for name, annotation in spec.get("inputs", {}).items():
-        if name in inputs:
-            try:
-                parsed = eval(annotation, {**vars(builtins), **vars(__import__("typing")), "dspy": dspy}, types)
-                adapter = pydantic.TypeAdapter(parsed)
-            except Exception:
-                continue  # a type pydantic can't validate: the value as it came
-            with contextlib.suppress(pydantic.ValidationError):  # a value its type rejects, passed as it came
-                inputs[name] = validate_wire(adapter, inputs[name])
+    inputs = {name: read_input(namespace, name, value) for name, value in inputs.items()}
     prediction = namespace[class_name]().forward(**inputs)
     fields = getattr(prediction, "_store", prediction)
     return json.dumps({"fields": encode_value(dict(fields))})
