@@ -57,7 +57,7 @@ from dspy.primitives.repl_types import (
     restore_repl_events,
 )
 from dspy.primitives.sandbox_bundle import SandboxBundleError
-from dspy.primitives.sandbox_guest import INTERPRETER_TOOL, LM_TOOL
+from dspy.primitives.sandbox_guest import INTERPRETER_TOOL, LM_TOOL, read_wire
 from dspy.primitives.sandbox_serializable import SandboxSerializable, build_repl_variable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
@@ -921,8 +921,8 @@ class RLM(Module):
         """Validate and parse FinalOutput. Returns (parsed_outputs, None) or (None, error)."""
         raw_output = result.output
         session = _repl_session.get()
-        if session is not None:  # SUBMIT sends dspy's objects in the session's wire form (see sandbox_guest.bind)
-            raw_output = session.decode(raw_output)
+        if session is not None and isinstance(raw_output, dict):  # see sandbox_guest.bind
+            raw_output = {name: read_wire(value, session.id, session) for name, value in raw_output.items()}
 
         # Validate raw_output is a dict
         if not isinstance(raw_output, dict):
