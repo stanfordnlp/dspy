@@ -1892,3 +1892,26 @@ def test_an_edited_source_file_makes_a_new_dspy_bundle(tmp_path, monkeypatch):
     assert sandbox_bundle._prepare_bundle((), None, "", root) == first  # unchanged sources reuse it
     source.write_text("value = 22\n")  # patched in place, as an installed file may be
     assert sandbox_bundle._prepare_bundle((), None, "", root) != first
+
+
+def test_the_dspy_bundle_ships_pillow_only_when_the_host_has_it(monkeypatch):
+    # dspy.Image.to_pil needs Pillow in the sandbox; Pyodide's own build comes with the bundle if this environment has it.
+    import importlib.util
+
+    from dspy.primitives import sandbox_bundle
+
+    lock = {"pillow": {"depends": ["libwebp"]}, "libwebp": {"depends": []}}
+    monkeypatch.setattr(sandbox_bundle, "_pyodide_lock", lambda deno_dir: lock)
+    monkeypatch.setattr(sandbox_bundle, "_distributions", lambda: [])
+    find_spec = importlib.util.find_spec
+    try:
+        for host_has_pillow in (True, False):
+            monkeypatch.setattr(
+                importlib.util,
+                "find_spec",
+                lambda name, *args, has=host_has_pillow: (object() if has else None) if name == "PIL" else find_spec(name, *args),
+            )
+            sandbox_bundle._plan.cache_clear()
+            assert sandbox_bundle._plan(None)[1] == (["libwebp", "pillow"] if host_has_pillow else [])
+    finally:
+        sandbox_bundle._plan.cache_clear()

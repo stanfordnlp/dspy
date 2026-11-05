@@ -8,7 +8,8 @@ that executes no sandboxed code byte-compiles each archive once, so sandboxes st
 - ``dspy-<digest>.zip``, for sandboxes whose code imports dspy (``PythonInterpreter.provide_dspy``), which have no
   network to install packages with. It holds dspy and every package its installed metadata says it needs: those
   Pyodide ships as Pyodide builds them (checked against Pyodide's lock file), the others from this environment if
-  they are pure Python. There is one per set of sources.
+  they are pure Python, and Pyodide's Pillow when this environment has Pillow, for ``dspy.Image.to_pil``. There is
+  one per set of sources.
 
 ``DSPY_SANDBOX_CACHE=0`` or ``PythonInterpreter(sandbox_cache=False)`` turns the cache off, for environments where
 writing files is unwelcome: nothing is written under the cache directory. Pyodide then starts from its own standard
@@ -229,6 +230,8 @@ def _plan(deno_dir: str | None) -> tuple[dict, list[str], list[tuple[Path, str]]
             shipped.append(name)
         else:
             files += _files(dist)
+    if "pillow" in lock and importlib.util.find_spec("PIL") is not None:
+        shipped.append("pillow")  # what dspy.Image converts to and from (Image.to_pil), when this environment has it
     needed: list[str] = []
     while shipped:  # with what they need, by Pyodide's lock file
         name = _normalize(shipped.pop())
