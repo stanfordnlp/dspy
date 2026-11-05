@@ -44,7 +44,7 @@ from dspy.adapters.base import Prompt
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types.base_type import Type, holds_dspy_type, model_fields
 from dspy.adapters.types.tool import Tool
-from dspy.adapters.utils import parse_value
+from dspy.adapters.utils import parse_value, serialize_for_json
 from dspy.clients.base_lm import BaseLM
 from dspy.lm15 import BuiltinTool, CacheConfig, FunctionTool, Request
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
@@ -628,7 +628,8 @@ def install(namespace: dict[str, Any], spec: dict[str, Any]) -> None:
 
 
 def bind(namespace: dict[str, Any]) -> None:
-    """Bind the provided tools and custom types in ``namespace``.
+    """Bind the provided tools and custom types in ``namespace``, and the host tools the spec names as ``prompts``,
+    which take prompts (RLM's ``llm_query``): the items of lists passed to them cross as ``prompt_text``.
 
     Interpreters may rebind their tools before each execution, so the Flex driver binds again before it runs.
     """
@@ -643,6 +644,10 @@ def bind(namespace: dict[str, Any]) -> None:
                 func.__dspy_host_tool__ = name  # so a nested interpreter calls the host tool directly
             returns = spec["types"].get("returns", {}).get(name)
             namespace[name] = HostTool(func, tool, _annotation(returns, module) if returns else Any)
+    for name in spec.get("prompts", ()):
+        query = namespace.get(name)
+        if callable(query) and not hasattr(query, "__wrapped__"):
+            namespace[name] = _sending_prompts(query)
     submit = namespace.get("SUBMIT")
     if callable(submit) and not hasattr(submit, "__wrapped__"):
         # The interpreter's own encoding would render dspy types as prompts, so SUBMIT sends their wire form.
@@ -654,6 +659,29 @@ def bind(namespace: dict[str, Any]) -> None:
     for name, value in TYPING_NAMES.items():
         namespace.setdefault(name, value)
     namespace.update(namespace["__dspy_types"])
+
+
+def prompt_text(value: Any) -> str:
+    """An item of a prompt list as text: a dspy type as its prompt rendering, whose custom-type markers the host
+    expands into content parts (``parts_from_text``), and other values as adapters render them."""
+    if isinstance(value, str):
+        return value
+    serialized = serialize_for_json(value)
+    return serialized if isinstance(serialized, str) else json.dumps(serialized, ensure_ascii=False)
+
+
+def _prompt_lists(value: Any) -> Any:
+    if isinstance(value, list):
+        return [_prompt_lists(item) if isinstance(item, list) else prompt_text(item) for item in value]
+    return value
+
+
+def _sending_prompts(query: Any) -> Any:
+    @functools.wraps(query)
+    def sending_prompts(*args: Any, **kwargs: Any) -> Any:
+        return query(*map(_prompt_lists, args), **{key: _prompt_lists(value) for key, value in kwargs.items()})
+
+    return sending_prompts
 
 
 def read_input(namespace: dict[str, Any], name: str, value: Any) -> Any:

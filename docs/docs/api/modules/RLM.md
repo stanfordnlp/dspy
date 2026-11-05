@@ -149,7 +149,7 @@ Inside the REPL, the LLM has access to:
 
 | Tool | Description |
 |------|-------------|
-| `llm_query(prompt)` | Query a sub-LLM for semantic analysis (~500K char capacity) |
+| `llm_query(prompt)` | Query a sub-LLM for semantic analysis (~500K char capacity). `prompt` may be a list of strings and DSPy values, such as images |
 | `llm_query_batched(prompts)` | Query multiple prompts concurrently (faster for batch operations) |
 | `print()` | Print output (required to see results) |
 | `SUBMIT(...)` | Submit final output and end execution |
@@ -276,7 +276,7 @@ class DataFrame(dspy.SandboxSerializable):
 
 ### Images and Other DSPy Types
 
-Values of DSPy types such as `dspy.Image` keep their type across the sandbox boundary: in inputs, tool arguments and results, `SUBMIT`, and sub-agents built with `dspy` in the REPL. The REPL runs dspy itself, so a `dspy.Image` is a `dspy.Image` there, with its methods. Your own `dspy.Type` subclasses arrive as plain classes of their fields, with their methods left on the host, as in `dspy.Flex`. Inputs are read as the type their field declares, so annotate them (`photos: list[dspy.Image]`). They need no `SandboxSerializable` subclass: RLM gives them a built-in one, and a type that also subclasses `SandboxSerializable` uses its own.
+Values of DSPy types such as `dspy.Image` keep their type across the sandbox boundary: in inputs, tool arguments and results, `SUBMIT`, `llm_query` prompt lists, and sub-agents built with `dspy` in the REPL. The REPL runs dspy itself, so a `dspy.Image` is a `dspy.Image` there, with its methods. Your own `dspy.Type` subclasses arrive as plain classes of their fields, with their methods left on the host, as in `dspy.Flex`. Inputs are read as the type their field declares, so annotate them (`photos: list[dspy.Image]`). They need no `SandboxSerializable` subclass: RLM gives them a built-in one, and a type that also subclasses `SandboxSerializable` uses its own.
 
 `dspy.Image.to_pil()` needs Pillow in the interpreter. `dspy.LocalInterpreter` imports it from your environment; `PythonInterpreter`'s sandbox holds only dspy and its dependencies.
 
@@ -295,6 +295,7 @@ The model can then write code such as:
 
 ```python
 crop = dspy.Image(photo.to_pil().crop((600, 400, 900, 600)))
+label = llm_query(["Read the label in this crop.", crop])
 screen = take_screenshot()  # a dspy.Image
 answer = dspy.Predict("image: dspy.Image, question -> answer")(image=screen, question=question).answer
 SUBMIT(answer, crop)
