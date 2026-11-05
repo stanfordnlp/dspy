@@ -21,7 +21,6 @@ the bootstrap leaves it alone, and the caller scopes its execution with ``Sandbo
 from __future__ import annotations
 
 import ast
-import asyncio
 import base64
 import contextlib
 import contextvars
@@ -574,11 +573,16 @@ class SandboxSession:
         return getattr(factory, "execution_instructions", "") or ""
 
     def _serve_lm(
-        self, op: str, prompt: Any = None, options: dict[str, Any] | None = None, role: str | None = None
+        self,
+        op: str,
+        prompt: Any = None,
+        options: dict[str, Any] | None = None,
+        role: str | None = None,
     ) -> Any:
         """The ``LM_TOOL`` host tool: build a request (``op="request"``) or run a call (``op="call"``), on the host's
         LM, or with ``role="extraction"`` on the extraction model of the host's TwoStepAdapter. With ``op="adapter"``,
-        run a predictor's whole adapter call on the host, for an adapter class of the user's (``_run_adapter``)."""
+        run a predictor's whole adapter call on the host, for an adapter class of the user's (``_run_adapter``). Every
+        call runs the sync path, an async one in the sandbox too (see ``HostLM.acall``)."""
         call = next(self._calls)
         lm = None
         try:
@@ -613,10 +617,7 @@ class SandboxSession:
         inputs = {name: _typed(value, signature.input_fields.get(name)) for name, value in call["inputs"].items()}
         demos = [dspy.Example(**{name: _typed(value, signature.fields.get(name)) for name, value in demo.items()})
                  for demo in call.get("demos", ())]
-        arguments = {"lm_kwargs": options, "signature": signature, "demos": demos, "inputs": inputs}
-        if call.get("async"):  # an async predictor: the adapter's own acall
-            return _run_coroutine(self._adapter.acall(lm, **arguments))
-        return self._adapter(lm, **arguments)
+        return self._adapter(lm, lm_kwargs=options, signature=signature, demos=demos, inputs=inputs)
 
     def _seal(self, request: Any, role: str | None) -> Any:
         """``request`` as sandboxed code gets it: the settings the host LM owns, such as provider options that may hold
@@ -642,16 +643,6 @@ class SandboxSession:
                 f"Sandboxed code may not change request setting(s) {changed or ['extensions']}; they come from the host LM."
             )
         return dataclasses.replace(prompt, config=dataclasses.replace(prompt.config, **sealed[index]))
-
-
-def _run_coroutine(coroutine: Any) -> Any:
-    """Run ``coroutine`` to its end from this synchronous host tool, on a loop of its own."""
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coroutine)
-    with ThreadPoolExecutor(1) as pool:  # this thread already runs a loop: one in a worker, in the caller's context
-        return pool.submit(contextvars.copy_context().run, asyncio.run, coroutine).result()
 
 
 def _redact(text: str, lm: Any) -> str:

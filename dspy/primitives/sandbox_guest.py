@@ -195,6 +195,8 @@ class HostLM(BaseLM):
         return serde.response_from_dict(out) if isinstance(prompt, Request) else out
 
     async def acall(self, prompt: Any = None, **options: Any) -> Any:
+        # The bridge is synchronous: the host's loop, if it has one, waits under this call. So the host runs its
+        # LM's sync path, as for any call from the sandbox, rather than an async engine on a loop of its own.
         return self(prompt, **options)
 
 
@@ -215,20 +217,17 @@ class HostAdapter(ChatAdapter):
         self._host = host
 
     def __call__(self, lm: Any, lm_kwargs: dict[str, Any], signature: Any, demos: list[Any], inputs: dict[str, Any]):
-        return self._run(lm, lm_kwargs, signature, demos, inputs, run_async=False)
-
-    async def acall(self, lm: Any, lm_kwargs: dict[str, Any], signature: Any, demos: list[Any], inputs: dict[str, Any]):
-        return self._run(lm, lm_kwargs, signature, demos, inputs, run_async=True)  # the host runs the adapter's acall
-
-    def _run(self, lm: Any, lm_kwargs: Any, signature: Any, demos: Any, inputs: Any, run_async: bool) -> Any:
         options = {**(lm._changed() if isinstance(lm, HostLM) else {}), **(lm_kwargs or {})}
         if isinstance(lm, HostLM) and lm._cache is not None:
             options.setdefault("cache", lm._cache)
-        call = {"signature": signature_spec(signature), "inputs": encode_value(dict(inputs)), "async": run_async,
+        call = {"signature": signature_spec(signature), "inputs": encode_value(dict(inputs)),
                 "demos": [encode_value(dict(demo.items())) for demo in demos]}
         outputs = _raise_lm_error(self._host(op="adapter", prompt=call, options=encode_options(options), role=None))
         return [{name: _read(value, signature.output_fields[name].annotation) if name in signature.output_fields
                  else value for name, value in completion.items()} for completion in outputs]
+
+    async def acall(self, lm: Any, lm_kwargs: dict[str, Any], signature: Any, demos: list[Any], inputs: dict[str, Any]):
+        return self(lm, lm_kwargs, signature, demos, inputs)  # on the host's sync path, as HostLM.acall
 
 
 def _read(value: Any, annotation: Any) -> Any:
