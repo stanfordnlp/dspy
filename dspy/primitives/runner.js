@@ -18,7 +18,7 @@ buf_stdout, buf_stderr = io.StringIO(), io.StringIO()
 sys.stdout, sys.stderr = buf_stdout, buf_stderr
 
 def last_exception_args():
-    return json.dumps(sys.last_exc.args) if sys.last_exc else None
+    return json.dumps(sys.last_exc.args, default=repr) if sys.last_exc else None
 
 class _DSPyFinalOutput(BaseException):
     # Control-flow exception to signal completion (like StopIteration)
