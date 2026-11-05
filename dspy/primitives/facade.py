@@ -801,6 +801,8 @@ class _Shapes:
             for f in dataclasses.fields(cls):
                 info = infos.get(f.name) or (f.default if isinstance(f.default, pydantic.fields.FieldInfo) else None)
                 fields[f.name] = self._field(hints.get(f.name, Any), info, f.default, f.default_factory)
+                if getattr(f, "kw_only", False) is True:  # as resolved for the field, the class's setting included
+                    fields[f.name]["kw_only"] = True
             config = _config(getattr(cls, "__pydantic_config__", {}))  # a pydantic dataclass's settings, as a model's
             return {"kind": "dataclass", "frozen": cls.__dataclass_params__.frozen, "config": config, "fields": fields}
         if issubclass(cls, tuple) and hasattr(cls, "_fields"):
