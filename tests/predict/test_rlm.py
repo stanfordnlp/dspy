@@ -175,9 +175,10 @@ async def test_default_reasoning_trajectory(mode, async_mode):
     expected = "Some reasoning" if mode == "native" else "" if mode == "omitted" else responses[0]["plan"]
     assert result.answer == 13
     assert result.final_reasoning == expected
-    assert len(result.repl_trajectory) == 3
+    assert len(result.trajectory) == 3
+    assert "repl_trajectory" not in result
     assert all(
-        entry["reasoning"] == expected and isinstance(entry["reasoning"], str) for entry in result.repl_trajectory
+        entry["reasoning"] == expected and isinstance(entry["reasoning"], str) for entry in result.trajectory
     )
 
 
@@ -203,13 +204,17 @@ class TestRLMInitialization:
         assert "summary" in rlm.signature.output_fields
         assert "key_facts" in rlm.signature.output_fields
 
-    def test_custom_tools(self):
+    @pytest.mark.parametrize("positional", [False, True])
+    def test_custom_tools(self, positional):
         """Test RLM with custom tools."""
 
         def custom_tool(x: str = "") -> str:
             return x.upper()
 
-        rlm = RLM("context -> answer", max_iters=5, tools=[custom_tool])
+        if positional:
+            rlm = RLM("context -> answer", 5, 50, 10_000, False, [custom_tool])
+        else:
+            rlm = RLM("context -> answer", max_iters=5, tools=[custom_tool])
         assert "custom_tool" in rlm.tools
         assert len(rlm.tools) == 1  # Only user tools, not internal llm_query/llm_query_batched
 
@@ -281,7 +286,7 @@ class TestRLMInitialization:
             RLM("lookup -> answer", tools=[lookup])
 
     @pytest.mark.parametrize(
-        "output_name", ["history", "final_reasoning", "repl_trajectory", REPL_ENTRY_KEY, "variables_info", "iteration"]
+        "output_name", ["history", "final_reasoning", "trajectory", REPL_ENTRY_KEY, "variables_info", "iteration"]
     )
     def test_output_names_cannot_shadow_result_metadata(self, output_name):
         with pytest.raises(ValueError, match=f"Output fields conflict with RLM result metadata: \\['{output_name}'\\]"):
@@ -1686,18 +1691,18 @@ class TestRLMWithDummyLM:
 
             assert result.answer == 20
             assert len(result.history.messages) == 2
-            assert len(result.repl_trajectory) == 2
+            assert len(result.trajectory) == 2
 
-            # Make sure history and repl_trajectory agree
+            # Make sure history and trajectory agree
             history_repl_entries = [message["repl_entry"] for message in result.history.messages]
-            assert len(history_repl_entries) == len(result.repl_trajectory)
+            assert len(history_repl_entries) == len(result.trajectory)
             assert all(
                 (
                     hist_entry.reasoning == traj_entry["reasoning"]
                     and hist_entry.code == traj_entry["code"]
                     and hist_entry.output == traj_entry["output"]
                 )
-                for hist_entry, traj_entry in zip(history_repl_entries, result.repl_trajectory, strict=True)
+                for hist_entry, traj_entry in zip(history_repl_entries, result.trajectory, strict=True)
             )
 
     def test_with_input_variables_e2e(self):
@@ -1806,18 +1811,18 @@ class TestRLMWithDummyLM:
 
             assert result.answer == 20
             assert len(result.history.messages) == 2
-            assert len(result.repl_trajectory) == 2
+            assert len(result.trajectory) == 2
 
-            # Make sure history and repl_trajectory agree
+            # Make sure history and trajectory agree
             history_repl_entries = [message["repl_entry"] for message in result.history.messages]
-            assert len(history_repl_entries) == len(result.repl_trajectory)
+            assert len(history_repl_entries) == len(result.trajectory)
             assert all(
                 (
                     hist_entry.reasoning == traj_entry["reasoning"]
                     and hist_entry.code == traj_entry["code"]
                     and hist_entry.output == traj_entry["output"]
                 )
-                for hist_entry, traj_entry in zip(history_repl_entries, result.repl_trajectory, strict=True)
+                for hist_entry, traj_entry in zip(history_repl_entries, result.trajectory, strict=True)
             )
 
     @pytest.mark.asyncio
@@ -1976,8 +1981,8 @@ class TestRLMHistoryWithDummyLM:
         assert history.messages[2]["answer"] == 25
         assert history.messages[4]["answer"] == 40
 
-        first_traj = first_result.repl_trajectory
-        second_traj = second_result.repl_trajectory
+        first_traj = first_result.trajectory
+        second_traj = second_result.trajectory
 
         assert len(first_traj) == 3
         assert len(second_traj) == 2
@@ -2271,7 +2276,7 @@ class TestRLMHistoryWithDummyLM:
         final_event = history_events[-1]
         assert final_event == {"repl_entry": EXTRACT_FALLBACK, "answer": 25}
 
-        assert len(result.repl_trajectory) == 2
+        assert len(result.trajectory) == 2
 
         history_repl_entries = [
             msg["repl_entry"] for msg in result.history.messages if isinstance(msg["repl_entry"], REPLEntry)
@@ -2283,7 +2288,7 @@ class TestRLMHistoryWithDummyLM:
                 and hist_entry.code == traj_entry["code"]
                 and hist_entry.output == traj_entry["output"]
             )
-            for hist_entry, traj_entry in zip(history_repl_entries, result.repl_trajectory, strict=True)
+            for hist_entry, traj_entry in zip(history_repl_entries, result.trajectory, strict=True)
         )
 
     @pytest.mark.asyncio
@@ -2413,8 +2418,8 @@ class TestRLMHistoryWithDummyLM:
         assert history.messages[2]["answer"] == 25
         assert history.messages[4]["answer"] == 40
 
-        first_traj = first_result.repl_trajectory
-        second_traj = second_result.repl_trajectory
+        first_traj = first_result.trajectory
+        second_traj = second_result.trajectory
 
         assert len(first_traj) == 3
         assert len(second_traj) == 2
@@ -2461,7 +2466,7 @@ class TestRLMHistoryWithDummyLM:
         final_event = history_events[-1]
         assert final_event == {"repl_entry": EXTRACT_FALLBACK, "answer": 25}
 
-        assert len(result.repl_trajectory) == 2
+        assert len(result.trajectory) == 2
 
         history_repl_entries = [
             msg["repl_entry"] for msg in result.history.messages if isinstance(msg["repl_entry"], REPLEntry)
@@ -2473,7 +2478,7 @@ class TestRLMHistoryWithDummyLM:
                 and hist_entry.code == traj_entry["code"]
                 and hist_entry.output == traj_entry["output"]
             )
-            for hist_entry, traj_entry in zip(history_repl_entries, result.repl_trajectory, strict=True)
+            for hist_entry, traj_entry in zip(history_repl_entries, result.trajectory, strict=True)
         )
 
 
@@ -3527,7 +3532,7 @@ class TestRLMFacadeDeno:
         with dummy_lm_context([{"answer": "one"}, {"answer": "two"}]):
             result = rlm(query="q")
 
-        assert "LLM call limit exceeded: 1 + 1 > 1" in result.repl_trajectory[0]["output"]
+        assert "LLM call limit exceeded: 1 + 1 > 1" in result.trajectory[0]["output"]
         assert "one" in result.answer
 
     def test_facade_survives_serializable_inputs_on_the_default_sandbox(self):
@@ -3547,8 +3552,8 @@ class TestRLMFacadeDeno:
             result = rlm(data=_StubSerializable("payload"), query="q")
 
         # The block's own output: a dead facade would fall back to extract and still yield the answer.
-        assert "facade with serializable input" in result.repl_trajectory[0]["output"]
-        assert len(result.repl_trajectory) == 2
+        assert "facade with serializable input" in result.trajectory[0]["output"]
+        assert len(result.trajectory) == 2
 
 
 if __name__ == "__main__":

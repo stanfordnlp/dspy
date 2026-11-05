@@ -203,10 +203,11 @@ class RLM(Module):
         max_llm_calls: int = 50,
         max_output_chars: int = 10_000,
         verbose: bool = False,
-        history_processor: Callable[[dspy.History], dspy.History | None] | None = None,
         tools: list[Callable] | None = None,
         sub_lm: dspy.LM | None = None,
         interpreter_factory: Callable[[], CodeInterpreter] = PythonInterpreter,
+        *,
+        history_processor: Callable[[dspy.History], dspy.History | None] | None = None,
     ):
         """
         Args:
@@ -276,7 +277,7 @@ class RLM(Module):
     _HISTORY_EVENT_KEYS = frozenset({REPL_ENTRY_KEY, "variables_info", "iteration"})
     # Names that would collide with keys RLM writes onto conversation-history events or the returned Prediction.
     _RESERVED_INPUT_NAMES = frozenset({"history", *_HISTORY_EVENT_KEYS})
-    _RESERVED_RESULT_NAMES = frozenset({"history", "final_reasoning", "repl_trajectory", *_HISTORY_EVENT_KEYS})
+    _RESERVED_RESULT_NAMES = frozenset({"history", "final_reasoning", "trajectory", *_HISTORY_EVENT_KEYS})
     # Call-time arguments accepted in addition to the signature's input fields.
     _CALL_TIME_ARGS = frozenset({"history"})
     # Keyword-only options of forward/aforward; a signature input with one of these names could never be passed.
@@ -757,7 +758,7 @@ class RLM(Module):
         return Prediction(
             history=history,
             final_reasoning="Extract forced final output",
-            repl_trajectory=[e.to_trajectory_dict() for e in turn_entries],
+            trajectory=[e.to_trajectory_dict() for e in turn_entries],
             **final_outputs,
         )
 
@@ -933,9 +934,10 @@ class RLM(Module):
                 (`dspy.History`) is treated as read-only input; it is never mutated.
 
         Returns:
-            Prediction with output field(s) from the signature, along with `history` and `final_reasoning`.
+            Prediction with the signature's outputs, `history`, `final_reasoning`, and this call's `trajectory`.
             `history` is a new `dspy.History` containing the input history plus one event per REPL
-            iteration; pass it back as `history=` to continue the conversation.
+            iteration; pass it back as `history=` to continue the conversation. History does not restore
+            interpreter variables or mutations; each invocation uses a fresh interpreter.
 
         Raises:
             ValueError: If required input fields are missing
@@ -992,7 +994,7 @@ class RLM(Module):
                         **final_outputs,
                         history=history,
                         final_reasoning=repl_entry.reasoning,
-                        repl_trajectory=[e.to_trajectory_dict() for e in turn_entries],
+                        trajectory=[e.to_trajectory_dict() for e in turn_entries],
                     )
 
             # Max iterations reached - use extract fallback
@@ -1027,7 +1029,7 @@ class RLM(Module):
         return Prediction(
             history=history,
             final_reasoning="Extract forced final output",
-            repl_trajectory=[e.to_trajectory_dict() for e in turn_entries],
+            trajectory=[e.to_trajectory_dict() for e in turn_entries],
             **final_outputs,
         )
 
@@ -1084,9 +1086,10 @@ class RLM(Module):
                 (`dspy.History`) is treated as read-only input; it is never mutated.
 
         Returns:
-            Prediction with output field(s) from the signature, along with `history` and `final_reasoning`.
+            Prediction with the signature's outputs, `history`, `final_reasoning`, and this call's `trajectory`.
             `history` is a new `dspy.History` containing the input history plus one event per REPL
-            iteration; pass it back as `history=` to continue the conversation.
+            iteration; pass it back as `history=` to continue the conversation. History does not restore
+            interpreter variables or mutations; each invocation uses a fresh interpreter.
 
         Raises:
             ValueError: If required input fields are missing
@@ -1142,7 +1145,7 @@ class RLM(Module):
                         **final_outputs,
                         history=history,
                         final_reasoning=repl_entry.reasoning,
-                        repl_trajectory=[e.to_trajectory_dict() for e in turn_entries],
+                        trajectory=[e.to_trajectory_dict() for e in turn_entries],
                     )
 
             # Max iterations reached - use extract fallback
