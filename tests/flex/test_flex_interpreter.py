@@ -32,7 +32,8 @@ from dspy.primitives.code_interpreter import (
     CodeInterpreterError,
     resolve_interpreter_factory,
 )
-from dspy.primitives.sandbox_guest import encode_value
+from dspy.primitives.facade import SandboxSession, from_wire
+from dspy.primitives.sandbox_guest import GuestValues
 from dspy.signatures.signature import make_signature
 from dspy.utils.dummies import DummyLM
 from dspy.utils.exceptions import LMError, LMRateLimitError
@@ -107,8 +108,8 @@ def test_bad_interpreter_type_raises() -> None:
 def test_tools_plus_interpreter_is_supported() -> None:
     flex = Flex(Doubler, tools=[shout], interpreter_factory=lambda: MockInterpreter())
     assert flex._bridge is not None
-    # the user tool is registered (name -> callable) so sandbox glue can call it by name
-    assert flex._bridge._tool_callables()["shout"] is shout
+    # the user tool is served by name, so sandbox glue can call it
+    assert flex._bridge.session()._tools["shout"] is shout
 
 
 # =============================================================================
@@ -402,9 +403,23 @@ class _Where(dspy.Signature):
     same: _Address = dspy.OutputField()
 
 
-@pytest.mark.parametrize("factory", [dspy.LocalInterpreter, lambda: _ExecInterpreter()], ids=["local", "in-process"])
-def test_models_cross_as_models_whatever_their_aliases(factory) -> None:
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_values_of_the_users_types_reach_generated_code_as_plain_data(factory) -> None:
+    # The JSON the type writes, by field name whatever its aliases, which the host reads back as the type.
     flex = Flex(_Where, interpreter_factory=factory)
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, address):\n"
+        "        assert isinstance(address, dict)\n"
+        "        return dspy.Prediction(code=address['postal_code'], same=address)\n"
+    )
+    address = _Address(postal_code="10001", cityName="New York")
+    out = flex(address=address)
+    assert (out.code, out.same) == ("10001", address)
+
+
+def test_an_in_process_interpreter_shares_the_hosts_objects() -> None:
+    flex = Flex(_Where, interpreter_factory=_ExecInterpreter)
     flex._bind_code(
         "class M(dspy.Module):\n"
         "    def forward(self, address):\n"
@@ -412,7 +427,7 @@ def test_models_cross_as_models_whatever_their_aliases(factory) -> None:
     )
     address = _Address(postal_code="10001", cityName="New York")
     out = flex(address=address)
-    assert (out.code, out.same) == ("10001", address)
+    assert out.code == "10001" and out.same is address
 
 
 class _Account(pydantic.BaseModel):
@@ -425,15 +440,47 @@ class _Owner(dspy.Signature):
     seen: str = dspy.OutputField()
 
 
+class _Keep(dspy.Signature):
+    account: _Account = dspy.InputField()
+    seen: str = dspy.OutputField()
+    same: _Account = dspy.OutputField()
+
+
 @pytest.mark.parametrize("factory", BACKENDS)
 def test_excluded_input_fields_do_not_reach_generated_code(factory) -> None:
-    flex = Flex(_Owner, interpreter_factory=factory)
+    flex = Flex(_Keep, interpreter_factory=factory)
     flex._bind_code(
         "class M(dspy.Module):\n"
         "    def forward(self, account):\n"
-        "        return dspy.Prediction(seen=account.name + ':' + account.token)\n"
+        "        return dspy.Prediction(seen=','.join(sorted(account)), same=account)\n"
     )
-    assert flex(account=_Account(name="a", token="secret")).seen == "a:"
+    out = flex(account=_Account(name="a", token="secret"))
+    assert (out.seen, out.same) == ("name", _Account(name="a"))
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_generated_code_returns_plain_data_for_the_users_types(factory) -> None:
+    flex = Flex(_Keep, interpreter_factory=factory)
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, account):\n"
+        "        return dspy.Prediction(seen=account['name'], same={'name': account['name'] + '!'})\n"
+    )
+    assert flex(account=_Account(name="a")).same == _Account(name="a!")  # read as the type on the host
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, account):\n"
+        "        return dspy.Prediction(seen='x', same={'name': 5})\n"
+    )
+    with pytest.raises(CodeInterpreterError, match="output field 'same'"):
+        flex(account=_Account(name="a"))
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, account):\n"
+        "        return dspy.Prediction(seen='x', same=_Account(name='b'))\n"
+    )
+    with pytest.raises(CodeInterpreterError, match="plain data"):  # the type is named there, its values are data
+        flex(account=_Account(name="a"))
 
 
 def _tagged(allowed: set[str]) -> type[dspy.Signature]:
@@ -452,15 +499,15 @@ def _tagged(allowed: set[str]) -> type[dspy.Signature]:
 
 
 @pytest.mark.parametrize("factory", BACKENDS)
-def test_inputs_of_a_type_defined_in_a_function_reach_generated_code_as_that_type(factory) -> None:
+def test_inputs_of_a_type_defined_in_a_function_reach_generated_code_as_plain_data(factory) -> None:
     signature = _tagged({"red"})
     flex = Flex(signature, interpreter_factory=factory)
     flex._bind_code(
         "class M(dspy.Module):\n"
         "    def forward(self, tag):\n"
-        "        return dspy.Prediction(name=f'{type(tag).__name__} {tag.name}')\n"
+        "        return dspy.Prediction(name=f'{type(tag).__name__} {tag[\"name\"]}')\n"
     )
-    assert flex(tag=signature.input_fields["tag"].annotation(name="red")).name == "Tag red"
+    assert flex(tag=signature.input_fields["tag"].annotation(name="red")).name == "dict red"
 
 
 class _Placed(pydantic.BaseModel):
@@ -481,17 +528,17 @@ def test_strict_models_cross_as_the_json_pydantic_wrote(factory) -> None:
     flex._bind_code(
         "class M(dspy.Module):\n"
         "    def forward(self, place):\n"
-        "        return dspy.Prediction(report=f'{place.coordinates!r} {place.data!r}', same=place)\n"
+        "        return dspy.Prediction(report=f\"{place['coordinates']} {place['data']}\", same=place)\n"
     )
     place = _Placed(coordinates=(1, 2), data=b"hi")
     out = flex(place=place)
-    assert (out.report, out.same) == ("(1, 2) b'hi'", place)
+    assert (out.report, out.same) == ("[1, 2] hi", place)
 
 
-def test_the_optimizer_is_told_the_users_types_are_data_in_the_sandbox() -> None:
+def test_the_optimizer_is_told_the_users_types_are_plain_data_in_the_sandbox() -> None:
     blurb = Flex(_Owner)._flex_ctx.render_context_blurb(sandboxed=True)
-    assert "In the sandbox, _Account are plain data classes" in blurb and "don't call their methods" in blurb
-    assert "plain data classes" not in Flex("q -> a")._flex_ctx.render_context_blurb(sandboxed=True)
+    assert "In the sandbox, values of _Account are plain data" in blurb
+    assert "plain data" not in Flex("q -> a")._flex_ctx.render_context_blurb(sandboxed=True)
 
 
 class _Color(str, enum.Enum):
@@ -540,14 +587,13 @@ class _Paint(dspy.Signature):
 
 
 @pytest.mark.parametrize("factory", BACKENDS)
-def test_root_models_dataclasses_and_named_tuples_reach_generated_code(factory) -> None:
+def test_root_models_dataclasses_and_named_tuples_reach_generated_code_as_their_json(factory) -> None:
     flex = Flex(_Paint, interpreter_factory=factory)
     flex._bind_code(
         "class M(dspy.Module):\n"
         "    def forward(self, canvas):\n"
-        "        import dataclasses\n"
-        "        frame = dataclasses.replace(canvas.frame, width=canvas.frame.width + 1)\n"
-        "        return dspy.Prediction(report=f'{canvas.size.root} {frame.width} {canvas.corner.x} {canvas.corner.y}')\n"
+        "        size, width, (x, y) = canvas['size'], canvas['frame']['width'], canvas['corner']\n"
+        "        return dspy.Prediction(report=f'{size} {width + 1} {x} {y}')\n"
     )
     assert flex(canvas=_Canvas(size=_Size(3), frame=_Frame(4), corner=_Corner(5))).report == "3 5 5 0"
 
@@ -585,12 +631,12 @@ class _Unwrap(dspy.Signature):
 
 
 @pytest.mark.parametrize("factory", [*BACKENDS, pytest.param(lambda: _ExecInterpreter(), id="in-process")])
-def test_models_with_alias_paths_return_to_the_host(factory) -> None:
+def test_models_with_alias_paths_return_to_the_host_by_field_name(factory) -> None:
     flex = Flex(_Unwrap, interpreter_factory=factory)
     flex._bind_code(
         "class M(dspy.Module):\n"
         "    def forward(self, value):\n"
-        "        return dspy.Prediction(nested=_Nested.model_validate({'data': {'x': value}}))\n"
+        "        return dspy.Prediction(nested={'x': value})\n"
     )
     assert flex(value=7).nested.x == 7
 
@@ -617,12 +663,12 @@ class _Match(dspy.Signature):
 
 
 @pytest.mark.parametrize("factory", BACKENDS)
-def test_shared_types_compare_equal_and_host_factories_make_defaults(factory) -> None:
+def test_enum_values_compare_as_data_and_the_host_makes_defaults(factory) -> None:
     flex = Flex(_Match, interpreter_factory=factory)
     flex._bind_code(
         "class M(dspy.Module):\n"
         "    def forward(self, swatch, wanted):\n"
-        "        return dspy.Prediction(same=swatch.tone == wanted and swatch.tone is wanted, mark=_Mark(name='m'))\n"
+        "        return dspy.Prediction(same=swatch['tone'] == wanted, mark={'name': 'm'})\n"
     )
     out = flex(swatch=_Swatch(tone=_Tone.COOL), wanted=_Tone.COOL)
     assert (out.same, out.mark.id) == (True, "host-made")
@@ -639,13 +685,13 @@ class _Compare(dspy.Signature):
     same: _Sides = dspy.OutputField()
 
 
-@pytest.mark.parametrize("factory", [*BACKENDS, pytest.param(lambda: _ExecInterpreter(), id="in-process")])
+@pytest.mark.parametrize("factory", BACKENDS)
 def test_fields_whose_alias_choices_share_a_name_keep_their_own_values(factory) -> None:
     flex = Flex(_Compare, interpreter_factory=factory)
     flex._bind_code(
         "class M(dspy.Module):\n"
         "    def forward(self, sides):\n"
-        "        return dspy.Prediction(diff=sides.left - sides.right, same=sides)\n"
+        "        return dspy.Prediction(diff=sides['left'] - sides['right'], same=sides)\n"
     )
     sides = _Sides.model_validate({"left": {"value": 1}, "right": {"value": 2}})
     out = flex(sides=sides)
@@ -659,21 +705,19 @@ class _Draw(dspy.Signature):
 
 
 @pytest.mark.parametrize("factory", BACKENDS)
-def test_model_inputs_keep_their_python_types_in_generated_code(factory) -> None:
+def test_model_inputs_reach_generated_code_as_their_json_and_come_back_as_the_model(factory) -> None:
     flex = Flex(_Draw, interpreter_factory=factory)
     flex._bind_code(
         "class M(dspy.Module):\n"
         "    def forward(self, shape):\n"
-        "        shape.tags.add('seen')\n"
-        "        kinds = [type(getattr(shape, name)).__name__ for name in ('points', 'groups', 'span', 'data', 'amount')]\n"
-        "        report = ' '.join([shape.color.name, type(next(iter(shape.points))).__name__, *kinds])\n"
+        "        report = f\"{shape['color']} {shape['points']} {shape['span']} {shape['data']} {shape['amount']}\"\n"
         "        return dspy.Prediction(report=report, same=shape)\n"
     )
     shape = _Shape(color=_Color.BLUE, points={_Point(x=1)}, groups={frozenset({1})}, span=(1, 2), data=b"ab",
                    amount=decimal.Decimal("1.5"))
     out = flex(shape=shape)
-    assert out.report == "BLUE _Point set set tuple bytes Decimal"
-    assert out.same == shape.model_copy(update={"tags": {"seen"}})
+    assert out.report == "blue [{'x': 1}] [1, 2] ab 1.5"
+    assert out.same == shape
 
 
 class _Order(pydantic.BaseModel):
@@ -694,21 +738,28 @@ class _Pack(dspy.Signature):
     report: str = dspy.OutputField()
 
 
-@pytest.mark.parametrize("factory", [*BACKENDS, pytest.param(lambda: _ExecInterpreter(), id="in-process")])
-def test_json_fields_exclusions_and_model_defaults_reach_generated_code(factory) -> None:
-    flex = Flex(_Pack, interpreter_factory=factory)
+class _Packed(dspy.Signature):
+    ship: _Ship = dspy.InputField()
+    report: str = dspy.OutputField()
+    same: _Ship = dspy.OutputField()
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_json_fields_exclusions_and_settings_cross_as_the_type_writes_them(factory) -> None:
+    flex = Flex(_Packed, interpreter_factory=factory)
     flex._bind_code(
         "class M(dspy.Module):\n"
         "    def forward(self, ship):\n"
-        "        fresh = type(ship.order).model_fields['note'].default\n"
-        "        ship.order.marks.add('seen')\n"
-        "        return dspy.Prediction(report=f'{sum(ship.order.items)} {ship.count} {fresh!r}')\n"
+        "        order = ship['order']\n"
+        "        return dspy.Prediction(report=f\"{order['items']} {order['note']} {ship['count']} {sorted(order)}\", "
+        "same=ship)\n"
     )
-    ship = _Ship(order=_Order(items="[1, 2]", secret="s"), count_=3)
-    assert flex(ship=ship).report == "3 3 b'ab'"
+    out = flex(ship=_Ship(order=_Order(items="[1, 2]", secret="s"), count_=3))
+    assert out.report == "[1,2] 6162 3 ['items', 'note']"  # the type's round-trip JSON: no excluded field in it
+    assert (out.same.order.items, out.same.order.note, out.same.count, out.same.order.secret) == ([1, 2], b"ab", 3, "")
 
 
-
+def test_a_two_step_adapter_serves_the_sandbox_from_the_host() -> None:
     main = DummyLM([{"result": "four, I think"}], adapter=dspy.ChatAdapter())
     extraction = DummyLM([{"result": "4"}], adapter=dspy.ChatAdapter())
     flex = Flex(Doubler, interpreter_factory=dspy.LocalInterpreter)
@@ -785,9 +836,9 @@ def test_parse_module_class_name_prefers_forward() -> None:
     assert bridge.parse_module_class_name(src) == "MyModule"
 
 
-def test_outputs_cross_in_json_mode() -> None:
-    # Everything dspy.Predict can output must cross the boundary: datetimes, enums, and pydantic
-    # models holding them serialize in JSON mode, and dspy types cross as their fields.
+def test_outputs_cross_with_their_types() -> None:
+    # Everything dspy.Predict can output crosses the boundary: datetimes, enums and dspy types as themselves, and a
+    # value of the user's types as the JSON it writes, which the host reads back as the type.
     class Color(enum.Enum):
         RED = "red"
 
@@ -795,17 +846,17 @@ def test_outputs_cross_in_json_mode() -> None:
         when: datetime.datetime
         color: Color
 
-    fields = encode_value({
+    values = {
         "event": Event(when=datetime.datetime(2026, 1, 1), color=Color.RED),
         "when": datetime.datetime(2026, 1, 2),
-        "color": Color.RED,
         "image": dspy.Image(url="https://example.com/x.png"),
-    })
-    assert fields["event"] == {"when": "2026-01-01T00:00:00", "color": "red"}
-    assert fields["when"] == "2026-01-02T00:00:00"
-    assert fields["color"] == "red"
-    assert fields["image"] == {"url": "https://example.com/x.png"}
-    json.dumps(fields)
+    }
+    session, guest = SandboxSession({}), GuestValues()
+    inside = guest.decode(json.loads(json.dumps(session.encode(values))))
+    assert inside["event"] == {"when": "2026-01-01T00:00:00", "color": "red"}
+    assert (inside["when"], inside["image"]) == (values["when"], values["image"])
+    back = session.decode(json.loads(json.dumps(guest.encode(inside))))
+    assert back["image"] is values["image"] and from_wire(back["event"], Event) == values["event"]
 
 
 class _ExecInterpreter:

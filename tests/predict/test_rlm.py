@@ -1564,7 +1564,9 @@ class TestRLMWithDummyLM:
 
             assert result.color == "red"
 
-    def test_dspy_tool_execution_semantics_e2e(self):
+    # Once REPL code imports dspy, its tools are dspy.Tools that call the host: the same semantics apply.
+    @pytest.mark.parametrize("prefix", ["", "import dspy\n"], ids=["plain", "after-import-dspy"])
+    def test_dspy_tool_execution_semantics_e2e(self, prefix):
         import inspect
 
         from pydantic import BaseModel
@@ -1599,7 +1601,7 @@ class TestRLMWithDummyLM:
         with dummy_lm_context([
             {
                 "plan": "Call the tool",
-                "code": 'result = score_payload({"value": 3})\nSUBMIT(result)',
+                "code": prefix + 'result = score_payload({"value": 3})\nSUBMIT(result)',
             },
         ]):
             with dspy.context(callbacks=[Recorder()]):

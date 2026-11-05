@@ -1,34 +1,38 @@
 """SandboxLM: the host LM as sandboxed code may call it, and the wire between a sandbox's HostLM and the host."""
 
 import builtins
-import copy
 import dataclasses
 import datetime
+import decimal
 import enum
 import inspect
 import json
-import pickle
+import math
 import sys
 import types
 import typing
+import uuid
 
 import pydantic
-import pydantic_core
 import pytest
 import typing_extensions
 
 import dspy
 from dspy.adapters.base import Prompt
 from dspy.lm15 import CacheConfig, Config, FunctionTool, Message, Request, Response
-from dspy.primitives.facade import LM_ERROR_KEY, SANDBOX_LM_KWARGS, SandboxLM, SandboxSession, from_wire, types_spec
+from dspy.primitives.code_interpreter import CodeInterpreterError
+from dspy.primitives.facade import LM_ERROR_KEY, SANDBOX_LM_KWARGS, HostValues, SandboxLM, SandboxSession, from_wire
 from dspy.primitives.sandbox_guest import (
+    GuestValues,
     HostLM,
+    HostTool,
+    HostType,
+    _host_type,
     decode_options,
     decode_prompt,
     encode_options,
     encode_prompt,
-    encode_value,
-    rebuild_types,
+    signature_spec,
 )
 from dspy.utils.dummies import DummyLM
 from dspy.utils.exceptions import LMProviderError, LMRateLimitError
@@ -370,38 +374,6 @@ def test_prompts_and_options_round_trip_the_wire():
     assert decoded["n"] == 2
 
 
-class _Node(pydantic.BaseModel):
-    value: int
-    children: list["_Node"] = []
-
-
-def test_recursive_models_keep_their_fields_in_the_sandbox():
-    rebuilt = rebuild_types(types_spec({"_Node": _Node}))["_Node"]
-    tree = {"value": 1, "children": [{"value": 2, "children": [{"value": 3}]}]}
-    assert rebuilt.model_validate(tree).model_dump(mode="json") == _Node.model_validate(tree).model_dump(mode="json")
-
-
-@pytest.mark.parametrize(
-    "adapter",
-    [
-        dspy.XMLAdapter(use_native_function_calling=True, parallel_tool_calls=False),
-        dspy.ChatAdapter(use_json_adapter_fallback=False, native_response_types=[dspy.Reasoning]),
-        dspy.JSONAdapter(use_native_function_calling=False),
-    ],
-)
-def test_built_in_adapters_keep_their_settings_in_the_sandbox(adapter):
-    import json
-
-    from dspy.primitives.facade import _adapter_spec
-    from dspy.primitives.sandbox_guest import rebuild_adapter
-
-    spec, _ = _adapter_spec(adapter)
-    rebuilt = rebuild_adapter(json.loads(json.dumps(spec)))
-    assert type(rebuilt) is type(adapter)
-    for name in ("use_native_function_calling", "parallel_tool_calls", "use_json_adapter_fallback", "native_response_types"):
-        assert getattr(rebuilt, name, None) == getattr(adapter, name, None)
-
-
 def test_extended_trace_entries_reach_the_host_too():
     from dspy.primitives.sandbox_guest import HostTrace
 
@@ -432,7 +404,8 @@ def test_signatures_the_sandbox_records_import_nothing_and_name_no_object_on_the
 
     with dspy.context(trace=[]):
         assert recorded("x: planted_module -> y") == {"x": str, "y": str}
-        assert recorded("x: T -> y", {"T": "tabnanny.NannyNag"}) == {"x": str, "y": str}
+        assert recorded("x: T -> y", {"T": {"import": "tabnanny.NannyNag"}}) == {"x": str, "y": str}
+        assert recorded("x: T -> y", {"T": {"key": "T"}}) == {"x": str, "y": str}  # a key the host never gave
         for reach in ("os.environ", "dspy.settings.lm.kwargs", "Literal[os.environ]", "Literal[dspy.settings.lm]",
                       "Literal[sys]", "list[os.sep]"):
             assert recorded(f"x: {reach} -> y") == {"x": str, "y": str}, reach
@@ -443,9 +416,9 @@ def test_signatures_the_sandbox_records_import_nothing_and_name_no_object_on_the
             assert recorded(f"x: {quoted} -> y") == {"x": str, "y": str}, quoted
         assert not hasattr(builtins, "PWNED")
         # Nor does a class the sandbox calls Literal take quoted values.
-        assert recorded("x: Literal['int'] -> y", {"Literal": "typing.Generic"}) == {"x": str, "y": str}
+        assert recorded("x: Literal['int'] -> y", {"Literal": {"import": "typing.Generic"}}) == {"x": str, "y": str}
         # What the sandbox records for its predictors still resolves: builtin, typing, dspy and loaded stdlib types.
-        types = {"Reasoning": "dspy.adapters.types.reasoning.Reasoning", "date": "datetime.date"}
+        types = {"Reasoning": {"import": "dspy.adapters.types.reasoning.Reasoning"}, "date": {"import": "datetime.date"}}
         assert recorded("x: list[int] | None, when: date -> y: Reasoning, z: Literal['a', -1]", types) == {
             "x": list[int] | None, "when": datetime.date, "y": dspy.Reasoning, "z": typing.Literal["a", -1],
         }
@@ -460,17 +433,18 @@ def test_types_the_sandbox_names_are_read_without_running_a_module_getattr(monke
     lazy.__getattr__ = lambda name: called.append(name) or int  # a module that loads attributes lazily
     monkeypatch.setitem(sys.modules, "lazymod", lazy)
     monkeypatch.setattr(facade, "_in_sandbox", lambda module: True)
-    with pytest.raises(ValueError):
-        facade._loaded_class("lazymod.Thing")
+    for path in ("lazymod.Thing", "lazymod.Thing.Inner"):
+        with pytest.raises(ValueError):
+            facade._loaded_class(path)
     assert called == []
+    assert facade._loaded_class("dspy.adapters.types.tool.ToolCalls.ToolCall") is dspy.ToolCalls.ToolCall
 
 
 def test_a_nested_interpreter_refuses_a_resume_with_no_call_waiting():
     # Sandboxed code drives the nested interpreter's operations, so one out of order must fail, not hang the host.
-    from dspy.primitives.code_interpreter import CodeInterpreterError
     from dspy.primitives.facade import _NestedInterpreter
 
-    nested = _NestedInterpreter(dspy.LocalInterpreter(), {})
+    nested = _NestedInterpreter(dspy.LocalInterpreter(), {}, HostValues())
     try:
         with pytest.raises(CodeInterpreterError, match="no call waiting"):
             nested.resume({"value": 1})  # nothing executing yet
@@ -484,7 +458,7 @@ def test_a_nested_interpreter_refuses_a_resume_with_no_call_waiting():
 def test_stand_ins_for_sandbox_functions_take_their_parameter_kinds_by_name():
     from dspy.primitives.facade import _NestedInterpreter
 
-    nested = _NestedInterpreter(None, {})
+    nested = _NestedInterpreter(None, {}, HostValues())
     stand_in = nested._parent_call("helper", {"parameters": [{"name": "a", "kind": "KEYWORD_ONLY", "type": "int"}]})
     assert str(inspect.signature(stand_in)) == "(*, a: int)"
     with pytest.raises(KeyError) as error:  # not an attribute of a host class, shown back to the sandbox
@@ -492,7 +466,26 @@ def test_stand_ins_for_sandbox_functions_take_their_parameter_kinds_by_name():
     assert str(error.value) == "'__dict__'"
 
 
-# -- custom types, which cross as their shape, and values, which cross by field name ---------------------------------
+# -- the user's custom types, whose values are plain data in the sandbox, and values, which carry their types --------
+
+
+def _sandbox(custom_types=None, tools=None, **kwargs):
+    """A session, the sandbox's side of the wire in this process, and the custom types bound as ``install`` binds
+    them in a sandbox."""
+    session = SandboxSession(tools or {}, custom_types=custom_types, **kwargs)
+    bound = {name: entry["import"] if "import" in entry else _host_type(name, entry["schema"])
+             for name, entry in session._spec("test")["types"].items()}
+    return session, GuestValues(), bound
+
+
+def _into(session, guest, value):
+    """``value`` as the sandbox gets it, through JSON."""
+    return guest.decode(json.loads(json.dumps(session.encode(value))))
+
+
+def _back(session, guest, value):
+    """``value`` from the sandbox as the host gets it, through JSON."""
+    return session.decode(json.loads(json.dumps(guest.encode(value))))
 
 
 class _Hue(str, enum.Enum):
@@ -550,91 +543,34 @@ class _Account(pydantic.BaseModel):
     def _name(cls, value):
         return _clean(value)
 
-    def greeting(self):
-        return f"Hi {self.name}"
 
-
-def _cross(t, value):
-    """``value`` sent into a sandbox that builds ``t``, and its value there sent back, as the bridge does."""
-    inside = from_wire(encode_value(value), rebuild_types(types_spec({t.__name__: t}))[t.__name__])
-    return inside, from_wire(encode_value(inside), t)
-
-
-def test_custom_types_cross_as_their_shape():
-    assert "CANARY" not in json.dumps(types_spec({"_Account": _Account}))  # nothing but the shape crosses
-    original = _Account.model_validate({
-        "Name": " Ann ", "items": [9, 7], "spots": [{"x": 1}], "data": "6869", "mark": 6, "token": "secret",
+def _account():
+    return _Account.model_validate({
+        "Name": " Ann ", "items": [9, 7], "spots": [{"x": 1}], "data": "ff00", "mark": 6, "token": "secret",
         "when": "2026-11-02T10:00:00", "kids": [{"Name": "Kid", "items": [1]}],
     })
-    inside, back = _cross(_Account, original)
-    assert type(inside) is not _Account and (type(inside).__name__, type(inside).__doc__) == ("_Account", "An account.")
-    # What the host validated, by field name. Excluded fields never cross, nor does a default that may be private.
-    assert (inside.name, inside.last, inside.id, inside.data, inside.token, inside.key) == ("ann", 7, "made", b"hi", "", None)
-    assert (inside.hue is type(inside.hue).CRIMSON, int(inside.mark), type(next(iter(inside.spots))).__name__) == (
-        True, 6, "_Spot"
-    )
-    assert (inside.pair.right, inside.count.root, inside.when.year, type(inside.kids[0]).__name__) == (
-        "r", 3, 2026, "_Account"
-    )
+
+
+def test_a_value_of_the_users_types_is_the_json_its_type_writes_in_the_sandbox():
+    session, guest, _ = _sandbox({"_Account": _Account})
+    original = _account()
+    inside = _into(session, guest, original)
+    assert inside == original.model_dump(mode="json", round_trip=True)  # pydantic's own round-trip JSON
+    assert (inside["name"], inside["data"], inside["pair"]) == ("ann", "ff00", [1, "r"])
+    assert "token" not in inside and "CANARY" not in json.dumps(inside)  # what's marked exclude=True doesn't cross
+    back = from_wire(_back(session, guest, inside), _Account)  # the host reads it back as the type
     assert back == original.model_copy(update={"token": ""})
-
-
-def test_methods_and_validators_stay_on_the_host():
-    inside = rebuild_types(types_spec({"_Account": _Account}))["_Account"]
-    assert not hasattr(inside, "greeting") and not hasattr(inside, "_name")
-    made = inside(Name=" Bob ", items=[1])  # built in the sandbox: no validator of the user's runs there
-    assert made.name == " Bob "
-    with pytest.raises(pydantic.ValidationError):  # but its constraints do
-        inside(Name="x" * 21, items=[1])
-    back = from_wire(encode_value(made), _Account)  # the host's own type reads what comes back
-    assert (back.name, back.id, back.greeting()) == ("bob", "made", "Hi bob")
-
-
-def test_types_defined_in_a_function_cross_as_their_shape():
-    def make(limit):
-        class Point(pydantic.BaseModel):
-            x: int
-
-        class Shape(pydantic.BaseModel):
-            points: list[Point]
-            cap: int = limit  # read while the class is made
-
-            def capped(self):
-                return min(len(self.points), limit)
-
-        return Shape
-
-    shape = make(3)
-    inside, back = _cross(shape, shape(points=[{"x": 1}]))
-    assert (type(inside.points[0]).__name__, inside.cap, back) == ("Point", 3, shape(points=[{"x": 1}]))
 
 
 @dataclasses.dataclass
 class _Ticket:
     title: str
-    id: str = dataclasses.field(default_factory=lambda: "made")  # a factory only the host has
-
-
-class _Raw(pydantic.RootModel[bytes]):
-    model_config = pydantic.ConfigDict(ser_json_bytes="hex", val_json_bytes="hex")
+    id: str = dataclasses.field(default_factory=lambda: "made")
 
 
 @pydantic.dataclasses.dataclass(config=pydantic.ConfigDict(ser_json_bytes="hex", val_json_bytes="hex"))
 class _Blob:
     data: bytes
-
-
-@dataclasses.dataclass(kw_only=True)
-class _Record:
-    a: int = 1  # a default before a required field, which keyword-only fields allow
-    b: str
-
-
-@dataclasses.dataclass
-class _Entry:
-    a: int = dataclasses.field(default=1, kw_only=True)
-    b: str = "b"
-    c: list = dataclasses.field(default_factory=list, kw_only=True)
 
 
 @dataclasses.dataclass
@@ -645,135 +581,128 @@ class _Private:
 _Address = typing_extensions.TypedDict("_Address", {"postal-code": str, "__typename": str})  # as pydantic needs before 3.12
 
 
-class _Level(pydantic.BaseModel):
-    hue: typing.Literal[_Hue.RED] = _Hue.RED
+def test_each_kind_of_type_crosses_as_the_json_it_writes_and_reads_back():
+    session, guest, _ = _sandbox()
+    kinds = [(_Ticket("t"), {"title": "t", "id": "made"}), (_Blob(b"\xff"), {"data": "ff"}), (_Pair(1), [1, "r"]),
+             (_Count(4), 4), (_Hue.RED, "red"), (_Mark(6), 6), (_Private(_value=3), {"_value": 3})]
+    for value, data in kinds:
+        inside = _into(session, guest, value)
+        assert inside == data, value
+        assert from_wire(_back(session, guest, inside), type(value)) == value
+    address = {"postal-code": "1", "__typename": "A"}  # a TypedDict's values are dicts anyway
+    assert from_wire(_back(session, guest, _into(session, guest, address)), _Address) == address
 
 
-class _Note(pydantic.BaseModel):
-    text: str | None = pydantic.Field(default_factory=lambda: "made")
+def test_values_carry_their_types_across():
+    class Thing:
+        def __str__(self):
+            return "thing"
 
-
-@dataclasses.dataclass
-class _Draft:
-    text: str | None = dataclasses.field(default_factory=lambda: "made")
-
-
-def test_defaults_made_on_the_host_enum_literals_and_type_settings_keep_their_meaning():
-    inside = rebuild_types(types_spec({"_Ticket": _Ticket}))["_Ticket"]
-    assert from_wire(encode_value(inside(title="t")), _Ticket) == _Ticket("t", "made")  # the host made the id
-    for host in (_Note, _Draft):
-        inside = rebuild_types(types_spec({host.__name__: host}))[host.__name__]
-        unset, chosen = inside(), inside()
-        chosen.text = "chosen"
-        assert repr(unset.text) == "<made on the host>"
-        assert from_wire(encode_value(unset), host).text == "made"
-        assert from_wire(encode_value(chosen), host).text == "chosen"  # set after it was built
-        assert from_wire(encode_value(inside(text=None)), host).text is None  # a None given stays
-        for copied in (copy.copy(unset), copy.deepcopy(unset), pickle.loads(pickle.dumps(unset))):
-            assert from_wire(encode_value(copied), host).text == "made"
-    assert from_wire(encode_value(inside(None)), _Draft).text is None
-    assert from_wire(encode_value(dataclasses.replace(inside(), text="new")), _Draft).text == "new"
-    ticket = rebuild_types(types_spec({"_Ticket": _Ticket}))["_Ticket"](title="t")
-    assert from_wire(encode_value(dataclasses.replace(ticket, title="u")), _Ticket) == _Ticket("u", "made")
-    level, _ = _cross(_Level, _Level())
-    assert level.hue.name == "RED"  # a member of the enum, not its value
-    raw, back = _cross(_Raw, _Raw(b"hi"))
-    assert (raw.root, back) == (b"hi", _Raw(b"hi"))
-    blob, back = _cross(_Blob, _Blob(b"ab"))  # a pydantic dataclass keeps its settings, as a model does
-    assert (blob.data, back) == (b"ab", _Blob(b"ab"))
-    record = rebuild_types(types_spec({"_Record": _Record}))["_Record"]
-    assert dataclasses.is_dataclass(record) and record(b="x").a == 1  # keyword-only fields stay keyword-only
-    entry = rebuild_types(types_spec({"_Entry": _Entry}))["_Entry"]
-    assert from_wire(encode_value(entry("y")), _Entry) == _Entry(b="y")  # also when only some fields are
-    private, _ = _cross(_Private, _Private(_value=3))
-    assert private._value == 3  # a field name each kind allows, as its own constructor checks
-    address, _ = _cross(_Address, {"postal-code": "12345", "__typename": "Address"})
-    assert address == {"postal-code": "12345", "__typename": "Address"}  # a TypedDict's keys are not attributes
-
-
-def test_classes_of_the_same_name_each_get_a_key_of_their_own():
-    def named(name):
-        return pydantic.create_model(name, value=(int, 0))
-
-    first, second, third = named("Item"), named("Item_2"), named("Item")
-    spec = types_spec({"first": first, "second": second, "third": third})
-    assert [ref["shape"] for ref in spec["types"].values()] == ["Item", "Item_2", "Item_3"]
-    assert list(spec["shapes"]) == ["Item", "Item_2", "Item_3"]
-
-
-def test_the_host_builds_no_class_from_what_the_sandbox_sends():
-    import builtins
-
-    from dspy.primitives.facade import SandboxSession
-
-    escape = {"shape": "(__import__('builtins').__setattr__('_dspy_escaped', 1), int)[1]"}
-    sent = {"signature": "case: _Child, note: Verdict -> verdict: list[Verdict], score: int", "instructions": "Judge.",
-            "fields": {}, "types": {"Verdict": "__main__.Verdict"}, "inputs": ["case", "note"],
-            "outputs": ["verdict", "score"], "shapes": {"types": {"Verdict": escape}, "shapes": {}}}
-    signature = SandboxSession({}, custom_types={"_Child": _Child})._signature(sent)
-    assert {name: f.annotation for name, f in signature.fields.items()} == {
-        "case": _Child, "note": str, "verdict": str, "score": int,  # only a type the host doesn't know is left out
+    session, guest, _ = _sandbox()
+    values = {
+        "tuple": (1, (2, "b")), "set": {1, 2}, "frozenset": frozenset({"a"}), "bytes": b"\xff\x00",
+        "datetime": datetime.datetime(2026, 1, 2, 3, 4, 5, 6, tzinfo=datetime.timezone.utc),
+        "date": datetime.date(2026, 1, 2), "time": datetime.time(3, 4), "timedelta": datetime.timedelta(days=1, microseconds=7),
+        "decimal": decimal.Decimal("1.10"), "uuid": uuid.UUID(int=7), "inf": float("inf"),
+        "keys": {("a", "b"): 1, '["a", "b"]': 2, 3: "three"}, "tagged": {"__dspy__": "ref", "ref": 0},
+        "image": dspy.Image("https://example.com/a.png"), "nested": [[{"x": (1,)}]],
     }
-    assert not hasattr(builtins, "_dspy_escaped")
+    inside = _into(session, guest, values)
+    assert inside == values and type(inside["nested"][0][0]["x"]) is tuple
+    assert math.isnan(_into(session, guest, float("nan")))
+    assert _back(session, guest, inside) == values and _back(session, guest, inside)["image"] is values["image"]
+    code = _into(session, guest, original_code := dspy.Code(code="print(1)"))
+    code.code = "print(2)"  # a class both sides have, changed there: a new value of it
+    assert _back(session, guest, code) == dspy.Code(code="print(2)") and original_code.code == "print(1)"
+    assert _into(session, guest, Thing()) == "thing"  # what pydantic can't write crosses as its text
 
 
-def test_types_built_at_runtime_cross_as_their_shape_too():
-    built = pydantic.create_model("Dynamic", a=(int, ...), b=(str, "x"))
-    inside = rebuild_types(types_spec({"Dynamic": built}))["Dynamic"]
-    assert (inside(a="1").a, inside(a=1).b) == (1, "x")
+def test_types_defined_in_a_function_or_at_runtime_cross_as_plain_data_too():
+    def make(limit):
+        class Point(pydantic.BaseModel):
+            x: int
+
+        class Shape(pydantic.BaseModel):
+            points: list[Point]
+            cap: int = limit
+
+        return Shape
+
+    shape = make(3)
+    session, guest, bound = _sandbox({"Shape": shape, "Dynamic": pydantic.create_model("Dynamic", a=(int, ...))})
+    original = shape(points=[{"x": 1}])
+    inside = _into(session, guest, original)
+    assert inside == {"points": [{"x": 1}], "cap": 3}
+    assert from_wire(_back(session, guest, inside), shape) == original
+    assert issubclass(bound["Dynamic"], HostType)
 
 
 class _Child(pydantic.BaseModel):
     x: int
 
 
-class _Parent(pydantic.BaseModel):
-    children: "list[_Child]"  # quoted, as pydantic resolves it
-    best: "dict[str, list['_Child']]" = {}
-    label: typing.Annotated[str, pydantic.StringConstraints(max_length=5)] = "plot"
+class _Node(pydantic.BaseModel):
+    value: int
+    children: list["_Node"] = []
+    child: _Child | None = None
 
 
-def test_types_cross_as_pydantic_resolved_them():
-    inside, back = _cross(_Parent, _Parent(children=[{"x": 1}], best={"a": [{"x": 2}]}))
-    assert (type(inside.children[0]).__name__, inside.best["a"][0].x, back) == (
-        "_Child", 2, _Parent(children=[{"x": 1}], best={"a": [{"x": 2}]})
-    )
-    with pytest.raises(pydantic.ValidationError, match="at most 5 characters"):
-        type(inside)(children=[], label="too long")
+def test_the_types_names_in_the_sandbox_carry_the_hosts_schema_and_take_plain_data():
+    session, _, bound = _sandbox({"_Account": _Account, "_Node": _Node})
+    account, node = bound["_Account"], bound["_Node"]
+    with pytest.raises(TypeError, match="plain data"):
+        account(Name="x")
+    schema = pydantic.TypeAdapter(list[node]).json_schema()  # as an RLM built in the sandbox describes the type
+    assert "$ref" not in json.dumps(schema) and schema["items"]["properties"]["child"]["anyOf"][0]["properties"] == {
+        "x": {"title": "X", "type": "integer"}
+    }
+    assert schema["items"]["properties"]["children"]["items"] == {"type": "object", "title": "_Node"}  # itself
+    hidden = pydantic.TypeAdapter(account).json_schema()  # what crosses: no excluded field, nor its default
+    assert {"token", "key"}.isdisjoint(hidden["properties"]) and "CANARY" not in json.dumps(hidden)
+    assert pydantic.TypeAdapter(node).validate_python({"value": 1}) == {"value": 1}  # its values are data here
+    named = dspy.Signature({"case": (account, dspy.InputField()), "answer": (str, dspy.OutputField())})
+    assert session._signature(signature_spec(named)).input_fields["case"].annotation is _Account  # the host's type
 
 
-class _Lamp(pydantic.BaseModel):
-    hue: typing.Literal[_Hue.RED] = _Hue.RED
-    child: _Child = _Child(x=1)
+def test_the_host_builds_no_class_from_what_the_sandbox_sends():
+    session, _, _ = _sandbox({"_Child": _Child})
+    escape = "(__import__('builtins').__setattr__('_dspy_escaped', 1), int)[1]"
+    sent = {"signature": "case: _Child, note: Verdict -> verdict: list[Verdict], score: int", "instructions": "Judge.",
+            "fields": {}, "types": {"Verdict": {"import": "__main__.Verdict"}, "_Child": {"host": "_Child"},
+                                    "X": {"host": escape}},
+            "inputs": ["case", "note"], "outputs": ["verdict", "score"]}
+    signature = session._signature(sent)
+    assert {name: f.annotation for name, f in signature.fields.items()} == {
+        "case": _Child, "note": str, "verdict": str, "score": int,  # only a type the host doesn't know is left out
+    }
+    for forged in ({"__dspy__": "ref", "ref": 99}, {"__dspy__": "nope"}):
+        with pytest.raises(ValueError):
+            session.decode(forged)
+    for path in ("os.system", "subprocess.Popen", escape):  # a class it doesn't load, or won't build: its fields
+        assert session.decode({"__dspy__": "object", "import": path, "fields": {"args": "x"}}) == {"args": "x"}
+    assert not hasattr(builtins, "_dspy_escaped")
 
 
-class _Shade(pydantic.BaseModel):
-    child: _Child = _Child(x=2)
+def test_provided_tools_get_the_hosts_values_and_tools_cross_as_what_describes_them():
+    seen = []
 
+    def describe(image, child):
+        """Look at a child."""
+        seen.append((image, child))
+        return _Child(x=child["x"] + 1)
 
-def test_a_type_held_by_several_signature_types_is_built_once():
-    out = rebuild_types(types_spec({"_Account": _Account, "_Hue": _Hue}))
-    assert out["_Account"].model_validate({"Name": "a", "items": [1]}).hue is out["_Hue"].RED
-    out = rebuild_types(types_spec({"_Level": _Level, "_Lamp": _Lamp, "_Shade": _Shade}))  # each names one of another
-    assert out["_Lamp"]().hue is out["_Level"]().hue is out["_Lamp"].model_validate({"hue": "red"}).hue
-    assert (type(out["_Shade"]().child).__name__, out["_Shade"]().child.x) == ("_Child", 2)  # not a dict
-
-
-class _Thought(dspy.Type):
-    text: str = ""
-
-    def format(self):
-        return self.text
-
-
-def test_adapters_naming_types_of_the_user_keep_them():
-    from dspy.primitives.facade import _adapter_spec
-    from dspy.primitives.sandbox_guest import rebuild_adapter
-
-    spec, named = _adapter_spec(dspy.ChatAdapter(native_response_types=[_Thought]))
-    rebuilt = rebuild_adapter(spec, None, rebuild_types(types_spec(named)))
-    assert [t.__name__ for t in rebuilt.native_response_types] == ["_Thought"]
-    assert rebuilt.native_response_types[0] is not _Thought  # the sandbox's own copy
+    session, guest, _ = _sandbox({"_Child": _Child}, tools={"describe": describe})
+    image = dspy.Image("https://example.com/a.png")
+    inside = _into(session, guest, {"image": image, "child": _Child(x=1)})
+    out = guest.decode(session._serve_tool("describe", guest.encode(inside)))
+    assert seen == [(image, {"x": 1})] and seen[0][0] is image and out == {"x": 2}  # the host's Image, the data
+    host_tool = HostTool({"name": "describe", "desc": "", "args": {"child": {}}, "has_kwargs": False},
+                         session._serve_tool, guest)
+    assert session.decode(guest.encode(host_tool)).func is describe  # the host's own tool, by name
+    own = _back(session, guest, dspy.Tool(lambda q: q, name="mine", desc="Mine."))  # one the sandbox defined
+    assert (own.name, own.desc, own.args) == ("mine", "Mine.", {"q": {}})
+    with pytest.raises(RuntimeError, match="other side"):
+        own.func(q=1)
 
 
 class _Prefixing(dspy.ChatAdapter):
@@ -786,23 +715,26 @@ class _Prefixing(dspy.ChatAdapter):
         return f"PREFIX {self.api_key[:2]} " + super().format_task_description(signature)
 
 
-def test_an_adapter_class_of_the_user_runs_on_the_host_with_its_state():
-    from dspy.primitives.facade import SandboxSession, _adapter_spec
-    from dspy.primitives.sandbox_guest import HostAdapter, rebuild_adapter, signature_spec
+@pytest.mark.parametrize("adapter", [
+    _Prefixing(api_key="sk-CANARY-1", lm=dspy.LM("openai/m", api_key="sk-CANARY-2")),
+    dspy.JSONAdapter(use_native_function_calling=False),
+    None,
+])
+def test_every_predictor_call_runs_on_the_host_with_its_own_adapter(adapter):
+    from dspy.primitives.sandbox_guest import signature_spec
 
-    adapter = _Prefixing(api_key="sk-CANARY-1", lm=dspy.LM("openai/m", api_key="sk-CANARY-2"))
-    assert _adapter_spec(adapter) == ({"host": True}, {})  # nothing of it crosses
-    assert isinstance(rebuild_adapter({"host": True}), HostAdapter)
-
-    lm = DummyLM([{"answer": "pong"}])
-    call = {"signature": signature_spec(dspy.Signature("question -> answer")), "inputs": {"question": "ping"}, "demos": []}
+    lm = DummyLM([{"answer": "pong"}], adapter=adapter)
+    call = {"signature": signature_spec(dspy.Signature("question -> answer")),
+            "inputs": {"question": "ping"}, "demos": []}
     with dspy.context(lm=lm, adapter=adapter):
         session = SandboxSession({})
-        session._spec("session")
-        assert session._serve_lm("adapter", prompt=call, options={}) == [{"answer": "pong"}]
+        spec = session._spec("session")
+        assert "adapter" not in spec and "CANARY" not in json.dumps(spec)  # nothing of the adapter crosses
+        assert session._serve_lm("adapter", prompt=call, options={})[0]["answer"] == "pong"
         with pytest.raises(TypeError, match="may not set LM option"):  # the same metered LM, with the same allowlist
             session._serve_lm("adapter", prompt=call, options={"api_base": "http://elsewhere"})
-    assert "PREFIX sk" in str(lm.history[-1]["messages"])  # formatted by the user's adapter, with its state
+    if isinstance(adapter, _Prefixing):
+        assert "PREFIX sk" in str(lm.history[-1]["messages"])  # formatted by the user's adapter, with its state
 
 
 class _Recording(dspy.ChatAdapter):
@@ -811,45 +743,47 @@ class _Recording(dspy.ChatAdapter):
         self.calls = []
 
     def __call__(self, lm, lm_kwargs, signature, demos, inputs):
-        self.calls.append(("sync", demos, lm_kwargs))
+        self.calls.append(("sync", demos, inputs, lm_kwargs))
         return super().__call__(lm, lm_kwargs, signature, demos, inputs)
 
     async def acall(self, lm, lm_kwargs, signature, demos, inputs):
-        self.calls.append(("async", demos, lm_kwargs))
+        self.calls.append(("async", demos, inputs, lm_kwargs))
         return await super().acall(lm, lm_kwargs, signature, demos, inputs)
 
 
-def test_a_user_adapter_on_the_host_gets_typed_demos_and_runs_its_sync_path():
+def test_a_predictor_in_the_sandbox_gets_typed_values_and_runs_the_host_adapters_sync_path(monkeypatch):
     import asyncio
 
-    from dspy.primitives.facade import SandboxSession
-    from dspy.primitives.sandbox_guest import HostAdapter, HostLM
+    from dspy.primitives import sandbox_guest
+    from dspy.primitives.sandbox_guest import HostAdapter
 
     class Verdict(pydantic.BaseModel):  # as sandboxed code defines one
         ok: bool
         why: str
 
     Verdict.__module__ = "__main__"
-    signature = dspy.Signature({"case": (_Child, dspy.InputField()), "answer": (str, dspy.OutputField())})
     adapter = _Recording()
     lm = DummyLM([{"answer": "a"}, {"answer": "b"}, {"verdict": '{"ok": true, "why": "fine"}'}], adapter=dspy.ChatAdapter())
+    reserved = []
     with dspy.context(lm=lm, adapter=adapter):
-        session = SandboxSession({}, custom_types={"_Child": _Child})
-        session._spec("session")
-        host = HostAdapter(lambda **call: session._serve_lm(**call))
-        sandbox_lm = HostLM(lambda **call: None, {"model": "m", "model_type": "chat", "kwargs": {},
-                            "capabilities": {"supports_function_calling": False, "supports_reasoning": False,
-                                             "supports_response_schema": False, "supported_params": []}}).copy(cache=False)
-        demos = [dspy.Example(case=_Child(x=1), answer="no")]
-        host(sandbox_lm, {}, signature, demos, {"case": _Child(x=2)})
-        asyncio.run(host.acall(sandbox_lm, {}, signature, demos, {"case": _Child(x=3)}))
+        session, guest, bound = _sandbox({"_Child": _Child}, reserve=reserved.append)
+        signature = dspy.Signature({"case": (bound["_Child"], dspy.InputField()), "answer": (str, dspy.OutputField())})
+        monkeypatch.setattr(sandbox_guest, "_wire", guest)
+        monkeypatch.setattr(HostAdapter, "_host", session._serve_lm)
+        host_lm = _host_lm(session).copy(cache=False)
+        demo, case = _Child(x=1), _Child(x=2)
+        demos = [dspy.Example(case=_into(session, guest, demo), answer="no")]
+        HostAdapter()(host_lm, {}, signature, demos, {"case": _into(session, guest, case)})
+        proxy = SandboxLM(host_lm, reserve=reserved.append)  # as an RLM built in the sandbox wraps the LM
+        asyncio.run(HostAdapter().acall(proxy, {}, signature, demos, {"case": {"x": 3}}))
         # A type sandboxed code defined: the host formats it as text, which is parsed into it here.
-        out = host(sandbox_lm, {}, dspy.Signature({"verdict": (Verdict, dspy.OutputField())}), [], {})
-    (kind, sent_demos, options), (async_kind, _, _), _ = adapter.calls
+        out = HostAdapter()(host_lm, {}, dspy.Signature({"verdict": (Verdict, dspy.OutputField())}), [], {})
+    (kind, sent_demos, inputs, options), (async_kind, _, made, _), _ = adapter.calls
     assert (kind, async_kind) == ("sync", "sync")  # an async predictor too, as for the LM
-    assert type(sent_demos[0].case).__name__ == "_Child" and sent_demos[0].case.x == 1  # demos typed again
+    assert (sent_demos[0].case, inputs["case"], made["case"]) == (demo, case, _Child(x=3))  # read as the host's type
     assert options.get("cache") is False  # the copy's cache choice comes along
     assert isinstance(out[0]["verdict"], Verdict) and out[0]["verdict"].why == "fine"
+    assert reserved == [1, 1, 1, 1]  # the proxy in the sandbox metered its call too, like an RLM's built there
 
 
 def test_every_call_from_the_sandbox_runs_the_host_lms_sync_path():
@@ -876,54 +810,21 @@ def test_every_call_from_the_sandbox_runs_the_host_lms_sync_path():
     assert paths == ["sync", "sync"]
 
 
-def test_values_cross_as_pydantic_dumps_them_by_field_name():
-    class Thing:
-        def __str__(self):
-            return "thing"
-
-    @dataclasses.dataclass
-    class Holder:
-        thing: Thing
-
-    class Secret(pydantic.BaseModel):
-        payload: bytes
-        token: str = pydantic.Field(default="", exclude=True)
-
-    assert encode_value({_Hue.RED: {_Spot(1)}, "image": dspy.Image("https://example.com/a.png")}) == {
-        "red": [{"x": 1, "label": ""}], "image": {"url": "https://example.com/a.png"},
-    }
-    assert encode_value(Holder(Thing())) == {"thing": "thing"}
-    assert encode_value({("a", "b"): 1, 2: "two"}) == {'["a", "b"]': 1, 2: "two"}  # JSON keys
-    with pytest.raises(ValueError, match="distinct"):
-        encode_value({("a", "b"): 1, '["a", "b"]': 2})  # rather than dropping one of them
-
-    class Key(pydantic.BaseModel, frozen=True):
-        name: str
-        token: str = pydantic.Field(default="", exclude=True)
-
-    assert encode_value({Key(name="k", token="secret"): 1}) == {'{"name": "k"}': 1}
-    assert encode_value(Secret(payload=b"ok", token="secret")) == {"payload": "ok"}
-    with pytest.raises((pydantic_core.PydanticSerializationError, UnicodeDecodeError)):
-        encode_value(Secret(payload=b"\xff", token="secret"))  # not sent at all, rather than some other way
-
-
-def test_two_step_adapter_runs_its_extraction_model_through_the_host():
-    import json
-
-    from dspy.primitives.sandbox_guest import rebuild_adapter
+def test_two_step_adapter_runs_on_the_host_with_both_models_metered(monkeypatch):
+    from dspy.primitives import sandbox_guest
+    from dspy.primitives.sandbox_guest import HostAdapter
 
     main = DummyLM([{"answer": "the capital is Paris"}], adapter=dspy.ChatAdapter())
     extraction = DummyLM([{"answer": "Paris"}], adapter=dspy.ChatAdapter())
-    adapter = dspy.TwoStepAdapter(extraction, use_native_function_calling=False)
-    with dspy.context(adapter=adapter):
-        session = SandboxSession({}, lm=main)
-        spec = session._spec("test")
-        rebuilt = rebuild_adapter(json.loads(json.dumps(spec["adapter"])), session._serve_lm)
-        host = HostLM(session._serve_lm, spec["lm"])
-        assert type(rebuilt) is dspy.TwoStepAdapter and rebuilt.use_native_function_calling is False
-        with dspy.context(lm=host, adapter=rebuilt):
+    reserved = []
+    with dspy.context(adapter=dspy.TwoStepAdapter(extraction, use_native_function_calling=False)):
+        session, guest, _ = _sandbox(lm=main, reserve=reserved.append)
+        monkeypatch.setattr(sandbox_guest, "_wire", guest)
+        monkeypatch.setattr(HostAdapter, "_host", session._serve_lm)
+        with dspy.context(lm=_host_lm(session), adapter=HostAdapter()):
             assert dspy.Predict("question -> answer")(question="Capital of France?").answer == "Paris"
     assert len(main.history) == len(extraction.history) == 1  # both stages ran on the host's own LMs
+    assert reserved == [1, 1]
 
 
 @pytest.mark.parametrize("where", ["message", "tool_result", "system", "prompt"])

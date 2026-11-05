@@ -135,8 +135,9 @@ class FlexContext:
             )
             if custom := [name for name, t in self.custom_types().items() if _is_user_type(t)]:
                 parts.append(
-                    f"In the sandbox, {', '.join(sorted(custom))} are plain data classes with their fields, defaults "
-                    "and constraints: read and build them, but don't call their methods, which stay on the host."
+                    f"In the sandbox, values of {', '.join(sorted(custom))} are plain data, the JSON the type writes, "
+                    "like a dict of a model's fields: read them that way, and where the signature names the type, return "
+                    "such data, which the host reads as the type. The types' methods and properties stay on the host."
                 )
         return "\n\n".join(parts) if parts else "(no extra context)"
 
@@ -151,7 +152,7 @@ def _type_name(t: Any) -> str:
 
 
 def _is_user_type(t: type) -> bool:
-    """A type of the user's, which reaches the sandbox as its shape (see ``facade.types_spec``)."""
+    """A type of the user's, whose values are plain data in the sandbox (see ``facade.HostValues``)."""
     from dspy.primitives.facade import _import_path
 
     return _import_path(t) is None

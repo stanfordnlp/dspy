@@ -7,41 +7,43 @@ must not own, as JSON over the interpreter's tool-call protocol:
 - LM calls. ``HostLM`` sends each request to the host through one host tool, ``LM_TOOL``. The host builds the
   request from its own LM, admits only the options sandboxed code may set, meters the call and runs it, so the
   model, credentials, cache, retries and call budget stay on the host.
+- Predictor calls. ``HostAdapter`` has the host's adapter format each one and parse its answer, on the host, so the
+  prompt and the parsing come from the real types, as they would without a sandbox.
 - Provided tools. Each is bound as a ``HostTool``: a ``dspy.Tool`` with the host tool's name, description and
-  argument schemas, so modules built in the sandbox present it as the host would.
-- Custom types named in the host signature, built here as plain classes of their shape: their fields or members,
-  never their code (see ``rebuild_types``). Their methods and validators stay on the host.
-- An adapter class of the user's, which runs on the host as a whole (``HostAdapter``).
+  argument schemas, called through ``CALL_TOOL``.
+- The user's custom types. The host owns them: a value of one is plain data here, the JSON its type writes, and the
+  host reads it back as the type. Code here can still name the type, as in a signature (``HostType``).
 
-Code-executing modules built in the sandbox, like ``dspy.RLM``, each get a ``HostInterpreter``: a fresh interpreter
-the host creates from its factory, outside this sandbox.
+Values cross both ways in one JSON form that carries their types (``Wire``). Code-executing modules built in the
+sandbox, like ``dspy.RLM``, each get a ``HostInterpreter``: a fresh interpreter the host creates from its factory,
+outside this sandbox.
 """
 
 from __future__ import annotations
 
 import base64
-import builtins
 import contextlib
+import copy
+import dataclasses
+import datetime
+import decimal
 import enum
 import importlib
 import inspect
-import io
 import json
-import pickle
+import math
 import sys
-import types
-from typing import Annotated, Any, ForwardRef, Literal, NamedTuple, Union
+import uuid
+from typing import Any, ClassVar, Literal, Union
 
 import pydantic
-import pydantic.dataclasses
 import pydantic_core
-from typing_extensions import NotRequired, TypedDict
+from pydantic_core import core_schema
 
 import dspy
 from dspy._vendor.lm15 import serde
 from dspy.adapters.base import Prompt
 from dspy.adapters.chat_adapter import ChatAdapter
-from dspy.adapters.types.base_type import Type
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value
 from dspy.clients.base_lm import BaseLM
@@ -54,49 +56,188 @@ LM_TOOL = "__dspy_lm__"
 LM_ERROR_KEY = "__dspy_lm_error__"
 # The host tool each predictor call recorded in the sandbox's trace is reported to.
 TRACE_TOOL = "__dspy_trace__"
+# The host tool provided tools are called through.
+CALL_TOOL = "__dspy_tool_call__"
 
 
 # -- wire format, shared with the host ----------------------------------------------------------------------------
 
+# The key that marks a JSON object as a tagged value rather than a dict.
+TAG = "__dspy__"
+_COLLECTIONS = {"tuple": tuple, "set": set, "frozenset": frozenset}
 
-def encode_value(value: Any) -> Any:
-    """The JSON form of ``value`` that its type reads back on the other side (by field name, see ``from_wire``).
 
-    That is pydantic's own, which keeps a model's exclusions, serializers and settings; a model it cannot encode
-    raises rather than crossing some other way. A dspy type crosses as its fields, not its prompt rendering, so an
-    ``Image`` still validates as an ``Image``. A value with no JSON form (a function, say) crosses as its string form.
+class Wire:
+    """The JSON form values cross the sandbox boundary in, read back the same way on both sides.
+
+    A value carries its own types, so neither side needs the other's annotations to read it. JSON's own values cross
+    as they are. A tuple, set, bytes, date or time, ``Decimal``, ``UUID`` or non-finite float is an object tagged
+    with what it is, and so is a dict whose keys aren't all strings. An object of a class both sides have (dspy's,
+    the standard library's, pydantic's) crosses as that class, by where it is imported from, and its fields, and an
+    enum member as its enum and value. A ``dspy.Tool`` crosses as what describes it, without its function. Anything
+    else crosses as pydantic writes it in JSON, or as its text: that is how a value of the user's own types reaches
+    the sandbox (``facade.HostValues``).
+
+    An object the host sends carries a reference to it, which goes back with it, so the host can use its own object
+    when it comes back unchanged.
     """
-    if isinstance(value, Type):
-        return {name: encode_value(getattr(value, name)) for name, f in type(value).model_fields.items() if not f.exclude}
-    if isinstance(value, dict):
-        out, seen = {}, set()
-        for key, item in value.items():
-            encoded = _key(key)
-            if (written := encoded if isinstance(encoded, str) else json.dumps(encoded)) in seen:  # JSON's keys are strings
-                raise ValueError(f"Two keys of a dict cross the sandbox boundary as {written!r}; give them distinct ones.")
-            seen.add(written)
-            out[encoded] = encode_value(item)
-        return out
-    if isinstance(value, (list, tuple, set, frozenset)):
-        return [encode_value(item) for item in value]
+
+    def encode(self, value: Any) -> Any:
+        if isinstance(value, enum.Enum):  # before int and str, which some enums are
+            return self.encode_enum(value)
+        if value is None or isinstance(value, (bool, int, str)):
+            return value
+        if isinstance(value, float):
+            return value if math.isfinite(value) else {TAG: "float", "value": repr(value)}
+        if isinstance(value, list):
+            return [self.encode(item) for item in value]
+        if isinstance(value, dict):
+            if TAG not in value and all(type(key) is str for key in value):
+                return {key: self.encode(item) for key, item in value.items()}
+            return {TAG: "dict", "items": [[self.encode(key), self.encode(item)] for key, item in value.items()]}
+        if isinstance(value, Tool):
+            return self.encode_tool(value)
+        if (fields := _fields_of(value)) is not None:
+            return self.encode_object(value, fields)
+        if isinstance(value, (tuple, set, frozenset)):
+            kind = next(name for name, kind in _COLLECTIONS.items() if isinstance(value, kind))
+            return {TAG: kind, "items": [self.encode(item) for item in value]}
+        if isinstance(value, (bytes, bytearray, memoryview)):
+            return {TAG: "bytes", "base64": base64.b64encode(bytes(value)).decode()}
+        for kind in (datetime.datetime, datetime.date, datetime.time):  # a datetime is a date too
+            if isinstance(value, kind):
+                return {TAG: kind.__name__, "iso": value.isoformat()}
+        if isinstance(value, datetime.timedelta):
+            return {TAG: "timedelta", "days": value.days, "seconds": value.seconds, "microseconds": value.microseconds}
+        if isinstance(value, (decimal.Decimal, uuid.UUID)):
+            return {TAG: "decimal" if isinstance(value, decimal.Decimal) else "uuid", "value": str(value)}
+        return self.encode(pydantic_core.to_jsonable_python(value, by_alias=False, round_trip=True, fallback=str))
+
+    def decode(self, data: Any) -> Any:
+        if isinstance(data, list):
+            return [self.decode(item) for item in data]
+        if not isinstance(data, dict):
+            return data
+        tag = data.get(TAG)
+        if tag is None:
+            return {key: self.decode(item) for key, item in data.items()}
+        if tag in _COLLECTIONS:
+            items = [self.decode(item) for item in data["items"]]
+            with contextlib.suppress(TypeError):  # a set of values that aren't hashable here stays a list
+                return _COLLECTIONS[tag](items)
+            return items
+        if tag == "dict":
+            out = {}
+            for key, item in data["items"]:
+                value = self.decode(item)
+                try:
+                    out[self.decode(key)] = value
+                except TypeError:  # a key that isn't hashable here, as its JSON
+                    out[json.dumps(key)] = value
+            return out
+        if tag == "bytes":
+            return base64.b64decode(data["base64"])
+        if tag in ("datetime", "date", "time"):
+            return getattr(datetime, tag).fromisoformat(data["iso"])
+        if tag == "timedelta":
+            return datetime.timedelta(days=data["days"], seconds=data["seconds"], microseconds=data["microseconds"])
+        if tag in ("decimal", "uuid", "float"):
+            return {"decimal": decimal.Decimal, "uuid": uuid.UUID, "float": float}[tag](data["value"])
+        if tag == "enum":
+            value, owner = self.decode(data["value"]), self.find_class(data)
+            if isinstance(owner, type) and issubclass(owner, enum.Enum):
+                with contextlib.suppress(ValueError):
+                    return owner(value)
+            return value
+        if tag == "object":
+            return self.decode_object(data)
+        if tag == "tool":
+            return self.decode_tool(data)
+        if tag == "ref":
+            return self.decode_ref(data)
+        raise ValueError(f"Unknown value tag {tag!r} on the wire.")
+
+    # How each side names the classes it sends and finds those it receives.
+
+    def name_class(self, cls: type) -> dict[str, Any]:
+        return {"import": f"{cls.__module__}.{cls.__qualname__}"}
+
+    def find_class(self, node: dict[str, Any]) -> Any:
+        with contextlib.suppress(Exception):
+            return _import(node["import"])
+        return None
+
+    def encode_enum(self, member: enum.Enum) -> Any:
+        return {TAG: "enum", **self.name_class(type(member)), "value": self.encode(member.value)}
+
+    def encode_object(self, value: Any, fields: dict[str, Any]) -> dict[str, Any]:
+        return {TAG: "object", **self.name_class(type(value)),
+                "fields": {name: self.encode(item) for name, item in fields.items()}}
+
+    def decode_object(self, node: dict[str, Any]) -> Any:
+        """An object of a class this side has, read by field name, or its fields if not."""
+        owner, fields = self.find_class(node), self.decode(node.get("fields", {}))
+        if not isinstance(owner, type):
+            return fields
+        try:
+            return pydantic.TypeAdapter(owner).validate_python(fields, by_name=True)
+        except Exception:
+            return fields
+
+    def encode_tool(self, tool: Tool) -> dict[str, Any]:
+        return {TAG: "tool", "name": tool.name, "desc": tool.desc, "args": self.encode(tool.args),
+                "arg_desc": self.encode(tool.arg_desc), "has_kwargs": tool.has_kwargs}
+
+    def decode_tool(self, node: dict[str, Any]) -> Tool:
+        """A tool from the other side, which describes it: its function stays there."""
+        name = node["name"]
+
+        def elsewhere(**kwargs: Any) -> Any:
+            raise RuntimeError(f"The tool {name!r} runs on the other side of the sandbox boundary.")
+
+        args = self.decode(node.get("args")) or {}
+        tool = Tool(elsewhere, name=name, desc=node.get("desc"), args=args, arg_types=dict.fromkeys(args, Any),
+                    arg_desc=self.decode(node.get("arg_desc")))
+        tool.has_kwargs = bool(node.get("has_kwargs"))
+        return tool
+
+    def decode_ref(self, node: dict[str, Any]) -> Any:
+        raise ValueError("Only the host reads references to its objects.")
+
+
+def _fields_of(value: Any) -> dict[str, Any] | None:
+    """The fields ``value`` crosses as, if it is an object of a class: a pydantic model's or dataclass's but those marked
+    ``exclude=True``, which stay where they are, or a ``NamedTuple``'s."""
+    if isinstance(value, type):
+        return None
+    if isinstance(value, pydantic.BaseModel):
+        fields = {name: getattr(value, name) for name, info in type(value).model_fields.items() if info.exclude is not True}
+        return {**fields, **(value.__pydantic_extra__ or {})}
+    if dataclasses.is_dataclass(value):
+        infos = getattr(type(value), "__pydantic_fields__", None) or {}
+        return {f.name: getattr(value, f.name) for f in dataclasses.fields(value)
+                if hasattr(value, f.name) and getattr(infos.get(f.name), "exclude", None) is not True}
+    if isinstance(value, tuple) and hasattr(type(value), "_fields"):
+        return dict(zip(type(value)._fields, value, strict=False))
+    return None
+
+
+def _import(path: str) -> Any:
+    """What ``path`` names: an attribute, maybe nested, of the longest importable module it starts with."""
+    parts = path.split(".")
+    for split in range(len(parts) - 1, 0, -1):
+        try:
+            found = importlib.import_module(".".join(parts[:split]))
+        except ImportError:
+            continue
+        for name in parts[split:]:
+            found = getattr(found, name)
+        return found
+    raise ImportError(f"Nothing to import at {path!r}")
+
+
+def _jsonable(value: Any) -> Any:
     return pydantic_core.to_jsonable_python(value, by_alias=False, round_trip=True, fallback=str)
-
-
-def validate_wire(adapter: pydantic.TypeAdapter, value: Any) -> Any:
-    """``value``, as ``encode_value`` sent it, validated by ``adapter`` by field name. It is validated as the JSON
-    pydantic wrote it as, which a strict model accepts too (a tuple as a list, bytes as text)."""
-    try:
-        text = json.dumps(value)
-    except (TypeError, ValueError):  # not a value from the wire
-        return adapter.validate_python(value, by_name=True)
-    return adapter.validate_json(text, by_name=True)
-
-
-def _key(key: Any) -> Any:
-    """A dict key as JSON can hold it: its JSON form (an enum's value), as a string if that is not a scalar (a tuple's
-    is a list). Built from its JSON form, so a model key keeps its excluded fields out."""
-    encoded = pydantic_core.to_jsonable_python(key, by_alias=False, round_trip=True, fallback=str)
-    return encoded if encoded is None or isinstance(encoded, (str, int, float, bool)) else json.dumps(encoded)
 
 
 def encode_prompt(prompt: Any) -> Any:
@@ -146,17 +287,85 @@ def decode_options(options: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# -- the user's custom types ----------------------------------------------------------------------------------------
+
+# Typing names a signature's annotations may use; sandboxed code is told not to import at module scope.
+TYPING_NAMES = {"Any": Any, "Literal": Literal, "Optional": __import__("typing").Optional, "Union": Union}
+
+
+class HostType:
+    """A custom type of the user's, as sandboxed code can name it, as in a signature. The type and its code stay on the
+    host, which owns it: its values are plain data here, the JSON the type writes, which the host reads back as the
+    type. Pydantic takes any value for it here, and describes it with the type's JSON schema, which the host sends."""
+
+    __dspy_schema__: ClassVar[dict[str, Any]] = {}
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
+        raise TypeError(
+            f"{cls.__name__} is the host's type: in the sandbox its values are plain data, like a dict of its fields."
+        )
+
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source: Any, handler: Any) -> Any:
+        return core_schema.any_schema()
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, schema: Any, handler: Any) -> dict[str, Any]:
+        return copy.deepcopy(cls.__dspy_schema__)
+
+
+def _host_type(name: str, schema: dict[str, Any]) -> type:
+    return type(name, (HostType,), {"__dspy_schema__": schema, "__module__": "__dspy_types"})
+
+
+class GuestValues(Wire):
+    """The sandbox's side of the wire. The reference each object from the host comes with is kept here, for when the
+    object goes back (see ``Wire``)."""
+
+    def __init__(self) -> None:
+        self._refs: dict[int, tuple[Any, int]] = {}  # objects from the host, by id: the object and its reference
+
+    def decode_object(self, node: dict[str, Any]) -> Any:
+        value = super().decode_object(node)
+        if isinstance(node.get("ref"), int) and _fields_of(value) is not None:
+            self._refs[id(value)] = (value, node["ref"])
+        return value
+
+    def encode_object(self, value: Any, fields: dict[str, Any]) -> dict[str, Any]:
+        node = super().encode_object(value, fields)
+        kept = self._refs.get(id(value))
+        return {**node, "ref": kept[1]} if kept is not None and kept[0] is value else node
+
+    def encode_tool(self, tool: Tool) -> dict[str, Any]:
+        # A provided tool goes back by name, as the host's own tool.
+        return {TAG: "tool", "host": tool.name} if isinstance(tool, HostTool) else super().encode_tool(tool)
+
+
+class InMemory(Wire):
+    """The wire for code in the host's own memory, like an in-process interpreter's: nothing crosses, so values stay
+    as they are."""
+
+    def encode(self, value: Any) -> Any:
+        return value
+
+    def decode(self, data: Any) -> Any:
+        return data
+
+
+# The sandbox's side of the wire, set by ``install``.
+_wire: Wire = Wire()
+
+
 # -- the host LM ----------------------------------------------------------------------------------------------------
 
 
 class HostLM(BaseLM):
     """The host's LM as sandboxed code sees it. Requests are built and run on the host."""
 
-    def __init__(self, host: Any, spec: dict[str, Any], role: str | None = None) -> None:
+    def __init__(self, host: Any, spec: dict[str, Any]) -> None:
         super().__init__(model=spec["model"], model_type=spec["model_type"], cache=False, num_retries=0,
                          **spec["kwargs"])
         self._host = host
-        self._role = role  # which host LM serves the calls: the main one, or a TwoStepAdapter's "extraction" one
         self._defaults = dict(self.kwargs)
         # The cache setting a copy asked for. This LM's own `cache` stays off: the host caches, not the sandbox.
         self._cache: bool | None = None
@@ -166,10 +375,10 @@ class HostLM(BaseLM):
     supports_reasoning = property(lambda self: self._capabilities["supports_reasoning"])
     supports_response_schema = property(lambda self: self._capabilities["supports_response_schema"])
     supported_params = property(lambda self: set(self._capabilities["supported_params"]))
+    supported_tool_result_media = property(lambda self: set(self._capabilities.get("supported_tool_result_media", ())))
 
     def _send(self, op: str, prompt: Any, options: dict[str, Any]) -> Any:
-        return _raise_lm_error(self._host(op=op, prompt=encode_prompt(prompt), options=encode_options(options),
-                                          role=self._role))
+        return _raise_lm_error(self._host(op=op, prompt=encode_prompt(prompt), options=encode_options(options)))
 
     def _changed(self) -> dict[str, Any]:
         """Options set on this LM (``lm.copy(...)``), which override the host's defaults like call options do."""
@@ -192,7 +401,7 @@ class HostLM(BaseLM):
         if self._cache is not None:
             changed["cache"] = self._cache
         out = self._send("call", prompt, {**changed, **options})
-        return serde.response_from_dict(out) if isinstance(prompt, Request) else out
+        return serde.response_from_dict(out) if isinstance(prompt, Request) else _wire.decode(out)
 
     async def acall(self, prompt: Any = None, **options: Any) -> Any:
         # The bridge is synchronous: the host's loop, if it has one, waits under this call. So the host runs its
@@ -208,21 +417,30 @@ def _raise_lm_error(out: Any) -> Any:
 
 
 class HostAdapter(ChatAdapter):
-    """An adapter class of the user's as sandboxed predictors see it: each call runs on the host, with the user's
-    adapter, as it would without a sandbox. It formats the request, calls the host's LM, metered, and parses the
-    answer there. Only the signature, the demos and the inputs cross, and the parsed outputs back."""
+    """The host's adapter as sandboxed predictors see it: each call runs on the host, with the host's adapter, as
+    it would without a sandbox. It formats the request with the real types, calls the host's LM, metered, and parses
+    the answer there. Only the signature, the demos and the inputs cross, and the parsed outputs back. A predictor
+    given an LM of the sandbox's own runs this adapter here instead."""
 
-    def __init__(self, host: Any) -> None:
-        super().__init__()
-        self._host = host
+    _host: Any = None  # the LM_TOOL host tool, set by install()
 
     def __call__(self, lm: Any, lm_kwargs: dict[str, Any], signature: Any, demos: list[Any], inputs: dict[str, Any]):
-        options = {**(lm._changed() if isinstance(lm, HostLM) else {}), **(lm_kwargs or {})}
-        if isinstance(lm, HostLM) and lm._cache is not None:
+        # The host's LM, maybe behind proxies that meter and check each call, like those of an RLM built here.
+        chain = [lm]
+        while not isinstance(chain[-1], HostLM) and getattr(chain[-1], "_lm", None) is not None:
+            chain.append(chain[-1]._lm)
+        if not isinstance(chain[-1], HostLM) or HostAdapter._host is None:
+            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+        for proxy in chain[:-1]:
+            if callable(admit := getattr(proxy, "_admit", None)):
+                admit(dict(lm_kwargs or {}))
+        lm = chain[-1]
+        options = {**lm._changed(), **(lm_kwargs or {})}
+        if lm._cache is not None:
             options.setdefault("cache", lm._cache)
-        call = {"signature": signature_spec(signature), "inputs": encode_value(dict(inputs)),
-                "demos": [encode_value(dict(demo.items())) for demo in demos]}
-        outputs = _raise_lm_error(self._host(op="adapter", prompt=call, options=encode_options(options), role=None))
+        call = {"signature": signature_spec(signature), "inputs": _wire.encode(dict(inputs)),
+                "demos": [_wire.encode(dict(demo.items())) for demo in demos]}
+        outputs = _wire.decode(_raise_lm_error(HostAdapter._host(op="adapter", prompt=call, options=encode_options(options))))
         return [{name: _read(value, signature.output_fields[name].annotation) if name in signature.output_fields
                  else value for name, value in completion.items()} for completion in outputs]
 
@@ -231,10 +449,10 @@ class HostAdapter(ChatAdapter):
 
 
 def _read(value: Any, annotation: Any) -> Any:
-    """``value`` from the host, as its declared type here, or as it came if it isn't one. The host formats a type it
-    doesn't know, like one sandboxed code defined, as text, which is parsed here as an adapter would."""
+    """``value`` from the host, as its declared type here. The host formats a type it doesn't know, like one
+    sandboxed code defined, as text, which is parsed here as an adapter would."""
     with contextlib.suppress(Exception):
-        return validate_wire(pydantic.TypeAdapter(annotation), value)
+        return pydantic.TypeAdapter(annotation).validate_python(value)
     if isinstance(value, str):
         with contextlib.suppress(Exception):
             return parse_value(value, annotation)
@@ -245,205 +463,23 @@ def _read(value: Any, annotation: Any) -> Any:
 
 
 class HostTool(Tool):
-    """A provided tool as sandboxed code sees it: a ``dspy.Tool`` that calls the host tool by name."""
+    """A provided tool as sandboxed code sees it: a ``dspy.Tool`` that calls the host tool by name, through
+    ``call`` (the ``CALL_TOOL`` host tool), with values crossing on ``wire``."""
 
-    def __init__(self, func: Any, spec: dict[str, Any]) -> None:
-        super().__init__(func, name=spec["name"], desc=spec["desc"], args=spec["args"],
-                         arg_types=dict.fromkeys(spec["args"], Any))
+    def __init__(self, spec: dict[str, Any], call: Any, wire: Wire) -> None:
+        name = spec["name"]
+
+        def func(**kwargs: Any) -> Any:
+            return wire.decode(call(tool=name, arguments=wire.encode(kwargs)))
+
+        func.__name__ = func.__qualname__ = name
+        func.__dspy_host_tool__ = name  # kept by wrappers, so a nested interpreter calls the host tool directly
+        super().__init__(func, name=name, desc=spec["desc"], args=spec["args"], arg_types=dict.fromkeys(spec["args"], Any))
         self.has_kwargs = spec["has_kwargs"]
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         # Generated code may call a tool positionally, in the order the host declares its arguments.
         return super().__call__(**dict(zip(self.args, args, strict=False)), **kwargs)
-
-    def _validate_and_parse_args(self, **kwargs: Any) -> dict[str, Any]:
-        return {key: encode_value(value) for key, value in super()._validate_and_parse_args(**kwargs).items()}
-
-
-# -- custom types ---------------------------------------------------------------------------------------------------
-
-# Typing names a signature's annotations may use; sandboxed code is told not to import at module scope.
-TYPING_NAMES = {"Any": Any, "Literal": Literal, "Optional": __import__("typing").Optional, "Union": Union}
-
-
-# Settings of a pydantic model that decide what its values look like on the wire, which the sandbox's shape keeps.
-_CONFIG_KEYS = (
-    "extra", "frozen", "strict", "use_enum_values", "ser_json_bytes", "val_json_bytes", "ser_json_timedelta",
-    "ser_json_inf_nan", "str_strip_whitespace", "str_to_lower", "str_to_upper", "str_min_length", "str_max_length",
-    "populate_by_name", "validate_by_name", "validate_by_alias", "serialize_by_alias",
-)
-
-
-def rebuild_types(spec: dict[str, Any]) -> dict[str, Any]:
-    """The custom types of the host signature, by name, as the host describes them (``facade.types_spec``): imported,
-    or built here as plain classes of the same names and shapes, in a module of their own, so they can name each
-    other. One whose shape can't be built here is a model that takes any fields."""
-    module = types.ModuleType("__dspy_types")
-    sys.modules[module.__name__] = module
-    for key, shape in spec.get("shapes", {}).items():  # the types each holds first, as the host lists them
-        try:
-            built = _build(shape, module)
-        except Exception:
-            built = pydantic.create_model(str(shape.get("name", key)), __config__=pydantic.ConfigDict(extra="allow"))
-        built.__module__ = module.__name__
-        setattr(module, key, built)
-    for built in list(vars(module).values()):  # now that the types each names are there
-        if isinstance(built, type) and issubclass(built, pydantic.BaseModel):
-            with contextlib.suppress(Exception):
-                built.model_rebuild(force=True, _types_namespace=vars(module))
-    return {name: _annotation(t, module) for name, t in spec.get("types", {}).items()}
-
-
-def _annotation(spec: dict[str, Any], module: types.ModuleType) -> Any:
-    try:
-        if "import" in spec:
-            return _import(spec["import"])
-        if "shape" in spec:
-            return vars(module).get(spec["shape"]) or ForwardRef(spec["shape"])
-        if "none" in spec:
-            return type(None)
-        if "ellipsis" in spec:
-            return ...
-        if "literal" in spec:
-            values = tuple(_literal(value, module) for value in spec["literal"])
-            return Literal[values] if values else Any
-        if "union" in spec:
-            return Union[tuple(_annotation(arg, module) for arg in spec["union"])]  # noqa: UP007  # built at runtime
-        if "annotated" in spec:
-            inner = _annotation(spec["annotated"], module)
-            metadata = [_constraint(c) for c in spec["metadata"]]
-            return Annotated[(inner, *metadata)] if metadata else inner
-        if "generic" in spec:
-            args = tuple(_annotation(arg, module) for arg in spec["args"])
-            return _import(spec["generic"])[args] if args else _import(spec["generic"])
-    except Exception:
-        pass
-    return Any
-
-
-def _literal(value: Any, module: types.ModuleType) -> Any:
-    """A literal's value: an enum member is looked up on its enum, which is built before the types that name it."""
-    if not isinstance(value, dict):
-        return value
-    owner = _annotation(value["member"], module)
-    return getattr(owner, value["name"], value["name"]) if isinstance(owner, type) else value["name"]
-
-
-def _constraint(spec: dict[str, Any]) -> Any:
-    marker = _import(spec["import"])
-    return marker if spec["values"] is None else marker(**spec["values"])
-
-
-def _build(shape: dict[str, Any], module: types.ModuleType) -> type:
-    """A plain class of ``shape``: a pydantic model, dataclass, NamedTuple, TypedDict or enum, with no code of its own."""
-    name, kind = str(shape["name"]), shape["kind"]
-    if kind in ("enum", "flag"):
-        base = {"str": str, "int": int}.get(shape.get("base"))
-        if kind == "flag":
-            return (enum.IntFlag if base is int else enum.Flag)(name, shape["members"])
-        if base is int:
-            return enum.IntEnum(name, shape["members"])
-        return enum.Enum(name, shape["members"], **({"type": str} if base is str else {}))
-    # Each kind's own constructor checks its field names, as on the host: a TypedDict takes any key, a dataclass a
-    # field like `_value`. Only a class body leaves out a dunder, which would replace the class's own attributes.
-    fields = {key: (_field_type(field, module), field) for key, field in shape.get("fields", {}).items()
-              if isinstance(key, str) and (kind == "typeddict" or not key.startswith("__"))}
-    if kind in ("model", "root", "dataclass"):
-        namespace = {
-            "__module__": module.__name__,
-            "__annotations__": {key: annotation for key, (annotation, _) in fields.items()},
-        }
-        namespace.update({key: _field_info(field) for key, (_, field) in fields.items()
-                          if _has_default(field)})
-        if isinstance(shape.get("doc"), str):
-            namespace["__doc__"] = shape["doc"]
-        if any(field.get("host_default") for _, field in fields.values()):
-            namespace["_leave_host_defaults"] = pydantic.model_serializer(mode="wrap")(_leave_host_defaults)
-        # A RootModel takes no extra, and a dataclass is frozen by its own parameter.
-        config = {key: value for key, value in shape.get("config", {}).items()
-                  if key in _CONFIG_KEYS and (kind, key) not in (("root", "extra"), ("dataclass", "frozen"))}
-        if kind == "dataclass":
-            dataclass = pydantic.dataclasses.dataclass(frozen=bool(shape.get("frozen")), config=pydantic.ConfigDict(**config))
-            return dataclass(type(name, (), namespace))
-        namespace["model_config"] = pydantic.ConfigDict(**config)
-        base = pydantic.RootModel if kind == "root" else pydantic.BaseModel
-        return types.new_class(name, (base,), {}, lambda body: body.update(namespace))
-    if kind == "namedtuple":
-        built = NamedTuple(name, [(key, annotation) for key, (annotation, _) in fields.items()])
-        defaults = [field["default"] for _, field in fields.values() if "default" in field]
-        built.__new__.__defaults__ = tuple(defaults) or None
-        return built
-    if kind == "typeddict":
-        required = set(shape.get("required", ()))
-        return TypedDict(name, {key: annotation if key in required else NotRequired[annotation]
-                                for key, (annotation, _) in fields.items()})
-    return pydantic.create_model(name, __config__=pydantic.ConfigDict(extra="allow"))
-
-
-def _field_type(field: dict[str, Any], module: types.ModuleType) -> Any:
-    annotation = _annotation(field["type"], module)
-    if "default" in field and field["default"] is not None:  # its JSON form, read back as the field's type
-        with contextlib.suppress(Exception):
-            field["default"] = validate_wire(pydantic.TypeAdapter(annotation), field["default"])
-    metadata = [_constraint(c) for c in field.get("metadata", ())]
-    if field.get("host_default"):  # holds HOST_DEFAULT until it is set, which it takes as it is and doesn't send
-        metadata += [pydantic.WrapValidator(_or_host_default), pydantic.WrapSerializer(_unless_host_default)]
-    return Annotated[(annotation, *metadata)] if metadata else annotation
-
-
-def _field_info(field: dict[str, Any]) -> Any:
-    settings = {key: field[key] for key in ("description", "alias", "serialization_alias", "exclude", "kw_only")
-                if key in field}
-    if "validation_alias" in field:
-        settings["validation_alias"] = _alias_from(field["validation_alias"])
-    if "factory" in field:
-        return pydantic.Field(default_factory=_import(field["factory"]), **settings)
-    if field.get("host_default"):
-        return pydantic.Field(default_factory=lambda: HOST_DEFAULT, **settings)
-    return pydantic.Field(field["default"] if "default" in field else ..., **settings)
-
-
-def _has_default(field: dict[str, Any]) -> bool:
-    return any(key in field for key in ("default", "factory", "host_default", "description", "alias",
-                                        "serialization_alias", "validation_alias", "exclude", "kw_only"))
-
-
-def _alias_from(alias: Any) -> Any:
-    if isinstance(alias, dict) and "path" in alias:
-        return pydantic.AliasPath(*alias["path"])
-    if isinstance(alias, dict):
-        return pydantic.AliasChoices(*(_alias_from(choice) for choice in alias["choices"]))
-    return alias
-
-
-class _HostDefault:
-    def __repr__(self) -> str:
-        return "<made on the host>"
-
-    def __reduce__(self) -> str:  # copied and pickled as the one marker
-        return "HOST_DEFAULT"
-
-
-# What a field whose default only the host can make (with a factory of the user's) holds in the sandbox until it is
-# set. A built model or dataclass doesn't send such a field, so the host makes its default.
-HOST_DEFAULT = _HostDefault()
-
-
-def _leave_host_defaults(self: Any, handler: Any) -> Any:
-    data = handler(self)
-    if isinstance(data, dict):
-        for name, value in vars(self).items():
-            if value is HOST_DEFAULT:
-                data.pop(name, None)
-    return data
-
-
-def _or_host_default(value: Any, handler: Any) -> Any:
-    return value if value is HOST_DEFAULT else handler(value)
-
-
-def _unless_host_default(value: Any, handler: Any) -> Any:
-    return None if value is HOST_DEFAULT else handler(value)
 
 
 # -- interpreters for code-executing modules built in the sandbox ----------------------------------------------------
@@ -466,7 +502,7 @@ def _parameters(fn: Any) -> list[dict[str, Any]]:
         if annotation in _SIMPLE_TYPES:
             entry["type"] = annotation
         if p.default is not inspect.Parameter.empty:
-            entry["default"] = encode_value(p.default)
+            entry["default"] = _jsonable(p.default)
         out.append(entry)
     return out
 
@@ -504,13 +540,14 @@ class HostInterpreter:
             host_tool = fn.name if isinstance(fn, HostTool) else getattr(fn, "__dspy_host_tool__", None)
             tools[name] = {"host": host_tool} if host_tool else {"parameters": _parameters(fn)}
         out = HostInterpreter._host(
-            op="execute", id=self._id, code=code, variables=encode_value(dict(variables or {})), tools=tools,
+            op="execute", id=self._id, code=code, variables=_wire.encode(dict(variables or {})), tools=tools,
             output_fields=self.output_fields,
         )
         while "call" in out:
             call = out["call"]
             try:
-                reply = {"value": encode_value(self.tools[call["name"]](*call["args"], **call["kwargs"]))}
+                result = self.tools[call["name"]](*_wire.decode(call["args"]), **_wire.decode(call["kwargs"]))
+                reply = {"value": _wire.encode(result)}
             except Exception as e:
                 reply = {"error": f"{type(e).__name__}: {e}"}
             out = HostInterpreter._host(op="resume", id=self._id, reply=reply)
@@ -520,7 +557,7 @@ class HostInterpreter:
                 error["type"], CodeInterpreterError
             )
             raise kind(error["message"])
-        return FinalOutput(out["final"]) if "final" in out else out.get("output")
+        return FinalOutput(_wire.decode(out["final"])) if "final" in out else _wire.decode(out.get("output"))
 
     def shutdown(self) -> None:
         if self._id is not None:
@@ -567,42 +604,27 @@ class HostTrace(list):
 # -- install and the Flex driver --------------------------------------------------------------------------------------
 
 
-def _import(path: str) -> Any:
-    module, _, name = path.rpartition(".")
-    return getattr(importlib.import_module(module), name)
-
-
-def rebuild_adapter(spec: dict[str, Any], host: Any = None, custom_types: dict[str, Any] | None = None) -> Any:
-    """The host's adapter, unpickled. ``host`` is the LM host tool, which serves a TwoStepAdapter's extraction model,
-    and ``custom_types`` the user's types defined here, which the adapter may name."""
-
-    if spec.get("host"):  # an adapter class of the user's, which runs on the host
-        return HostAdapter(host)
-
-    class Unpickler(pickle.Unpickler):
-        def persistent_load(self, pid: str) -> Any:
-            if pid.startswith("type:"):
-                return (custom_types or {})[pid.removeprefix("type:")]
-            return HostLM(host, spec["extraction_lm"], role="extraction")
-
-    return Unpickler(io.BytesIO(base64.b64decode(spec["pickle"]))).load()
-
-
 def install(namespace: dict[str, Any], spec: dict[str, Any]) -> None:
     """Wire this sandbox's dspy to the host; called once, right after sandboxed code first imports dspy."""
+    global _wire
+    _wire = GuestValues()
     settings: dict[str, Any] = {}
     if INTERPRETER_TOOL in namespace:
         HostInterpreter._host = namespace[INTERPRETER_TOOL]
         HostInterpreter.execution_instructions = spec.get("execution_instructions", "")
         settings["interpreter_factory"] = HostInterpreter
-    if spec.get("lm") is not None and LM_TOOL in namespace:
-        settings["lm"] = HostLM(namespace[LM_TOOL], spec["lm"])
+    if LM_TOOL in namespace:
+        HostAdapter._host = namespace[LM_TOOL]
+        settings["adapter"] = HostAdapter()
+        if spec.get("lm") is not None:
+            settings["lm"] = HostLM(namespace[LM_TOOL], spec["lm"])
     settings["trace"] = HostTrace(namespace[TRACE_TOOL]) if spec.get("trace") and TRACE_TOOL in namespace else None
-    namespace["__dspy_types"] = rebuild_types(spec["types"])  # before the adapter, which may name some
-    if spec.get("adapter") is not None:
-        with contextlib.suppress(Exception):
-            settings["adapter"] = rebuild_adapter(spec["adapter"], namespace.get(LM_TOOL), namespace["__dspy_types"])
     dspy.configure(**settings)
+    namespace["__dspy_values"] = _wire
+    namespace["__dspy_types"] = {
+        name: _import(entry["import"]) if "import" in entry else _host_type(name, entry.get("schema") or {})
+        for name, entry in spec["types"].items()
+    }
     namespace["__dspy_guest_spec"] = spec
     bind(namespace)
 
@@ -613,53 +635,56 @@ def bind(namespace: dict[str, Any]) -> None:
     Interpreters may rebind their tools before each execution, so the Flex driver binds again before it runs.
     """
     spec = namespace["__dspy_guest_spec"]
-    for name, tool in spec["tools"].items():
-        func = namespace.get(name)
-        if func is not None and not isinstance(func, HostTool):
-            func.__dspy_host_tool__ = name  # so a nested interpreter calls the host tool directly
-            namespace[name] = HostTool(func, tool)
-    if "__dspy_types" not in namespace:
-        namespace["__dspy_types"] = rebuild_types(spec["types"])
+    call = namespace.get(CALL_TOOL)
+    if call is not None:
+        for name, tool in spec["tools"].items():
+            if not isinstance(namespace.get(name), HostTool):
+                namespace[name] = HostTool(tool, call, namespace["__dspy_values"])
     for name, value in TYPING_NAMES.items():
         namespace.setdefault(name, value)
     namespace.update(namespace["__dspy_types"])
 
 
-def run_forward(namespace: dict[str, Any], class_name: str, inputs: dict[str, Any]) -> str:
-    """Run one Flex forward in the sandbox; return its output fields as JSON."""
+def run_forward(namespace: dict[str, Any], class_name: str, inputs: dict[str, Any]) -> Any:
+    """Run one Flex forward in the sandbox; return its output fields as JSON, or as they are in the host's memory."""
     bind(namespace)
-    spec = namespace["__dspy_guest_spec"]
-    types = namespace["__dspy_types"]
-    for name, annotation in spec.get("inputs", {}).items():
-        if name in inputs:
-            try:
-                parsed = eval(annotation, {**vars(builtins), **vars(__import__("typing")), "dspy": dspy}, types)
-                adapter = pydantic.TypeAdapter(parsed)
-            except Exception:
-                continue  # a type pydantic can't validate: the value as it came
-            with contextlib.suppress(pydantic.ValidationError):  # a value its type rejects, passed as it came
-                inputs[name] = validate_wire(adapter, inputs[name])
-    prediction = namespace[class_name]().forward(**inputs)
-    fields = getattr(prediction, "_store", prediction)
-    return json.dumps({"fields": encode_value(dict(fields))})
+    wire = namespace["__dspy_values"]
+    prediction = namespace[class_name]().forward(**wire.decode(inputs))
+    fields = {"fields": wire.encode(dict(getattr(prediction, "_store", prediction)))}
+    return fields if isinstance(wire, InMemory) else json.dumps(fields)
 
 
 def signature_spec(signature: Any) -> dict[str, Any]:
-    """``signature`` as the host rebuilds it (``SandboxSession._signature``), with the user's types by name."""
+    """``signature`` as the host rebuilds it (``SandboxSession._signature``): the user's types by their name on the
+    host, dspy's and the standard library's (dspy.Reasoning, Decimal, ...) by where they are imported from, and each
+    field's settings that are data, like its description, prefix, or the name an adapter writes a reasoning field as."""
     from dspy.predict.flex.ctx import FlexContext
 
     ctx = FlexContext(signature_cls=signature)
-    # dspy's and the standard library's types (dspy.Reasoning, Decimal, ...) resolve on the host by import; others by name.
-    types = {name: f"{t.__module__}.{t.__qualname__}" for name, t in ctx.custom_types().items()
-             if t.__module__.split(".")[0] == "dspy" or t.__module__.split(".")[0] in sys.stdlib_module_names}
+    types = {}
+    for name, t in ctx.custom_types().items():
+        if isinstance(t, type) and issubclass(t, HostType):
+            types[name] = {"host": t.__name__}
+        elif t.__module__.split(".")[0] == "dspy" or t.__module__.split(".")[0] in sys.stdlib_module_names:
+            types[name] = {"import": f"{t.__module__}.{t.__qualname__}"}
+    extra = {name: {key: value for key, value in (field.json_schema_extra or {}).items() if _is_json(value)}
+             for name, field in signature.fields.items()}
     return {"signature": ctx.render_signature_string(), "instructions": signature.instructions,
-            "fields": ctx.field_kwargs(), "types": types,
+            "fields": ctx.field_kwargs(), "extra": extra, "types": types,
             "inputs": list(signature.input_fields), "outputs": list(signature.output_fields)}
+
+
+def _is_json(value: Any) -> bool:
+    try:
+        json.dumps(value, allow_nan=False)
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def _trace_entry(predictor: Any, inputs: dict[str, Any], prediction: Any) -> dict[str, Any]:
     signature = getattr(predictor, "signature", None)
     outputs = getattr(prediction, "_store", None)
     return {"signature": signature_spec(signature) if signature is not None else None,
-            "inputs": encode_value(dict(inputs)),
-            "outputs": encode_value(dict(outputs)) if outputs is not None else None}
+            "inputs": _wire.encode(dict(inputs)),
+            "outputs": _wire.encode(dict(outputs)) if outputs is not None else None}
