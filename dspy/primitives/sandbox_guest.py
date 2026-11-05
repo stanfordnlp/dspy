@@ -36,7 +36,7 @@ import math
 import secrets
 import sys
 import uuid
-from typing import Any, ClassVar, Literal, Union
+from typing import Any, Callable, ClassVar, Literal, Union
 
 import pydantic
 import pydantic_core
@@ -707,22 +707,31 @@ def bind(namespace: dict[str, Any]) -> None:
             # The interpreter's own binding, or none: code may have reused the name for a value of its own.
             if current is None or (callable(current) and not isinstance(current, HostTool)):
                 namespace[name] = HostTool(tool, call, wire)
-    submit = namespace.get("SUBMIT")
-    if callable(submit) and not getattr(submit, "__dspy_wire__", False):
-        # The interpreter sends SUBMIT's values as JSON: each goes in the wire form, marked with this session so the
-        # host reads back only what was encoded (``read_wire``), never plain JSON that looks like a tagged value.
-        def send(value: Any) -> Any:
-            return {TAG: WIRE, "session": spec["session"], "value": wire.encode(value)}
-
-        @functools.wraps(submit)
-        def wire_submit(*args: Any, **kwargs: Any) -> Any:
-            return submit(*map(send, args), **{key: send(value) for key, value in kwargs.items()})
-
-        wire_submit.__dspy_wire__ = True
-        namespace["SUBMIT"] = wire_submit
+    # RLM's own host functions take JSON from the interpreter: each value goes in the wire form, marked with this
+    # session so the host reads back only what was encoded (``read_wire``), never plain JSON that looks like a tagged
+    # value. SUBMIT's values, and llm_query's prompts, whose lists may hold images.
+    for name in _WIRE_CALLS:
+        function = namespace.get(name)
+        if callable(function) and not isinstance(function, HostTool) and not getattr(function, "__dspy_wire__", False):
+            namespace[name] = _wire_call(function, wire, spec["session"])
     for name, value in TYPING_NAMES.items():
         namespace.setdefault(name, value)
     namespace.update(namespace["__dspy_types"])
+
+
+_WIRE_CALLS = ("SUBMIT", "llm_query", "llm_query_batched")
+
+
+def _wire_call(function: Callable[..., Any], wire: Wire, session: str) -> Callable[..., Any]:
+    def send(value: Any) -> Any:
+        return {TAG: WIRE, "session": session, "value": wire.encode(value)}
+
+    @functools.wraps(function)
+    def wire_call(*args: Any, **kwargs: Any) -> Any:
+        return function(*map(send, args), **{key: send(value) for key, value in kwargs.items()})
+
+    wire_call.__dspy_wire__ = True
+    return wire_call
 
 
 def run_forward(namespace: dict[str, Any], class_name: str, inputs: dict[str, Any]) -> Any:

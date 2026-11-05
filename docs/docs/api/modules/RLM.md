@@ -149,7 +149,7 @@ Inside the REPL, the LLM has access to:
 
 | Tool | Description |
 |------|-------------|
-| `llm_query(prompt)` | Query a sub-LLM for semantic analysis (~500K char capacity) |
+| `llm_query(prompt)` | Query a sub-LLM for semantic analysis (~500K char capacity). `prompt` may be a list of strings and DSPy values, such as images |
 | `llm_query_batched(prompts)` | Query multiple prompts concurrently (faster for batch operations) |
 | `print()` | Print output (required to see results) |
 | `SUBMIT(...)` | Submit final output and end execution |
@@ -279,6 +279,29 @@ class DataFrame(dspy.SandboxSerializable):
 ```
 
 `SandboxSerializable` also defines a Pydantic schema hook so subclasses can be used directly in DSPy signatures, for example `data: DataFrame = dspy.InputField()`. The hook is intentionally pass-through: Pydantic accepts the object as-is and serializes it with `str(value)` for schema/metadata purposes. RLM's real sandbox transport still comes from `to_sandbox()` and `sandbox_assignment()`.
+
+### Images and Other DSPy Types
+
+Values of DSPy types such as `dspy.Image` keep their type across the REPL boundary: in inputs, tool arguments and results, `SUBMIT`, `llm_query` prompt lists, and sub-agents built with `dspy` in the REPL. The REPL runs dspy itself, so a `dspy.Image` is a `dspy.Image` there, with its methods. Your own `dspy.Type` subclasses and models arrive as plain data of their fields, with their methods left on the host, as in `dspy.Flex`. A tool's result keeps its type when the tool's return annotation names it (`-> dspy.Image`).
+
+`dspy.Image.to_pil()` needs Pillow in the interpreter. `dspy.LocalInterpreter` uses your environment's; `PythonInterpreter`'s sandbox includes Pyodide's build of Pillow when your environment has Pillow installed.
+
+```python
+def take_screenshot() -> dspy.Image:
+    ...
+
+rlm = dspy.RLM("photo: dspy.Image, question -> answer, crop: dspy.Image", tools=[take_screenshot])
+```
+
+The model can then write code such as:
+
+```python
+crop = dspy.Image(photo.to_pil().crop((600, 400, 900, 600)))
+label = llm_query(["Read the label in this crop.", crop])
+screen = take_screenshot()  # a dspy.Image
+answer = dspy.Predict("image: dspy.Image, question -> answer")(image=screen, question=question).answer
+SUBMIT(answer, crop)
+```
 
 ### Async Execution
 
