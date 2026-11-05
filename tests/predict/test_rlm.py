@@ -1650,6 +1650,36 @@ class TestRLMWithDummyLM:
 
             assert result.total == 15
 
+    @pytest.mark.asyncio
+    async def test_acall_awaits_async_tools_e2e(self):
+        """Async tools run under acall's event loop, keep the caller's context, and raise into the sandbox."""
+        import asyncio
+        import contextvars
+
+        request = contextvars.ContextVar("request", default="missing")
+        request.set("req-7")
+
+        async def lookup(sku: str) -> str:
+            await asyncio.sleep(0)
+            return f"{sku}:{request.get()}"
+
+        async def explode(sku: str) -> str:
+            await asyncio.sleep(0)
+            raise KeyError(f"no such sku {sku}")
+
+        code = (
+            "try:\n"
+            "    explode(sku=sku)\n"
+            "except RuntimeError as e:\n"
+            "    error = str(e)\n"
+            "SUBMIT(lookup(sku=sku) + ' | ' + error)"
+        )
+        with dummy_lm_context([{"plan": "Look up the SKU", "code": code}]):
+            rlm = RLM("sku -> answer: str", max_iters=1, tools=[lookup, explode])
+            result = await rlm.acall(sku="A1")
+
+        assert result.answer == "A1:req-7 | KeyError: 'no such sku A1'"
+
 
 # ============================================================================
 # Integration Tests: RLM with real LM (require API key and Deno)
