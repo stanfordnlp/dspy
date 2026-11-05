@@ -33,6 +33,7 @@ import importlib
 import inspect
 import json
 import math
+import secrets
 import sys
 import uuid
 from typing import Any, ClassVar, Literal, Union
@@ -66,8 +67,10 @@ CALL_TOOL = "__dspy_tool_call__"
 
 # The key that marks a JSON object as a tagged value rather than a dict.
 TAG = "__dspy__"
-# The names a SandboxSerializable's assignment reads its payload from and writes its value to (``Wire.encode_codec``).
-_DATA, _VALUE = "__dspy_codec_data", "__dspy_codec_value"
+# The name a SandboxSerializable's assignment writes its value to (``Wire.encode_codec``).
+_VALUE = "__dspy_codec_value"
+# The tag of a value a host function RLM gives the interpreter (SUBMIT) gets in the session's wire form (``bind``).
+WIRE = "wire"
 _COLLECTIONS = {"tuple": tuple, "set": set, "frozenset": frozenset}
 
 
@@ -214,7 +217,9 @@ class Wire:
 
     def encode_codec(self, value: SandboxSerializable) -> dict[str, Any]:
         """A ``SandboxSerializable`` as its own hooks write it: its payload (text if it is UTF-8, else base64), the
-        setup and the assignment that rebuild it in the sandbox (``decode_codec``)."""
+        setup and the assignment that rebuild it in the sandbox (``decode_codec``). The payload gets a name of its
+        own, which stays bound for code the assignment defines to read later (say, a lambda)."""
+        name = f"__dspy_codec_data_{secrets.token_hex(8)}"
         payload = value.to_sandbox()
         if isinstance(payload, bytes):
             try:
@@ -223,22 +228,29 @@ class Wire:
                 data = {"base64": base64.b64encode(payload).decode("ascii")}
         else:
             data = {"text": str(payload)}
-        return {TAG: "codec", "setup": value.sandbox_setup(), "assign": value.sandbox_assignment(_VALUE, _DATA), **data}
+        assign = value.sandbox_assignment(_VALUE, name)
+        return {TAG: "codec", "setup": value.sandbox_setup(), "assign": assign, "name": name, **data}
 
     def decode_codec(self, node: dict[str, Any]) -> Any:
         raise ValueError("Only the sandbox rebuilds a SandboxSerializable value.")
+
+
+def read_wire(value: Any, session: str, wire: Wire) -> Any:
+    """A value a host function got from the interpreter: read back from the wire form if ``bind`` sent it so for
+    ``session``, else the interpreter's plain JSON, as is."""
+    if isinstance(value, dict) and value.keys() == {TAG, "session", "value"} and value[TAG] == WIRE:
+        if value["session"] == session:
+            return wire.decode(value["value"])
+    return value
 
 
 def _rebuild(node: dict[str, Any], namespace: dict[str, Any]) -> Any:
     """Run a ``SandboxSerializable``'s setup and assignment (``Wire.encode_codec``) in ``namespace``; its value."""
     if node.get("setup"):
         exec(node["setup"], namespace)
-    namespace[_DATA] = node["text"] if "text" in node else base64.b64decode(node["base64"])
-    try:
-        exec(node["assign"], namespace)
-        return namespace.pop(_VALUE)
-    finally:
-        namespace.pop(_DATA, None)
+    namespace[node["name"]] = node["text"] if "text" in node else base64.b64decode(node["base64"])
+    exec(node["assign"], namespace)
+    return namespace.pop(_VALUE)
 
 
 def _fields_of(value: Any) -> dict[str, Any] | None:
@@ -695,10 +707,14 @@ def bind(namespace: dict[str, Any]) -> None:
                 namespace[name] = HostTool(tool, call, wire)
     submit = namespace.get("SUBMIT")
     if callable(submit) and not getattr(submit, "__dspy_wire__", False):
-        # The interpreter sends SUBMIT's values as JSON: dspy's objects go in their wire form, which the host reads back.
+        # The interpreter sends SUBMIT's values as JSON: each goes in the wire form, marked with this session so the
+        # host reads back only what was encoded (``read_wire``), never plain JSON that looks like a tagged value.
+        def send(value: Any) -> Any:
+            return {TAG: WIRE, "session": spec["session"], "value": wire.encode(value)}
+
         @functools.wraps(submit)
         def wire_submit(*args: Any, **kwargs: Any) -> Any:
-            return submit(*map(wire.encode, args), **{key: wire.encode(value) for key, value in kwargs.items()})
+            return submit(*map(send, args), **{key: send(value) for key, value in kwargs.items()})
 
         wire_submit.__dspy_wire__ = True
         namespace["SUBMIT"] = wire_submit

@@ -442,6 +442,7 @@ class SandboxSession:
         self._sealed: list[dict[str, Any]] = []  # see _seal
         self.lm_error: tuple[LMError, str] | None = None
         self.in_host = False
+        self.id: str | None = None  # the session's id in the interpreter, once installed
 
     def install(self, interpreter: Any, *, import_dspy: bool) -> None:
         """Bootstrap the bridge in ``interpreter``; with ``import_dspy``, import dspy there right away."""
@@ -455,7 +456,7 @@ class SandboxSession:
         # Inside a sandbox, the host already gave this interpreter the host's own interpreter tool.
         if self._interpreter_factory is not None and not isinstance(interpreter, HostInterpreter):
             interpreter.tools[INTERPRETER_TOOL] = self._serve_interpreter
-        session = secrets.token_hex(8)
+        session = self.id = secrets.token_hex(8)
         spec = self._spec(session)
         interpreter.execute(BOOTSTRAP, variables={"__dspy_spec": spec})
         namespace = _in_host.pop(session, None)
