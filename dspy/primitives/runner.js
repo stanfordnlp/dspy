@@ -141,41 +141,70 @@ globalThis.addEventListener("unhandledrejection", (event) => {
   }));
 });
 
-// Built once by dspy/primitives/sandbox_bundle.py: Pyodide's standard library with its bytecode, which Pyodide
-// starts from instead of compiling the library on every start.
+// Archives built by dspy/primitives/sandbox_bundle.py: Pyodide's standard library with its bytecode, which Pyodide
+// starts from instead of compiling the library on every start, and the dspy bundle, installed before any code runs.
 const argValue = (name) => Deno.args.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1);
 const stdlib = argValue("--dspy-stdlib");
-const stdlibTarget = argValue("--dspy-build-stdlib");
+const bundle = argValue("--dspy-bundle");
+const buildTarget = argValue("--dspy-build");
+const buildSource = argValue("--dspy-build-from");
 
 const pyodide = await pyodideModule.loadPyodide(stdlib ? { stdLibURL: stdlib } : {});
 const denoDir = argValue("--dspy-deno-dir");
 if (denoDir) await Deno.permissions.revoke({ name: "read", path: denoDir });
 if (stdlib) await Deno.permissions.revoke({ name: "read", path: stdlib });
 
-// Build mode runs no sandboxed code: it byte-compiles the archive, writes it, and exits.
-const PACK = `
-import compileall, os, py_compile, sys, zipfile
+// Build mode runs no sandboxed code: it byte-compiles an archive (by default the standard library), writes it, and
+// exits.
+if (buildTarget) {
+  if (buildSource) pyodide.FS.writeFile("/tmp/source.zip", Deno.readFileSync(buildSource));
+  pyodide.runPython(`
+import compileall, os, py_compile, site, sys, zipfile
 
-def pack(root, target):
-    with zipfile.ZipFile(target, "w") as archive:
-        for folder, _, files in os.walk(root):
-            for name in files:
-                path = os.path.join(folder, name)
-                archive.write(path, os.path.relpath(path, root))
-
-unchecked = py_compile.PycInvalidationMode.UNCHECKED_HASH
-`;
-
-if (stdlibTarget) {
-  pyodide.runPython(PACK + `
-# Each module's bytecode goes beside it, where zipimport looks for it.
 stdlib = next(path for path in sys.path if path.endswith(".zip"))
-zipfile.ZipFile(stdlib).extractall("/tmp/stdlib")
-compileall.compile_dir("/tmp/stdlib", quiet=2, legacy=True, ddir=stdlib, invalidation_mode=unchecked)
-pack("/tmp/stdlib", "/tmp/stdlib.zip")
+legacy = ${buildSource ? "False" : "True"}
+zipfile.ZipFile(stdlib if legacy else "/tmp/source.zip").extractall("/tmp/build")
+# The standard library's bytecode goes beside each module, where zipimport looks for it; a bundle's goes in
+# __pycache__ of the site-packages it is unpacked into.
+compileall.compile_dir("/tmp/build", quiet=2, legacy=legacy, ddir=stdlib if legacy else site.getsitepackages()[0],
+                       invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH)
+with zipfile.ZipFile("/tmp/build.zip", "w") as archive:
+    for folder, _, files in os.walk("/tmp/build"):
+        for name in files:
+            archive.write(os.path.join(folder, name), os.path.relpath(os.path.join(folder, name), "/tmp/build"))
 `);
-  Deno.writeFileSync(stdlibTarget, pyodide.FS.readFile("/tmp/stdlib.zip"));
+  Deno.writeFileSync(buildTarget, pyodide.FS.readFile("/tmp/build.zip"));
   Deno.exit(0);
+}
+
+if (bundle) {
+  const sitePackages = pyodide.runPython("import site; site.getsitepackages()[0]");
+  pyodide.unpackArchive(Deno.readFileSync(bundle), "zip", { extractDir: sitePackages });
+  await Deno.permissions.revoke({ name: "read", path: bundle });
+  // Installed now, so loadPackagesFromImports must not fetch them.
+  for (const entry of pyodide.FS.readdir(sitePackages)) {
+    const name = entry.endsWith(".dist-info") ? entry.split("-")[0].toLowerCase() : null;
+    if (name) for (const key of [name.replaceAll("_", "-"), name.replaceAll("-", "_")]) pyodide.loadedPackages[key] = "dspy";
+  }
+  pyodide.runPython(`
+import concurrent.futures
+
+class InlineExecutor(concurrent.futures.Executor):
+    # Pyodide cannot start threads: run each submitted call before returning its future.
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def submit(self, fn, /, *args, **kwargs):
+        future = concurrent.futures.Future()
+        try:
+            future.set_result(fn(*args, **kwargs))
+        except BaseException as e:
+            future.set_exception(e)
+        return future
+
+concurrent.futures.ThreadPoolExecutor = InlineExecutor
+del InlineExecutor
+`);
 }
 
 // Tool call support: allows Python code to call host-side functions

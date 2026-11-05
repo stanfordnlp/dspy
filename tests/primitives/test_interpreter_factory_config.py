@@ -19,6 +19,7 @@ from dspy.primitives.code_interpreter import (
     resolve_interpreter_factory,
 )
 from dspy.primitives.python_interpreter import PythonInterpreter
+from dspy.utils.dummies import DummyLM
 from tests.mock_interpreter import MockInterpreter, MockInterpreterFactory
 
 
@@ -145,9 +146,8 @@ def test_rlm_refreshes_execution_instructions_for_context_factory():
 
 def test_flex_forward_uses_the_configured_factory():
     def execute_fn(code, variables):
-        # The shim setup and the class definition come with no variables; only the driver
-        # code carries the call's inputs, and it is the one that must return the prediction.
-        return '{"result": 4}' if variables else ""
+        # Only the driver code returns the prediction; the bridge setup and the class definition return nothing.
+        return '{"fields": {"result": 4}, "trace": null}' if "run_forward" in code else ""
 
     factory = MockInterpreterFactory(execute_fn=execute_fn)
     dspy.configure(interpreter_factory=factory)
@@ -164,10 +164,22 @@ def test_flex_forward_uses_the_configured_factory():
     assert len(factory.instances) == 1
 
 
-def test_flex_lets_a_sub_predictor_resolve_the_configured_factory_itself():
-    # Flex hands its default factory to code-executing sub-predictors, whose resolver lets
-    # the configured factory override it at their own forward.
-    dspy.configure(interpreter_factory=MockInterpreterFactory())
+def test_flex_code_executing_sub_predictors_get_the_configured_factory():
+    # The configured factory makes the Flex's interpreter, and a fresh one for each code-executing module that
+    # the Flex's code builds.
+    made = []
 
+    def factory():
+        made.append(dspy.LocalInterpreter())
+        return made[-1]
+
+    dspy.configure(interpreter_factory=factory)
     flex = Flex(Doubler)
-    assert flex._bridge.invocation()._build_predictor("RLM", "query -> answer", {})._interpreter_factory is PythonInterpreter
+    flex._bind_code(
+        "class Doubling(dspy.Module):\n"
+        "    def forward(self, value):\n"
+        "        return dspy.Prediction(result=dspy.RLM('value: int -> result: int', max_iters=1)(value=value).result)\n"
+    )
+    with dspy.context(lm=DummyLM([{"plan": "p", "code": "SUBMIT(result=value * 2)"}])):
+        assert flex(value=2).result == 4
+    assert len(made) == 2
