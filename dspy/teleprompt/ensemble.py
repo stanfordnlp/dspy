@@ -21,6 +21,14 @@ class Ensemble(Teleprompter):
         size = self.size
         reduce_fn = self.reduce_fn
 
+        if size is not None:
+            if size < 0:
+                raise ValueError(f"Ensemble size must be non-negative, but got {size}.")
+            if size > len(programs):
+                raise ValueError(
+                    f"Ensemble size {size} exceeds the number of programs ({len(programs)})."
+                )
+
         import dspy
 
         class EnsembledProgram(dspy.Module):
