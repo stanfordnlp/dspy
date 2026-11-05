@@ -464,6 +464,22 @@ def test_types_the_sandbox_names_are_read_without_running_a_module_getattr(monke
     assert called == []
 
 
+def test_a_nested_interpreter_refuses_a_resume_with_no_call_waiting():
+    # Sandboxed code drives the nested interpreter's operations, so one out of order must fail, not hang the host.
+    from dspy.primitives.code_interpreter import CodeInterpreterError
+    from dspy.primitives.facade import _NestedInterpreter
+
+    nested = _NestedInterpreter(dspy.LocalInterpreter(), {})
+    try:
+        with pytest.raises(CodeInterpreterError, match="no call waiting"):
+            nested.resume({"value": 1})  # nothing executing yet
+        assert nested.execute("1 + 1", {}, {}, None) == {"output": 2}
+        with pytest.raises(CodeInterpreterError, match="no call waiting"):
+            nested.resume({"value": 1})  # the execution is done
+    finally:
+        nested.close()
+
+
 def test_stand_ins_for_sandbox_functions_take_their_parameter_kinds_by_name():
     from dspy.primitives.facade import _NestedInterpreter
 

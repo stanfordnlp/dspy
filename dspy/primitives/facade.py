@@ -329,6 +329,9 @@ class _NestedInterpreter:
         return self._next()
 
     def resume(self, reply: dict) -> dict:
+        # Busy means paused at a call into the parent: execute and resume return only at a call or once it is done.
+        if not self._busy:
+            raise CodeInterpreterError("This interpreter has no call waiting for a reply.")
         self._replies.put(reply)
         return self._next()
 
