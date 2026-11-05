@@ -2945,6 +2945,18 @@ class TestSandboxValues:
         )
         assert rlm(a=Deferred("first "), b=Deferred("second")).answer == "first second"
 
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_code_that_imports_dspy_itself_submits_its_objects_in_a_later_execution(self, factory):
+        # Nothing typed crosses this RLM; LocalInterpreter defines SUBMIT anew for the second execution.
+        rlm = RLM("q -> answer: Any", max_iters=2, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "r", "code": "import dspy\nphoto = dspy.Image('https://example.com/a.png')"},
+                {"reasoning": "r", "code": "SUBMIT(answer=photo)"},
+            ]
+        )
+        assert rlm(q="x").answer == dspy.Image("https://example.com/a.png")
+
     def test_an_interpreter_in_the_host_memory_rebuilds_inputs_in_its_namespace(self):
         rlm = RLM("nums, query -> answer", max_iters=1, interpreter_factory=_InProcessInterpreter)
         rlm.generate_action = make_mock_predictor(
