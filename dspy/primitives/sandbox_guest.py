@@ -358,10 +358,12 @@ def _build(shape: dict[str, Any], module: types.ModuleType) -> type:
             namespace["__doc__"] = shape["doc"]
         if any(field.get("host_default") for _, field in fields.values()):
             namespace["_leave_host_defaults"] = pydantic.model_serializer(mode="wrap")(_leave_host_defaults)
-        if kind == "dataclass":
-            return pydantic.dataclasses.dataclass(frozen=bool(shape.get("frozen")))(type(name, (), namespace))
+        # A RootModel takes no extra, and a dataclass is frozen by its own parameter.
         config = {key: value for key, value in shape.get("config", {}).items()
-                  if key in _CONFIG_KEYS and not (kind == "root" and key == "extra")}  # a RootModel takes no extra
+                  if key in _CONFIG_KEYS and (kind, key) not in (("root", "extra"), ("dataclass", "frozen"))}
+        if kind == "dataclass":
+            dataclass = pydantic.dataclasses.dataclass(frozen=bool(shape.get("frozen")), config=pydantic.ConfigDict(**config))
+            return dataclass(type(name, (), namespace))
         namespace["model_config"] = pydantic.ConfigDict(**config)
         base = pydantic.RootModel if kind == "root" else pydantic.BaseModel
         return types.new_class(name, (base,), {}, lambda body: body.update(namespace))
