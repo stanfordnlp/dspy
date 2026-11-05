@@ -718,18 +718,16 @@ def _refuse_host_files(prompt: Any) -> None:
 
 
 def from_wire(value: Any, annotation: Any) -> Any:
-    """``value``, as read off the wire, as ``annotation``, by field name: as JSON when it is plain data, which is how a
-    value of the user's types crosses (the JSON its type wrote), or else as the Python values it holds. Failing that,
-    it is parsed as dspy parses an LM's output."""
+    """Read the wire's restored Python values as ``annotation``, by field name. Fall back to JSON validation for
+    custom types whose round-trip data requires it, then to dspy's LM-output parser."""
     adapter = pydantic.TypeAdapter(annotation)
     try:
-        try:
-            text = json.dumps(value)
-        except (TypeError, ValueError):  # it holds values JSON doesn't, like a datetime or a dspy type
-            return adapter.validate_python(value, by_name=True)
-        return adapter.validate_json(text, by_name=True)
+        return adapter.validate_python(value, by_name=True)
     except Exception:
-        return parse_value(value, annotation)
+        try:
+            return adapter.validate_json(json.dumps(value), by_name=True)
+        except Exception:
+            return parse_value(value, annotation)
 
 
 def _typed(value: Any, field: Any) -> Any:

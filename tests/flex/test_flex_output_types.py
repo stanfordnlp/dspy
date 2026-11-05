@@ -21,7 +21,7 @@ import json
 import logging
 import shutil
 import textwrap
-from typing import Callable
+from typing import Any, Callable
 
 import pydantic
 import pytest
@@ -185,6 +185,32 @@ def test_baseline_output_can_be_named_like_a_prediction_method(factory):
     })
     with dspy.context(lm=DummyLM([{"items": '[{"name": "Ada", "age": 36}]'}])):
         assert dspy.Flex(signature, interpreter_factory=factory)(text="Ada is 36")["items"] == [Person(name="Ada", age=36)]
+
+
+@pytest.mark.parametrize("factory", [dspy.LocalInterpreter, pytest.param(dspy.PythonInterpreter, marks=deno_required)])
+@pytest.mark.parametrize("annotation", [Any, dict[Any, Any]])
+def test_native_values_keep_their_types_and_dictionary_entries(factory, annotation):
+    signature = dspy.Signature(
+        {
+            "data": (annotation, dspy.InputField()),
+            "answer": (annotation, dspy.OutputField()),
+        }
+    )
+    program = dspy.Flex(signature, interpreter_factory=factory)
+    program.load_state(
+        {
+            "module_src": textwrap.dedent("""
+        class M(dspy.Module):
+            def forward(self, data):
+                return dspy.Prediction(answer={
+                    "count": len(data), "original": data, "pair": (3, -2), "nested": [(5, -7)],
+                })
+    """)
+        }
+    )
+    out = program(data={1: "first", "1": "second"}).answer
+    assert out == {"count": 2, "original": {1: "first", "1": "second"}, "pair": (3, -2), "nested": [(5, -7)]}
+    assert isinstance(out["pair"], tuple) and isinstance(out["nested"][0], tuple)
 
 
 @deno_required
