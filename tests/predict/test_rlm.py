@@ -2947,6 +2947,114 @@ class TestSandboxValues:
             rlm(query="q", nums=_Numbers([1]))
 
 
+def _png(width: int, height: int, noisy: bool = False) -> dspy.Image:
+    import random
+
+    from PIL import Image as PILImage
+
+    buffer = io.BytesIO()
+    if noisy:  # incompressible, so its base64 is long
+        PILImage.frombytes("RGB", (width, height), random.Random(0).randbytes(width * height * 3)).save(buffer, "PNG")
+    else:
+        PILImage.new("RGB", (width, height), (255, 0, 0)).save(buffer, format="PNG")
+    return dspy.Image(buffer.getvalue())
+
+
+class TestRLMImages:
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_repl_code_manipulates_image_inputs_with_pil(self, factory):
+        pytest.importorskip("PIL")
+        photo = _png(32, 32, noisy=True)
+        assert len(photo.url) > 1000  # longer than REPLVariable's preview, which used to cut its base64 in two
+
+        rlm = RLM("photo: dspy.Image -> rotated: dspy.Image", max_iters=1, interpreter_factory=factory)
+        code = "SUBMIT(dspy.Image(photo.to_pil().rotate(90, expand=True).crop((0, 0, 32, 8))))"
+        with dummy_lm_context([{"plan": "Crop it", "code": code}]) as lm:
+            assert rlm(photo=photo).rotated.to_pil().size == (32, 8)
+
+        # The root prompt previews the image as text; the image itself stays in the REPL.
+        assert not any(part.type == "image" for message in lm.history[0]["request"].messages for part in message.parts)
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_llm_query_shows_images_to_the_sub_lm(self, factory):
+        pytest.importorskip("PIL")
+        photo = _png(6, 4)
+
+        def rate() -> dict:
+            """Rate the photo."""
+            return {"value": 0.5, "confidence": 0.9}
+
+        rlm = RLM("photo: dspy.Image -> answer", tools=[rate], max_iters=1, interpreter_factory=factory)
+        code = (
+            "seen = llm_query(['What color?', photo, rate()])\n"
+            "batch = llm_query_batched([['Again?', photo], 'Plain text?'])\n"
+            "SUBMIT(seen + ' ' + ' '.join(batch))"
+        )
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Show it", "code": code}])
+        lm = DummyLM([{"answer": "red"}] * 3, adapter=dspy.ChatAdapter())
+        lm.kwargs.update(temperature=0.7, max_tokens=321)
+
+        with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+            result = rlm(photo=photo)
+        assert result.final_reasoning == "Show it", result.trajectory
+
+        image_part = {"type": "image", "media_type": "image/png", "data": photo.url.split(",", 1)[1]}
+        question, image, rating = lm.history[0]["messages"][-1]["content"]
+        assert (question, image) == ({"type": "text", "text": "What color?"}, image_part)
+        assert json.loads(rating["text"]) == {"value": 0.5, "confidence": 0.9}
+        batched = sorted((entry["messages"][-1]["content"] for entry in lm.history[1:]), key=str)
+        assert batched == ["Plain text?", [{"type": "text", "text": "Again?"}, image_part]]
+        # The LM's generation defaults apply to list prompts, as to string prompts.
+        assert (lm.history[0]["request"].config.temperature, lm.history[0]["request"].config.max_tokens) == (0.7, 321)
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_llm_query_takes_images_made_in_the_repl(self, factory):
+        # No image crosses into this RLM: the code imports dspy and makes one itself.
+        sub_lm = DummyLM([{"answer": "red"}])
+        rlm = RLM("q -> answer", sub_lm=sub_lm, max_iters=1, interpreter_factory=factory)
+        code = "import dspy\nSUBMIT(llm_query(['What color?', dspy.Image('https://example.com/x.png')]))"
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Ask", "code": code}])
+
+        assert "red" in rlm(q="x").answer
+        parts = sub_lm.history[0]["request"].messages[-1].parts
+        assert [part.type for part in parts] == ["text", "image"]
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_llm_query_reads_json_that_looks_like_a_wire_value_as_json(self, factory):
+        for signature, inputs in [("q -> answer", {"q": "x"}), ("photo: dspy.Image -> answer", {"photo": _png(2, 2)})]:
+            sub_lm = DummyLM([{"answer": "ok"}])
+            rlm = RLM(signature, sub_lm=sub_lm, max_iters=1, interpreter_factory=factory)
+            code = "SUBMIT(llm_query(['Look:', {'__dspy__': 'customer'}]))"
+            rlm.generate_action = make_mock_predictor([{"reasoning": "Ask", "code": code}])
+            rlm(**inputs)
+            parts = sub_lm.history[0]["request"].messages[-1].parts
+            assert [(part.type, part.text) for part in parts] == [("text", "Look:"), ("text", '{"__dspy__": "customer"}')]
+
+    def test_llm_query_keeps_strings_as_text(self, tmp_path):
+        # A marker written into a string stays text: it neither becomes media nor has the host read a file.
+        secret = tmp_path / "secret.txt"
+        secret.write_text("TOP SECRET")
+        marker = (
+            dspy.adapters.types.base_type.CUSTOM_TYPE_START_IDENTIFIER
+            + json.dumps([{"type": "document", "media_type": "text/plain", "path": str(secret)}])
+            + dspy.adapters.types.base_type.CUSTOM_TYPE_END_IDENTIFIER
+        )
+        lm = DummyLM([{"answer": "ok"}])
+        tools = RLM("context -> answer", sub_lm=lm)._make_llm_tools()
+
+        tools["llm_query"]([marker, "Repeat it."])
+
+        parts = lm.history[0]["request"].messages[-1].parts
+        assert [(part.type, part.text) for part in parts] == [("text", marker), ("text", "Repeat it.")]
+
+    def test_a_callable_sub_lm_takes_strings_and_explains_list_prompts(self):
+        tools = RLM("context -> answer", sub_lm=lambda prompt: [f"echo: {prompt}"])._make_llm_tools()
+
+        assert tools["llm_query"]("hi") == "echo: hi"
+        with pytest.raises(TypeError, match="list prompt needs a DSPy LM"):
+            tools["llm_query"](["Read this", dspy.Image("https://example.com/x.png")])
+
+
 class TestREPLEventContract:
     """`build_repl_event` and `split_repl_event` are the single definition of RLM's history event layout."""
 

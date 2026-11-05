@@ -2039,3 +2039,26 @@ def test_a_new_standard_library_archive_makes_a_new_snapshot(tmp_path, monkeypat
     assert not second.exists()
     with pytest.raises(sandbox_bundle.SandboxBundleError):  # this process builds none in its place
         sandbox_bundle._prepare_snapshot((), None, "", bundle, stdlib)
+
+
+def test_the_dspy_bundle_ships_pillow_only_when_the_host_has_it(monkeypatch):
+    # dspy.Image.to_pil needs Pillow in the sandbox; Pyodide's own build comes with the bundle if this environment has it.
+    import importlib.util
+
+    from dspy.primitives import sandbox_bundle
+
+    lock = {"pillow": {"depends": ["libwebp"]}, "libwebp": {"depends": []}}
+    monkeypatch.setattr(sandbox_bundle, "_pyodide_lock", lambda deno_dir: lock)
+    monkeypatch.setattr(sandbox_bundle, "_distributions", lambda: [])
+    find_spec = importlib.util.find_spec
+    try:
+        for host_has_pillow in (True, False):
+            monkeypatch.setattr(
+                importlib.util,
+                "find_spec",
+                lambda name, *args, has=host_has_pillow: (object() if has else None) if name == "PIL" else find_spec(name, *args),
+            )
+            sandbox_bundle._plan.cache_clear()
+            assert sandbox_bundle._plan(None)[1] == (["libwebp", "pillow"] if host_has_pillow else [])
+    finally:
+        sandbox_bundle._plan.cache_clear()
