@@ -462,7 +462,7 @@ class SandboxSession:
         if namespace is not None:
             # Code in the host's memory has the host's own types and values: nothing crosses.
             self.in_host = True
-            self._values = InMemory()
+            self._values = InMemory(namespace)
             namespace["__dspy_guest_spec"] = spec
             namespace["__dspy_values"] = self._values
             namespace["__dspy_types"] = dict(self._custom_types)
@@ -539,7 +539,9 @@ class SandboxSession:
             raise CodeInterpreterError(f"Unknown tool {tool!r}")
         registered = (getattr(self._interpreter, "tools", None) or {}).get(tool)
         function = registered if callable(registered) else _entrypoint(self._tools[tool])
-        result = function(**self._values.decode(arguments or {}))
+        declared = (self._tools[tool] if isinstance(self._tools[tool], Tool) else Tool(self._tools[tool])).arg_types
+        kwargs = {name: _as_declared(value, declared.get(name)) for name, value in self._values.decode(arguments or {}).items()}
+        result = function(**kwargs)
         if asyncio.iscoroutine(result):
             from dspy.primitives.python_interpreter import _await_in_sync
 
@@ -728,6 +730,17 @@ def from_wire(value: Any, annotation: Any) -> Any:
             return adapter.validate_json(json.dumps(value), by_name=True)
         except Exception:
             return parse_value(value, annotation)
+
+
+def _as_declared(value: Any, annotation: Any) -> Any:
+    """A tool argument as the type the tool declares, when it came as plain data (as a value of the user's types
+    crosses), or as it came: the tool then checks it as sent."""
+    if annotation in (None, Any) or not isinstance(value, (dict, list)):
+        return value
+    try:
+        return from_wire(value, annotation)
+    except Exception:
+        return value
 
 
 def _typed(value: Any, field: Any) -> Any:

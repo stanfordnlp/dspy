@@ -38,7 +38,7 @@ The default `PythonInterpreter` executes Python in a Deno and Pyodide WASM sandb
 
 ### 8. `SandboxSerializable` loads large inputs into the sandbox once
 
-Some inputs are not plain strings. A DataFrame, a parsed corpus, or a binary blob would be wasteful and lossy to re-marshal into code on every turn. `SandboxSerializable` lets an input define how it crosses into the sandbox through four hooks: `sandbox_setup()` for imports, `to_sandbox()` for the payload, `sandbox_assignment()` for the reconstruction, and `rlm_preview()` for the metadata the model sees. `dspy.RLM` runs this once at the start of `forward()`, so the value is rebuilt under its original name and stays live across turns. The model works with a real pandas DataFrame rather than a stringified copy.
+Some inputs are not plain strings. A DataFrame, a parsed corpus, or a binary blob would be wasteful and lossy to re-marshal into code on every turn. `SandboxSerializable` lets an input define how it crosses into the sandbox through four hooks: `sandbox_setup()` for imports, `to_sandbox()` for the payload, `sandbox_assignment()` for the reconstruction, and `rlm_preview()` for the metadata the model sees. `dspy.RLM` runs this once at the start of `forward()`, so the value is rebuilt under its original name and stays live across turns. It crosses on the same path as dspy types, so the same value also works as a `dspy.Flex` input or a tool's result. The model works with a real pandas DataFrame rather than a stringified copy.
 
 ### 9. An extract pass salvages outputs when the loop ends early
 

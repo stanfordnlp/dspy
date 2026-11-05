@@ -77,7 +77,12 @@ class Type(pydantic.BaseModel):
 
         return result
 
-    @pydantic.model_serializer()
+    @pydantic.model_serializer(mode="wrap")
+    def _serialize(self, handler: pydantic.SerializerFunctionWrapHandler, info: pydantic.SerializationInfo):
+        # A dump meant to be validated back (``round_trip``), like a user model's crossing a sandbox, keeps the fields;
+        # any other dump is the prompt rendering.
+        return handler(self) if info.round_trip else self.serialize_model()
+
     def serialize_model(self):
         formatted = self.format()
         if isinstance(formatted, list):
