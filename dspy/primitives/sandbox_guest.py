@@ -344,8 +344,10 @@ def _build(shape: dict[str, Any], module: types.ModuleType) -> type:
         if base is int:
             return enum.IntEnum(name, shape["members"])
         return enum.Enum(name, shape["members"], **({"type": str} if base is str else {}))
+    # Each kind's own constructor checks its field names, as on the host: a TypedDict takes any key, a dataclass a
+    # field like `_value`. Only a class body leaves out a dunder, which would replace the class's own attributes.
     fields = {key: (_field_type(field, module), field) for key, field in shape.get("fields", {}).items()
-              if isinstance(key, str) and key.isidentifier() and not key.startswith("_")}
+              if isinstance(key, str) and (kind == "typeddict" or not key.startswith("__"))}
     if kind in ("model", "root", "dataclass"):
         namespace = {
             "__module__": module.__name__,

@@ -15,6 +15,7 @@ import typing
 import pydantic
 import pydantic_core
 import pytest
+import typing_extensions
 
 import dspy
 from dspy.adapters.base import Prompt
@@ -636,6 +637,14 @@ class _Entry:
     c: list = dataclasses.field(default_factory=list, kw_only=True)
 
 
+@dataclasses.dataclass
+class _Private:
+    _value: int = 0
+
+
+_Address = typing_extensions.TypedDict("_Address", {"postal-code": str, "__typename": str})  # as pydantic needs before 3.12
+
+
 class _Level(pydantic.BaseModel):
     hue: typing.Literal[_Hue.RED] = _Hue.RED
 
@@ -676,6 +685,20 @@ def test_defaults_made_on_the_host_enum_literals_and_type_settings_keep_their_me
     assert dataclasses.is_dataclass(record) and record(b="x").a == 1  # keyword-only fields stay keyword-only
     entry = rebuild_types(types_spec({"_Entry": _Entry}))["_Entry"]
     assert from_wire(encode_value(entry("y")), _Entry) == _Entry(b="y")  # also when only some fields are
+    private, _ = _cross(_Private, _Private(_value=3))
+    assert private._value == 3  # a field name each kind allows, as its own constructor checks
+    address, _ = _cross(_Address, {"postal-code": "12345", "__typename": "Address"})
+    assert address == {"postal-code": "12345", "__typename": "Address"}  # a TypedDict's keys are not attributes
+
+
+def test_classes_of_the_same_name_each_get_a_key_of_their_own():
+    def named(name):
+        return pydantic.create_model(name, value=(int, 0))
+
+    first, second, third = named("Item"), named("Item_2"), named("Item")
+    spec = types_spec({"first": first, "second": second, "third": third})
+    assert [ref["shape"] for ref in spec["types"].values()] == ["Item", "Item_2", "Item_3"]
+    assert list(spec["shapes"]) == ["Item", "Item_2", "Item_3"]
 
 
 def test_the_host_builds_no_class_from_what_the_sandbox_sends():
