@@ -31,6 +31,36 @@ def token_rates(monkeypatch):
     })
 
 
+def test_tool_result_media_follows_route_policy():
+    lm = dspy.LM("openai/gpt-4o", engine="lm15")
+    claude = dspy.LM("anthropic/claude-sonnet-4-5", engine="lm15")
+    # Media inside tool results follows each route's lm15 policy, not the Chat/Responses split.
+    assert lm.supported_tool_result_media == set()
+    assert claude.supported_tool_result_media == {"image", "document"}
+    assert dspy.LM("openai/gpt-4o", engine="lm15", model_type="responses").supported_tool_result_media == {
+        "image", "document",
+    }
+    assert dspy.LM("xai/grok-4", engine="lm15").supported_tool_result_media == {"image"}
+    # Gemini nests media in functionResponse parts only on the Gemini 3 class; 2.5 answers HTTP 400.
+    assert dspy.LM("gemini/gemini-3-flash-preview", engine="lm15").supported_tool_result_media == {"image", "document"}
+    assert dspy.LM("gemini/gemini-2.5-flash", engine="lm15").supported_tool_result_media == set()
+
+
+def test_tool_result_media_follows_the_backend_that_runs_the_request():
+    from dspy.clients.capabilities import tool_result_media
+    from dspy.clients.requests import build_request
+
+    claude = dspy.LM("anthropic/claude-sonnet-4-5", api_key="k")
+    assert tool_result_media(claude, {}, build_request(claude, "hi", {})) == {"image", "document"}
+    # Provider options lm15 cannot map send this request to LiteLLM, whose Chat writer carries no tool-result media.
+    options = {"extra_body": {"metadata": {"run": "1"}}}
+    assert tool_result_media(claude, options, build_request(claude, "hi", options)) == set()
+    # So does a part native planning refuses: Anthropic's Messages writer takes no audio.
+    audio = dspy.lm15.AudioPart(media_type="audio/wav", data="UklGRg==")
+    request = build_request(claude, dspy.adapters.Prompt(messages=(dspy.lm15.Message.user((audio,)),)), {})
+    assert tool_result_media(claude, {}, request) == set()
+
+
 def test_snapshot_loads():
     data = metadata._snapshot()
     assert isinstance(data, dict) and data
@@ -61,6 +91,7 @@ def test_unknown_and_custom_capabilities(monkeypatch):
     class Engine:
         supports_function_calling = True
         supported_params = frozenset({"tools"})
+        supported_tool_result_media = frozenset({"image"})
 
         def complete(self, request):
             raise AssertionError("No generation during capability lookup")
@@ -68,6 +99,8 @@ def test_unknown_and_custom_capabilities(monkeypatch):
     lm = dspy.LM("custom", engine=Engine())
     assert lm.supports_function_calling
     assert lm.supported_params == {"tools"}
+    assert lm.supported_tool_result_media == {"image"}
+    assert dspy.LM("custom", engine=type("E", (), {"complete": lambda self, r: None})()).supported_tool_result_media == set()
 
 
 def test_lm15_restriction_beats_catalog(monkeypatch):

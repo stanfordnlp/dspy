@@ -25,6 +25,8 @@ class Capabilities:
     reasoning: bool = False
     response_schema: bool = False
     params: frozenset[str] = field(default_factory=frozenset)
+    # lm15 part types (e.g. "image") the selected API carries inside a tool result.
+    tool_result_media: frozenset[str] = field(default_factory=frozenset)
 
 
 def resolve(lm):
@@ -102,6 +104,34 @@ def capabilities(lm):
         return _capabilities(lm)
 
 
+def tool_result_media(lm, options, request) -> set[str]:
+    """The media types the backend that runs ``request`` carries inside a tool result.
+
+    ``lm.supported_tool_result_media`` describes the selected route. With ``engine="auto"``, a built request
+    can still move to the LiteLLM compatibility engine, whose Chat writer carries none: for provider options
+    lm15 cannot map, or when native planning refuses it (mirroring ``execution._select_engine``).
+    """
+    carried = set(getattr(lm, "supported_tool_result_media", ()) or ())
+    spec = getattr(lm, "_engine_spec", None)
+    if not carried or not isinstance(spec, str):
+        return carried
+    if not select_backend(lm, options, request).native:
+        return set()
+    if spec == "auto" and request.config.cache is None:
+        from dspy.clients.engines.lm15_engine import LM15Engine
+        from dspy.lm15 import RouterConfig, _definitions
+
+        engine = LM15Engine(RouterConfig(env={}, providers=_definitions(getattr(lm, "_providers", ()))),
+                            model_type=lm.model_type)
+        try:
+            engine.plan(request)
+        except UnsupportedFeatureError:
+            return set()
+        finally:
+            engine.close()
+    return carried
+
+
 def _litellm_capabilities(lm, selection):
     from dspy.clients._litellm import get_litellm
 
@@ -128,6 +158,7 @@ def _capabilities(lm, options=None):
             bool(getattr(spec, "supports_reasoning", False)),
             bool(getattr(spec, "supports_response_schema", False)),
             frozenset(getattr(spec, "supported_params", ()) or ()),
+            frozenset(getattr(spec, "supported_tool_result_media", ()) or ()),
         )
     selection = select_backend(lm, options)
     route = selection.resolution
@@ -143,6 +174,8 @@ def _capabilities(lm, options=None):
         resolve_openai_chat_compat,
         resolve_openai_responses_compat,
     )
+    from dspy._vendor.lm15.providers.common import _TOOL_RESULT_MEDIA_ADMITS
+    from dspy._vendor.lm15.providers.gemini import gemini_level_class
     from dspy._vendor.lm15.registry import lookup
     from dspy.lm15 import _binding_for
 
@@ -179,6 +212,7 @@ def _capabilities(lm, options=None):
         else:
             partial = OpenAIChatCompat.preset(definition.compat or ("xai" if route.provider == "xai" else "openai"))
         compat = resolve_openai_chat_compat(partial.for_model(route.model))
+        media_policy = compat.tool_result_media
         params.update({"stop", "max_completion_tokens", "logprobs", "top_logprobs", "seed",
                        "presence_penalty", "frequency_penalty", "logit_bias", "user"})
         if schema or tools:
@@ -194,6 +228,7 @@ def _capabilities(lm, options=None):
             compat = resolve_anthropic_compat(definition.compat)
         else:
             compat = resolve_anthropic_compat(AnthropicCompat.preset(definition.compat or "anthropic"))
+        media_policy = compat.tool_result_media
         params.update({"stop", "top_k"})
         if schema and compat.structured_output != "reject":
             params.add("response_format")
@@ -203,11 +238,14 @@ def _capabilities(lm, options=None):
             params.difference_update({"temperature", "top_p", "top_k"})
     elif definition.dialect == "gemini":
         params.update({"stop", "top_k", "logprobs", "top_logprobs", "response_format"})
+        # functionResponse parts carry images and documents on the Gemini 3 class; Gemini 2.5 rejects them.
+        media_policy = "native" if gemini_level_class(route.model) else "reject"
     else:
         if isinstance(definition.compat, OpenAIResponsesCompat):
             compat = resolve_openai_responses_compat(definition.compat)
         else:
             compat = resolve_openai_responses_compat(OpenAIResponsesCompat.preset(definition.compat or "openai"))
+        media_policy = compat.tool_result_media
         params.update({"response_format", "max_completion_tokens", "logprobs", "top_logprobs", "store"})
         if compat.reasoning_format == "none":
             reasoning = False
@@ -221,4 +259,4 @@ def _capabilities(lm, options=None):
             params.discard("parallel_tool_calls")
     if reasoning:
         params.add("reasoning_effort")
-    return Capabilities(tools, reasoning, schema, frozenset(params))
+    return Capabilities(tools, reasoning, schema, frozenset(params), _TOOL_RESULT_MEDIA_ADMITS[media_policy])
