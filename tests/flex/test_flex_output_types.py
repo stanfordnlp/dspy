@@ -162,6 +162,31 @@ def test_sub_signature_naming_a_custom_type_resolves_on_the_host() -> None:
 # =============================================================================
 
 
+@pytest.mark.parametrize("factory", [dspy.LocalInterpreter, pytest.param(dspy.PythonInterpreter, marks=deno_required)])
+@pytest.mark.parametrize("nested", [False, True], ids=["list", "dict-of-lists"])
+def test_baseline_resolves_custom_types_inside_containers(factory, nested):
+    people = [{"name": "Ada", "age": 36}, {"name": "Bob", "age": 40}]
+    annotation = dict[str, list[Person]] if nested else list[Person]
+    payload = {"team": people} if nested else people
+    expected = {"team": [Person(**person) for person in people]} if nested else [Person(**person) for person in people]
+    signature = dspy.Signature({
+        "text": (str, dspy.InputField()),
+        "people": (annotation, dspy.OutputField()),
+    })
+    with dspy.context(lm=DummyLM([{"people": json.dumps(payload)}])):
+        assert dspy.Flex(signature, interpreter_factory=factory)(text="Ada and Bob").people == expected
+
+
+@pytest.mark.parametrize("factory", [dspy.LocalInterpreter, pytest.param(dspy.PythonInterpreter, marks=deno_required)])
+def test_baseline_output_can_be_named_like_a_prediction_method(factory):
+    signature = dspy.Signature({
+        "text": (str, dspy.InputField()),
+        "items": (list[Person], dspy.OutputField()),
+    })
+    with dspy.context(lm=DummyLM([{"items": '[{"name": "Ada", "age": 36}]'}])):
+        assert dspy.Flex(signature, interpreter_factory=factory)(text="Ada is 36")["items"] == [Person(name="Ada", age=36)]
+
+
 @deno_required
 def test_pydantic_output_comes_back_as_the_model_like_predict_does() -> None:
     payload = json.dumps({"name": "Ada", "age": 36})

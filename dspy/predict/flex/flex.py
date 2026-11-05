@@ -132,7 +132,7 @@ class Flex(Module, Parameter):
         Uses ``dspy.RLM`` when tools are provided; otherwise a single ``dspy.Predict``.
         """
         cls: type[Signature] = self._signature_cls
-        returns = ", ".join(f"{name}=result.{name}" for name in cls.output_fields)
+        returns = ", ".join(f"{name}=result[{name!r}]" for name in cls.output_fields)
         preamble = ""
         if any(self._flex_ctx.field_kwargs().values()):
             # A class-based signature keeps the field descriptions and constraints that the string form drops.
@@ -141,7 +141,12 @@ class Flex(Module, Parameter):
         else:
             sig_str = self._flex_ctx.render_signature_string()
             instructions = (getattr(cls, "instructions", "") or "").strip()
-            sig_arg = f"dspy.Signature({sig_str!r}, {instructions!r})" if instructions else repr(sig_str)
+            if custom := self._flex_ctx.custom_types():
+                # Caller-frame discovery does not find types nested inside list/dict annotations.
+                bindings = ", ".join(f"{name!r}: {name}" for name in custom)
+                sig_arg = f"dspy.Signature({sig_str!r}, {instructions!r}, custom_types={{{bindings}}})"
+            else:
+                sig_arg = f"dspy.Signature({sig_str!r}, {instructions!r})" if instructions else repr(sig_str)
         tool_names = list(self._flex_ctx.context_names())
         if tool_names:
             attr, ctor = "rlm", f"dspy.RLM({sig_arg}, tools=[{', '.join(tool_names)}])"
