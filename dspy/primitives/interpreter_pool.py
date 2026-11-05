@@ -10,7 +10,6 @@ from typing import Any, Callable
 
 from dspy.primitives.code_interpreter import CodeInterpreter
 from dspy.primitives.python_interpreter import PythonInterpreter
-from dspy.primitives.sandbox_bundle import SandboxBundleError
 
 logger = logging.getLogger(__name__)
 
@@ -94,18 +93,18 @@ class InterpreterPool:
             threading.Thread(target=self._start_one, name="dspy-interpreter-pool", daemon=True).start()
 
     def _start_one(self) -> None:
+        interpreter = None
         try:
             interpreter = self._factory()
             if isinstance(interpreter, PythonInterpreter):
                 # Flex and RLM add the dspy bundle to their interpreters, which must happen before one starts.
-                try:
-                    interpreter.provide_dspy()
-                except SandboxBundleError:
-                    logger.debug("InterpreterPool starts interpreters without dspy", exc_info=True)
+                interpreter.provide_dspy()
             interpreter.start()
         except Exception:
             # A call that finds no interpreter ready makes its own, and surfaces the failure there.
             logger.debug("InterpreterPool could not start an interpreter", exc_info=True)
+            if interpreter is not None:
+                _shut_down(interpreter)
             with self._lock:
                 self._starting -= 1
             return

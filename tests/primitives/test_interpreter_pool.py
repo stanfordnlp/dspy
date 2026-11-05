@@ -134,6 +134,25 @@ def test_pool_starts_again_after_its_background_starts_failed():
 
 
 @pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
+def test_failed_dspy_warmup_does_not_poison_the_next_flex_call(monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    def fail_preparation(*args, **kwargs):
+        raise sandbox_bundle.SandboxBundleError("transient bundle failure")
+
+    with monkeypatch.context() as warmup:
+        warmup.setattr(sandbox_bundle, "prepare_bundle", fail_preparation)
+        with dspy.InterpreterPool(size=1) as pool:
+            _wait_for(lambda: pool._starting == 0)
+            warmup.undo()  # Preparation recovers before the public invocation, not before pool startup.
+            flex = dspy.Flex("value: int -> result: int", interpreter_factory=pool)
+            with dspy.context(lm=DummyLM([{"result": "4"}, {"result": "6"}])):
+                assert flex(value=2).result == 4
+                _wait_for(lambda: pool._ready.qsize() == 1)
+                assert flex(value=3).result == 6
+
+
+@pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
 def test_pooled_python_interpreters_can_import_dspy():
     class Doubler(dspy.Signature):
         value: int = dspy.InputField()
