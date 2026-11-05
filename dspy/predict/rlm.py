@@ -789,7 +789,8 @@ class RLM(Module):
         # An interpreter in the host's memory runs sub-agents on the host's dspy: scope its executions on the
         # metered sub-agent LM.
         token = _repl_session.set(session)
-        prelude = _repl_prelude.set(_REBIND if typed and not session.in_host else "")
+        # Code may import dspy itself, in any execution: the prelude rebinds once it has, and does nothing before.
+        prelude = _repl_prelude.set("" if session.in_host else _REBIND)
         try:
             yield SUB_AGENT_INSTRUCTIONS
         finally:
