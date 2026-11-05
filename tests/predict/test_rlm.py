@@ -2847,6 +2847,43 @@ class TestSandboxValues:
         rlm.generate_action = make_mock_predictor([{"reasoning": "r", "code": "SUBMIT(label)"}])
         assert rlm(label=Label(text="hi")).answer == "own form: hi"
 
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_submitted_json_that_looks_like_a_wire_value_stays_json(self, factory):
+        # Plain JSON is read back only when the REPL sent it in the wire form: with or without dspy loaded there.
+        looks_tagged = {"__dspy__": "customer", "items": [1, 2]}
+        for signature, inputs in [
+            ("q -> answer: dict", {"q": "x"}),
+            ("photo: dspy.Image -> answer: dict", {"photo": dspy.Image("https://example.com/x.png")}),
+        ]:
+            rlm = RLM(signature, max_iters=1, interpreter_factory=factory)
+            code = f"SUBMIT(answer={looks_tagged!r})"
+            rlm.generate_action = make_mock_predictor([{"reasoning": "r", "code": code}])
+            assert rlm(**inputs).answer == looks_tagged
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_each_input_keeps_its_own_payload_for_code_that_reads_it_later(self, factory):
+        class Deferred(SandboxSerializable):
+            def __init__(self, text):
+                self.text = text
+
+            def sandbox_setup(self):
+                return ""
+
+            def to_sandbox(self):
+                return self.text.encode()
+
+            def sandbox_assignment(self, var_name, data_expr):
+                return f"{var_name} = lambda: {data_expr}"
+
+            def rlm_preview(self, max_chars=500):
+                return "deferred"
+
+        rlm = RLM("a, b -> answer", max_iters=2, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor(
+            [{"reasoning": "r", "code": "print(a())"}, {"reasoning": "r", "code": "SUBMIT(answer=a() + b())"}]
+        )
+        assert rlm(a=Deferred("first "), b=Deferred("second")).answer == "first second"
+
     def test_an_interpreter_in_the_host_memory_rebuilds_inputs_in_its_namespace(self):
         rlm = RLM("nums, query -> answer", max_iters=1, interpreter_factory=_InProcessInterpreter)
         rlm.generate_action = make_mock_predictor(
