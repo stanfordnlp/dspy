@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Iterator
 import pydantic
 from pydantic import Field
 
+from dspy.adapters.types.base_type import _MARKER_PATTERN
 from dspy.adapters.utils import serialize_for_json
 
 if TYPE_CHECKING:
@@ -265,7 +266,11 @@ def format_repl_event(adapter: Adapter, signature: type[Signature], message: dic
         if not repl_outputs:
             return []
         fallback_signature = Signature({name: (str, OutputField()) for name in repl_outputs})
-        return [Message.assistant(adapter.format_assistant_message_content(fallback_signature, repl_outputs))]
+        text = adapter.format_assistant_message_content(fallback_signature, repl_outputs)
+        # Replay is a text preview, not media transport. Elide after formatting so live values,
+        # JSON-restored markers, and nested containers follow the same rule without changing stored outputs.
+        text = _MARKER_PATTERN.sub("<media omitted from replay>", text)
+        return [Message.assistant(text)]
 
     messages = []
     user_content = adapter.format_user_message_content(
