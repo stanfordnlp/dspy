@@ -121,9 +121,11 @@ def test_native_reasoning_default_survives_provider_omission():
     # Native reasoning strips the field from the signature the LM formats against; the provider
     # then omits native reasoning entirely.
     processed = Sig.delete("reasoning")
-    outputs = [{"text": "[[ ## answer ## ]]\n42\n\n[[ ## completed ## ]]"}]
+    from tests.test_utils.engines import make_response
 
-    value = adapter._call_postprocess(processed, Sig, outputs, None, {})[0]
+    responses = [make_response("[[ ## answer ## ]]\n42\n\n[[ ## completed ## ]]")]
+
+    value = adapter._call_postprocess(processed, Sig, responses)[0]
 
     assert value["answer"] == "42"
     assert value["reasoning"] == dspy.Reasoning(content="(omitted)")

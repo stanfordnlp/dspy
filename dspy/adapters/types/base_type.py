@@ -2,38 +2,48 @@ import json
 import re
 from typing import TYPE_CHECKING, Any, Optional, get_args, get_origin
 
-import json_repair
 import pydantic
 
+from dspy._vendor.lm15.serde import part_from_dict, part_to_dict
+from dspy._vendor.lm15.types import Part, _is_part
 from dspy.clients.base_lm import BaseLM
+from dspy.lm15 import Response, TextPart
 
 if TYPE_CHECKING:
-    from litellm import ModelResponseStream
-
     from dspy.signatures.signature import Signature
 
 CUSTOM_TYPE_START_IDENTIFIER = "<<CUSTOM-TYPE-START-IDENTIFIER>>"
 CUSTOM_TYPE_END_IDENTIFIER = "<<CUSTOM-TYPE-END-IDENTIFIER>>"
+_MARKER_PATTERN = re.compile(rf"{CUSTOM_TYPE_START_IDENTIFIER}(.*?){CUSTOM_TYPE_END_IDENTIFIER}", re.DOTALL)
+
+
+class TypeFormatError(TypeError):
+    """A `dspy.Type.format()` implementation returned something adapters cannot send."""
 
 
 class Type(pydantic.BaseModel):
     """Base class to support creating custom types for DSPy signatures.
 
-    This is the parent class of DSPy custom types, e.g, dspy.Image. Subclasses must implement the `format` method to
-    return a list of dictionaries (same as the Array of content parts in the OpenAI API user message's content field).
+    This is the parent class of DSPy custom types, e.g, dspy.Image. Subclasses implement `format` to
+    return either a string or a list of `dspy.lm15` content parts (`ImagePart`, `AudioPart`,
+    `DocumentPart`, ...). Adapters place those parts in the user message exactly where the field
+    value appears in the rendered prompt.
 
     Examples:
 
         ```python
+        from dspy import Type
+        from dspy.lm15 import ImagePart
+
         class Image(Type):
             url: str
 
-            def format(self) -> list[dict[str, Any]]:
-                return [{"type": "image_url", "image_url": {"url": self.url}}]
+            def format(self) -> list:
+                return [ImagePart(url=self.url)]
         ```
     """
 
-    def format(self) -> list[dict[str, Any]] | str:
+    def format(self) -> list[Part] | str:
         raise NotImplementedError
 
     @classmethod
@@ -71,9 +81,13 @@ class Type(pydantic.BaseModel):
     def serialize_model(self):
         formatted = self.format()
         if isinstance(formatted, list):
-            return (
-                f"{CUSTOM_TYPE_START_IDENTIFIER}{json.dumps(formatted, ensure_ascii=False)}{CUSTOM_TYPE_END_IDENTIFIER}"
-            )
+            if not all(_is_part(part) for part in formatted):
+                raise TypeFormatError(
+                    f"{type(self).__name__}.format() must return a string or dspy.lm15 content parts; "
+                    "OpenAI-style content dictionaries are no longer accepted (DSPy 3.5)."
+                )
+            payload = json.dumps([part_to_dict(part) for part in formatted], ensure_ascii=False)
+            return f"{CUSTOM_TYPE_START_IDENTIFIER}{payload}{CUSTOM_TYPE_END_IDENTIFIER}"
         return formatted
 
     @classmethod
@@ -107,12 +121,12 @@ class Type(pydantic.BaseModel):
         return False
 
     @classmethod
-    def parse_stream_chunk(cls, chunk: "ModelResponseStream") -> Optional["Type"]:
+    def parse_stream_chunk(cls, chunk) -> Optional["Type"]:
         """
         Parse a stream chunk into the custom type.
 
         Args:
-            chunk: A stream chunk.
+            chunk: A listener-facing stream chunk (`chunk.choices[0].delta`).
 
         Returns:
             A custom type object or None if the chunk is not for this custom type.
@@ -120,93 +134,55 @@ class Type(pydantic.BaseModel):
         return None
 
     @classmethod
-    def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["Type"]:
-        """Parse a LM response into the custom type.
+    def parse_lm_response(cls, response: Response) -> Optional["Type"]:
+        """Read the native representation of this type out of an lm15 `Response`.
 
         Args:
-            response: A LM response.
+            response: The model's `dspy.lm15.Response`.
 
         Returns:
-            A custom type object.
+            A custom type object, or None when the response carries nothing for it.
         """
         return None
 
 
-def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Split user message content into a list of content blocks.
+def parts_from_text(text: str) -> tuple[Part, ...]:
+    """Expand the custom-type markers in rendered text into lm15 content parts.
 
-    This method splits each user message's content in the `messages` list to be a list of content block, so that
-    the custom types like `dspy.Image` can be properly formatted for better quality. For example, the split content
-    may look like below if the user message has a `dspy.Image` object:
-
-    ```
-    [
-        {"type": "text", "text": "{text_before_image}"},
-        {"type": "image_url", "image_url": {"url": "{image_url}"}},
-        {"type": "text", "text": "{text_after_image}"},
-    ]
-    ```
-
-    This is implemented by finding the `<<CUSTOM-TYPE-START-IDENTIFIER>>` and `<<CUSTOM-TYPE-END-IDENTIFIER>>`
-    in the user message content and splitting the content around them. The `<<CUSTOM-TYPE-START-IDENTIFIER>>`
-    and `<<CUSTOM-TYPE-END-IDENTIFIER>>` are the reserved identifiers for the custom types as in `dspy.Type`.
-
-    Args:
-        messages: a list of messages sent to the LM. The format is the same as [OpenAI API's messages
-            format](https://platform.openai.com/docs/guides/chat-completions/response-format).
-
-    Returns:
-        A list of messages with the content split into a list of content blocks around custom types content.
+    Adapters render every field value into one string. A `dspy.Type` whose
+    `format()` returns content parts serializes them behind a marker, so that
+    the parts land in the user message exactly where the field appears.
     """
-    for message in messages:
-        if message["role"] != "user":
-            # Custom type messages are only in user messages
+    merged: list[Part] = []
+    # Captured marker payloads alternate with the surrounding prompt text.
+    for index, chunk in enumerate(_MARKER_PATTERN.split(text)):
+        if not chunk and index % 2 == 0:
             continue
-
-        pattern = rf"{CUSTOM_TYPE_START_IDENTIFIER}(.*?){CUSTOM_TYPE_END_IDENTIFIER}"
-        result = []
-        last_end = 0
-        # DSPy adapter always formats user input into a string content before custom type splitting
-        content: str = message["content"]
-
-        for match in re.finditer(pattern, content, re.DOTALL):
-            start, end = match.span()
-
-            # Add text before the current block
-            if start > last_end:
-                result.append({"type": "text", "text": content[last_end:start]})
-
-            # Parse the JSON inside the block
-            custom_type_content = match.group(1).strip()
-            parsed = None
-
-            for parse_fn in [json.loads, _parse_doubly_quoted_json, json_repair.loads]:
-                try:
-                    parsed = parse_fn(custom_type_content)
-                    break
-                except json.JSONDecodeError:
-                    continue
-
-            if parsed:
-                for custom_type_content in parsed:
-                    result.append(custom_type_content)
+        values = _values_from_payload(chunk.strip()) if index % 2 else [chunk]
+        for value in values:
+            part = part_from_dict(value) if isinstance(value, dict) else TextPart(str(value))
+            # Only coalesce plain text; continuation metadata belongs to its original part.
+            if (
+                merged
+                and isinstance(part, TextPart)
+                and isinstance(merged[-1], TextPart)
+                and not part.continuation
+                and not merged[-1].continuation
+            ):
+                merged[-1] = TextPart(merged[-1].text + part.text)
             else:
-                # fallback to raw string if it's not valid JSON
-                result.append({"type": "text", "text": custom_type_content})
+                merged.append(part)
+    return tuple(merged) or (TextPart(""),)
 
-            last_end = end
 
-        if last_end == 0:
-            # No custom type found, return the original message
+def _values_from_payload(payload: str) -> list[Any]:
+    for parse in (json.loads, _parse_doubly_quoted_json):
+        try:
+            data = parse(payload)
+            return data if isinstance(data, list) else [payload]
+        except (ValueError, TypeError):
             continue
-
-        # Add any remaining text after the last match
-        if last_end < len(content):
-            result.append({"type": "text", "text": content[last_end:]})
-
-        message["content"] = result
-
-    return messages
+    return [payload]
 
 
 def _parse_doubly_quoted_json(json_str: str) -> Any:
@@ -215,3 +191,13 @@ def _parse_doubly_quoted_json(json_str: str) -> Any:
     `dspy.Type` can be json-encoded twice if included in either list or dict, e.g., `list[dspy.experimental.Document]`
     """
     return json.loads(json.loads(f'"{json_str}"'))
+
+
+def split_data_uri(value: str) -> tuple[str, str] | None:
+    """`data:<media_type>;base64,<payload>` -> (media_type, payload), else None."""
+    if not value.startswith("data:"):
+        return None
+    head, sep, payload = value[5:].partition(",")
+    if not sep or not head.endswith(";base64") or not payload:
+        raise ValueError("A data URI must look like data:<media-type>;base64,<payload>")
+    return head[: -len(";base64")], payload

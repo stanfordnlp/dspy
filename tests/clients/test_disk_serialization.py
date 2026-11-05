@@ -10,9 +10,12 @@ import diskcache
 import numpy as np
 import pydantic
 import pytest
-from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
-from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse
+from openai.types import Completion as TextCompletionResponse
+from openai.types import CreateEmbeddingResponse as EmbeddingResponse
+from openai.types.chat import ChatCompletion as ModelResponse
+from openai.types.responses import Response as ResponsesAPIResponse
 from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
+from openai.types.responses import ResponseUsage as ResponseAPIUsage
 
 from dspy.clients.disk_serialization import (
     DeserializationError,
@@ -76,8 +79,11 @@ def _write_tool_call_cache(directory):
     cache["k"] = ModelResponse(
         id="chatcmpl-tool",
         model="dummy",
+        created=0,
+        object="chat.completion",
         choices=[{
             "message": {
+                "role": "assistant",
                 "content": None,
                 "tool_calls": [{
                     "id": "call_1",
@@ -96,8 +102,7 @@ def _write_tool_call_cache(directory):
 def _assert_cached_tool_call_normalizes(directory):
     response = _make_cache(directory, set())["k"]
     tool_call = response.choices[0].message.tool_calls[0]
-    assert type(type(tool_call).__pydantic_serializer__).__name__ == "MockValSer"
-    assert type(type(tool_call.function).__pydantic_serializer__).__name__ == "MockValSer"
+    assert tool_call.function.name == "get_weather"
 
     lm_response = response_value(response, "chat", Request(model="dummy", messages=(Message.user("-"),)))
     part = lm_response.tool_calls[0]
@@ -137,7 +142,9 @@ def _write_responses_function_call_cache(directory):
         status="completed",
         text=None,
         truncation="disabled",
-        usage=ResponseAPIUsage(input_tokens=1, output_tokens=2, total_tokens=3),
+        usage=ResponseAPIUsage(input_tokens=1, output_tokens=2, total_tokens=3,
+                               input_tokens_details={"cached_tokens": 0, "cache_write_tokens": 0},
+                               output_tokens_details={"reasoning_tokens": 0}),
         user=None,
     )
     cache.close()
@@ -146,7 +153,7 @@ def _write_responses_function_call_cache(directory):
 def _assert_cached_responses_function_call_normalizes(directory):
     response = _make_cache(directory, set())["k"]
     function_call = response.output[0]
-    assert type(type(function_call).__pydantic_serializer__).__name__ == "MockValSer"
+    assert function_call.name == "get_weather"
 
     lm_response = response_value(response, "responses", Request(model="dummy", messages=(Message.user("-"),)))
     part = lm_response.tool_calls[0]
@@ -201,11 +208,11 @@ def test_ndarray_roundtrip(tmp_path):
     np.testing.assert_array_equal(result, value)
 
 
-def test_litellm_response_roundtrip(tmp_path):
+def test_openai_chat_response_roundtrip(tmp_path):
     cache = _make_cache(str(tmp_path), set())
     response = ModelResponse(
-        id="chatcmpl-test",
-        choices=[{"message": {"content": "Hello"}, "index": 0, "finish_reason": "stop"}],
+        id="chatcmpl-test", model="m", created=0, object="chat.completion",
+        choices=[{"message": {"role": "assistant", "content": "Hello"}, "index": 0, "finish_reason": "stop"}],
     )
     cache["k"] = response
     result = cache["k"]
@@ -216,24 +223,25 @@ def test_litellm_response_roundtrip(tmp_path):
 def test_text_completion_response_roundtrip(tmp_path):
     cache = _make_cache(str(tmp_path), set())
     response = TextCompletionResponse(
-        id="cmpl-test", choices=[{"text": "Hello", "index": 0, "finish_reason": "stop"}], model="m",
+        id="cmpl-test", created=0, object="text_completion",
+        choices=[{"text": "Hello", "index": 0, "finish_reason": "stop", "logprobs": None}], model="m",
     )
     cache["k"] = response
     result = cache["k"]
     assert isinstance(result, TextCompletionResponse)
-    assert result.choices[0]["text"] == "Hello"
+    assert result.choices[0].text == "Hello"
 
 
 def test_embedding_response_roundtrip(tmp_path):
     cache = _make_cache(str(tmp_path), set())
     response = EmbeddingResponse(
         data=[{"embedding": [0.1, 0.2], "index": 0, "object": "embedding"}],
-        model="m", usage={"prompt_tokens": 1, "total_tokens": 1},
+        model="m", object="list", usage={"prompt_tokens": 1, "total_tokens": 1},
     )
     cache["k"] = response
     result = cache["k"]
     assert isinstance(result, EmbeddingResponse)
-    assert result.data[0]["embedding"] == pytest.approx([0.1, 0.2])
+    assert result.data[0].embedding == pytest.approx([0.1, 0.2])
 
 
 def test_responses_api_roundtrip(tmp_path):
@@ -268,7 +276,9 @@ def test_responses_api_roundtrip(tmp_path):
         status="completed",
         text=None,
         truncation="disabled",
-        usage=ResponseAPIUsage(input_tokens=1, output_tokens=1, total_tokens=2),
+        usage=ResponseAPIUsage(input_tokens=1, output_tokens=1, total_tokens=2,
+                               input_tokens_details={"cached_tokens": 0, "cache_write_tokens": 0},
+                               output_tokens_details={"reasoning_tokens": 0}),
         user=None,
     )
     cache["k"] = response
@@ -278,12 +288,13 @@ def test_responses_api_roundtrip(tmp_path):
 
 
 def test_tool_call_response_roundtrip(tmp_path):
-    """ModelResponse with tool calls uses nested litellm types."""
+    """ChatCompletion with tool calls uses nested OpenAI types."""
     cache = _make_cache(str(tmp_path), set())
     response = ModelResponse(
-        id="chatcmpl-tool",
+        id="chatcmpl-tool", model="m", created=0, object="chat.completion",
         choices=[{
             "message": {
+                "role": "assistant",
                 "content": None,
                 "tool_calls": [{
                     "id": "call_1",
@@ -375,7 +386,8 @@ def test_nested_class_safe_types(tmp_path):
 
 def test_restricted_load_allows_builtin_types():
     response = ModelResponse(
-        id="t", choices=[{"message": {"content": "hi"}, "index": 0, "finish_reason": "stop"}],
+        id="t", model="m", created=0, object="chat.completion",
+        choices=[{"message": {"role": "assistant", "content": "hi"}, "index": 0, "finish_reason": "stop"}],
     )
     result = _roundtrip(response)
     assert isinstance(result, ModelResponse)
@@ -385,14 +397,16 @@ def test_all_cached_lm_types_roundtrip():
     """Every LM return type that DSPy caches must roundtrip through the restricted unpickler."""
     test_values = [
         ModelResponse(
-            id="t", choices=[{"message": {"content": "hi"}, "index": 0, "finish_reason": "stop"}],
+            id="t", model="m", created=0, object="chat.completion",
+            choices=[{"message": {"role": "assistant", "content": "hi"}, "index": 0, "finish_reason": "stop"}],
         ),
         TextCompletionResponse(
-            id="t", choices=[{"text": "hi", "index": 0, "finish_reason": "stop"}], model="m",
+            id="t", created=0, object="text_completion",
+            choices=[{"text": "hi", "index": 0, "finish_reason": "stop", "logprobs": None}], model="m",
         ),
         EmbeddingResponse(
             data=[{"embedding": [0.1], "index": 0, "object": "embedding"}],
-            model="m", usage={"prompt_tokens": 1, "total_tokens": 1},
+            model="m", object="list", usage={"prompt_tokens": 1, "total_tokens": 1},
         ),
     ]
     for value in test_values:

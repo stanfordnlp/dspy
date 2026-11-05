@@ -5,7 +5,9 @@ from typing import Any
 
 import pydantic
 
-from dspy.adapters.types.base_type import Type
+from dspy._vendor.lm15.types import document
+from dspy.adapters.types.base_type import Type, split_data_uri
+from dspy.lm15 import DocumentPart
 
 
 class File(Type):
@@ -75,17 +77,21 @@ class File(Type):
 
         return encode_file_to_dict(values)
 
-    def format(self) -> list[dict[str, Any]]:
-        try:
-            file_dict = {}
-            if self.file_data:
-                file_dict["file_data"] = self.file_data
-            if self.file_id:
-                file_dict["file_id"] = self.file_id
-            if self.filename:
-                file_dict["filename"] = self.filename
+    def format(self) -> list[DocumentPart]:
+        """Render as one lm15 document part.
 
-            return [{"type": "file", "file": file_dict}]
+        `filename` is kept for display only: the canonical document part
+        carries the media type from the data URI instead, and engines derive
+        any file name a provider requires from it.
+        """
+        try:
+            if self.file_id:
+                return [document(file_id=self.file_id)]
+            inline = split_data_uri(self.file_data)
+            if inline is None:
+                raise ValueError("file_data must be a base64 data URI")
+            media_type, data = inline
+            return [document(data=data, media_type=media_type)]
         except Exception as e:
             raise ValueError(f"Failed to format file for DSPy: {e}")
 

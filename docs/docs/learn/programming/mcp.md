@@ -84,7 +84,7 @@ asyncio.run(main())
 
 ### 2. Stdio Server (Local Process)
 
-The most common way to use MCP is with a local server process communicating via stdio. This example connects ReActV2 to an arithmetic server and works with both SDK versions.
+The most common way to use MCP is with a local server process communicating via stdio. This example connects ReAct to an arithmetic server and works with both SDK versions.
 
 Save the following as `mcp_server.py`:
 
@@ -143,13 +143,13 @@ async def main():
                 for tool in response.tools
             ]
 
-            # Create a ReActV2 agent with the tools
+            # Create a ReAct agent with the tools
             class QuestionAnswer(dspy.Signature):
                 """Answer questions using available tools."""
                 question: str = dspy.InputField()
                 answer: int = dspy.OutputField()
 
-            react_agent = dspy.ReActV2(
+            react_agent = dspy.ReAct(
                 signature=QuestionAnswer,
                 tools=dspy_tools,
                 max_iters=5

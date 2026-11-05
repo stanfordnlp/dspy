@@ -225,7 +225,7 @@ def compact_history(history: History, max_chars: int = _COMPACTED_CHARS) -> Hist
 
     Only the `value` of each `ToolCallResult` attached to a `ToolCalls` message value is shortened; a cut
     value ends with a marker naming how many characters were removed. Thoughts, tool names, tool
-    arguments, user inputs, and error flags are untouched. The input is never mutated: `dspy.ReActV2`
+    arguments, user inputs, and error flags are untouched. The input is never mutated: `dspy.ReAct`
     appends to its `History` in place and the trace shares that object.
     """
     messages = []

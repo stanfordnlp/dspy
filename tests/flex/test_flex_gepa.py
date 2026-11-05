@@ -375,12 +375,12 @@ def test_code_proposer_infra_error_propagates() -> None:
     silently burn the optimization budget; propagating matches the instruction-proposer paths
     (and the build-time policy in DspyAdapter.evaluate)."""
 
-    class DownLM(DummyLM):
-        def forward(self, *args, **kwargs):
-            raise LMRateLimitError("429 from the provider", model="dummy")
+    from tests.test_utils.engines import failing_lm
+
+    down_lm = failing_lm(LMRateLimitError("429 from the provider", model="dummy"))
 
     student = dspy.Flex(Echo)
-    adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={}, reflection_lm=DownLM([]))
+    adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={}, reflection_lm=down_lm)
     candidate = {"self": student.module_src}
     reflective = {"self": [{"Inputs": {"q": "x"}, "Generated Outputs": "wrong", "Feedback": "bad"}]}
 
@@ -393,12 +393,11 @@ def test_code_proposer_bad_proposal_keeps_original() -> None:
     proposal machinery can't handle) keeps that component's original source instead of
     crashing the run."""
 
-    class GarbledLM(DummyLM):
-        def forward(self, *args, **kwargs):
-            raise RuntimeError("reflection output could not be handled")
+    # The reflection LM answers, but not in a shape the proposer can read.
+    garbled_lm = DummyLM([{"unrelated": "reflection output could not be handled"}] * 4)
 
     student = dspy.Flex(Echo)
-    adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={}, reflection_lm=GarbledLM([]))
+    adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={}, reflection_lm=garbled_lm)
     original = student.module_src
     candidate = {"self": original}
     reflective = {"self": [{"Inputs": {"q": "x"}, "Generated Outputs": "wrong", "Feedback": "bad"}]}

@@ -4,6 +4,7 @@ import pydantic
 
 from dspy.adapters.types.base_type import Type
 from dspy.clients.base_lm import BaseLM
+from dspy.lm15 import Response, ThinkingPart
 
 if TYPE_CHECKING:
     from dspy.signatures.signature import Signature
@@ -64,6 +65,15 @@ class Reasoning(Type):
         lm: BaseLM,
         lm_kwargs: dict[str, Any],
     ) -> type["Signature"]:
+        thinking = lm_kwargs.get("thinking", lm.kwargs.get("thinking"))
+        if isinstance(thinking, dict) and thinking.get("type") in ("disabled", "enabled", "adaptive"):
+            # An explicit provider control already decides whether thinking is on.
+            # Do not inject a competing default effort; the request builder still
+            # validates any reasoning controls the caller explicitly supplied.
+            if thinking["type"] == "disabled" or not lm.supports_reasoning:
+                return signature
+            return signature.delete(field_name)
+
         if "reasoning_effort" in lm_kwargs:
             # `lm_kwargs` overrides `lm.kwargs`.
             reasoning_effort = lm_kwargs["reasoning_effort"]
@@ -84,11 +94,10 @@ class Reasoning(Type):
         return signature.delete(field_name)
 
     @classmethod
-    def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["Reasoning"]:
-        """Parse the LM response into a Reasoning object."""
-        if "reasoning_content" in response:
-            return Reasoning(content=response["reasoning_content"])
-        return None
+    def parse_lm_response(cls, response: Response) -> Optional["Reasoning"]:
+        """Read the model's native thinking parts into a Reasoning object."""
+        thinking = "".join(part.text for part in response.message.parts_of(ThinkingPart))
+        return Reasoning(content=thinking) if thinking else None
 
     @classmethod
     def parse_stream_chunk(cls, chunk) -> str | None:

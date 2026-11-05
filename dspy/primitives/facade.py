@@ -32,6 +32,7 @@ from pydantic_core import PydanticSerializationError, to_jsonable_python
 import dspy
 from dspy.clients.base_lm import BaseLM
 from dspy.primitives.code_interpreter import CodeInterpreterError
+from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import make_signature
 from dspy.utils.exceptions import LMError
 
@@ -40,7 +41,7 @@ CONSTRUCT_TOOL = "__dspy_construct__"
 CALL_TOOL = "__dspy_call__"
 
 # Predictors the sandbox shim may construct and the host builds
-BRIDGEABLE_KINDS = ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought", "ReAct", "ReActV2")
+BRIDGEABLE_KINDS = ("Predict", "ChainOfThought", "RLM", "ReAct", "ReActV2")
 # The shim's dspy.Signature(...) emits this marker so the host can rebuild a Signature.
 SIGNATURE_MARKER = "__dspy_sig__"
 # The shim passes tools by name (callables can't cross the JSON boundary); the host resolves the name
@@ -72,7 +73,18 @@ def _resolve_signature(signature: Any, custom_types: dict[str, type] | None = No
     """Turn a shim signature payload back into something a host predictor accepts."""
     if isinstance(signature, dict) and signature.get(SIGNATURE_MARKER):
         # marker always carries a string signature; make_signature applies instructions if given
-        return make_signature(signature["signature"], signature.get("instructions"), custom_types=custom_types)
+        sig = make_signature(signature["signature"], signature.get("instructions"), custom_types=custom_types)
+        fields = signature.get("fields")
+        if fields:
+            # A class-based signature also carries each field's InputField/OutputField kwargs.
+            sig = make_signature(
+                {
+                    name: (f.annotation, (InputField if name in sig.input_fields else OutputField)(**fields[name]))
+                    for name, f in sig.fields.items()
+                },
+                sig.instructions,
+            )
+        return sig
     if isinstance(signature, str):
         return make_signature(signature, custom_types=custom_types)
     return signature
@@ -142,25 +154,36 @@ class SandboxLM(BaseLM):
         self._reserve = reserve
 
     @staticmethod
-    def _check(kwargs: dict[str, Any]) -> None:
-        rejected = sorted(kwargs.keys() - _LM_CALL_INPUTS - SANDBOX_LM_KWARGS)
+    def _check(kwargs: dict[str, Any], *, allow_inputs: bool = True) -> None:
+        allowed = SANDBOX_LM_KWARGS | _LM_CALL_INPUTS if allow_inputs else SANDBOX_LM_KWARGS
+        rejected = sorted(kwargs.keys() - allowed)
         if rejected:
             raise TypeError(
                 f"Sandboxed code may not set LM option(s) {rejected}; allowed per call: {sorted(SANDBOX_LM_KWARGS)}."
             )
 
-    def _admit(self, kwargs: dict[str, Any]) -> None:
+    def _build_adapter_request(self, prompt, options):
+        from dspy.clients.requests import build_request
+
+        # Only overrides come from sandboxed code. Host defaults remain trusted,
+        # including provider-specific settings that are not exposed on this proxy.
+        self._check(options or {}, allow_inputs=False)
+        return build_request(self._lm, prompt, options)
+
+    def _admit(self, kwargs: dict[str, Any], args: tuple = ()) -> None:
         self._check(kwargs)
         if self._reserve is not None:
-            # `n` completions cost `n` calls, so it cannot multiply the budget.
-            self._reserve(max(1, int(kwargs.get("n", self.kwargs.get("n")) or 1)))
+            prompt = args[0] if args else kwargs.get("request", kwargs.get("prompt"))
+            # Typed requests are singular even when the wrapped LM defaults to n > 1.
+            count = 1 if isinstance(prompt, dspy.lm15.Request) else max(1, int(kwargs.get("n", self.kwargs.get("n")) or 1))
+            self._reserve(count)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        self._admit(kwargs)
+        self._admit(kwargs, args)
         return self._lm(*args, **kwargs)
 
     async def acall(self, *args: Any, **kwargs: Any) -> Any:
-        self._admit(kwargs)
+        self._admit(kwargs, args)
         return await self._lm.acall(*args, **kwargs)
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:

@@ -236,11 +236,53 @@ def test_multiple_callbacks():
     assert len(callback_2.calls) == 2
 
 
-def test_callback_complex_module():
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_custom_adapter_mixin_keeps_local_and_global_callbacks(asynchronous):
+    class FormatMixin:
+        def format(self, signature, demos, inputs):
+            return dspy.adapters.Prompt(messages=(dspy.lm15.Message.user(inputs["question"]),))
+
+        def parse(self, signature, completion):
+            return {"answer": int(completion)}
+
+    class CustomAdapter(FormatMixin, dspy.ChatAdapter):
+        pass
+
+    class Engine:
+        def complete(self, request):
+            return dspy.lm15.Response(
+                id="response", model=request.model,
+                message=dspy.lm15.Message.assistant("42"), usage=dspy.lm15.Usage(),
+                finish_reason="stop",
+            )
+
+    class AsyncEngine:
+        async def complete(self, request):
+            return Engine().complete(request)
+
+    local, global_ = MyCallback(), MyCallback()
+    with dspy.context(
+        lm=dspy.LM("test/mixin", engine=Engine(), async_engine=AsyncEngine(), cache=False),
+        adapter=CustomAdapter(callbacks=[local]), callbacks=[global_],
+    ):
+        predict = dspy.Predict("question -> answer: int")
+        result = await predict.acall(question="6 * 7?") if asynchronous else predict(question="6 * 7?")
+
+    assert result.answer == 42
+    for callback in (local, global_):
+        assert [call["handler"] for call in callback.calls if call["handler"].startswith("on_adapter_")] == [
+            "on_adapter_format_start", "on_adapter_format_end", "on_adapter_parse_start", "on_adapter_parse_end",
+        ]
+
+
+@pytest.mark.parametrize("adapter", [None, dspy.ChatAdapter(), dspy.JSONAdapter()])
+def test_callback_complex_module(adapter):
     callback = MyCallback()
     dspy.configure(
         lm=DummyLM({"How are you?": {"answer": "test output", "plan": "No more responses"}}),
         callbacks=[callback],
+        adapter=adapter,
     )
 
     cot = dspy.ChainOfThought("question -> answer", n=3)
@@ -248,12 +290,17 @@ def test_callback_complex_module():
     assert result["answer"] == "test output"
     assert result["reasoning"] == "No more responses"
 
-    assert len(callback.calls) == 14
+    assert len(callback.calls) == 18
     assert [call["handler"] for call in callback.calls] == [
         "on_module_start",
         "on_module_start",
         "on_adapter_format_start",
         "on_adapter_format_end",
+        # Each candidate is a separate LM call (n=3).
+        "on_lm_start",
+        "on_lm_end",
+        "on_lm_start",
+        "on_lm_end",
         "on_lm_start",
         "on_lm_end",
         # Parsing will run per output (n=3)
@@ -268,23 +315,30 @@ def test_callback_complex_module():
     ]
 
 @pytest.mark.asyncio
-async def test_callback_async_module():
+@pytest.mark.parametrize("adapter", [None, dspy.ChatAdapter(), dspy.JSONAdapter()])
+async def test_callback_async_module(adapter):
     callback = MyCallback()
     with dspy.context(
         lm=DummyLM({"How are you?": {"answer": "test output", "plan": "No more responses"}}),
         callbacks=[callback],
+        adapter=adapter,
     ):
         cot = dspy.ChainOfThought("question -> answer", n=3)
         result = await cot.acall(question="How are you?")
     assert result["answer"] == "test output"
     assert result["reasoning"] == "No more responses"
 
-    assert len(callback.calls) == 14
+    assert len(callback.calls) == 18
     assert [call["handler"] for call in callback.calls] == [
         "on_module_start",
         "on_module_start",
         "on_adapter_format_start",
         "on_adapter_format_end",
+        # Each candidate is a separate LM call (n=3).
+        "on_lm_start",
+        "on_lm_end",
+        "on_lm_start",
+        "on_lm_end",
         "on_lm_start",
         "on_lm_end",
         # Parsing will run per output (n=3)

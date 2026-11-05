@@ -5,15 +5,14 @@ from typing import Any
 
 import pytest
 
-# Read LiteLLM's bundled model catalog instead of fetching its live copy from GitHub, so capability
-# lookups do not change under the suite when upstream edits or retires an entry. Set before anything
-# imports litellm; tests of the remote path unset it with monkeypatch.
+# DSPy still reads the model catalog after removing LiteLLM. Keep ordinary
+# tests on the bundled snapshot; remote-catalog tests explicitly unset this.
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
 from tests.test_utils.server import (  # noqa: F401
-    _litellm_test_server,
-    litellm_test_server,
-    read_litellm_test_server_request_logs,
+    _openai_test_server,
+    openai_test_server,
+    read_test_server_request_logs,
 )
 
 SKIP_DEFAULT_FLAGS = ["reliability", "extra", "llm_call", "deno"]

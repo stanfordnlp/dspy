@@ -9,6 +9,7 @@ import requests
 
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat, get_finetune_directory
+from dspy.utils.lazy_import import require
 
 if TYPE_CHECKING:
     from databricks.sdk import WorkspaceClient
@@ -55,6 +56,8 @@ class DatabricksProvider(Provider):
         databricks_token: str | None = None,
         deploy_timeout: int = 900,
     ):
+        # Fail before creating or updating the endpoint, not after: the readiness check needs the OpenAI SDK.
+        openai_client = require("openai", feature="DatabricksProvider.deploy_finetuned_model").OpenAI
         workspace_client = _get_workspace_client()
         model_version = next(workspace_client.model_versions.list(model)).version
 
@@ -138,9 +141,7 @@ class DatabricksProvider(Provider):
             f"Waiting for serving endpoint {model_name} to be ready, this might take a few minutes... You can check "
             f"the status of the endpoint at {databricks_host}/ml/endpoints/{model_name}"
         )
-        from openai import OpenAI
-
-        client = OpenAI(
+        client = openai_client(
             api_key=databricks_token,
             base_url=f"{databricks_host}/serving-endpoints",
         )

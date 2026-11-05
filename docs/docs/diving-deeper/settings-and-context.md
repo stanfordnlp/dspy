@@ -72,7 +72,7 @@ Standard keys (defined in `DEFAULT_CONFIG`):
 | Key | Default | Purpose |
 |---|---|---|
 | `lm` | `None` | Default LM for every `Predict`. |
-| `adapter` | `None` (falls back to `ChatAdapter()`) | Adapter used to format and parse. |
+| `adapter` | `None` (falls back to `XMLAdapter(use_native_function_calling=True)`) | Adapter used to format and parse. |
 | `rm` | `None` | Default retriever for `dspy.Retrieve()`. |
 | `callbacks` | `[]` | Callback handlers fired around module calls. |
 | `track_usage` | `False` | Enable token-usage accounting. |

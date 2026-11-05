@@ -45,7 +45,7 @@ class Cache:
         disk_cache_dir: str | None,
         disk_size_limit_bytes: int | None = 1024 * 1024 * 10,
         memory_max_entries: int = 1000000,
-        restrict_pickle: bool = False,
+        restrict_pickle: bool = True,
         safe_types: list[type[Any]] | None = None,
     ):
         """
@@ -55,8 +55,8 @@ class Cache:
             disk_cache_dir: The directory where the disk cache is stored.
             disk_size_limit_bytes: The maximum size of the disk cache (in bytes).
             memory_max_entries: The maximum size of the in-memory cache (in number of items).
-            restrict_pickle: When True, restrict pickle deserialization to a known-safe
-                set of types. When False (default), use unrestricted pickle.
+            restrict_pickle: When True (default), restrict pickle deserialization to a known-safe
+                set of types. When False, use unrestricted pickle.
             safe_types: Additional types to allow when restrict_pickle is True.
         """
 
@@ -153,7 +153,7 @@ class Cache:
         if hasattr(response, "usage"):
             # Clear the usage data when cache is hit, because no LM call is made
             response.usage = {}
-            # Strict provider models (e.g. litellm's ResponsesAPIResponse) reject
+            # Strict provider models reject
             # undeclared attributes in pydantic __setattr__, so stamp the marker
             # directly on the instance dict.
             object.__setattr__(response, "cache_hit", True)
@@ -251,7 +251,7 @@ def request_cache(
             fn_identifier = f"{fn.__module__}.{fn.__qualname__}"
 
             # Create a modified request that includes the function identifier so that it's incorporated into the cache
-            # key. Deep copy is required because litellm sometimes modifies the kwargs in place.
+            # key. Deep copy protects the key from in-place changes by the wrapped callable.
             if cache_arg_name:
                 # When `cache_arg_name` is provided, use the value of the argument with this name as the request for
                 # caching.

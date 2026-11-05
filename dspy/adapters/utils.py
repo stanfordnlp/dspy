@@ -17,7 +17,16 @@ from dspy.adapters.types.reasoning import Reasoning
 from dspy.signatures.utils import get_dspy_field_type
 
 if TYPE_CHECKING:
+    from dspy.adapters.base import Adapter
     from dspy.signatures.signature import Signature
+
+
+def _get_adapter() -> "Adapter":
+    """Resolve the configured adapter, or DSPy's implicit default."""
+    from dspy.adapters.xml_adapter import XMLAdapter
+    from dspy.dsp.utils.settings import settings
+
+    return settings.adapter if settings.adapter is not None else XMLAdapter(use_native_function_calling=True)
 
 
 def annotation_allows_none(annotation: Any) -> bool:
@@ -76,7 +85,13 @@ def serialize_for_json(value: Any) -> Any:
     # whole value falls back to its string form only if pydantic can't handle it at all.
     try:
         return TypeAdapter(type(value)).dump_python(value, mode="json", fallback=str)
-    except Exception:
+    except Exception as exc:
+        from dspy.adapters.types.base_type import TypeFormatError
+
+        if isinstance(exc, TypeFormatError):
+            raise
+        if isinstance(exc.__cause__, TypeFormatError):
+            raise exc.__cause__ from None
         return str(value)
 
 

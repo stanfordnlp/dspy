@@ -338,7 +338,7 @@ class ResolvedOpenAIResponsesCompat:
 _CHAT_OVERRIDABLE: frozenset[str] = frozenset({
     "instruction_role", "max_tokens_field", "stream_usage", "thinking_format", "thinking_replay",
     "assistant_reasoning_content", "strict_tools", "cache_control", "user_field",
-    "forced_tool_choice", "json_schema", "reasoning_efforts", "tool_result_media", "reasoning_off",
+    "forced_tool_choice", "json_schema", "reasoning_efforts", "tool_result_media", "reasoning_off", "reasoning_usage",
 })
 
 OpenAIChatInstructionRole = Literal["auto", "developer", "system"]
@@ -417,6 +417,15 @@ OpenAIChatTokenScoring = Literal["auto", "none", "logprob_token_ids"]
 # 2026-09-03), so the preset lists the three.  `off` is never in the list:
 # the off switch is thinking_format's business.
 OpenAIChatReasoningEfforts = tuple[str, ...]
+# MAP-19: how the server counts reasoning in its usage.  "in_completion":
+# `completion_tokens` already includes `completion_tokens_details.
+# reasoning_tokens`, the dialect's own rule (OpenAI's schema; receipts with
+# total_tokens = prompt + completion and reasoning > 0 from DeepSeek,
+# Fireworks, Groq, Meta, Moonshot, Parasail, Together, Z.AI and Azure).
+# "separate": reasoning is counted beside the completion (xAI: total_tokens =
+# prompt + completion + reasoning on every recorded body), so canonical
+# output is their sum.  Usage only: nothing on the request changes.
+OpenAIChatReasoningUsage = Literal["auto", "in_completion", "separate"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -446,6 +455,7 @@ class OpenAIChatCompat:
     json_schema: OpenAIChatJsonSchema | None = None
     token_scoring: OpenAIChatTokenScoring | None = field(default=None, kw_only=True)
     reasoning_efforts: OpenAIChatReasoningEfforts | None = field(default=None, kw_only=True)
+    reasoning_usage: OpenAIChatReasoningUsage | None = field(default=None, kw_only=True)
     routing: JsonObject | None = None
     extensions: JsonObject | None = None
     # Per-model-family overrides on a door that forwards knobs to many
@@ -482,6 +492,7 @@ class OpenAIChatCompat:
             reasoning_off: OpenAIChatReasoningOff | None = ...,
             token_scoring: OpenAIChatTokenScoring | None = ...,
             reasoning_efforts: OpenAIChatReasoningEfforts | None = ...,
+            reasoning_usage: OpenAIChatReasoningUsage | None = ...,
             model_overrides: Sequence[tuple[str, Mapping[str, str | Sequence[str]]]] = ...,
         ) -> None: ...
     # END generated
@@ -522,6 +533,7 @@ class OpenAIChatCompat:
         _check_literal_or_none(self.forced_tool_choice, OpenAIChatForcedToolChoice, "forced_tool_choice")
         _check_literal_or_none(self.reasoning_off, OpenAIChatReasoningOff, "reasoning_off")
         _check_literal_or_none(self.json_schema, OpenAIChatJsonSchema, "json_schema")
+        _check_literal_or_none(self.reasoning_usage, OpenAIChatReasoningUsage, "reasoning_usage")
         if self.reasoning_efforts is not None:
             from .types import REASONING_EFFORTS
 
@@ -692,6 +704,9 @@ OPENAI_CHAT_PRESETS: dict[str, OpenAIChatCompat] = {
         strict_tools="omit",
         cache_control="none",
         tool_result_media="images",  # MAP-10: image tool results received (grok-4.20); documents 400 "use /v1/responses"
+        # MAP-19: total_tokens = prompt + completion + reasoning on all eight
+        # recorded xAI bodies (goldens/xai/*, e.g. structured_output 254 + 9 + 111 = 374).
+        reasoning_usage="separate",
     ),
     "vllm": OpenAIChatCompat(
         instruction_role="system",
@@ -1068,6 +1083,7 @@ class ResolvedOpenAIChatCompat:
     json_schema: Literal["send", "reject"] = "send"
     token_scoring: Literal["none", "logprob_token_ids"] = field(default="none", kw_only=True)
     reasoning_efforts: tuple[str, ...] | None = field(default=None, kw_only=True)
+    reasoning_usage: Literal["in_completion", "separate"] = field(default="in_completion", kw_only=True)
     routing: JsonObject | None = None
     extensions: JsonObject | None = None
 
@@ -1090,6 +1106,7 @@ _CHAT_AUTO_DEFAULTS: dict[str, str] = {
     "json_schema": "send",
     "token_scoring": "none",
     "reasoning_off": "send",
+    "reasoning_usage": "in_completion",
 }
 
 
