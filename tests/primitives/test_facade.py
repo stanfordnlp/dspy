@@ -779,7 +779,7 @@ class _Recording(dspy.ChatAdapter):
         return await super().acall(lm, lm_kwargs, signature, demos, inputs)
 
 
-def test_a_user_adapter_on_the_host_gets_typed_demos_and_its_async_path():
+def test_a_user_adapter_on_the_host_gets_typed_demos_and_runs_its_sync_path():
     import asyncio
 
     from dspy.primitives.facade import SandboxSession
@@ -806,25 +806,34 @@ def test_a_user_adapter_on_the_host_gets_typed_demos_and_its_async_path():
         # A type sandboxed code defined: the host formats it as text, which is parsed into it here.
         out = host(sandbox_lm, {}, dspy.Signature({"verdict": (Verdict, dspy.OutputField())}), [], {})
     (kind, sent_demos, options), (async_kind, _, _), _ = adapter.calls
-    assert (kind, async_kind) == ("sync", "async")  # an async predictor runs the adapter's acall
+    assert (kind, async_kind) == ("sync", "sync")  # an async predictor too, as for the LM
     assert type(sent_demos[0].case).__name__ == "_Child" and sent_demos[0].case.x == 1  # demos typed again
     assert options.get("cache") is False  # the copy's cache choice comes along
     assert isinstance(out[0]["verdict"], Verdict) and out[0]["verdict"].why == "fine"
 
 
-def test_an_async_adapter_call_keeps_the_callers_settings():
+def test_every_call_from_the_sandbox_runs_the_host_lms_sync_path():
     import asyncio
 
-    from dspy.primitives.facade import _run_coroutine
+    paths = []
 
-    async def read():
-        return dspy.settings.lm
+    class Paths(DummyLM):  # records which of its paths the host LM ran
+        def __call__(self, *args, **kwargs):
+            paths.append("sync")
+            return super().__call__(*args, **kwargs)
 
-    async def scoped():
-        with dspy.context(lm="scoped"):
-            return _run_coroutine(read())  # from a thread that already runs a loop
+        async def acall(self, *args, **kwargs):
+            paths.append("async")
+            return await super().acall(*args, **kwargs)
 
-    assert asyncio.run(scoped()) == "scoped"
+    lm = Paths([{"answer": "a"}, {"answer": "b"}])
+    host = _host_lm(SandboxSession({}, lm=lm))
+    predict = dspy.Predict("question -> answer")
+    assert predict(question="q", lm=host).answer == "a"
+    assert asyncio.run(predict.acall(question="q", lm=host)).answer == "b"
+    # The bridge is synchronous: the host's loop, if it has one, waits under the call, so an async engine of the
+    # host's would have to run on a loop of its own, apart from the connections it keeps.
+    assert paths == ["sync", "sync"]
 
 
 def test_values_cross_as_pydantic_dumps_them_by_field_name():

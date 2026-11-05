@@ -87,7 +87,7 @@ The maximum number of LM calls the generated code can make in one `forward`, cou
 
 The optimizer-authored code runs against the real `dspy` package, the same source the host runs. Only a few things cross to the host:
 
-- LM calls. Every predictor uses the host's LM through a stand-in that sends each request to the host. Generation parameters (`temperature`, `max_tokens`, `n`, …) apply, while LM routing and credential options (`api_base`, `api_key`, headers, `model`) are rejected by the host.
+- LM calls. Every predictor uses the host's LM through a stand-in that sends each request to the host. Generation parameters (`temperature`, `max_tokens`, `n`, …) apply, while LM routing and credential options (`api_base`, `api_key`, headers, `model`) are rejected by the host. The host runs each call on its LM's sync path, an async one in the sandbox too, since the caller's loop waits while the sandbox runs. An LM that only implements async can't serve a sandbox.
 - Provided tools. Each tool passed to `dspy.Flex(tools=...)` is in scope by name as a `dspy.Tool` carrying its host name, description, and arguments, so the code can call it directly or pass it to `dspy.ReAct` or `dspy.RLM`. It runs on the host. Functions the code defines run in the sandbox and can be passed to those modules as well.
 - Custom types of the signature, as described in section 8.
 - The trace. Predictor calls made in the sandbox are added to the host's `dspy.settings.trace`, which is how `program_trace` metrics see them.
