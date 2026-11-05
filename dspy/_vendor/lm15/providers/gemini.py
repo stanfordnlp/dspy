@@ -1233,15 +1233,25 @@ class GeminiLM(BaseProviderLM):
             while True:
                 raw = ws.recv()
                 events, turn_complete, usage = self._decode_live_completion_stream_events(raw)
-                # usageMetadata on Live is the turn's running count; merge non-zero
-                # counters across frames so partial trailing frames do not zero out fields.
+                # usageMetadata on Live is the turn's running count; merge reported
+                # counters across frames and reconcile via settle_usage.
                 if usage != Usage():
-                    acc_usage = Usage(
-                        input_tokens=max(acc_usage.input_tokens or 0, usage.input_tokens or 0),
-                        output_tokens=max(acc_usage.output_tokens or 0, usage.output_tokens or 0),
-                        total_tokens=max(acc_usage.total_tokens or 0, usage.total_tokens or 0),
-                        cache_read_tokens=max(acc_usage.cache_read_tokens or 0, usage.cache_read_tokens or 0) or None,
-                        reasoning_tokens=max(acc_usage.reasoning_tokens or 0, usage.reasoning_tokens or 0) or None,
+                    def _merge_count(prev: int | None, cur: int | None) -> int | None:
+                        if cur is None:
+                            return prev
+                        if prev is None:
+                            return cur
+                        return max(prev, cur)
+
+                    acc_usage = settle_usage(
+                        input_tokens=_merge_count(acc_usage.input_tokens, usage.input_tokens),
+                        output_tokens=_merge_count(acc_usage.output_tokens, usage.output_tokens),
+                        total_tokens=_merge_count(acc_usage.total_tokens, usage.total_tokens),
+                        cache_read_tokens=_merge_count(acc_usage.cache_read_tokens, usage.cache_read_tokens),
+                        cache_write_tokens=_merge_count(acc_usage.cache_write_tokens, usage.cache_write_tokens),
+                        reasoning_tokens=_merge_count(acc_usage.reasoning_tokens, usage.reasoning_tokens),
+                        input_audio_tokens=_merge_count(acc_usage.input_audio_tokens, usage.input_audio_tokens),
+                        output_audio_tokens=_merge_count(acc_usage.output_audio_tokens, usage.output_audio_tokens),
                     )
                 for event in events:
                     if event.type == "delta" and isinstance(event.delta, ToolCallDelta):

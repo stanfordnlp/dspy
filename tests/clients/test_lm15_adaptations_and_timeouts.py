@@ -422,6 +422,8 @@ def test_gemini_live_completion_accumulates_reasoning_and_cache_tokens(monkeypat
                         "responseTokenCount": 10,
                         "thoughtsTokenCount": 18,
                         "cachedContentTokenCount": 8,
+                        "promptTokensDetails": [{"modality": "AUDIO", "tokenCount": 6}],
+                        "responseTokensDetails": [{"modality": "AUDIO", "tokenCount": 4}],
                         "totalTokenCount": 48,
                     },
                 }),
@@ -445,4 +447,30 @@ def test_gemini_live_completion_accumulates_reasoning_and_cache_tokens(monkeypat
     assert end.usage.output_tokens == 28
     assert end.usage.reasoning_tokens == 18
     assert end.usage.cache_read_tokens == 8
+    assert end.usage.input_audio_tokens == 6
+    assert end.usage.output_audio_tokens == 4
     assert end.usage.total_tokens == 48
+
+    class TotalOnlyWS(FakeWS):
+        def __init__(self):
+            self.sent = []
+            self.frames = iter([
+                json.dumps({"setupComplete": {}}),
+                json.dumps({
+                    "serverContent": {
+                        "modelTurn": {"parts": [{"text": "Done"}]},
+                        "turnComplete": True,
+                    },
+                    "usageMetadata": {
+                        "totalTokenCount": 48,
+                    },
+                }),
+            ])
+
+    monkeypatch.setattr(lm, "_live_connect", lambda url: TotalOnlyWS())
+    total_only_end = [e for e in lm._stream_via_live_completion(req) if e.type == "end"][-1]
+    assert total_only_end.usage.input_tokens is None
+    assert total_only_end.usage.output_tokens is None
+    assert total_only_end.usage.total_tokens == 48
+    assert total_only_end.usage.cache_read_tokens == 0
+    assert total_only_end.usage.reasoning_tokens == 0
