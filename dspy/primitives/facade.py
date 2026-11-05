@@ -32,6 +32,7 @@ from pydantic_core import PydanticSerializationError, to_jsonable_python
 import dspy
 from dspy.clients.base_lm import BaseLM
 from dspy.primitives.code_interpreter import CodeInterpreterError
+from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import make_signature
 from dspy.utils.exceptions import LMError
 
@@ -40,7 +41,7 @@ CONSTRUCT_TOOL = "__dspy_construct__"
 CALL_TOOL = "__dspy_call__"
 
 # Predictors the sandbox shim may construct and the host builds
-BRIDGEABLE_KINDS = ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought", "ReAct", "ReActV2")
+BRIDGEABLE_KINDS = ("Predict", "ChainOfThought", "RLM", "ReAct", "ReActV2")
 # The shim's dspy.Signature(...) emits this marker so the host can rebuild a Signature.
 SIGNATURE_MARKER = "__dspy_sig__"
 # The shim passes tools by name (callables can't cross the JSON boundary); the host resolves the name
@@ -72,7 +73,18 @@ def _resolve_signature(signature: Any, custom_types: dict[str, type] | None = No
     """Turn a shim signature payload back into something a host predictor accepts."""
     if isinstance(signature, dict) and signature.get(SIGNATURE_MARKER):
         # marker always carries a string signature; make_signature applies instructions if given
-        return make_signature(signature["signature"], signature.get("instructions"), custom_types=custom_types)
+        sig = make_signature(signature["signature"], signature.get("instructions"), custom_types=custom_types)
+        fields = signature.get("fields")
+        if fields:
+            # A class-based signature also carries each field's InputField/OutputField kwargs.
+            sig = make_signature(
+                {
+                    name: (f.annotation, (InputField if name in sig.input_fields else OutputField)(**fields[name]))
+                    for name, f in sig.fields.items()
+                },
+                sig.instructions,
+            )
+        return sig
     if isinstance(signature, str):
         return make_signature(signature, custom_types=custom_types)
     return signature

@@ -179,8 +179,9 @@ def test_react_kinds_are_bridgeable_and_construct_on_host() -> None:
     assert not hasattr(agent, "interpreter")
 
 
-def test_reactv2_constructs_and_runs_through_the_bridge() -> None:
-    # primitives_doc recommends dspy.ReActV2 for tool-use steps, so the whole bridged path must
+@pytest.mark.parametrize("kind", ["ReAct", "ReActV2"])
+def test_react_constructs_and_runs_through_the_bridge(kind) -> None:
+    # primitives_doc recommends dspy.ReAct for tool-use steps, so the whole bridged path must
     # work: a shim-style construct payload builds the real agent on the host with the resolved
     # tool, the host LM drives the loop, and the prediction (incl. history) crosses the JSON
     # boundary back to the sandbox.
@@ -190,9 +191,9 @@ def test_reactv2_constructs_and_runs_through_the_bridge() -> None:
 
     flex = Flex(ShoutSig, tools=[lookup], interpreter_factory=lambda: MockInterpreter())
     inv = flex._bridge.invocation()
-    inv.construct("ReActV2", "question: str -> answer: str", "agent", {"tools": [{facade.TOOL_MARKER: "lookup"}]})
+    inv.construct(kind, "question: str -> answer: str", "agent", {"tools": [{facade.TOOL_MARKER: "lookup"}]})
     agent = inv._predictors["agent"]
-    assert isinstance(agent, dspy.ReActV2)
+    assert isinstance(agent, dspy.ReAct)
     assert not hasattr(agent, "interpreter")  # not a code-executing predictor
 
     lm = DummyLM([
@@ -544,7 +545,7 @@ def test_recovered_lm_failure_does_not_hijack_a_local_later_crash() -> None:
 # =============================================================================
 # Code-executing sub-predictors inherit the Flex sandbox backend (no Deno)
 # =============================================================================
-# A bridged CodeAct/ProgramOfThought/RLM runs its OWN inner code. It must run that code in the
+# A bridged RLM runs its OWN inner code. It must run that code in the
 # sandbox backend chosen for Flex (via the Flex interpreter factory), not a separate default
 # Deno/Pyodide sandbox — otherwise sandboxing the Flex glue but not the code its sub-predictors
 # execute would be a hole.
@@ -552,28 +553,12 @@ def test_recovered_lm_failure_does_not_hijack_a_local_later_crash() -> None:
 
 def test_accepts_interpreter_factory_only_for_code_executing_kinds() -> None:
     # Introspection-based, not a hardcoded list, so it tracks the real constructors.
-    assert facade._accepts_interpreter_factory(dspy.CodeAct)
-    assert facade._accepts_interpreter_factory(dspy.ProgramOfThought)
     assert facade._accepts_interpreter_factory(dspy.RLM)  # type: ignore[arg-type]  # dspy re-exports RLM oddly
     # Pure-LM and tool-calling predictors run no inner code, so no interpreter factory is injected.
     assert not facade._accepts_interpreter_factory(dspy.Predict)
     assert not facade._accepts_interpreter_factory(dspy.ChainOfThought)
     assert not facade._accepts_interpreter_factory(dspy.ReAct)
     assert not facade._accepts_interpreter_factory(dspy.ReActV2)  # type: ignore[arg-type]  # re-export quirk
-
-
-def test_bridged_codeact_inherits_flex_interpreter_backend() -> None:
-    # CodeAct requires function tools; `shout` is a Flex-level tool, resolvable on the host.
-    flex = Flex(ShoutSig, tools=[shout], interpreter_factory=lambda: MockInterpreter())
-    inv = flex._bridge.invocation()
-    tools_payload = [{facade.TOOL_MARKER: "shout"}]  # how the shim passes a tool by name
-    inv.construct("CodeAct", "text: str -> out: str", "act", {"tools": tools_payload})
-    # The sub-predictor makes its per-forward interpreter from the Flex factory (the configured
-    # backend), not a default PythonInterpreter.
-    act = inv._predictors["act"]
-    assert isinstance(act, dspy.CodeAct)
-    assert act._interpreter_factory is flex._bridge._factory
-    assert isinstance(act._interpreter_factory(), MockInterpreter)
 
 
 def test_code_executing_sub_predictors_get_the_flex_interpreter_factory() -> None:
@@ -790,48 +775,8 @@ def test_recovered_lm_failure_does_not_hijack_through_the_real_sandbox() -> None
     assert "NameError" in str(err.value) or "oops" in str(err.value)
 
 
-# A module that constructs and calls a dspy.CodeAct with a Flex-level tool. CodeAct runs its own
-# LM-authored code in an interpreter; under the bridge that interpreter is a fresh instance from the
-# Flex factory, so CodeAct's code runs in the SAME sandbox backend configured for Flex.
-CODEACT_MODULE = textwrap.dedent(
-    """
-    class ShoutModule(dspy.Module):
-        def __init__(self):
-            super().__init__()
-            self.act = dspy.CodeAct("text: str -> out: str", tools=[shout])
-
-        def forward(self, **inputs):
-            r = self.act(text=inputs["text"])
-            return dspy.Prediction(out=r.out)
-    """
-).strip()
-
-
-@deno_required
-def test_bridged_codeact_runs_in_flex_sandbox() -> None:
-    # CodeAct generates code that calls the (Flex-level) `shout` tool, then extracts the answer.
-    dspy.configure(
-        lm=DummyLM(
-            [
-                {"generated_code": "```python\nprint(shout('hello'))\n```", "finished": True},
-                {"plan": "the code printed HELLO", "out": "HELLO"},
-            ]
-        )
-    )
-
-    def backend_factory():
-        return dspy.PythonInterpreter()
-
-    flex = Flex(ShoutSig, tools=[shout], interpreter_factory=backend_factory)
-    flex._bind_code(CODEACT_MODULE)
-    out = flex(text="hello")
-    assert out.out == "HELLO"
-    # (That the sub-CodeAct builds its interpreter from the very factory Flex was given is
-    # asserted in test_bridged_codeact_inherits_flex_interpreter_backend.)
-
-
 # A module that constructs and calls a dspy.ReAct with a Flex-level tool. ReAct runs no code of its
-# own: the LM picks a tool, the host runs it, and the LM extracts the answer — all bridged from the
+# own: the LM picks a tool, the host runs it, and the LM submits the answer — all bridged from the
 # sandbox where the module's glue runs.
 REACT_MODULE = textwrap.dedent(
     """
@@ -852,9 +797,14 @@ def test_bridged_react_runs_in_flex_sandbox() -> None:
     dspy.configure(
         lm=DummyLM(
             [
-                {"next_thought": "shout it", "next_tool_name": "shout", "next_tool_args": {"text": "hello"}},
-                {"next_thought": "done", "next_tool_name": "finish", "next_tool_args": {}},
-                {"plan": "the tool returned HELLO", "out": "HELLO"},
+                {
+                    "next_thought": "shout it",
+                    "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "shout", "args": {"text": "hello"}}]),
+                },
+                {
+                    "next_thought": "the tool returned HELLO",
+                    "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"out": "HELLO"}}]),
+                },
             ]
         )
     )

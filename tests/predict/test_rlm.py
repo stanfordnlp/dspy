@@ -3409,7 +3409,7 @@ class TestRLMSubAgents:
     def test_facade_sub_agents_cannot_choose_their_interpreter(self, requested):
         invocation = _facade_invocation(RLM("query -> answer"))
 
-        for kind in ("RLM", "CodeAct", "ProgramOfThought", "Predict"):
+        for kind in ("RLM", "Predict"):
             with pytest.raises(CodeInterpreterError, match="cannot choose its interpreter_factory"):
                 invocation.construct(kind, "q -> a", "chosen", {"interpreter_factory": requested})
         assert "chosen" not in invocation._predictors

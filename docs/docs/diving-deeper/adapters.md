@@ -10,7 +10,7 @@ Read this when you want to know what the prompt looks like on the wire, why a ty
 
 ### 1. Adapters are pluggable
 
-Same Signature, different prompt shape, no Signature changes. LMs vary a lot in what they prefer to read and produce: a model trained on instruction-following with markers loves ChatAdapter’s `[[ ## field ## ]]` format; a model with native structured-output mode does best with JSONAdapter; a reasoning model that formats unreliably wants TwoStepAdapter. Putting this decision behind one interface means Signatures, modules, and optimizers don’t have to know which family of LM they’re running against.
+Same Signature, different prompt shape, no Signature changes. LMs vary a lot in what they prefer to read and produce: a model trained on instruction-following with markers loves ChatAdapter’s `[[ ## field ## ]]` format; a model with native structured-output mode does best with JSONAdapter; XMLAdapter is the default for text-formatted outputs. Putting this decision behind one interface means Signatures, modules, and optimizers don’t have to know which family of LM they’re running against.
 
 ### 2. XMLAdapter is the default
 
@@ -42,7 +42,11 @@ It checks `lm.supported_params` and falls through tiers: OpenAI-style `response_
 
 ### 9. TwoStepAdapter splits generation from extraction
 
-For reasoning models that produce free-form text but format unreliably. Stage one: the main LM gets the task as plain prose, no field markers, and produces whatever shape it wants. Stage two: a smaller extractor LM with ChatAdapter reads the output and pulls out the declared fields. Useful for o1, o3-mini, and similar models where formatting reliability is the bottleneck.
+!!! warning "Deprecated in DSPy 3.5"
+
+    `dspy.TwoStepAdapter` will be removed in DSPy 3.6. Use `dspy.JSONAdapter()` for models supporting structured outputs, or `dspy.XMLAdapter()` otherwise. `JSONAdapter` automatically requests native structured outputs when the LM and output schema support them. Neither replacement uses a separate extraction LM; migration changes the prompting and extraction strategy.
+
+TwoStepAdapter remains available until removal. Stage one: the main LM gets the task as plain prose, no field markers, and produces free-form text. Stage two: a smaller extractor LM with ChatAdapter reads the output and pulls out the declared fields.
 
 ### 10. Field marker format is hard-coded
 
@@ -70,7 +74,7 @@ The implicit default passes `use_native_function_calling=True`; explicit constru
 Container-closing tag sequences are reserved inside strings. Undeclared object fields are rejected unless the schema allows extras.
 
 **`dspy.TwoStepAdapter(extraction_model: BaseLM, **kwargs)`**  
-Two LM calls per inference. Use it when the main LM is a reasoning model that’s bad at formatting — the extractor is usually a cheap general-purpose LM with ChatAdapter. Doesn’t support finetuning yet.
+Deprecated in DSPy 3.5; removal in DSPy 3.6. Prefer `dspy.JSONAdapter()` for models supporting structured outputs, or `dspy.XMLAdapter()` otherwise (see section 9). Two LM calls per inference, with a separate extraction LM using ChatAdapter. Doesn’t support finetuning.
 
 **`dspy.BAMLAdapter`**  
 JSON-backed, but renders the output schema in BAML-style commented Pydantic form. Worth trying when JSONAdapter’s raw JSON schema is too verbose for complex nested types.
@@ -127,7 +131,7 @@ The base class. Subclass it (it’s a `pydantic.BaseModel`) and implement `forma
 
 **`dspy.Image(source)`**
 
-URL reference, data URI, bytes, or PIL image. `format()` returns one lm15 `ImagePart` (a URL reference or inline base64 data). Ordinary construction and adapter parsing never access the filesystem or network. Use `Image.from_path(path)` to read a local file or `Image.from_url(url)` to download and base64-encode a remote resource. The deprecated direct call `Image(url, download=True)` also downloads for compatibility through 3.3; migrate it to `Image.from_url(url)`.
+URL reference, data URI, bytes, or PIL image. `format()` returns one lm15 `ImagePart` (a URL reference or inline base64 data). Ordinary construction and adapter parsing never access the filesystem or network. Use `Image.from_path(path)` to read a local file or `Image.from_url(url, verify=...)` to download and base64-encode a remote resource. The constructor no longer accepts `download` or `verify`; use `Image(url)` for a non-downloading URL reference.
 
 **`dspy.Audio(source)`**
 
@@ -162,15 +166,19 @@ In DSPy 3.3, constructing or validating `Image`, `Audio`, and `File` values no l
 | Before 3.3 | 3.3 replacement | Behavior |
 | --- | --- | --- |
 | `Image(path)` | `Image.from_path(path)` | Read and embed a local image |
-| `Image(url, download=True)` | `Image.from_url(url)` | Download and embed a remote image |
+| `Image(url, download=True, verify=...)` | `Image.from_url(url, verify=...)` | Download and embed a remote image |
+| `Image(url, download=False)` | `Image(url)` | Keep a non-downloading URL reference |
 | `Image.from_url(url)` or `Image.from_url(url, download=False)` | `Image(url)` | Keep a non-downloading URL reference |
 | `Audio(path)` | `Audio.from_path(path)` | Read and embed a local audio file |
 | `Audio(url)` | `Audio.from_url(url)` | Download and embed remote audio |
 | `File(path)` | `File.from_path(path)` | Read and embed a local file |
-| `Image.from_file(path)` | `Image.from_path(path)` | Replace the deprecated alias |
-| `Audio.from_file(path)` | `Audio.from_path(path)` | Replace the deprecated alias |
+| `Image.from_file(path)` | `Image.from_path(path)` | Replace the removed alias |
+| `Image.from_PIL(pil_image)` | `Image(pil_image)` | Replace the removed alias |
+| `Audio.from_file(path)` | `Audio.from_path(path)` | Replace the removed alias |
 
-Safe in-memory inputs such as data URIs, bytes, PIL images, audio arrays, and structured dictionaries remain supported. The deprecated direct call `Image(url, download=True)` continues to work with a warning through 3.3; `Image.from_file()`, `Image.from_PIL()`, and `Audio.from_file()` are also scheduled for removal in 3.4.
+Safe in-memory inputs such as data URIs, bytes, PIL images, audio arrays, and structured dictionaries remain supported. The `Image()` constructor's `download` and `verify` keywords were scheduled for removal in 3.4 and are now removed in 3.5. Passing either keyword raises `TypeError`, even with a false or `None` value. Remove both keywords to retain a URL reference, or migrate downloading calls to `Image.from_url(url, verify=...)`. The `verify` option remains supported on both `Image.from_url()` and `Audio.from_url()`.
+
+`Image.from_file()`, `Image.from_PIL()`, and `Audio.from_file()` have been removed after their announced 3.4 removal deadline. Use the replacements in the table above; the old aliases are no longer callable.
 
 `Image.from_url()` and `Audio.from_url()` perform synchronous, caller-initiated HTTP requests and follow redirects. They do not validate destinations against an SSRF allowlist, so applications must validate or allowlist URLs derived from untrusted input before calling them.
 
@@ -185,4 +193,4 @@ Safe in-memory inputs such as data URIs, bytes, PIL images, audio arrays, and st
 - [Signatures in depth](signatures-in-depth.md) — what the adapter consumes.
 - [Settings and context()](settings-and-context.md) — how `configure` and `context` propagate the adapter choice.
 - [Tools and MCP](tools.md) — `Tool` and `ToolCalls` are adapter-formatted but module-driven.
-- [ReAct and ReActV2](react.md) — how the two agent loops present history and tool calls to adapters.
+- [ReAct](react.md) — how the structured-history agent loop presents history and tool calls to adapters.

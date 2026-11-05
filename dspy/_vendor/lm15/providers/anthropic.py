@@ -74,7 +74,7 @@ from .base import (
     batch_entry_request,
     default_transport,
 )
-from .common import check_message_media, EFFORT_THINKING_BUDGETS, MEDIA_KINDS, anthropic_source, check_tool_result_media, data_part_text, iso_utc, model_infos_from_entries, multipart_form_body, parts_to_text, path_id, tool_description, unnamed_tool_call_error
+from .common import settle_usage, wire_count, wire_sum, check_message_media, EFFORT_THINKING_BUDGETS, MEDIA_KINDS, anthropic_source, check_tool_result_media, data_part_text, iso_utc, model_infos_from_entries, multipart_form_body, parts_to_text, path_id, tool_description, unnamed_tool_call_error
 
 # Canonical builtin tool name → Anthropic tool format
 _ANTHROPIC_BUILTIN_MAP: dict[str, str] = {
@@ -133,9 +133,34 @@ def _reasoning_tokens(usage_payload: dict) -> int | None:
     # The wire nests thinking spend under output_tokens_details; absent
     # when thinking never ran, so None stays the honest "not reported".
     details = usage_payload.get("output_tokens_details")
-    if isinstance(details, dict) and details.get("thinking_tokens") is not None:
-        return int(details["thinking_tokens"])
+    if isinstance(details, dict):
+        return wire_count(details.get("thinking_tokens"), "thinking_tokens")
     return None
+
+
+def _usage_from_anthropic(usage_payload: Any) -> Usage:
+    """MAP-19, Anthropic Messages (every server on this wire).
+
+    The wire's ``input_tokens`` is only the tokens after the last cache
+    breakpoint; ``cache_read_input_tokens`` and ``cache_creation_input_tokens``
+    are counted beside it, not inside it. Canonical input is their exact sum,
+    unknown when any of the three is not reported. ``output_tokens`` already
+    includes thinking. A total is read when the server sends one (Moonshot
+    does); otherwise it is input + output.
+    """
+    if not isinstance(usage_payload, dict):
+        usage_payload = {}
+    wire_input = wire_count(usage_payload.get("input_tokens"), "input_tokens")
+    cache_read = wire_count(usage_payload.get("cache_read_input_tokens"), "cache_read_input_tokens")
+    cache_write = wire_count(usage_payload.get("cache_creation_input_tokens"), "cache_creation_input_tokens")
+    return settle_usage(
+        input_tokens=wire_sum(wire_input, cache_read, cache_write),
+        output_tokens=wire_count(usage_payload.get("output_tokens"), "output_tokens"),
+        total_tokens=wire_count(usage_payload.get("total_tokens"), "total_tokens"),
+        cache_read_tokens=cache_read,
+        cache_write_tokens=cache_write,
+        reasoning_tokens=_reasoning_tokens(usage_payload),
+    )
 
 
 _ADAPTIVE_CLASS_MARKERS = ("sonnet-5", "opus-5", "sonnet-4-6", "opus-4-6", "opus-4-7", "opus-4-8", "fable", "mythos", "haiku-5")
@@ -982,16 +1007,7 @@ class AnthropicLM(BaseProviderLM):
         if not parts:
             parts = [TextPart(text="")]
 
-        usage_payload = data.get("usage", {}) or {}
-        # INV-029: absent counters stay None; Usage sums the total itself
-        # only when both primaries are present.
-        usage = Usage(
-            input_tokens=usage_payload.get("input_tokens"),
-            output_tokens=usage_payload.get("output_tokens"),
-            cache_read_tokens=usage_payload.get("cache_read_input_tokens"),
-            cache_write_tokens=usage_payload.get("cache_creation_input_tokens"),
-            reasoning_tokens=_reasoning_tokens(usage_payload),
-        )
+        usage = _usage_from_anthropic(data.get("usage"))
         has_tool = any(isinstance(part, ToolCallPart) for part in parts)
         # D8 (2026-09-06): Response.id carries the message id; no
         # message-level continuation state is minted for it.
@@ -1086,15 +1102,7 @@ class AnthropicLM(BaseProviderLM):
             # message_stop is just the terminator and carries neither.
             delta = payload.get("delta", {}) if isinstance(payload.get("delta"), dict) else {}
             usage_payload = payload.get("usage", {}) if isinstance(payload.get("usage"), dict) else {}
-            usage = None
-            if usage_payload:
-                usage = Usage(
-                    input_tokens=usage_payload.get("input_tokens"),
-                    output_tokens=usage_payload.get("output_tokens"),
-                    cache_read_tokens=usage_payload.get("cache_read_input_tokens"),
-                    cache_write_tokens=usage_payload.get("cache_creation_input_tokens"),
-                    reasoning_tokens=_reasoning_tokens(usage_payload),
-                )
+            usage = _usage_from_anthropic(usage_payload) if usage_payload else None
             stop_reason = delta.get("stop_reason")
             if stop_reason is not None or usage is not None:
                 # MAP-3 (D9, 2026-09-06): this frame supplied usage (and the

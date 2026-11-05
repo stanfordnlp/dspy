@@ -394,7 +394,7 @@ def test_compact_history_cuts_long_tool_results_and_leaves_the_input_alone():
     assert result.name == "search"
     assert result.is_error is False
 
-    # The input is untouched: ReActV2 appends to its History in place and the trace shares that object.
+    # The input is untouched: ReAct appends to its History in place and the trace shares that object.
     assert history.messages[0]["tool_calls"].tool_call_results.tool_call_results[0].value == long_result
     assert compacted is not history
     assert compacted.messages is not history.messages
@@ -531,7 +531,7 @@ def react_program_and_lm():
         ]
         * 20
     )
-    return dspy.ReActV2("question -> answer", tools=[lookup]), task_lm
+    return dspy.ReAct("question -> answer", tools=[lookup]), task_lm
 
 
 def react_metric(gold, pred, trace=None, pred_name=None, pred_trace=None):

@@ -1,7 +1,8 @@
 # dspy.Embedder
 
 !!! note "Requires numpy"
-    `dspy.Embedder` requires numpy. Install it with `pip install dspy[numpy]`.
+    `dspy.Embedder` requires numpy. Install it with `pip install dspy[numpy]`. Hosted models also need the OpenAI SDK:
+    `pip install dspy[numpy,openai]`.
 
 ## Hosted endpoints and custom embedding functions
 

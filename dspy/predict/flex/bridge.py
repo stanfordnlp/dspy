@@ -99,8 +99,8 @@ class BridgeRuntime:
 
     User ``tools`` are registered with the interpreter, callable by name from the sandbox, and
     resolved by name when handed to a bridged sub-predictor; functions defined inside the
-    generated module stay in the sandbox. A code-executing sub-predictor (RLM, CodeAct,
-    ProgramOfThought) receives the same interpreter factory, so its inner code runs on the
+    generated module stay in the sandbox. A code-executing sub-predictor (RLM)
+    receives the same interpreter factory, so its inner code runs on the
     backend chosen for the Flex.
     """
 

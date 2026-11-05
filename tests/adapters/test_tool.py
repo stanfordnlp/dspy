@@ -826,13 +826,13 @@ def test_tool_calls_none_and_empty_dict_mean_no_calls():
 
 
 def test_tool_calls_none_reaches_empty_tool_calls_semantics():
-    """End-to-end: ReActV2 with a JSON-mode model writing `"tool_calls": null`
+    """End-to-end: ReAct with a JSON-mode model writing `"tool_calls": null`
     must take the usual empty_tool_calls path (like `[]`), not a parse error."""
     adapter = dspy.JSONAdapter()
     lm = dspy.utils.DummyLM([{"next_thought": "Nothing to call.", "tool_calls": None}] * 2, adapter=adapter)
     with dspy.context(lm=lm, adapter=adapter):
         try:
-            dspy.ReActV2("question -> answer", tools=[])(question="hi")
+            dspy.ReAct("question -> answer", tools=[])(question="hi")
             raised = None
         except Exception as e:
             raised = e
