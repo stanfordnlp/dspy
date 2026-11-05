@@ -28,6 +28,7 @@ import dataclasses
 import datetime
 import decimal
 import enum
+import functools
 import importlib
 import inspect
 import json
@@ -49,6 +50,7 @@ from dspy.adapters.utils import parse_value
 from dspy.clients.base_lm import BaseLM
 from dspy.lm15 import BuiltinTool, CacheConfig, FunctionTool, Request
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.primitives.sandbox_serializable import SandboxSerializable
 from dspy.utils import exceptions
 
 # The host tool every LM call goes through, and the key of an LM error it reports.
@@ -64,6 +66,8 @@ CALL_TOOL = "__dspy_tool_call__"
 
 # The key that marks a JSON object as a tagged value rather than a dict.
 TAG = "__dspy__"
+# The names a SandboxSerializable's assignment reads its payload from and writes its value to (``Wire.encode_codec``).
+_DATA, _VALUE = "__dspy_codec_data", "__dspy_codec_value"
 _COLLECTIONS = {"tuple": tuple, "set": set, "frozenset": frozenset}
 
 
@@ -97,6 +101,8 @@ class Wire:
             return {TAG: "dict", "items": [[self.encode(key), self.encode(item)] for key, item in value.items()]}
         if isinstance(value, Tool):
             return self.encode_tool(value)
+        if isinstance(value, SandboxSerializable):  # its own codec, before any other form its class has
+            return self.encode_codec(value)
         if (fields := _fields_of(value)) is not None:
             return self.encode_object(value, fields)
         if isinstance(value, (tuple, set, frozenset)):
@@ -155,6 +161,8 @@ class Wire:
             return self.decode_tool(data)
         if tag == "ref":
             return self.decode_ref(data)
+        if tag == "codec":
+            return self.decode_codec(data)
         raise ValueError(f"Unknown value tag {tag!r} on the wire.")
 
     # How each side names the classes it sends and finds those it receives.
@@ -203,6 +211,34 @@ class Wire:
 
     def decode_ref(self, node: dict[str, Any]) -> Any:
         raise ValueError("Only the host reads references to its objects.")
+
+    def encode_codec(self, value: SandboxSerializable) -> dict[str, Any]:
+        """A ``SandboxSerializable`` as its own hooks write it: its payload (text if it is UTF-8, else base64), the
+        setup and the assignment that rebuild it in the sandbox (``decode_codec``)."""
+        payload = value.to_sandbox()
+        if isinstance(payload, bytes):
+            try:
+                data = {"text": payload.decode("utf-8")}
+            except UnicodeDecodeError:
+                data = {"base64": base64.b64encode(payload).decode("ascii")}
+        else:
+            data = {"text": str(payload)}
+        return {TAG: "codec", "setup": value.sandbox_setup(), "assign": value.sandbox_assignment(_VALUE, _DATA), **data}
+
+    def decode_codec(self, node: dict[str, Any]) -> Any:
+        raise ValueError("Only the sandbox rebuilds a SandboxSerializable value.")
+
+
+def _rebuild(node: dict[str, Any], namespace: dict[str, Any]) -> Any:
+    """Run a ``SandboxSerializable``'s setup and assignment (``Wire.encode_codec``) in ``namespace``; its value."""
+    if node.get("setup"):
+        exec(node["setup"], namespace)
+    namespace[_DATA] = node["text"] if "text" in node else base64.b64decode(node["base64"])
+    try:
+        exec(node["assign"], namespace)
+        return namespace.pop(_VALUE)
+    finally:
+        namespace.pop(_DATA, None)
 
 
 def _fields_of(value: Any) -> dict[str, Any] | None:
@@ -320,10 +356,15 @@ def _host_type(name: str, schema: dict[str, Any]) -> type:
 
 class GuestValues(Wire):
     """The sandbox's side of the wire. The reference each object from the host comes with is kept here, for when the
-    object goes back (see ``Wire``)."""
+    object goes back (see ``Wire``). A ``SandboxSerializable`` value is rebuilt in ``namespace``, where its setup's
+    names stay in scope for the code that uses it."""
 
-    def __init__(self) -> None:
+    def __init__(self, namespace: dict[str, Any] | None = None) -> None:
         self._refs: dict[int, tuple[Any, int]] = {}  # objects from the host, by id: the object and its reference
+        self._namespace = namespace if namespace is not None else {}
+
+    def decode_codec(self, node: dict[str, Any]) -> Any:
+        return _rebuild(node, self._namespace)
 
     def decode_object(self, node: dict[str, Any]) -> Any:
         value = super().decode_object(node)
@@ -343,9 +384,18 @@ class GuestValues(Wire):
 
 class InMemory(Wire):
     """The wire for code in the host's own memory, like an in-process interpreter's: nothing crosses, so values stay
-    as they are."""
+    as they are, except that a ``SandboxSerializable`` from the host is rebuilt in ``namespace``, as in a sandbox."""
+
+    def __init__(self, namespace: dict[str, Any] | None = None) -> None:
+        self._namespace = namespace if namespace is not None else {}
 
     def encode(self, value: Any) -> Any:
+        if isinstance(value, SandboxSerializable):
+            return _rebuild(self.encode_codec(value), self._namespace)
+        if isinstance(value, list):
+            return [self.encode(item) for item in value]
+        if isinstance(value, dict):
+            return {key: self.encode(item) for key, item in value.items()}
         return value
 
     def decode(self, data: Any) -> Any:
@@ -607,7 +657,7 @@ class HostTrace(list):
 def install(namespace: dict[str, Any], spec: dict[str, Any]) -> None:
     """Wire this sandbox's dspy to the host; called once, right after sandboxed code first imports dspy."""
     global _wire
-    _wire = GuestValues()
+    _wire = GuestValues(namespace)
     settings: dict[str, Any] = {}
     if INTERPRETER_TOOL in namespace:
         HostInterpreter._host = namespace[INTERPRETER_TOOL]
@@ -635,11 +685,23 @@ def bind(namespace: dict[str, Any]) -> None:
     Interpreters may rebind their tools before each execution, so the Flex driver binds again before it runs.
     """
     spec = namespace["__dspy_guest_spec"]
+    wire = namespace["__dspy_values"]
     call = namespace.get(CALL_TOOL)
     if call is not None:
         for name, tool in spec["tools"].items():
-            if not isinstance(namespace.get(name), HostTool):
-                namespace[name] = HostTool(tool, call, namespace["__dspy_values"])
+            current = namespace.get(name)
+            # The interpreter's own binding, or none: code may have reused the name for a value of its own.
+            if current is None or (callable(current) and not isinstance(current, HostTool)):
+                namespace[name] = HostTool(tool, call, wire)
+    submit = namespace.get("SUBMIT")
+    if callable(submit) and not getattr(submit, "__dspy_wire__", False):
+        # The interpreter sends SUBMIT's values as JSON: dspy's objects go in their wire form, which the host reads back.
+        @functools.wraps(submit)
+        def wire_submit(*args: Any, **kwargs: Any) -> Any:
+            return submit(*map(wire.encode, args), **{key: wire.encode(value) for key, value in kwargs.items()})
+
+        wire_submit.__dspy_wire__ = True
+        namespace["SUBMIT"] = wire_submit
     for name, value in TYPING_NAMES.items():
         namespace.setdefault(name, value)
     namespace.update(namespace["__dspy_types"])
