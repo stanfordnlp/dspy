@@ -1184,6 +1184,37 @@ async def test_xml_stream_preserves_literal_text(response, expected, chunk_size,
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("chunk_size", [1, 7, 1000])
+async def test_xml_stream_multiline_field_closed_before_next_field_on_same_line(chunk_size):
+    class Result(dspy.Signature):
+        answer: str = dspy.OutputField()
+        count: int = dspy.OutputField()
+
+    response = "<answer>\nParis\nLyon\n</answer><count>2</count>"
+
+    async def stream(*args, **kwargs):
+        for start in range(0, len(response), chunk_size):
+            yield ModelResponseStream(choices=[StreamingChoices(delta=Delta(content=response[start:start + chunk_size]))])
+
+    program = dspy.streamify(
+        dspy.Predict(Result),
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name=name) for name in ("answer", "count")],
+    )
+    with patch_streaming(side_effect=stream):
+        with dspy.context(
+            lm=dspy.LM("openai/gpt-4o-mini", cache=False),
+            adapter=dspy.XMLAdapter(use_json_adapter_fallback=False),
+        ):
+            values = [value async for value in program()]
+    assert values[-1].answer == "Paris\nLyon"
+    assert values[-1].count == 2
+    for name, expected in [("answer", "Paris\nLyon"), ("count", "2")]:
+        chunks = [v for v in values if isinstance(v, StreamResponse) and v.signature_field_name == name]
+        assert "".join(c.chunk for c in chunks) == expected
+        assert sum(c.is_last_chunk for c in chunks) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("chunk_size", [1, 7, 1000])
 @pytest.mark.parametrize("finish_reason", [None, "stop"])
 async def test_xml_stream_recovers_html_without_consuming_following_field(chunk_size, finish_reason):
     class Page(dspy.Signature):

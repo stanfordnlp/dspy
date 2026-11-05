@@ -542,8 +542,9 @@ class _XMLScalarParser:
         if self.multiline:
             # A tag at a chunk boundary may still be followed by literal text on the same line.
             ending = r"(?:\n|$)" if final else r"\n"
-            # Accept an end-of-line closing tag attached to text (e.g. a Markdown code fence).
-            pattern = rf"</{self.name}[ \t]*>[ \t]*\r?{ending}"
+            # Accept an end-of-line closing tag attached to text (e.g. a Markdown code fence), or one
+            # followed by a tag on the same line; the boundary check below decides if that tag is a sibling field.
+            pattern = rf"</{self.name}[ \t]*>(?:[ \t]*\r?{ending}|(?=[ \t]*<))"
         else:
             pattern = rf"</{self.name}\s*>"
         if self.enclosing:

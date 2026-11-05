@@ -133,6 +133,26 @@ def test_xml_adapter_preserves_declared_thinking_field(name):
     assert result == {name: "Literal thought", "answer": "42"}
 
 
+@pytest.mark.parametrize(
+    "completion",
+    [
+        "<answer>\nParis\n</answer><count>2</count>",
+        "<answer>\nParis\n</answer> <count>\n2\n</count>",
+        "<answer>\nParis</answer><count>2</count>",
+        "<answer>\r\nParis\r\n</answer>\t<count>2</count>",
+    ],
+)
+def test_xml_adapter_multiline_field_closed_before_next_field_on_same_line(completion):
+    signature = dspy.Signature("question -> answer: str, count: int")
+    assert XMLAdapter().parse(signature, completion) == {"answer": "Paris", "count": 2}
+
+
+def test_xml_adapter_multiline_close_followed_by_non_field_tag_stays_literal():
+    signature = dspy.Signature("question -> answer: str, count: int")
+    completion = "<answer>\nx = '</answer><b>'\n</answer>\n<count>2</count>"
+    assert XMLAdapter().parse(signature, completion) == {"answer": "x = '</answer><b>'", "count": 2}
+
+
 @pytest.mark.parametrize("prefix", ["<think>unfinished", "<thinking>unfinished", "<unknown>extra</unknown>"])
 def test_xml_adapter_does_not_ignore_incomplete_reasoning_or_unknown_fields(prefix):
     with pytest.raises(dspy.utils.exceptions.AdapterParseError):
