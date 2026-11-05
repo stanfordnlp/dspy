@@ -474,8 +474,10 @@ class SandboxSession:
         lm: Any = None,
         reserve: Callable[[int], None] | None = None,
         interpreter_factory: Callable[[], Any] | None = None,
+        prompts: tuple[str, ...] = (),
     ) -> None:
         self._tools = tools
+        self._prompts = prompts  # host tools that take prompts, see ``sandbox_guest.bind``
         self._custom_types = custom_types or {}
         self._inputs = inputs or {}
         self._lm = lm
@@ -616,6 +618,7 @@ class SandboxSession:
             "adapter": adapter,
             "tools": {name: _tool_spec(name, tool) for name, tool in self._tools.items()},
             "types": types_spec({**adapter_types, **self._custom_types}, self._dspy_type_returns()),
+            "prompts": list(self._prompts),
             "inputs": self._inputs,
             "execution_instructions": self._execution_instructions(),
             "trace": dspy.settings.trace is not None and dspy.settings.max_trace_size > 0,

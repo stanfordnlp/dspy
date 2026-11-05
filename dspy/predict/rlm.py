@@ -27,10 +27,14 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator
 import pydantic
 
 import dspy
-from dspy.adapters.types.base_type import annotation_holds_dspy_type, holds_dspy_type
+from dspy._vendor.lm15.types import Part
+from dspy.adapters.base import Prompt
+from dspy.adapters.types.base_type import annotation_holds_dspy_type, holds_dspy_type, parts_from_text
 from dspy.adapters.types.decision import Choice, Noul, Score
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import translate_field_type
+from dspy.clients.requests import build_request
+from dspy.lm15 import Message
 from dspy.primitives.code_interpreter import (
     SIMPLE_TYPES,
     CodeExecutionError,
@@ -43,6 +47,7 @@ from dspy.primitives.code_interpreter import (
 from dspy.primitives.facade import (
     SandboxLM,
     SandboxSession,
+    _refuse_host_files,
     from_wire,
     is_reserved_sandbox_name,
     tool_entrypoint,
@@ -61,7 +66,7 @@ from dspy.primitives.repl_types import (
     restore_repl_events,
 )
 from dspy.primitives.sandbox_bundle import SandboxBundleError
-from dspy.primitives.sandbox_guest import INTERPRETER_TOOL, LM_TOOL, encode_value
+from dspy.primitives.sandbox_guest import INTERPRETER_TOOL, LM_TOOL, encode_value, prompt_text
 from dspy.primitives.sandbox_serializable import SandboxSerializable, build_repl_variable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
@@ -81,7 +86,7 @@ You have access to a Python REPL environment. Write Python code and it will be e
 {interpreter_rules}
 Available:
 - Variables: {inputs} (your input data)
-- `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis
+- `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis. `prompt` is a string, or a list of strings and DSPy values such as images to show them to the sub-LLM
 - `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries)
 - `print()` - ALWAYS print to see results
 - `SUBMIT({final_output_names})` - submit final output when done
@@ -209,6 +214,21 @@ class _FinalExecution:
 @dataclass
 class _FinalExecutionWithError:
     repl_entry: REPLEntry
+
+
+def _llm_query_content(prompt: Any) -> str | list[Part]:
+    """An ``llm_query`` prompt as text, or a list of text and DSPy values as lm15 content parts."""
+    if isinstance(prompt, str):
+        if not prompt:
+            raise ValueError("prompt cannot be empty")
+        return prompt
+    if not isinstance(prompt, list) or not prompt:
+        raise ValueError("prompt must be a non-empty string or a non-empty list of strings and DSPy values")
+    # Values render as adapters render input fields; dspy types such as dspy.Image become content parts.
+    parts = [part for item in prompt for part in parts_from_text(prompt_text(item))]
+    # Text may hold custom-type markers, which must not have the host read its files into the request.
+    _refuse_host_files(Prompt(messages=(Message.user(tuple(parts)),)))
+    return parts
 
 
 class _TypeValues(SandboxSerializable):
@@ -450,14 +470,25 @@ class RLM(Module):
         budget = budget if budget is not None else _LLMCallBudget(self.max_llm_calls)
         lm = self.sub_lm
 
-        def _query_lm(prompt: str) -> str:
+        def _query_lm(prompt: str | list[Part]) -> str:
             target_lm = lm if lm is not None else dspy.settings.lm
             # In an in-process REPL that is the metered stand-in for sub-agents; llm_query already reserved this call.
             if isinstance(target_lm, SandboxLM) and target_lm._reserve == budget.reserve:
                 target_lm = target_lm._lm
             if target_lm is None:
-                raise dspy.LMNotConfiguredError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
-            response = target_lm(prompt)
+                raise dspy.LMNotConfiguredError(
+                    "No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM."
+                )
+            if isinstance(prompt, list):
+                if getattr(target_lm, "model", None) is None:
+                    raise TypeError(
+                        "llm_query with a list prompt needs a DSPy LM (such as dspy.LM) as sub_lm; "
+                        "a plain callable sub_lm takes string prompts only."
+                    )
+                # build_request applies the LM's generation defaults, as a string prompt gets them.
+                response = target_lm(build_request(target_lm, Prompt(messages=(Message.user(tuple(prompt)),))))
+            else:
+                response = target_lm(prompt)
             if isinstance(response, dspy.lm15.Response):
                 text = response.text
             elif isinstance(response, list) and response:
@@ -473,17 +504,17 @@ class RLM(Module):
                 raise TypeError(f"Sub-LM response must contain text, got {type(text).__name__}.")
             return text
 
-        def llm_query(prompt: str) -> str:
-            """Query the LLM with a prompt string."""
-            if not prompt:
-                raise ValueError("prompt cannot be empty")
+        def llm_query(prompt: str | list) -> str:
+            """Query the LLM with a prompt string, or a list of strings and DSPy values such as images."""
+            content = _llm_query_content(prompt)
             budget.reserve(1)
-            return _query_lm(prompt)
+            return _query_lm(content)
 
-        def llm_query_batched(prompts: list[str]) -> list[str]:
+        def llm_query_batched(prompts: list[str | list]) -> list[str]:
             """Query prompts concurrently, isolating LM failures while propagating contract errors."""
             if not prompts:
                 return []
+            prompts = [prompt if isinstance(prompt, str) else _llm_query_content(prompt) for prompt in prompts]
             budget.reserve(len(prompts))
 
             results: dict[int, str] = {}
@@ -763,6 +794,7 @@ class RLM(Module):
             lm=self.sub_lm,
             reserve=budget.reserve,
             interpreter_factory=interpreter_factory,
+            prompts=("llm_query", "llm_query_batched"),
         )
         typed = self._crosses_dspy_types(input_args)
         try:
