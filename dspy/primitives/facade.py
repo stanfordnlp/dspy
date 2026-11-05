@@ -45,6 +45,7 @@ from typing import Any, Callable
 
 import pydantic
 import pydantic_core
+import typing_extensions
 
 import dspy
 from dspy._vendor.lm15 import serde
@@ -810,7 +811,7 @@ class _Shapes:
             defaults = getattr(cls, "_field_defaults", {})
             fields = {name: self._field(hints.get(name, Any), None, defaults.get(name, _ABSENT)) for name in cls._fields}
             return {"kind": "namedtuple", "fields": fields}
-        if typing.is_typeddict(cls):
+        if typing_extensions.is_typeddict(cls):  # typing's misses those of typing_extensions, which pydantic needs
             return {"kind": "typeddict", "required": sorted(cls.__required_keys__),
                     "fields": {name: {"type": self.ref(hint)} for name, hint in hints.items()}}
         return {"kind": "opaque"}  # a class pydantic can't validate: values of it cross as what they encode to
