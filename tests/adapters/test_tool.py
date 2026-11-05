@@ -2,7 +2,7 @@ import asyncio
 from typing import Any
 
 import pytest
-from pydantic import BaseModel, TypeAdapter
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, Json, RootModel, TypeAdapter, field_serializer
 
 import dspy
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls, convert_input_schema_to_tool_args
@@ -146,6 +146,47 @@ def test_tool_from_function():
     assert tool.args["y"]["default"] == "hello"
 
 
+def test_tool_accepts_custom_type_instances_for_custom_type_args():
+    def caption(image: dspy.Image, prefix: str) -> str:
+        return f"{prefix}: {image.url}"
+
+    image = dspy.Image("https://example.com/cat.png")
+
+    assert Tool(caption)(image=image, prefix="cat") == "cat: https://example.com/cat.png"
+
+    def count(images: list[dspy.Image]) -> int:
+        return len(images)
+
+    assert Tool(count)(images=[image, image]) == 2
+    with pytest.raises(ValueError):
+        Tool(count)(images=[image, 3])
+
+    from dspy.adapters.types.decision import Noul
+
+    def judge(verdict: Noul) -> bool:
+        return verdict.value
+
+    assert Tool(judge)(verdict=Noul(value=True, confidence=0.7)) is True  # its hidden probability field is not checked
+
+    class Labeled(dspy.Type):
+        label: str = Field(validation_alias="wire_label")
+        tag: str = Field(validation_alias=AliasChoices("wire_tag", "tag_name"))
+
+        def format(self):
+            return self.label
+
+    def read(item: Labeled) -> str:
+        return f"{item.label}/{item.tag}"
+
+    # The schema requires the validation aliases, so the fields are checked under those names.
+    assert Tool(read)(item=Labeled(wire_label="a", wire_tag="b")) == "a/b"
+
+    https_only = {"type": "object", "properties": {"url": {"type": "string", "pattern": "^https://"}}}
+    restricted = Tool(caption, args={"image": https_only, "prefix": {"type": "string"}})
+    with pytest.raises(ValueError, match="does not match"):
+        restricted(image=dspy.Image("http://example.com/cat.png"), prefix="cat")
+
+
 def test_tool_defaults_are_json_serializable():
     import datetime
     import enum
@@ -180,6 +221,24 @@ def test_tool_defaults_without_json_form_are_kept():
 
     tool = Tool(scale)
     assert tool.args["data"]["default"] == b"\xff"
+
+
+def test_tool_checks_custom_type_fields_as_json_and_leaves_other_values_alone():
+    import datetime
+    from decimal import Decimal
+
+    class Visit(dspy.Type):
+        day: datetime.date
+        tags: set[str]
+
+    def describe(visit: Visit, amount: float, note) -> str:
+        return f"{visit.day.isoformat()} {sorted(visit.tags)} {amount} {type(note).__name__}"
+
+    class Note:
+        pass
+
+    visit = Visit(day=datetime.date(2026, 11, 4), tags={"x"})
+    assert Tool(describe)(visit=visit, amount=Decimal("1.5"), note=Note()) == "2026-11-04 ['x'] 1.5 Note"
 
 
 def test_as_function_tool_excludes_defaulted_args_from_required():
@@ -256,6 +315,43 @@ def test_tool_with_pydantic_callable():
     model = DummyModel(field1="test", field2=123)
     result = tool(model=model)
     assert result == "test 123"
+
+
+def test_tool_checks_plain_model_args_as_the_json_their_schema_describes():
+    import datetime
+
+    class Row(BaseModel):
+        model_config = ConfigDict(ser_json_bytes="hex")
+        label: str = Field(alias="wire_label")
+        note: str = Field(serialization_alias="wire_note")
+        box: tuple[int, int]
+        day: datetime.date
+        meta: Json[dict[str, int]]
+        qty: int
+        raw: bytes
+
+        @field_serializer("qty", when_used="json")
+        def _qty_label(self, qty: int) -> str:
+            return f"{qty} units"
+
+    def describe(row: Row, tags: set[str]) -> str:
+        return f"{row.label} {row.note} {row.box} {row.day.isoformat()} {sorted(tags)} {row.meta} {row.qty}"
+
+    row = Row(wire_label="a", note="n", box=(1, 2), day=datetime.date(2026, 11, 4), meta='{"k": 1}', qty=3, raw=b"\xff")
+    assert Tool(describe)(row=row, tags={"x"}) == "a n (1, 2) 2026-11-04 ['x'] {'k': 1} 3"
+
+    class Counts(RootModel[list[int]]):
+        pass
+
+    class Tagged(BaseModel):
+        model_config = ConfigDict(extra="allow")
+
+    def total(counts: Counts, tagged: Tagged) -> str:
+        return f"{sum(counts.root)} {tagged.source}"
+
+    args = {"counts": {"type": "array"}, "tagged": {"type": "object", "required": ["source"]}}
+    tool = Tool(total, args=args, arg_types={"counts": Counts, "tagged": Tagged})
+    assert tool(counts=Counts([1, 2]), tagged=Tagged(source="web")) == "3 web"
 
 
 def test_invalid_function_call():
