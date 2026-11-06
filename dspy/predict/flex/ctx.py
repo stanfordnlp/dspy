@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import builtins
 import math
 import types
 import typing
@@ -108,9 +107,6 @@ class FlexContext:
             except ValueError:
                 lines.append(f"    {fname} = {field}")
                 continue
-            # Quote annotations naming non-builtins, so the sandbox needn't import or define them.
-            if not {n.id for n in ast.walk(ast.parse(ann, mode="eval")) if isinstance(n, ast.Name)} <= vars(builtins).keys():
-                ann = repr(ann)
             lines.append(f"    {fname}: {ann} = {field}")
         return "\n".join(lines)
 
@@ -133,10 +129,16 @@ class FlexContext:
             parts.append("Available tools (in scope by name):\n" + "\n".join(tool_lines))
         if sandboxed:
             parts.append(
-                "This module runs in a sandbox: only the tools listed above may be passed to "
-                "dspy.ReAct/dspy.RLM (their functions live on the host). A function you define inside "
-                "the module can be called directly in forward, but cannot be handed to those predictors."
+                "This module runs in a sandbox: the tools listed above run on the host, and functions you "
+                "define inside the module run in the sandbox. Either kind can be called directly in forward "
+                "or passed to dspy.ReAct/dspy.RLM."
             )
+            if custom := [name for name, t in self.custom_types().items() if _is_user_type(t)]:
+                parts.append(
+                    f"In the sandbox, values of {', '.join(sorted(custom))} are plain data, the JSON the type writes, "
+                    "like a dict of a model's fields: read them that way, and where the signature names the type, return "
+                    "such data, which the host reads as the type. The types' methods and properties stay on the host."
+                )
         return "\n\n".join(parts) if parts else "(no extra context)"
 
 
@@ -147,6 +149,13 @@ def _type_name(t: Any) -> str:
     if name:
         return name
     return str(t).replace("typing.", "")
+
+
+def _is_user_type(t: type) -> bool:
+    """A type of the user's, whose values are plain data in the sandbox (see ``facade.HostValues``)."""
+    from dspy.primitives.facade import _import_path
+
+    return _import_path(t) is None
 
 
 def _collect_custom_types(annotation: Any, out: dict[str, type]) -> None:

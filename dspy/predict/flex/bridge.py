@@ -5,19 +5,19 @@ every ``forward``:
 
 1. creates a fresh interpreter from the Flex's ``interpreter_factory``, or from
    ``dspy.settings.interpreter_factory`` when Flex uses its default (``BridgeRuntime.forward``);
-2. installs the sandbox dspy facade (``dspy.primitives.facade``) over the Flex's tools, interpreter
-   factory, predictor-call budget, and custom types;
+2. imports the real dspy there, wired to the host by a ``SandboxSession`` (``dspy.primitives.facade``) over the
+   Flex's tools, custom types and LM-call budget;
 3. executes ``module_src`` and drives its ``forward`` with the call's inputs.
 
-User tools passed to ``dspy.Flex(tools=...)`` are registered by name so sandbox code can call them
-directly; the callables themselves stay on the host. The final ``dspy.Prediction`` is parsed against
-the Flex signature's declared output types on the way out (``BridgeRuntime._to_prediction``).
+User tools passed to ``dspy.Flex(tools=...)`` are bound by name so sandbox code can call them
+directly; the callables themselves stay on the host. The inputs are read as the Flex signature's
+declared types on the way in, and the final ``dspy.Prediction`` on the way out
+(``BridgeRuntime._to_prediction``), on the host, which owns the types.
 """
 
 from __future__ import annotations
 
 import ast
-import functools
 import json
 import logging
 from typing import Any, Callable
@@ -25,19 +25,14 @@ from typing import Any, Callable
 from pydantic import TypeAdapter
 
 import dspy
-from dspy.adapters.types.base_type import Type as _CustomType
-from dspy.adapters.utils import annotation_allows_none, parse_value
+from dspy.adapters.utils import annotation_allows_none
 from dspy.primitives.code_interpreter import CodeInterpreterError, _create_interpreter
-from dspy.primitives.facade import FacadeInvocation, restore_custom_types
+from dspy.primitives.facade import SandboxSession, _typed, from_wire
 
 logger = logging.getLogger(__name__)
 
-# Variable/identifier names used in the per-forward driver code (namespaced to avoid clashing with
-# whatever the optimizer-authored module uses).
+# The per-forward inputs in the sandbox (namespaced to avoid clashing with whatever the module uses).
 _INPUTS_VAR = "__dspy_flex_inputs"
-_INSTANCE_VAR = "__dspy_flex_instance"
-_OUT_VAR = "__dspy_flex_out"
-_JSON_VAR = "__dspy_flex_json"
 
 
 def parse_module_class_name(module_src: str) -> str:
@@ -53,55 +48,33 @@ def parse_module_class_name(module_src: str) -> str:
     return chosen[0].name
 
 
-def _tool_entrypoint(tool: Any) -> Callable[..., Any]:
-    """A callable for the interpreter's tool registry."""
-    func = getattr(tool, "func", None)
-    if func is None:
-        return tool
+class _Budget:
+    """The LM calls one forward may make, counted by the host as the sandbox requests them."""
 
-    @functools.wraps(func)
-    def entrypoint(**kwargs: Any) -> Any:
-        return tool(**kwargs)
+    def __init__(self, limit: int | None) -> None:
+        self._limit = limit
+        self._count = 0
 
-    return entrypoint
-
-
-def _restoring_entrypoint(fn: Callable[..., Any], originals: dict[str, Any]) -> Callable[..., Any]:
-    """Wrap a tool entrypoint so serialized custom-type inputs arrive as the original objects."""
-
-    @functools.wraps(fn)
-    def entrypoint(**kwargs: Any) -> Any:
-        return fn(**{k: restore_custom_types(v, originals) for k, v in kwargs.items()})
-
-    return entrypoint
-
-
-def _collect_custom_type_originals(value: Any, out: dict[str, Any]) -> None:
-    """Record custom-type instances by their serialized string, recursing into containers."""
-    if isinstance(value, _CustomType):
-        out[value.serialize_model()] = value
-    elif isinstance(value, dict):
-        for v in value.values():
-            _collect_custom_type_originals(v, out)
-    elif isinstance(value, (list, tuple)):
-        for v in value:
-            _collect_custom_type_originals(v, out)
+    def reserve(self, n: int = 1) -> None:
+        self._count += n
+        if self._limit is not None and self._count > self._limit:
+            raise CodeInterpreterError(
+                f"Sandboxed forward exceeded its LM-call budget ({self._limit}). "
+                "Raise max_predictor_calls if this is expected."
+            )
 
 
 class BridgeRuntime:
     """Host side of the dspy.Flex bridge: runs the bound ``module_src`` for one ``Flex``.
 
-    Each ``forward`` creates a fresh interpreter from the factory, executes the shim and the
-    bound source, runs the module instance, and shuts the interpreter down. Predictors are built
-    host-side but held by that forward's ``FacadeInvocation`` — never set on the ``Flex`` — so nothing
-    outlives the call and parallel forwards stay isolated. ``_max_predictor_calls`` caps bridged
-    predictor calls per forward.
+    Each ``forward`` creates a fresh interpreter from the factory, imports dspy there, executes the bound
+    source, runs the module instance, and shuts the interpreter down, so nothing outlives the call and
+    parallel forwards stay isolated. Every LM call the sandbox makes runs on the host and counts against
+    ``_max_predictor_calls``.
 
-    User ``tools`` are registered with the interpreter, callable by name from the sandbox, and
-    resolved by name when handed to a bridged sub-predictor; functions defined inside the
-    generated module stay in the sandbox. A code-executing sub-predictor (RLM)
-    receives the same interpreter factory, so its inner code runs on the
-    backend chosen for the Flex.
+    User ``tools`` are callable by name from the sandbox, where they are ``dspy.Tool``s that predictors
+    built there can use. Each code-executing module built in the sandbox,
+    like an RLM, gets a fresh interpreter from the same factory, shut down with the forward.
     """
 
     def __init__(self, flex: Any, factory: Callable[[], Any], max_predictor_calls: int | None = 100) -> None:
@@ -116,57 +89,54 @@ class BridgeRuntime:
         self._module_src = module_src
         self._class_name = parse_module_class_name(module_src)
 
-    def invocation(self, originals: dict[str, Any] | None = None) -> FacadeInvocation:
-        """A fresh per-forward invocation over tools, factory, budget, and custom types."""
+    def session(self) -> SandboxSession:
+        """A fresh per-forward session over tools, custom types, and the LM-call budget."""
         ctx = self._flex._flex_ctx
-        return FacadeInvocation(
+        return SandboxSession(
             ctx.context_names(),
-            self._factory,
-            self._max_predictor_calls,
             custom_types=ctx.custom_types(),
-            originals=originals,
+            reserve=_Budget(self._max_predictor_calls).reserve,
+            interpreter_factory=self._factory,
         )
 
     def forward(self, inputs: dict[str, Any]) -> Any:
-        originals: dict[str, Any] = {}
-        for v in inputs.values():
-            _collect_custom_type_originals(v, originals)
-
-        invocation = self.invocation(originals)
+        fields = self._flex.signature.input_fields
+        inputs = {name: _typed(value, fields.get(name)) for name, value in inputs.items()}
+        session = self.session()
         interp = _create_interpreter(self._factory)
         try:
-            # User tools callable by name in the sandbox.
-            interp.tools.update(
-                {name: _restoring_entrypoint(fn, originals) for name, fn in self._tool_callables().items()}
-            )
-            invocation.install(interp)
+            session.install(interp, import_dspy=True)
             interp.execute(self._module_src)  # defines the class in the sandbox
             code = (
-                f"{_INSTANCE_VAR} = {self._class_name}()\n"
-                f"{_OUT_VAR} = {_INSTANCE_VAR}.forward(**{_INPUTS_VAR})\n"
-                f"import json as {_JSON_VAR}\n"
-                f"{_JSON_VAR}.dumps({_OUT_VAR}._fields if hasattr({_OUT_VAR}, '_fields') else {_OUT_VAR})"
+                "from dspy.primitives.sandbox_guest import run_forward as __dspy_run_forward\n"
+                f"__dspy_run_forward(globals(), {self._class_name!r}, {_INPUTS_VAR})"
             )
-            result = interp.execute(code, variables={_INPUTS_VAR: dict(inputs)})
+            with session.scope():
+                result = interp.execute(code, variables={_INPUTS_VAR: session.encode(inputs)})
         except CodeInterpreterError as e:
-            if invocation._lm_error is not None:
-                lm_error, tag = invocation._lm_error
+            if session.lm_error is not None:
+                lm_error, tag = session.lm_error
                 if tag in str(e):
                     raise lm_error from e
             raise
         finally:
+            session.close()
             try:
                 interp.shutdown()
             except Exception:
                 logger.warning("dspy.Flex: interpreter.shutdown() raised after forward", exc_info=True)
-        if not isinstance(result, str) or not result:
+        if isinstance(result, str) and result:
+            result = json.loads(result)
+        if not isinstance(result, dict) or "fields" not in result:  # an in-process forward's fields are as they are
             raise CodeInterpreterError(
                 "Sandboxed forward returned no serializable result; the generated forward must return "
                 f"a dspy.Prediction (got {result!r})"
             )
-        return self._to_prediction(json.loads(result))
+        return self._to_prediction(result["fields"], session.decode)
 
-    def _to_prediction(self, fields: dict[str, Any]) -> Any:
+    def _to_prediction(self, fields: dict[str, Any], read: Callable[[Any], Any] = lambda value: value) -> Any:
+        """The output ``fields`` as the signature's types, each first ``read`` off the wire. A field the types refuse,
+        there or here, raises a ``CodeInterpreterError`` naming it."""
         signature = self._flex.signature
         out = dict(fields)
         filled: set[str] = set()
@@ -187,23 +157,21 @@ class BridgeRuntime:
                 f"Sandboxed forward returned a dspy.Prediction missing required output field(s) "
                 f"{missing}; the signature declares {list(signature.output_fields)}."
             )
+        for name, value in out.items():
+            if name not in signature.output_fields:
+                out[name] = read(value)
         for name, field in signature.output_fields.items():
             if name in filled:
                 continue
             try:
+                out[name] = read(out[name])
                 if out[name] is None:
                     out[name] = TypeAdapter(field.annotation).validate_python(None)
                 else:
-                    out[name] = parse_value(out[name], field.annotation)
+                    out[name] = from_wire(out[name], field.annotation)
             except Exception as e:
                 raise CodeInterpreterError(
                     f"Sandboxed forward returned {out[name]!r} for output field {name!r}, which is "
                     f"not a valid {field.annotation}: {e}"
                 ) from e
         return dspy.Prediction(**out)
-
-    # -- host-side bridge callbacks --------------
-
-    def _tool_callables(self) -> dict[str, Callable[..., Any]]:
-        """User tools as ``name -> callable`` to register so sandbox code can call them."""
-        return {name: _tool_entrypoint(tool) for name, tool in self._flex._flex_ctx.context_names().items()}
