@@ -173,6 +173,22 @@ def test_example_copy_preserves_fields_when_example_has_no_visible_fields():
     assert Example(base=metadata_only).toDict() == {"dspy_uuid": "u1", "dspy_split": "train"}
 
 
+def test_example_subclass_initialization_from_parent_class_base():
+    # The base only has to be an Example, not an instance of the class being built,
+    # so a Prediction or another Example subclass can be built from a plain Example.
+    example = Example(question="q", answer="a").with_inputs("question")
+
+    prediction = dspy.Prediction(base=example, score=1.0)
+    assert prediction.toDict() == {"question": "q", "answer": "a", "score": 1.0}
+
+    class QAExample(Example):
+        pass
+
+    qa_example = QAExample(base=example)
+    assert qa_example.toDict() == {"question": "q", "answer": "a"}
+    assert qa_example.inputs().toDict() == {"question": "q"}
+
+
 def test_prediction_copy_does_not_require_input_keys():
     # Example subclasses (e.g. Prediction) don't keep _input_keys; copy() must not crash.
     import dspy
