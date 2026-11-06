@@ -54,7 +54,14 @@ class XMLAdapter(ChatAdapter):
 
         def format_field(name, field):
             if self._uses_nested_xml(field.annotation):
-                return self._xml_schema(name, field.annotation)
+                schema = self._xml_schema(name, field.annotation)
+                if self._schema_has_metadata(field.annotation):
+                    # The XML skeleton only carries property names, so keep the
+                    # JSON schema note for docstrings, field descriptions and
+                    # Literal values that the skeleton cannot express.
+                    note = translate_field_type(name, field, by_alias=False).removeprefix(f"{{{name}}}").strip()
+                    return f"{schema}\n\n{note}"
+                return schema
             annotations = (
                 get_args(field.annotation)
                 if get_origin(field.annotation) in (Union, types.UnionType)
@@ -334,6 +341,56 @@ class XMLAdapter(ChatAdapter):
             or is_typeddict(annotation)
             or (isinstance(annotation, type) and issubclass(annotation, pydantic.BaseModel))
         )
+
+    @staticmethod
+    def _schema_has_metadata(annotation: Any) -> bool:
+        """Whether the JSON schema carries information the XML skeleton drops."""
+
+        def walk(node: Any) -> bool:
+            if not isinstance(node, dict):
+                return False
+            if "description" in node or "enum" in node or "const" in node:
+                return True
+            # Name-keyed maps whose values are schemas.
+            for key in (
+                "$defs",
+                "definitions",
+                "properties",
+                "patternProperties",
+                "dependentSchemas",
+                "dependencies",
+            ):
+                children = node.get(key)
+                if isinstance(children, dict) and any(walk(child) for child in children.values()):
+                    return True
+            # Keywords that hold one schema, or a list of schemas in older drafts.
+            for key in (
+                "items",
+                "prefixItems",
+                "additionalItems",
+                "additionalProperties",
+                "propertyNames",
+                "unevaluatedItems",
+                "unevaluatedProperties",
+                "not",
+                "if",
+                "then",
+                "else",
+                "contains",
+            ):
+                child = node.get(key)
+                if isinstance(child, list):
+                    if any(walk(item) for item in child):
+                        return True
+                elif walk(child):
+                    return True
+            for key in ("anyOf", "oneOf", "allOf"):
+                children = node.get(key)
+                if isinstance(children, list) and any(walk(child) for child in children):
+                    return True
+            return False
+
+        return walk(TypeAdapter(annotation).json_schema(by_alias=False))
 
 
 class _XMLParser:
