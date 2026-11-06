@@ -357,6 +357,120 @@ async def test_request_cache_named_positional_only_argument():
     assert calls == [{"prompt": "first"}, {"prompt": "second"}]
 
 
+@pytest.mark.parametrize("parameter_kind", ["positional_or_keyword", "positional_only", "keyword_only"])
+def test_request_cache_named_default_argument(parameter_kind):
+    from dspy.clients.cache import request_cache
+
+    default_request = {"prompt": "first"}
+    calls = []
+
+    def compute(request):
+        calls.append(request.copy())
+        return request["prompt"]
+
+    if parameter_kind == "positional_only":
+
+        def complete(request=default_request, /):
+            return compute(request)
+    elif parameter_kind == "keyword_only":
+
+        def complete(*, request=default_request):
+            return compute(request)
+    else:
+
+        def complete(request=default_request):
+            return compute(request)
+
+    cached_complete = request_cache(cache_arg_name="request")(complete)
+    assert cached_complete() == "first"
+    assert cached_complete() == "first"
+    if parameter_kind != "keyword_only":
+        assert cached_complete({"prompt": "first"}) == "first"
+        assert cached_complete({"prompt": "second"}) == "second"
+        assert cached_complete({"prompt": "second"}) == "second"
+    if parameter_kind != "positional_only":
+        assert cached_complete(request={"prompt": "first"}) == "first"
+        assert cached_complete(request={"prompt": "second"}) == "second"
+        assert cached_complete(request={"prompt": "second"}) == "second"
+
+    assert default_request == {"prompt": "first"}
+    default_request["prompt"] = "second"
+    assert cached_complete() == "second"
+    default_request["prompt"] = "first"
+    assert cached_complete() == "first"
+    assert calls == [{"prompt": "first"}, {"prompt": "second"}]
+    assert default_request == {"prompt": "first"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("parameter_kind", ["positional_or_keyword", "positional_only", "keyword_only"])
+async def test_request_cache_named_default_argument_async(parameter_kind):
+    from dspy.clients.cache import request_cache
+
+    default_request = {"prompt": "first"}
+    calls = []
+
+    def compute(request):
+        calls.append(request.copy())
+        return request["prompt"]
+
+    if parameter_kind == "positional_only":
+
+        async def complete(request=default_request, /):
+            return compute(request)
+    elif parameter_kind == "keyword_only":
+
+        async def complete(*, request=default_request):
+            return compute(request)
+    else:
+
+        async def complete(request=default_request):
+            return compute(request)
+
+    cached_complete = request_cache(cache_arg_name="request")(complete)
+    assert await cached_complete() == "first"
+    assert await cached_complete() == "first"
+    if parameter_kind != "keyword_only":
+        assert await cached_complete({"prompt": "first"}) == "first"
+        assert await cached_complete({"prompt": "second"}) == "second"
+        assert await cached_complete({"prompt": "second"}) == "second"
+    if parameter_kind != "positional_only":
+        assert await cached_complete(request={"prompt": "first"}) == "first"
+        assert await cached_complete(request={"prompt": "second"}) == "second"
+        assert await cached_complete(request={"prompt": "second"}) == "second"
+
+    assert default_request == {"prompt": "first"}
+    default_request["prompt"] = "second"
+    assert await cached_complete() == "second"
+    default_request["prompt"] = "first"
+    assert await cached_complete() == "first"
+    assert calls == [{"prompt": "first"}, {"prompt": "second"}]
+    assert default_request == {"prompt": "first"}
+
+
+def test_request_cache_named_required_argument_is_not_defaulted():
+    from dspy.clients.cache import request_cache
+
+    @request_cache(cache_arg_name="request")
+    def complete(request):
+        pytest.fail("a missing required request must not invoke the function")
+
+    with pytest.raises(TypeError, match="request"):
+        complete()
+
+
+@pytest.mark.asyncio
+async def test_request_cache_named_required_argument_is_not_defaulted_async():
+    from dspy.clients.cache import request_cache
+
+    @request_cache(cache_arg_name="request")
+    async def complete(request):
+        pytest.fail("a missing required request must not invoke the function")
+
+    with pytest.raises(TypeError, match="request"):
+        await complete()
+
+
 def test_cache_consistency_with_lm_call_modifies_the_request(cache):
     """Test that the cache is consistent with the LM call that modifies the request."""
     from dspy.clients.cache import request_cache

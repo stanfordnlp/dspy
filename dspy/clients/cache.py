@@ -258,7 +258,9 @@ def request_cache(
                 if cache_arg_name in kwargs:
                     request = kwargs[cache_arg_name]
                 else:
-                    request = inspect.signature(fn).bind(*args, **kwargs).arguments[cache_arg_name]
+                    bound = inspect.signature(fn).bind(*args, **kwargs)
+                    bound.apply_defaults()
+                    request = bound.arguments[cache_arg_name]
                 modified_request = copy.deepcopy(request)
             else:
                 # When `cache_arg_name` is not provided, use the entire kwargs as the request for caching.
