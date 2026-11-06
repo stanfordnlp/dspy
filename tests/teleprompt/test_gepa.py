@@ -653,7 +653,7 @@ def test_alternating_half_component_selector():
             assert "classifier" not in selection["selected"], f"Odd iteration {selection['iteration']} should not include classifier"
 
 
-def test_track_stats_result_structure():
+def test_track_stats_result_structure(tmp_path):
     """
     Verify DspyGEPAResult fields have the correct types from GEPA 0.1.1:
     - val_subscores is list[dict[DataId, float]] (not list[list[float]])
@@ -720,6 +720,24 @@ def test_track_stats_result_structure():
     )
     for val_id, best_list in d["per_val_instance_best_candidates"].items():
         assert isinstance(best_list, list)
+
+    # The compiled program remains an ordinary Module: optimized instructions survive
+    # both persistence paths, while run diagnostics belong only to full-program saves.
+    evaluator = dspy.Evaluate(devset=trainset, metric=simple_metric, num_threads=1, display_progress=False)
+    assert evaluator(prog).score == 50.0
+    state_path = tmp_path / "optimized.json"
+    prog.save(state_path)
+    restored = SimpleModule("input -> output")
+    restored.load(state_path)
+    assert restored.predictor.signature.instructions == prog.predictor.signature.instructions
+    assert evaluator(restored).score == 50.0
+    assert not hasattr(restored, "detailed_results")
+
+    program_path = tmp_path / "optimized"
+    prog.save(program_path, save_program=True)
+    restored_program = dspy.load(program_path, allow_pickle=True)
+    assert evaluator(restored_program).score == 50.0
+    assert restored_program.detailed_results.val_aggregate_scores == dr.val_aggregate_scores
 
 
 def test_multi_objective_frontier_results():
