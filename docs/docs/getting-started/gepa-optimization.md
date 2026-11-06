@@ -78,7 +78,7 @@ When optimizing smaller models, it’s worthwhile to use a larger model as the `
 
 In addition to a `reflection_lm`, we set our metric and number of threads. For now we’re using two, but depending on your inference provider you may have to tweak this to avoid any rate limits.
 
-The `auto` argument sets our budget. `auto="light"` evaluates around six candidate prompts before stopping. `"medium"` and `"heavy"` options go further, and our GEPA deep dive covers additional levers we can set.
+The `auto` argument sets our budget. `auto="light"` reserves full-validation capacity for around six accepted candidate prompts. Rejected proposals are cheaper and may allow additional exploration. `"medium"` and `"heavy"` options go further, and our GEPA deep dive covers additional levers we can set.
 
 Finally, we compile our optimized program:
 
