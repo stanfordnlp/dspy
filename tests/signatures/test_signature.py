@@ -644,3 +644,26 @@ def test_predict_cloudpickle_roundtrip():
     loaded = pickle.loads(data)
 
     assert list(loaded.signature.fields.keys()) == ["question", "answer"]
+
+
+def test_insert_name_in_other_section_raises():
+    signature = Signature("question -> answer")
+
+    with pytest.raises(ValueError, match="distinct names"):
+        signature.append("answer", InputField())
+
+
+def test_insert_preserves_same_section_replacement():
+    signature = Signature("question -> answer")
+    replaced = signature.insert(-1, "question", InputField(desc="overwritten"))
+
+    assert list(replaced.input_fields.keys()) == ["question"]
+
+
+def test_chain_of_thought_with_reasoning_input_no_longer_silently_drops_field():
+    # Regression test for https://github.com/stanfordnlp/dspy/issues/10529:
+    # ChainOfThought prepends a "reasoning" output field; when the user's
+    # signature already had "reasoning" as an input, the dict merge in
+    # Signature.insert() silently dropped the input field.
+    with pytest.raises(ValueError, match="distinct names"):
+        dspy.ChainOfThought("reasoning, question -> answer")
