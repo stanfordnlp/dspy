@@ -6,6 +6,7 @@ Test organization:
 - Integration tests (@pytest.mark.deno): PythonInterpreter with Deno
 """
 
+import functools
 import io
 import json
 import logging
@@ -3165,6 +3166,28 @@ class TestRLMImages:
         # The LM's generation defaults apply to list prompts, as to string prompts.
         assert (lm.history[0]["request"].config.temperature, lm.history[0]["request"].config.max_tokens) == (0.7, 321)
 
+    @pytest.mark.deno
+    def test_a_sandbox_without_pillow_still_passes_images_through(self):
+        pytest.importorskip("PIL")  # to make the test image on the host
+        photo = _png(6, 4)
+        sub_lm = DummyLM([{"answer": "red"}])
+        factory = functools.partial(PythonInterpreter, sandbox_packages=[])
+        rlm = RLM("photo: dspy.Image -> answer, same: dspy.Image", sub_lm=sub_lm, max_iters=1, interpreter_factory=factory)
+        code = (
+            "try:\n"
+            "    photo.to_pil()\n"
+            "except ImportError as e:\n"
+            "    error = str(e)\n"
+            "SUBMIT(error + ' | ' + llm_query(['What color?', photo]), photo)"
+        )
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Look", "code": code}])
+
+        result = rlm(photo=photo)
+        assert result.final_reasoning == "Look", result.trajectory
+        assert "sandbox_packages" in result.answer and "red" in result.answer
+        assert result.same.url == photo.url
+        assert [part.type for part in sub_lm.history[0]["request"].messages[-1].parts] == ["text", "image"]
+
     @pytest.mark.parametrize("factory", _INTERPRETERS)
     def test_llm_query_takes_images_made_in_the_repl(self, factory):
         # No image crosses into this RLM: the code imports dspy and makes one itself.
@@ -3179,6 +3202,7 @@ class TestRLMImages:
 
     @pytest.mark.parametrize("factory", _INTERPRETERS)
     def test_llm_query_reads_json_that_looks_like_a_wire_value_as_json(self, factory):
+        pytest.importorskip("PIL")
         for signature, inputs in [("q -> answer", {"q": "x"}), ("photo: dspy.Image -> answer", {"photo": _png(2, 2)})]:
             sub_lm = DummyLM([{"answer": "ok"}])
             rlm = RLM(signature, sub_lm=sub_lm, max_iters=1, interpreter_factory=factory)
