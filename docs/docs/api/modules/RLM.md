@@ -284,7 +284,14 @@ class DataFrame(dspy.SandboxSerializable):
 
 Values of DSPy types such as `dspy.Image` keep their type across the REPL boundary: in inputs, tool arguments and results, `SUBMIT`, `llm_query` prompt lists, and sub-agents built with `dspy` in the REPL. The REPL runs dspy itself, so a `dspy.Image` is a `dspy.Image` there, with its methods. Your own `dspy.Type` subclasses and models arrive as plain data of their fields, with their methods left on the host, as in `dspy.Flex`. A tool's result keeps its type when the tool's return annotation names it (`-> dspy.Image`).
 
-`dspy.Image.to_pil()` needs Pillow in the interpreter. `dspy.LocalInterpreter` uses your environment's; `PythonInterpreter`'s sandbox includes Pyodide's build of Pillow when your environment has Pillow installed.
+`dspy.Image.to_pil()` needs Pillow in the interpreter. `dspy.LocalInterpreter` uses your environment's. `PythonInterpreter`'s sandbox includes Pyodide's build of Pillow, whether or not your environment has Pillow. Its `sandbox_packages` choose the packages Pyodide ships that the REPL can import, by default `("pillow",)`:
+
+```python
+# numpy as well as Pillow
+rlm = dspy.RLM(sig, interpreter_factory=functools.partial(dspy.PythonInterpreter, sandbox_packages=["pillow", "numpy"]))
+# no packages, for a sandbox that starts slightly faster; images still pass through, but to_pil() raises ImportError
+dspy.configure(interpreter_factory=functools.partial(dspy.PythonInterpreter, sandbox_packages=[]))
+```
 
 ```python
 def take_screenshot() -> dspy.Image:
