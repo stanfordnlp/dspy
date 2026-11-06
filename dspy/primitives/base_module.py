@@ -230,8 +230,9 @@ class BaseModule:
             state = self.dump_state()
             state["metadata"] = metadata
             try:
+                serialized_state = orjson.dumps(state, option=orjson.OPT_INDENT_2 | orjson.OPT_APPEND_NEWLINE)
                 with open(path, "wb") as f:
-                    f.write(orjson.dumps(state, option=orjson.OPT_INDENT_2 | orjson.OPT_APPEND_NEWLINE))
+                    f.write(serialized_state)
             except Exception as e:
                 raise RuntimeError(
                     f"Failed to save state to {path} with error: {e}. Your DSPy program may contain non "
