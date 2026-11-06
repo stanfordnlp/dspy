@@ -119,7 +119,10 @@ class Image(Type):
         ``dspy.Image(pil_image)`` goes the other way.
         """
         if not PIL_AVAILABLE:
-            raise ImportError("Pillow is required for Image.to_pil().")
+            raise ImportError(
+                "Pillow is required for Image.to_pil(): install it (`pip install pillow`). A PythonInterpreter "
+                "sandbox has it unless its sandbox_packages leave out 'pillow'."
+            )
         data = split_data_uri(self.url)
         if data is None:
             raise ValueError(f"to_pil() needs an embedded base64 image, not a URL: {self.url[:100]}")
