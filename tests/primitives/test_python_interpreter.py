@@ -1856,7 +1856,7 @@ def test_a_module_added_or_removed_after_the_first_bundle_makes_a_new_plan(tmp_p
     listed = []
 
     @functools.cache
-    def plan(deno_dir):  # lists the package's modules once, until its cache is cleared, as _plan does
+    def plan(deno_dir, packages):  # lists the package's modules once, until its cache is cleared, as _plan does
         listed.append(deno_dir)
         return {}, [], [(path, f"pkg/{path.name}") for path in sorted(package.glob("*.py"))]
 
@@ -1864,7 +1864,7 @@ def test_a_module_added_or_removed_after_the_first_bundle_makes_a_new_plan(tmp_p
         os.utime(package, ns=(step, step))
 
     def names():
-        return [name for _, name in sandbox_bundle._contents(tmp_path, None)[1]]
+        return [name for _, name in sandbox_bundle._contents(tmp_path, None, True)[1]]
 
     monkeypatch.setattr(sandbox_bundle, "_plan", plan)
     monkeypatch.setattr(sandbox_bundle, "_planned_at", {})
@@ -1885,7 +1885,7 @@ def test_an_edited_source_file_makes_a_new_dspy_bundle(tmp_path, monkeypatch):
     source = tmp_path / "module.py"
     source.write_text("value = 1\n")
     root = tmp_path / "cache"
-    monkeypatch.setattr(sandbox_bundle, "_plan", lambda deno_dir: ({}, [], [(source, "module.py")]))
+    monkeypatch.setattr(sandbox_bundle, "_plan", lambda deno_dir, packages: ({}, [], [(source, "module.py")]))
     monkeypatch.setattr(sandbox_bundle, "_build", lambda *args, **kwargs: args[3].write_text("built"))
 
     first = sandbox_bundle._prepare_bundle((), None, "", root)
@@ -1894,24 +1894,49 @@ def test_an_edited_source_file_makes_a_new_dspy_bundle(tmp_path, monkeypatch):
     assert sandbox_bundle._prepare_bundle((), None, "", root) != first
 
 
-def test_the_dspy_bundle_ships_pillow_only_when_the_host_has_it(monkeypatch):
-    # dspy.Image.to_pil needs Pillow in the sandbox; Pyodide's own build comes with the bundle if this environment has it.
+def test_sandbox_packages_choose_the_pyodide_packages_in_the_dspy_bundle(monkeypatch):
+    # Pyodide's own builds, by name, whatever this environment has installed: by default Pillow, for Image.to_pil.
     import importlib.util
+    import zipfile
 
     from dspy.primitives import sandbox_bundle
 
-    lock = {"pillow": {"depends": ["libwebp"]}, "libwebp": {"depends": []}}
+    lock = {name: {"depends": [], "file_name": f"{name}.whl"} for name in ("pillow", "libwebp", "numpy")}
+    lock["pillow"]["depends"] = ["libwebp"]
+    fetched = set()
+
+    def fetch_wheel(root, info, deno_dir):  # an empty wheel, without the network
+        fetched.add(info["file_name"].removesuffix(".whl"))
+        zipfile.ZipFile(root / info["file_name"], "w").close()
+        return info["file_name"]
+
     monkeypatch.setattr(sandbox_bundle, "_pyodide_lock", lambda deno_dir: lock)
     monkeypatch.setattr(sandbox_bundle, "_distributions", lambda: [])
+    monkeypatch.setattr(sandbox_bundle, "_fetch_wheel", fetch_wheel)
+    monkeypatch.setattr(sandbox_bundle, "_build", lambda *args, **kwargs: args[3].write_text("built"))
     find_spec = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name, *args: None if name == "PIL" else find_spec(name, *args))
+
+    def bundle(**kwargs):
+        fetched.clear()
+        interpreter = PythonInterpreter(sandbox_cache=False, **kwargs)
+        interpreter.provide_dspy()
+        return sorted(fetched), next(arg for arg in interpreter.deno_command if arg.startswith("--dspy-bundle="))
+
+    sandbox_bundle._plan.cache_clear()
     try:
-        for host_has_pillow in (True, False):
-            monkeypatch.setattr(
-                importlib.util,
-                "find_spec",
-                lambda name, *args, has=host_has_pillow: (object() if has else None) if name == "PIL" else find_spec(name, *args),
-            )
-            sandbox_bundle._plan.cache_clear()
-            assert sandbox_bundle._plan(None)[1] == (["libwebp", "pillow"] if host_has_pillow else [])
+        default = bundle()
+        assert default[0] == ["libwebp", "pillow"]  # though this environment has no Pillow
+        none = bundle(sandbox_packages=[])
+        assert none[0] == [] and none[1] != default[1]
+        more = bundle(sandbox_packages=["NumPy", "pillow"])
+        assert more[0] == ["libwebp", "numpy", "pillow"] and more[1] not in (default[1], none[1])
+        assert bundle(sandbox_packages=("pillow", "numpy")) == more  # one bundle, whatever the order or spelling
+        assert bundle() == default  # reused
+
+        with pytest.raises(ValueError, match="no package named 'nump'"):  # not a bundle RLM can do without
+            bundle(sandbox_packages=["nump"])
+        with pytest.raises(TypeError, match=r"like \['numpy'\]"):
+            PythonInterpreter(sandbox_packages="numpy")
     finally:
         sandbox_bundle._plan.cache_clear()
