@@ -304,6 +304,9 @@ class XMLAdapter(ChatAdapter):
                 return {}
             values = [element.text or "" for element in elements]
             return values[0] if len(values) == 1 else values
+        if not schema and all(child.tag == "item" for child in element):
+            # Untyped values have no schema to say "array", so read lists the way `_value_to_xml` writes them.
+            return [cls._elements_to_value([child], {}, definitions) for child in element]
         properties = schema.get("properties", {})
         child_schema = schema.get("additionalProperties", {})
         if not isinstance(child_schema, dict):
