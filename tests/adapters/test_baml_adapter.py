@@ -666,3 +666,441 @@ def test_baml_adapter_multiple_pydantic_input_fields():
     assert '"api1"' in user_message
     assert '"api2"' in user_message
     assert '"endpoints":' in user_message
+
+
+def test_baml_adapter_parse_delimiter_syntax():
+    """Test that BAMLAdapter correctly parses delimiter-wrapped outputs matching its prompt schema."""
+
+    class PatientAddress(pydantic.BaseModel):
+        street: str
+        city: str
+
+    class ExtractAddress(dspy.Signature):
+        text: str = dspy.InputField()
+        address: PatientAddress = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+
+    # The exact output models emit following BAMLAdapter's prompt instructions
+    completion = """[[ ## address ## ]]
+{
+  "street": "123 Main St",
+  "city": "Boston"
+}
+[[ ## completed ## ]]"""
+
+    parsed = adapter.parse(ExtractAddress, completion)
+    assert "address" in parsed
+    assert isinstance(parsed["address"], PatientAddress)
+    assert parsed["address"].street == "123 Main St"
+    assert parsed["address"].city == "Boston"
+
+
+def test_baml_adapter_parse_fallback_json():
+    """Test that BAMLAdapter maintains backward compatibility with standard JSON outputs."""
+
+    class Item(pydantic.BaseModel):
+        name: str
+        count: int
+
+    class Inventory(dspy.Signature):
+        query: str = dspy.InputField()
+        item: Item = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+
+    # Standard JSON object format
+    completion = '{"item": {"name": "Widget", "count": 42}}'
+    parsed = adapter.parse(Inventory, completion)
+    assert parsed["item"].name == "Widget"
+    assert parsed["item"].count == 42
+
+
+def test_baml_adapter_parse_with_markdown_fences():
+    """Test that BAMLAdapter handles markdown code fences within delimiters."""
+
+    class Status(pydantic.BaseModel):
+        ready: bool
+        msg: str
+
+    class CheckStatus(dspy.Signature):
+        query: str = dspy.InputField()
+        status: Status = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+
+    completion = """[[ ## status ## ]]
+```json
+{
+  "ready": true,
+  "msg": "all systems operational"
+}
+```
+[[ ## completed ## ]]"""
+
+    parsed = adapter.parse(CheckStatus, completion)
+    assert parsed["status"].ready is True
+    assert parsed["status"].msg == "all systems operational"
+
+
+def test_baml_adapter_parse_bare_pydantic_json():
+    """Test that BAMLAdapter parses bare Pydantic JSON objects when a single BaseModel output field is used."""
+
+    class PatientAddress(pydantic.BaseModel):
+        street: str
+        city: str
+
+    class ExtractAddress(dspy.Signature):
+        text: str = dspy.InputField()
+        address: PatientAddress = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+
+    completion = '{"street": "123 Main St", "city": "Boston"}'
+    parsed = adapter.parse(ExtractAddress, completion)
+    assert isinstance(parsed["address"], PatientAddress)
+    assert parsed["address"].street == "123 Main St"
+    assert parsed["address"].city == "Boston"
+
+
+def test_baml_adapter_parse_delimiter_with_reasoning_and_missing_fields():
+    """Test delimiter parsing with plain-text reasoning/str fields, colliding field names, and missing required fields."""
+
+    class Status(pydantic.BaseModel):
+        status: str
+        code: int
+
+    class DiagnoseSignature(dspy.Signature):
+        query: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        status: Status = dspy.OutputField()
+        notes: str | None = dspy.OutputField(default=None)
+
+    adapter = BAMLAdapter()
+
+    # Valid delimiter response with plain-text reasoning, colliding inner 'status' key, and omitted optional 'notes'
+    completion = """[[ ## reasoning ## ]]
+Step 1: check system code 200 and verify status is ok.
+
+[[ ## status ## ]]
+{
+  "status": "ok",
+  "code": 200
+}
+[[ ## completed ## ]]"""
+
+    parsed = adapter.parse(DiagnoseSignature, completion)
+    assert parsed["reasoning"] == "Step 1: check system code 200 and verify status is ok."
+    assert parsed["status"].status == "ok"
+    assert parsed["status"].code == 200
+    assert parsed["notes"] is None
+
+    # Missing required field 'status' in delimiter mode must raise AdapterParseError
+    incomplete = """[[ ## reasoning ## ]]
+Only reasoning was generated.
+[[ ## completed ## ]]"""
+
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError) as exc_info:
+        adapter.parse(DiagnoseSignature, incomplete)
+    assert exc_info.value.adapter_name == "BAMLAdapter"
+
+
+def test_baml_adapter_parse_dict_output_and_inline_markers():
+    """Test that delimiter parsing preserves all dict entries and does not truncate on inline [[ ## text."""
+
+    class DictAndTextSig(dspy.Signature):
+        query: str = dspy.InputField()
+        answer: dict[str, object] = dspy.OutputField()
+        explanation: str = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+
+    completion = """[[ ## answer ## ]]
+{"answer": {"x": 1}, "other": "keep"}
+
+[[ ## explanation ## ]]
+Use [[ ## to start a marker or write [[ ## inline ## ]] without breaking the section.
+[[ ## completed ## ]]"""
+
+    parsed = adapter.parse(DictAndTextSig, completion)
+    assert parsed["answer"] == {"answer": {"x": 1}, "other": "keep"}
+    assert parsed["explanation"] == (
+        "Use [[ ## to start a marker or write [[ ## inline ## ]] without breaking the section."
+    )
+
+
+def test_baml_adapter_parse_bare_pydantic_with_aliases_and_defaults():
+    """Test bare Pydantic JSON fallback with field aliases and models whose fields all have defaults."""
+
+    class AliasedUser(pydantic.BaseModel):
+        full_name: str = pydantic.Field(alias="name")
+
+    class DefaultConfig(pydantic.BaseModel):
+        retries: int = 3
+        verbose: bool = False
+
+    class AliasedSig(dspy.Signature):
+        query: str = dspy.InputField()
+        user: AliasedUser = dspy.OutputField()
+
+    class DefaultSig(dspy.Signature):
+        query: str = dspy.InputField()
+        config: DefaultConfig = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+
+    parsed_alias = adapter.parse(AliasedSig, '{"name": "Alice"}')
+    assert parsed_alias["user"].full_name == "Alice"
+
+    parsed_defaults = adapter.parse(DefaultSig, "{}")
+    assert parsed_defaults["config"].retries == 3
+    assert parsed_defaults["config"].verbose is False
+
+
+def test_baml_adapter_parse_same_line_headers_and_json_with_completed_marker():
+    """Test same-line header values and raw JSON followed by [[ ## completed ## ]]."""
+
+    class SameLineSig(dspy.Signature):
+        query: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        score: int = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+
+    same_line_completion = "[[ ## answer ## ]] yes\n[[ ## score ## ]] 1\n[[ ## completed ## ]]"
+    parsed = adapter.parse(SameLineSig, same_line_completion)
+    assert parsed["answer"] == "yes"
+    assert parsed["score"] == 1
+
+    json_with_completed = '{"answer": "yes", "score": 1}\n[[ ## completed ## ]]'
+    parsed_json = adapter.parse(SameLineSig, json_with_completed)
+    assert parsed_json["answer"] == "yes"
+    assert parsed_json["score"] == 1
+
+
+def test_baml_adapter_parse_line_scanner_edge_cases():
+    """Test line scanner with unknown headers, duplicate headers, and empty string fields."""
+
+    class ScannerSig(dspy.Signature):
+        query: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        notes: str = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+
+    completion = """[[ ## answer ## ]]
+first answer
+[[ ## unknown_header ## ]]
+should be ignored and not appended to answer
+[[ ## answer ## ]]
+duplicate answer should be ignored
+[[ ## notes ## ]]
+[[ ## completed ## ]]"""
+
+    parsed = adapter.parse(ScannerSig, completion)
+    assert parsed["answer"] == "first answer"
+    assert parsed["notes"] == ""
+
+
+def test_baml_adapter_wrapped_invalid_json_does_not_mask_with_defaults():
+    """Test that invalid wrapped JSON does not fall back to bare defaults."""
+
+    class Config(pydantic.BaseModel):
+        retries: int = 3
+
+    class Service(dspy.Signature):
+        query: str = dspy.InputField()
+        config: Config = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    invalid_wrapped = '{"config": {"retries": "not_a_number"}}'
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+        adapter.parse(Service, invalid_wrapped)
+
+
+def test_baml_adapter_bare_model_with_colliding_field_name():
+    """Test that bare models parse successfully when an inner property shares the output field name."""
+
+    class Status(pydantic.BaseModel):
+        status: str
+        code: int
+
+    class StatusSig(dspy.Signature):
+        query: str = dspy.InputField()
+        status: Status = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    bare_colliding = '{"status": "ok", "code": 200}'
+    parsed = adapter.parse(StatusSig, bare_colliding)
+    assert parsed["status"].status == "ok"
+    assert parsed["status"].code == 200
+
+
+def test_baml_adapter_parse_null_delimiter_block():
+    """Test that explicit 'null' inside a delimiter block parses as None for optional fields."""
+
+    class OptionalSig(dspy.Signature):
+        query: str = dspy.InputField()
+        notes: str | None = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    completion = """[[ ## notes ## ]]
+null
+[[ ## answer ## ]]
+real answer
+[[ ## completed ## ]]"""
+
+    parsed = adapter.parse(OptionalSig, completion)
+    assert parsed["notes"] is None
+    assert parsed["answer"] == "real answer"
+
+
+
+def test_baml_adapter_wrapped_dict_with_defaults_does_not_mask_supplied_values():
+    """Test that redundantly wrapped models with default fields unpack supplied values instead of defaults."""
+
+    class Config(pydantic.BaseModel):
+        retries: int = 3
+
+    class ConfigSig(dspy.Signature):
+        query: str = dspy.InputField()
+        config: Config = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    completion = """[[ ## config ## ]]
+{
+  "config": {
+    "retries": 10
+  }
+}
+[[ ## completed ## ]]"""
+
+    parsed = adapter.parse(ConfigSig, completion)
+    assert parsed["config"].retries == 10
+
+
+
+def test_baml_adapter_dict_output_preserves_single_key_matching_field_name():
+    """Test that dictionary outputs with a single key matching field_name are not unwrapped."""
+
+    class DictSig(dspy.Signature):
+        query: str = dspy.InputField()
+        answer: dict[str, object] = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    completion = """[[ ## answer ## ]]
+{
+  "answer": {
+    "x": 1
+  }
+}
+[[ ## completed ## ]]"""
+
+    parsed = adapter.parse(DictSig, completion)
+    assert parsed["answer"] == {"answer": {"x": 1}}
+
+
+
+def test_baml_adapter_union_dict_and_model_preserves_dict():
+    """Test that outputs allowing either a dict or a BaseModel preserve dict keys without unwrapping."""
+
+    class ResultModel(pydantic.BaseModel):
+        val: int
+
+    class UnionSig(dspy.Signature):
+        query: str = dspy.InputField()
+        answer: dict[str, object] | ResultModel = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    completion = """[[ ## answer ## ]]
+{
+  "answer": {
+    "x": 1
+  }
+}
+[[ ## completed ## ]]"""
+
+    parsed = adapter.parse(UnionSig, completion)
+    assert parsed["answer"] == {"answer": {"x": 1}}
+
+
+def test_baml_adapter_union_model_and_typed_dict_unwraps_when_dict_rejects_wrapper():
+    """Test that Config | dict[str, int] unwraps {'config': {'retries': 10}} when dict[str, int] rejects it."""
+
+    class Config(pydantic.BaseModel):
+        retries: int = 3
+
+    class UnionConfigSig(dspy.Signature):
+        query: str = dspy.InputField()
+        config: Config | dict[str, int] = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    completion = """[[ ## config ## ]]
+{
+  "config": {
+    "retries": 10
+  }
+}
+[[ ## completed ## ]]"""
+
+    parsed = adapter.parse(UnionConfigSig, completion)
+    assert isinstance(parsed["config"], Config)
+    assert parsed["config"].retries == 10
+
+
+def test_baml_adapter_wrapped_union_models_prefers_best_matching_model():
+    """Test that wrapped objects in A | B validate against the union and select the best matching model."""
+
+    class ModelA(pydantic.BaseModel):
+        retries: int = 3
+
+    class ModelB(pydantic.BaseModel):
+        retries: int
+        verbose: bool
+
+    class UnionSig(dspy.Signature):
+        query: str = dspy.InputField()
+        config: ModelA | ModelB = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    completion = """[[ ## config ## ]]
+{
+  "config": {
+    "retries": 10,
+    "verbose": true
+  }
+}
+[[ ## completed ## ]]"""
+
+    parsed = adapter.parse(UnionSig, completion)
+    assert isinstance(parsed["config"], ModelB)
+    assert parsed["config"].retries == 10
+    assert parsed["config"].verbose is True
+
+
+def test_baml_adapter_alias_choices_validation_preserves_outer_field_key():
+    """Test that models using AliasChoices or AliasPath matching field_name validate directly without unwrapping."""
+
+    class AnswerModel(pydantic.BaseModel):
+        payload: dict[str, int] = pydantic.Field(validation_alias=pydantic.AliasChoices("answer", "payload"))
+
+    class Sig(dspy.Signature):
+        query: str = dspy.InputField()
+        answer: AnswerModel = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    completion = """[[ ## answer ## ]]
+{
+  "answer": {
+    "x": 1
+  }
+}
+[[ ## completed ## ]]"""
+
+    parsed = adapter.parse(Sig, completion)
+    assert isinstance(parsed["answer"], AnswerModel)
+    assert parsed["answer"].payload == {"x": 1}
+
+
+
