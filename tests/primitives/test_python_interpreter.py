@@ -656,8 +656,16 @@ def test_a_failed_build_is_retried_only_after_a_while(monkeypatch, tmp_path):
     assert len(builds) == 2
 
 
-@pytest.mark.parametrize("failures", [2, 3])
-def test_sandbox_wheel_download_recovers_from_transient_tls_errors(monkeypatch, tmp_path, failures):
+@pytest.mark.parametrize(
+    "failure,failures,status,expected_error",
+    [
+        ("tls", 2, 200, None),
+        ("timeout", 2, 200, None),
+        ("tls", 3, 200, "unexpected TLS EOF"),
+        ("tls", 0, 404, "404 Client Error"),
+    ],
+)
+def test_sandbox_wheel_download_retry_policy(monkeypatch, tmp_path, failure, failures, status, expected_error):
     import hashlib
     import ssl
     import zipfile
@@ -678,10 +686,15 @@ def test_sandbox_wheel_download_recovers_from_transient_tls_errors(monkeypatch, 
     monkeypatch.setattr(sandbox_bundle, "_failed", {})
 
     response = requests.Response()
-    response.status_code = 200
+    response.status_code = status
     response._content = payload
+    response._content_consumed = True
+    error = (
+        requests.exceptions.SSLError(ssl.SSLEOFError(8, "unexpected TLS EOF"))
+        if failure == "tls" else requests.ReadTimeout("read timed out")
+    )
     replies = iter([
-        *[requests.exceptions.SSLError(ssl.SSLEOFError(8, "unexpected TLS EOF")) for _ in range(failures)],
+        *[error for _ in range(failures)],
         response,
     ])
 
@@ -693,8 +706,8 @@ def test_sandbox_wheel_download_recovers_from_transient_tls_errors(monkeypatch, 
 
     monkeypatch.setattr(requests, "get", get)
     with PythonInterpreter() as interpreter:
-        if failures == 3:
-            with pytest.raises(sandbox_bundle.SandboxBundleError, match="unexpected TLS EOF"):
+        if expected_error:
+            with pytest.raises(sandbox_bundle.SandboxBundleError, match=expected_error):
                 interpreter.provide_dspy()
             assert not (tmp_path / name).exists()
         else:
