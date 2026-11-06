@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
+import importlib.util
 import inspect
 import json
 import keyword
@@ -117,6 +118,21 @@ class LocalInterpreter:
             json.dumps(output_fields, allow_nan=False)
         except (TypeError, ValueError) as exc:
             raise ValueError(f"output fields must be JSON-compatible: {exc}") from exc
+
+    def provide_dspy(self, *, libraries: list[str] | tuple[str, ...] = ()) -> None:
+        """Make ``libraries``, module names, importable in the worker. It runs Python in isolated mode, which sees only
+        installed packages, so the directories the libraries are imported from here are added after its own path."""
+        directories = []
+        for name in libraries:
+            spec = importlib.util.find_spec(name.split(".")[0])
+            if spec is None:
+                continue
+            if spec.submodule_search_locations:
+                directories.append(str(Path(next(iter(spec.submodule_search_locations))).parent))
+            elif spec.origin and spec.origin not in ("built-in", "frozen"):
+                directories.append(str(Path(spec.origin).parent))
+        if directories:
+            self.execute(f"__import__('sys').path.extend(p for p in {directories!r} if p not in __import__('sys').path)")
 
     @with_callbacks
     def start(self) -> None:

@@ -89,7 +89,7 @@ class BridgeRuntime:
         self._module_src = module_src
         self._class_name = parse_module_class_name(module_src)
 
-    def session(self) -> SandboxSession:
+    def session(self, tool_calls: list[dict[str, Any]] | None = None) -> SandboxSession:
         """A fresh per-forward session over tools, custom types, and the LM-call budget."""
         ctx = self._flex._flex_ctx
         return SandboxSession(
@@ -97,12 +97,15 @@ class BridgeRuntime:
             custom_types=ctx.custom_types(),
             reserve=_Budget(self._max_predictor_calls).reserve,
             interpreter_factory=self._factory,
+            libraries=[library.name for library in ctx.libraries],
+            tool_calls=tool_calls,
         )
 
     def forward(self, inputs: dict[str, Any]) -> Any:
         fields = self._flex.signature.input_fields
         inputs = {name: _typed(value, fields.get(name)) for name, value in inputs.items()}
-        session = self.session()
+        tool_calls: list[dict[str, Any]] = []
+        session = self.session(tool_calls)
         interp = _create_interpreter(self._factory)
         try:
             session.install(interp, import_dspy=True)
@@ -132,7 +135,11 @@ class BridgeRuntime:
                 "Sandboxed forward returned no serializable result; the generated forward must return "
                 f"a dspy.Prediction (got {result!r})"
             )
-        return self._to_prediction(result["fields"], session.decode)
+        prediction = self._to_prediction(result["fields"], session.decode)
+        if "tool_calls" not in self._flex.signature.output_fields:
+            # Not an output: what the forward did with the provided tools, for a metric that scores side effects.
+            object.__setattr__(prediction, "tool_calls", tool_calls)
+        return prediction
 
     def _to_prediction(self, fields: dict[str, Any], read: Callable[[Any], Any] = lambda value: value) -> Any:
         """The output ``fields`` as the signature's types, each first ``read`` off the wire. A field the types refuse,

@@ -118,6 +118,50 @@ solve = dspy.Flex("order: str -> total_cents: int", tools=[lookup_sku])
 
 The optimizer can then wire your tools into `dspy.RLM(..., tools=[...])` / `dspy.ReAct(..., tools=[...])`, or call them directly from `forward`.
 
+## Your Own Libraries
+
+The code can also use your own libraries, such as your company's SDK. Pass them as `libraries`, and the optimizer gets an API reference for each one, generated from the module: its public functions and classes, with their signatures and docstrings. `dspy.Library` adds notes the reference can't show, and chooses what it documents:
+
+```python
+import acme
+
+support = dspy.Flex(
+    "ticket: str -> reply: str",
+    libraries=[dspy.Library(acme, docs="Open one acme.Session per call. Refunds need a reason code.")],
+    interpreter_factory=dspy.LocalInterpreter,
+)
+```
+
+The code imports the libraries inside `__init__` or `forward`. The signature stays the contract: the outputs are still parsed and checked against their declared types, and your metric scores them as usual.
+
+The optimizer sees the libraries next to DSPy's modules and writes code that uses what fits: your library for what it does, and a DSPy module where a language model is needed. To start from code of your own, such as a module that only uses your libraries, pass it as `module_src`.
+
+Where the code runs decides what a library can do there:
+
+- `dspy.PythonInterpreter` adds each library to its sandbox, with the packages it needs, like dspy's own. That works for pure-Python libraries and for those Pyodide builds. A library with other compiled code is refused with an error. The sandbox has no network or host files, so a library there can compute, but anything it would do outside goes through your tools.
+- `dspy.LocalInterpreter` imports the libraries from your environment, so any library works, with your credentials, network and files. It isolates nothing.
+- For an `InterpreterPool` of sandboxes, pass the module names: `dspy.InterpreterPool(size=2, libraries=["acme"])`.
+
+### Tools for other SDKs
+
+Code that hands your tools to another SDK, like an agent framework, can pass `tool.as_function()`: a plain function with the tool's name, description and typed arguments, which SDKs that build tools from a function's signature read like any other. Calling it calls the tool.
+
+### Side effects
+
+An SDK can do much more than a tool, and an optimizer runs your program many times. During optimization, give the program a test double, a sandbox account or test credentials for anything that changes the world. Inside the sandbox, a library can't reach the network, so side effects can only happen through your tools.
+
+Each prediction lists the calls its forward made to the provided tools, in `prediction.tool_calls`. A metric can score them and say why in its feedback, which the optimizer reads:
+
+```python
+def metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
+    refunds = [call for call in prediction.tool_calls if call["name"] == "refund"]
+    if refunds and not example.should_refund:
+        return dspy.Prediction(score=0.0, feedback=f"It refunded {refunds[0]['args']}, but the customer only asked a question.")
+    return dspy.Prediction(score=float(prediction.reply == example.reply), feedback="")
+```
+
+The metric runs after the forward, so it can't stop a side effect. To stop one, check in the tool itself, or swap in a test double while optimizing.
+
 ## Saving and Loading
 
 A `Flex` serializes its `module_src`, so saving and loading a program restores the optimized code:
@@ -131,12 +175,16 @@ restored.load("solver.json")  # rebinds the saved module_src
 
 The interpreter is a **runtime dependency and is not serialized**. Reconstructing with `dspy.Flex(signature)` restores the configured sandbox automatically; if you optimized with an `interpreter_factory` passed to the constructor, pass the same one when you reconstruct the module before calling `load`.
 
+The saved state also records what the code was written against: each library's version and a fingerprint of the API reference the optimizer read, and a fingerprint of each tool. Loading it, from JSON or from a pickle, warns when they differ from the ones installed now, for example after a library upgrade that changed a function the code calls. Install the versions it was optimized with, or optimize it again.
+
 ## Constructor Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `signature` | `str \| Signature` | required | Declares the module's inputs and outputs (e.g. `"invoice -> total_cents: int"`). |
 | `tools` | `list[Callable \| dspy.Tool]` | `None` | Tools the generated code may call. With tools, the baseline is a `dspy.RLM`; without, a `dspy.Predict`. |
+| `libraries` | `list[dspy.Library \| module \| str]` | `None` | Libraries the generated code may import, each documented for the optimizer. See [Your Own Libraries](#your-own-libraries). |
+| `module_src` | `str` | `None` | Source to start from instead of the baseline. |
 | `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Zero-arg factory returning a fresh `CodeInterpreter` for each interpreter session; defaults to `dspy.PythonInterpreter` (needs Deno), and `dspy.configure(interpreter_factory=...)` replaces that default. A bare interpreter instance is not accepted. Supported Python, libraries, and security boundaries are interpreter-dependent. |
 | `max_predictor_calls` | `int \| None` | `100` | Maximum number of LM calls the generated code can make in one `forward`, a guard against runaway loops. `None` removes the limit. |
 

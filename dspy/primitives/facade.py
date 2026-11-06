@@ -410,6 +410,26 @@ def _entrypoint(tool: Any) -> Callable[..., Any]:
     return entrypoint
 
 
+def recorded(name: str, function: Callable[..., Any], calls: list[dict[str, Any]] | None) -> Callable[..., Any]:
+    """``function``, appending each call to ``calls`` (if given): the tool's name, its arguments, and its result or
+    error. Calls are listed when they start, so nested ones follow the call they are part of."""
+    if calls is None:
+        return function
+
+    @functools.wraps(function)
+    def recording(**kwargs: Any) -> Any:
+        call: dict[str, Any] = {"name": name, "args": kwargs}
+        calls.append(call)
+        try:
+            call["result"] = function(**kwargs)
+        except BaseException as e:
+            call["error"] = f"{type(e).__name__}: {e}"
+            raise
+        return call["result"]
+
+    return recording
+
+
 class SandboxSession:
     """Host side of one interpreter session that runs the real dspy: one Flex forward, or one RLM call.
 
@@ -427,8 +447,12 @@ class SandboxSession:
         lm: Any = None,
         reserve: Callable[[int], None] | None = None,
         interpreter_factory: Callable[[], Any] | None = None,
+        libraries: list[str] | None = None,
+        tool_calls: list[dict[str, Any]] | None = None,
     ) -> None:
         self._tools = tools
+        self._tool_calls = tool_calls  # where calls to the provided tools are recorded, see ``recorded``
+        self._libraries = list(libraries or [])  # module names the sandboxed code may import
         self._custom_types = custom_types or {}
         self._values = HostValues(tools)
         self._lm = lm
@@ -447,7 +471,7 @@ class SandboxSession:
         """Bootstrap the bridge in ``interpreter``; with ``import_dspy``, import dspy there right away."""
         provide = getattr(interpreter, "provide_dspy", None)
         if callable(provide):
-            provide()
+            provide(libraries=self._libraries) if self._libraries else provide()
         self._interpreter = interpreter
         interpreter.tools[LM_TOOL] = self._serve_lm
         interpreter.tools[TRACE_TOOL] = self._serve_trace
@@ -510,7 +534,7 @@ class SandboxSession:
             interpreter = _create_interpreter(self._interpreter_factory)
             interpreter.tools[INTERPRETER_TOOL] = self._serve_interpreter  # for the modules its own code builds
             handle = secrets.token_hex(8)
-            host_tools = {name: _entrypoint(tool) for name, tool in self._tools.items()}
+            host_tools = {name: recorded(name, _entrypoint(tool), self._tool_calls) for name, tool in self._tools.items()}
             self._nested[handle] = _NestedInterpreter(interpreter, host_tools, self._values)
             return handle
         nested = self._nested.get(id)
@@ -539,7 +563,7 @@ class SandboxSession:
             raise CodeInterpreterError(f"Unknown tool {tool!r}")
         registered = (getattr(self._interpreter, "tools", None) or {}).get(tool)
         function = registered if callable(registered) else _entrypoint(self._tools[tool])
-        result = function(**self._values.decode(arguments or {}))
+        result = recorded(tool, function, self._tool_calls)(**self._values.decode(arguments or {}))
         if asyncio.iscoroutine(result):
             from dspy.primitives.python_interpreter import _await_in_sync
 

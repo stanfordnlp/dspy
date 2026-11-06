@@ -7,16 +7,18 @@ import typing
 from dataclasses import dataclass, field
 from typing import Any, get_args, get_origin
 
+from dspy.predict.flex.library import Library
 from dspy.primitives.facade import is_reserved_sandbox_name
 from dspy.signatures.field import PYDANTIC_CONSTRAINT_MAP
 
 
 @dataclass
 class FlexContext:
-    """Signature + tools that the baseline and code-optimization prompts render from."""
+    """Signature, tools and libraries that the baseline and code-optimization prompts render from."""
 
     signature_cls: type
     tools: list[Any] = field(default_factory=list)
+    libraries: list[Library] = field(default_factory=list)
 
     def context_names(self) -> dict[str, Any]:
         """Names to inject into the exec globals for the generated code."""
@@ -127,6 +129,12 @@ class FlexContext:
                 tdesc = tdesc.strip().splitlines()[0] if tdesc else ""
                 tool_lines.append(f"  - {tname}: {tdesc}")
             parts.append("Available tools (in scope by name):\n" + "\n".join(tool_lines))
+        if self.libraries:
+            parts.append(
+                "Libraries the module may import, inside `__init__` or `forward` (never at module scope). Use them "
+                "for what they do, and DSPy's modules for what needs a language model. Use only what each reference "
+                "documents:\n\n" + "\n\n".join(library.render() for library in self.libraries)
+            )
         if sandboxed:
             parts.append(
                 "This module runs in a sandbox: the tools listed above run on the host, and functions you "
