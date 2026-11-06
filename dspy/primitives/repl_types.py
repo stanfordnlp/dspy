@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Iterator
 import pydantic
 from pydantic import Field
 
+from dspy.adapters.types.base_type import CUSTOM_TYPE_END_IDENTIFIER, CUSTOM_TYPE_START_IDENTIFIER
 from dspy.adapters.utils import serialize_for_json
 
 if TYPE_CHECKING:
@@ -124,7 +125,12 @@ class REPLEntry(pydantic.BaseModel):
         """Format this entry for inclusion in prompts."""
         reasoning_line = f"Reasoning: {self.reasoning}\n" if self.reasoning else ""
         code_block = f"```python\n{self.code}\n```"
-        return f"=== Step {index + 1} ===\n{reasoning_line}Code:\n{code_block}\n{self.format_output(self.output, max_output_chars)}"
+        text = f"=== Step {index + 1} ===\n{reasoning_line}Code:\n{code_block}\n{self.format_output(self.output, max_output_chars)}"
+        # REPL code and output are plain text. A custom-type marker in them, such as a printed dspy.Image, stays text
+        # in the prompt rather than becoming content parts the adapter builds from it.
+        return text.replace(CUSTOM_TYPE_START_IDENTIFIER, "[CUSTOM-TYPE-START]").replace(
+            CUSTOM_TYPE_END_IDENTIFIER, "[CUSTOM-TYPE-END]"
+        )
 
 
 class REPLHistory(pydantic.BaseModel):
