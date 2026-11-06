@@ -43,10 +43,28 @@ def majority(prediction_or_completions, normalize=default_normalize, field=None)
 
     # Count
     value_counts = {}
+    use_dict = True
     for value in normalized_values_ or normalized_values:
-        value_counts[value] = value_counts.get(value, 0) + 1
+        try:
+            value_counts[value] = value_counts.get(value, 0) + 1
+        except TypeError:
+            use_dict = False
+            break
 
-    majority_value = max(value_counts, key=value_counts.get)
+    if use_dict:
+        majority_value = max(value_counts, key=value_counts.get)
+    else:
+        counted_values = []
+        counts = []
+        for value in normalized_values_ or normalized_values:
+            for i, counted in enumerate(counted_values):
+                if counted == value:
+                    counts[i] += 1
+                    break
+            else:
+                counted_values.append(value)
+                counts.append(1)
+        majority_value = counted_values[max(range(len(counts)), key=lambda i: counts[i])]
 
     # Return the first completion with the majority value in the field
     for completion in completions:
