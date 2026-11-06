@@ -658,6 +658,8 @@ def test_insert_preserves_same_section_replacement():
     replaced = signature.insert(-1, "question", InputField(desc="overwritten"))
 
     assert list(replaced.input_fields.keys()) == ["question"]
+    # The existing name must be replaced by the new field, not silently kept.
+    assert replaced.input_fields["question"].json_schema_extra["desc"] == "overwritten"
 
 
 def test_chain_of_thought_with_reasoning_input_no_longer_silently_drops_field():
