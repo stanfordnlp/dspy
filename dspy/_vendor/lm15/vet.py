@@ -231,8 +231,9 @@ def _response_result(response: Response) -> JsonObject:
 
 def _parse_stream_body(lm: BaseProviderLM, request: Request, body: bytes) -> list[StreamEvent]:
     def raw_events() -> Iterator[StreamEvent]:
+        reader = lm.stream_reader(request)
         for raw in parse_sse(iter(body.splitlines(keepends=True))):
-            for event in lm.parse_stream_events(request, raw):
+            for event in reader.feed(raw):
                 if event is not None:
                     yield event
 

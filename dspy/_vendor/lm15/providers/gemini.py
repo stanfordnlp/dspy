@@ -453,6 +453,76 @@ def _gemini_citations(candidate: dict[str, Any], full_text: str) -> list[Citatio
 _DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 
+def _gemini_part_kind(part: Any) -> str | None:
+    if not isinstance(part, dict):
+        return None
+    if "text" in part:
+        return "thought" if part.get("thought") else "text"
+    if isinstance(part.get("functionCall"), dict):
+        return "call"
+    if isinstance(part.get("inlineData"), dict):
+        return "media"
+    return None
+
+
+class _GeminiStreamReader:
+    """One Gemini stream: which part slot each chunk's parts belong to.
+
+    A chunk's ``parts`` are numbered from 0 in every chunk. The first part
+    of a chunk continues the previous chunk's last part when both are text
+    (or both thought text): that is how a long text arrives. Every other
+    part is a new part with a slot of its own, in arrival order. A
+    function call is never a continuation: gemini-2.5-pro and
+    gemini-3-flash-preview send each parallel call in a chunk of its own
+    (cases/gemini/streaming_parallel_tool_calls_chunked.json), and before
+    2026-11-05 every call landed in slot 0 and their arguments ran into one
+    unreadable input.
+    """
+
+    __slots__ = ("_lm", "_request", "_last", "_next")
+
+    def __init__(self, lm: "GeminiLM", request: Request) -> None:
+        self._lm = lm
+        self._request = request
+        self._last: tuple[int, str] | None = None
+        self._next = 0
+
+    def feed(self, raw_event: SSEEvent) -> Iterator[StreamEvent]:
+        events = list(self._lm.parse_stream_events(self._request, raw_event))
+        try:
+            payload = json.loads(raw_event.data) if raw_event.data else None
+        except ValueError:
+            payload = None
+        candidates = payload.get("candidates") if isinstance(payload, dict) else None
+        candidate = candidates[0] if isinstance(candidates, list) and candidates and isinstance(candidates[0], dict) else {}
+        content = candidate.get("content")
+        parts = content.get("parts") if isinstance(content, dict) else None
+        if not isinstance(parts, list):
+            parts = []
+        slots: dict[int, int] = {}
+        for idx, part in enumerate(parts):
+            kind = _gemini_part_kind(part)
+            if kind is None:
+                continue
+            if idx == 0 and kind in ("text", "thought") and self._last is not None and self._last[1] == kind:
+                slot = self._last[0]
+            else:
+                slot = self._next
+                self._next += 1
+            slots[idx] = slot
+            self._last = (slot, kind)
+        return iter([_with_slot(event, slots) for event in events])
+
+
+def _with_slot(event: StreamEvent, slots: dict[int, int]) -> StreamEvent:
+    if not isinstance(event, StreamDeltaEvent):
+        return event
+    index = getattr(event.delta, "part_index", None)
+    if index is None or index not in slots or slots[index] == index:
+        return event
+    return StreamDeltaEvent(delta=replace(event.delta, part_index=slots[index]))
+
+
 @dataclass(slots=True)
 class GeminiLM(BaseProviderLM):
     api_key: Credential | None = field(default=None, repr=False)
@@ -1048,7 +1118,13 @@ class GeminiLM(BaseProviderLM):
             provider_data=_attach_unmapped(data, unmapped),
         )
 
+    def stream_reader(self, request: Request) -> "_GeminiStreamReader":
+        return _GeminiStreamReader(self, request)
+
     def parse_stream_events(self, request: Request, raw_event: SSEEvent) -> Iterator[StreamEvent]:
+        """Map ONE chunk on its own, its parts numbered from 0. A whole
+        stream is read with :meth:`stream_reader`, which gives each part its
+        slot across chunks."""
         request = self._wire_request(request)
         if not raw_event.data:
             return

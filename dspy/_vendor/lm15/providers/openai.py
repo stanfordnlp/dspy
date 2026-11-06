@@ -8,6 +8,7 @@ import os
 import re
 import urllib.parse
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any, Callable, ClassVar, Iterator, Mapping
 
 from ..adaptation import AdaptationPolicy, adapt, check_policy
@@ -20,6 +21,7 @@ from ..errors import (
     ProviderError,
     RateLimitError,
     ServerError,
+    StreamAssemblyError,
     TimeoutError,
     UnsupportedFeatureError,
     UnsupportedModelError,
@@ -40,6 +42,7 @@ from ..profiles import ProviderProfile, ResolvedOpenAIResponsesCompat, resolve_o
 from ..sse import SSEEvent
 from ..transports import TransportRequest
 from ..types import (
+    FinishReason,
     JsonObject,
     continuation_data,
     VideoGenerationRequest,
@@ -364,7 +367,7 @@ def _response_format_to_openai_text(format_config: dict[str, Any]) -> dict[str, 
     return {"format": fmt}
 
 
-def _finish_from_status(data: dict[str, Any], *, has_tool_call: bool = False) -> str:
+def _finish_from_status(data: dict[str, Any], *, has_tool_call: bool = False) -> FinishReason:
     if has_tool_call:
         return "tool_call"
     status = str(data.get("status") or "").lower()
@@ -464,6 +467,167 @@ def _live_usage_from_response(response: dict[str, Any]) -> Usage | None:
     if not isinstance(usage_data, dict):
         return None
     return usage_from_responses(usage_data)
+
+
+def _sse_payload(raw_event: SSEEvent) -> Any:
+    return json.loads(raw_event.data) if raw_event.data and raw_event.data != "[DONE]" else None
+
+
+class _FinalCopies:
+    """What one stream's fragments delivered, per part slot and channel (MAP-20).
+
+    A final copy is the provider restating a value it may also have sent
+    in fragments. ``remainder`` is what the fragments did not deliver: the
+    whole value when none came, the rest when they are its beginning,
+    nothing when they are all of it. Fragments that are not its beginning
+    contradict it and the stream is refused: lm15 does not choose.
+    """
+
+    __slots__ = ("_seen",)
+
+    def __init__(self) -> None:
+        self._seen: dict[tuple[int, str], str] = {}
+
+    def saw(self, index: int, channel: str, text: str) -> None:
+        if text:
+            key = (index, channel)
+            self._seen[key] = self._seen.get(key, "") + text
+
+    def remainder(self, index: int, channel: str, final: str, *, json_value: bool = False) -> str:
+        key = (index, channel)
+        got = self._seen.get(key, "")
+        if final.startswith(got):
+            self._seen[key] = final
+            return final[len(got):]
+        if json_value and _same_json(got, final):
+            # The same JSON value, members in the same order: the text
+            # differs (whitespace, escapes), the arguments do not.
+            return ""
+        raise StreamAssemblyError(
+            f"the streamed {channel} of part {index} is not the beginning of the provider's final copy "
+            f"of it ({len(got)} characters streamed, {len(final)} in the final copy); lm15 does not choose "
+            "between them (MAP-20)",
+            part_index=index,
+        )
+
+
+def _same_json(a: str, b: str) -> bool:
+    def number(text: str) -> tuple[str, Decimal]:
+        # JSON numbers can differ in spelling, but are never JSON booleans.
+        return ("number", Decimal(text))
+
+    def load(text: str) -> Any:
+        return json.loads(text, object_pairs_hook=lambda pairs: ("object", tuple(pairs)),
+                          parse_int=number, parse_float=number)
+
+    try:
+        return load(a) == load(b)
+    except ValueError:
+        return False
+
+
+def _arguments_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _message_final_text(item: JsonObject) -> str:
+    """The text a message item's fragments add up to: its output_text and
+    refusal contents in order (both stream as text into the item's slot)."""
+    out = []
+    contents = item.get("content")
+    for content in contents if isinstance(contents, list) else []:
+        if not isinstance(content, dict):
+            continue
+        if content.get("type") in ("output_text", "text"):
+            out.append(str(content.get("text") or ""))
+        elif content.get("type") == "refusal":
+            out.append(str(content.get("refusal") or content.get("text") or ""))
+    return "".join(out)
+
+
+class _ResponsesStreamReader:
+    """One OpenAI Responses stream (MAP-20).
+
+    ``response.output_item.done`` is each item's final copy. At it the
+    reader emits what the item's fragments did not deliver: a function
+    call's ``arguments`` (the Codex backend sends parallel calls' arguments
+    only there, receipts/2026-11-05-stream-final-copy), a message's text, a
+    reasoning item's summary. A reasoning summary's parts are joined with a
+    newline, as the complete path joins them (INV-051); the newline is
+    emitted before the first fragment of each later part.
+    """
+
+    __slots__ = ("_lm", "_request", "_copies", "_summary_part", "_named")
+
+    def __init__(self, lm: "OpenAILM", request: Request) -> None:
+        self._lm = lm
+        self._request = request
+        self._copies = _FinalCopies()
+        self._summary_part: dict[int, int] = {}
+        self._named: set[int] = set()
+
+    def feed(self, raw_event: SSEEvent) -> Iterator[StreamEvent]:
+        # The per-event mapping stays the dialect's own (and a subclass's
+        # override of it); the reader only adds what MAP-20 needs.
+        events = list(self._lm.parse_stream_events(self._request, raw_event))
+        payload = _sse_payload(raw_event)
+        if not isinstance(payload, dict):
+            return iter(events)
+        et = payload.get("type")
+        index = int(payload.get("output_index", 0) or 0)
+        if et == "response.reasoning_summary_text.delta":
+            part = int(payload.get("summary_index", 0) or 0)
+            at = self._summary_part.get(index, 0)
+            if part > at:
+                self._summary_part[index] = part
+                events = [_prefix_thinking(event, "\n" * (part - at)) for event in events]
+            for event in events:
+                if isinstance(event, StreamDeltaEvent) and isinstance(event.delta, ThinkingDelta):
+                    self._copies.saw(index, "summary", event.delta.text)
+        elif et in ("response.output_text.delta", "response.refusal.delta"):
+            self._copies.saw(index, "text", str(payload.get("delta") or ""))
+        elif et in ("response.output_item.added", "response.function_call_arguments.delta"):
+            for event in events:
+                if isinstance(event, StreamDeltaEvent) and isinstance(event.delta, ToolCallDelta):
+                    self._copies.saw(index, "arguments", event.delta.input)
+                    if event.delta.name:
+                        self._named.add(index)
+        elif et == "response.output_item.done" and isinstance(payload.get("item"), dict):
+            events = self._complete(index, payload["item"]) + events
+        return iter(events)
+
+    def _complete(self, index: int, item: JsonObject) -> list[StreamEvent]:
+        kind = item.get("type")
+        if kind == "function_call":
+            rest = self._copies.remainder(index, "arguments", _arguments_text(item.get("arguments")), json_value=True)
+            if not rest and index in self._named:
+                return []
+            name = str(item.get("name") or "") or None
+            if name:
+                self._named.add(index)
+            return [StreamDeltaEvent(delta=ToolCallDelta(
+                input=rest, part_index=index,
+                id=str(item.get("call_id") or item.get("id") or "") or None, name=name,
+            ))]
+        if kind == "message":
+            rest = self._copies.remainder(index, "text", _message_final_text(item))
+            return [StreamDeltaEvent(delta=TextDelta(text=rest, part_index=index))] if rest else []
+        summary = item.get("summary")
+        if kind == "reasoning" and isinstance(summary, list):
+            final = "\n".join(str(x.get("text") if isinstance(x, dict) else x) for x in summary)
+            rest = self._copies.remainder(index, "summary", final)
+            return [StreamDeltaEvent(delta=ThinkingDelta(text=rest, part_index=index))] if rest else []
+        return []
+
+
+def _prefix_thinking(event: StreamEvent, prefix: str) -> StreamEvent:
+    if isinstance(event, StreamDeltaEvent) and isinstance(event.delta, ThinkingDelta):
+        return StreamDeltaEvent(delta=ThinkingDelta(text=prefix + event.delta.text, part_index=event.delta.part_index))
+    return event
 
 
 @dataclass(slots=True)
@@ -1217,8 +1381,16 @@ class OpenAILM(BaseProviderLM):
         )
 
     def parse_stream_events(self, request: Request, raw_event: SSEEvent) -> Iterator[StreamEvent]:
+        """Map ONE raw event on its own. A whole stream is read with
+        :meth:`stream_reader`, which also completes each item's fragments
+        from its final copy (MAP-20); this per-event mapping cannot."""
         request = self._wire_request(request)
-        payload = json.loads(raw_event.data) if raw_event.data and raw_event.data != "[DONE]" else None
+        yield from self._stream_events(request, raw_event, _sse_payload(raw_event))
+
+    def stream_reader(self, request: Request) -> "_ResponsesStreamReader":
+        return _ResponsesStreamReader(self, request)
+
+    def _stream_events(self, request: Request, raw_event: SSEEvent, payload: Any) -> Iterator[StreamEvent]:
         if isinstance(payload, dict) and payload.get("type") in {"response.output_item.added", "response.output_item.done"}:
             item = payload.get("item")
             if isinstance(item, dict) and item.get("type") == "reasoning":
@@ -1329,15 +1501,22 @@ class OpenAILM(BaseProviderLM):
                 )
             )
 
-        if et == "response.completed":
-            response = payload.get("response", {}) if isinstance(payload.get("response"), dict) else {}
-            usage = usage_from_responses(response.get("usage") if isinstance(response, dict) else None)
-            output = response.get("output", []) if isinstance(response, dict) else []
-            has_tool = any(isinstance(item, dict) and item.get("type") == "function_call" for item in output)
+        if et in ("response.completed", "response.incomplete"):
+            # A turn cut short (the output limit, a content filter) ends with
+            # response.incomplete, not response.completed (live 2026-11-05,
+            # cases/meta/streaming_incomplete.json); its finish reason reads
+            # from status and incomplete_details as on the complete path
+            # (INV-051). Before 2026-11-05 it was ignored and the stream had
+            # no end event (MAP-3: StreamAssemblyError).
+            raw_response = payload.get("response")
+            final: dict[str, Any] = raw_response if isinstance(raw_response, dict) else {}
+            usage = usage_from_responses(final.get("usage"))
+            output = final.get("output")
+            has_tool = isinstance(output, list) and any(isinstance(item, dict) and item.get("type") == "function_call" for item in output)
             return StreamEndEvent(
-                finish_reason="tool_call" if has_tool else "stop",
+                finish_reason=_finish_from_status(final, has_tool_call=has_tool),
                 usage=usage,
-                provider_data=response if isinstance(response, dict) else None,
+                provider_data=final,
             )
 
         if et in {"response.error", "error"}:
@@ -1386,6 +1565,7 @@ class OpenAILM(BaseProviderLM):
         ws = self._live_connect(self._live_url(request.model), self._live_headers())
         saw_tool_call = False
         usage = Usage()
+        copies = _FinalCopies()
         try:
             ws.send(json.dumps(self._live_session_update_from_request(request)))
             for frame in self._live_message_frames_for_request(request):
@@ -1394,7 +1574,7 @@ class OpenAILM(BaseProviderLM):
             yield StreamStartEvent(model=request.model)
             while True:
                 raw = ws.recv()
-                for event in self._decode_live_completion_stream_events(request, raw):
+                for event in self._decode_live_completion_stream_events(request, raw, copies):
                     if event.type == "delta":
                         if isinstance(event.delta, ToolCallDelta):
                             saw_tool_call = True
@@ -1454,7 +1634,7 @@ class OpenAILM(BaseProviderLM):
         frames.append(response_create)
         return frames
 
-    def _decode_live_completion_stream_events(self, request: Request, raw: str | bytes) -> list[StreamEvent]:
+    def _decode_live_completion_stream_events(self, request: Request, raw: str | bytes, copies: _FinalCopies) -> list[StreamEvent]:
         try:
             payload = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
         except Exception:
@@ -1470,19 +1650,33 @@ class OpenAILM(BaseProviderLM):
         if et == "response.output_audio.delta":
             delta = str(payload.get("delta") or "")
             return [StreamDeltaEvent(delta=AudioDelta(data=delta, media_type="audio/wav"))] if delta else []
-        if et in {"response.output_item.added", "response.function_call_arguments.delta", "response.function_call_arguments.done", "response.output_item.done"}:
-            if et in {"response.output_item.added", "response.output_item.done"}:
-                item = payload.get("item", {}) if isinstance(payload.get("item"), dict) else {}
-                if item.get("type") != "function_call":
-                    return []
-                call_id = str(item.get("call_id") or item.get("id") or "")
-                name = str(item.get("name") or "tool")
-                arguments = item.get("arguments") or ""
+        if et in {"response.output_item.added", "response.output_item.done"}:
+            # MAP-20: output_item.done is the call's final copy; it adds what
+            # the fragments did not deliver. Before 2026-11-05 every frame
+            # added the whole input again (added + deltas + both done frames:
+            # the arguments three times over).
+            item = payload.get("item", {}) if isinstance(payload.get("item"), dict) else {}
+            if item.get("type") != "function_call":
+                return []
+            index = int(payload.get("output_index", 0) or 0)
+            arguments = _arguments_text(item.get("arguments"))
+            if et == "response.output_item.added":
+                copies.saw(index, "arguments", arguments)
             else:
-                call_id = str(payload.get("call_id") or payload.get("id") or "")
-                name = str(payload.get("name") or "tool")
-                arguments = payload.get("delta") if et.endswith("delta") else payload.get("arguments")
-            return [StreamDeltaEvent(delta=ToolCallDelta(input=arguments if isinstance(arguments, str) else json.dumps(arguments or {}), id=call_id or None, name=name))]
+                arguments = copies.remainder(index, "arguments", arguments, json_value=True)
+            return [StreamDeltaEvent(delta=ToolCallDelta(
+                input=arguments, part_index=index,
+                id=str(item.get("call_id") or item.get("id") or "") or None, name=str(item.get("name") or "") or None,
+            ))]
+        if et == "response.function_call_arguments.delta":
+            index = int(payload.get("output_index", 0) or 0)
+            delta = str(payload.get("delta") or "")
+            copies.saw(index, "arguments", delta)
+            return [StreamDeltaEvent(delta=ToolCallDelta(
+                input=delta, part_index=index, id=str(payload.get("call_id") or "") or None,
+            ))] if delta else []
+        # response.function_call_arguments.done restates output_item.done's
+        # arguments: read once, there (MAP-20).
         if et in {"response.done", "response.completed"}:
             response = payload.get("response", {}) if isinstance(payload.get("response"), dict) else {}
             usage = usage_from_responses(response.get("usage") if isinstance(response, dict) else None)

@@ -317,6 +317,32 @@ def _jsonl_reply_text(response: HttpResponse) -> str:
     return text
 
 
+class StreamReader(Protocol):
+    """Reads ONE stream's raw provider events into canonical events.
+
+    A dialect's per-event mapping (``parse_stream_events``) holds no state;
+    a reader may hold what one stream needs and nothing across streams
+    (MAP-20: a dialect that restates an item in a final copy completes the
+    item's fragments from it, which needs to know what the fragments
+    delivered). ``feed`` is called once per raw event, in order.
+    """
+
+    def feed(self, raw_event: SSEEvent) -> Iterator[StreamEvent]: ...
+
+
+class StatelessStreamReader:
+    """The reader of a dialect without final copies: each raw event maps on its own."""
+
+    __slots__ = ("_lm", "_request")
+
+    def __init__(self, lm: "BaseProviderLM", request: Request) -> None:
+        self._lm = lm
+        self._request = request
+
+    def feed(self, raw_event: SSEEvent) -> Iterator[StreamEvent]:
+        return self._lm.parse_stream_events(self._request, raw_event)
+
+
 class ProviderDialect(Protocol):
     provider: str
     supports: EndpointSupport
@@ -690,6 +716,17 @@ class BaseProviderLM:
             _attach_error_metadata(error, resp.headers)
             raise
 
+    def stream_reader(self, request: Request) -> StreamReader:
+        """The reader for one stream of ``request`` (MAP-20).
+
+        Every path that turns raw events into canonical events goes through
+        it: the sync and async streams and the vet shim. The default maps
+        each event on its own with ``parse_stream_events``; a dialect whose
+        stream restates items in final copies returns a reader that
+        completes fragments from them.
+        """
+        return StatelessStreamReader(self, request)
+
     @operation
     def stream(self, request: Request) -> Iterator[StreamEvent]:
         # MAP-3 (docs/mapping-rules.md): adapters may emit one end event per
@@ -719,8 +756,9 @@ class BaseProviderLM:
                     raise error
                 lines = resp.iter_lines() if hasattr(resp, "iter_lines") else _iter_lines(resp)
                 try:
+                    reader = self.stream_reader(request)
                     for raw in parse_sse(lines):
-                        for event in self.parse_stream_events(request, raw):
+                        for event in reader.feed(raw):
                             if event is not None:
                                 yield _stream_error_metadata(event, resp.headers)
                 except ProviderError as error:
