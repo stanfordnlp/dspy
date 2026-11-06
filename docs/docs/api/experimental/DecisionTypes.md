@@ -64,6 +64,17 @@ LM settings when needed. There are no Jev-specific LM defaults. Normal LM cachin
 history, usage tracking, persistence, retry, and lifecycle semantics apply;
 synchronous and asynchronous response caches are separate.
 
+Other decision clients are published as separate packages. For example,
+[`dspy-wity`](https://pypi.org/project/dspy-wity/) answers the same requests
+with the [Wity](https://wity.alphanimble.com) API:
+
+```python
+# pip install dspy-wity; set WITY_API_KEY
+from dspy_wity import Wity
+
+assess.set_lm(Wity())
+```
+
 ## Annotations and evidence
 
 | Output annotation | Generative LM produces | Jev produces | Python result |
