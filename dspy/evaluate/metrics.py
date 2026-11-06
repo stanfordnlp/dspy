@@ -30,8 +30,10 @@ def EM(prediction, answers_list):  # noqa: N802
         EM("paris", ["Paris, France"])  # False
         ```
     """
-    if not isinstance(answers_list, list):
-        raise ValueError(f"`answers_list` must be a list, got {type(answers_list)}")
+    if not isinstance(answers_list, (list, tuple, set)):
+        raise ValueError(f"`answers_list` must be a list, tuple, or set, got {type(answers_list)}")
+    if not answers_list:
+        return False
 
     return max(em_score(prediction, ans) for ans in answers_list)
 
@@ -44,7 +46,7 @@ def F1(prediction, answers_list):  # noqa: N802
 
     Args:
         prediction (str): Predicted answer string.
-        answers_list (list[str]): List of reference answers.
+        answers_list (list[str] | tuple[str, ...] | set[str]): Reference answers.
 
     Returns:
         float: Highest F1 score in [0.0, 1.0].
@@ -54,8 +56,10 @@ def F1(prediction, answers_list):  # noqa: N802
         round(F1("Eiffel Tower is in Paris", ["Paris"]), 2)  # 0.33
         ```
     """
-    if not isinstance(answers_list, list):
-        raise ValueError(f"`answers_list` must be a list, got {type(answers_list)}")
+    if not isinstance(answers_list, (list, tuple, set)):
+        raise ValueError(f"`answers_list` must be a list, tuple, or set, got {type(answers_list)}")
+    if not answers_list:
+        return 0.0
 
     return max(f1_score(prediction, ans) for ans in answers_list)
 
@@ -68,7 +72,7 @@ def HotPotF1(prediction, answers_list):  # noqa: N802
 
     Args:
         prediction (str): Predicted answer.
-        answers_list (list[str]): List of reference answers.
+        answers_list (list[str] | tuple[str, ...] | set[str]): Reference answers.
 
     Returns:
         float: Highest HotPotQA-style F1 in [0.0, 1.0].
@@ -78,8 +82,10 @@ def HotPotF1(prediction, answers_list):  # noqa: N802
         HotPotF1("yes", ["no"])  # 0.0
         ```
     """
-    if not isinstance(answers_list, list):
-        raise ValueError(f"`answers_list` must be a list, got {type(answers_list)}")
+    if not isinstance(answers_list, (list, tuple, set)):
+        raise ValueError(f"`answers_list` must be a list, tuple, or set, got {type(answers_list)}")
+    if not answers_list:
+        return 0.0
 
     return max(hotpot_f1_score(prediction, ans) for ans in answers_list)
 
@@ -258,6 +264,9 @@ def precision_score(prediction, ground_truth):
 
 def _passage_match(passages: list[str], answers: list[str]) -> bool:
     """Return True if any passage contains any answer (normalized & DPR-normalized)."""
+    if not passages or not answers:
+        return False
+
     from dspy.dsp.utils import DPR_normalize, has_answer
 
     def passage_has_answers(passage: str, answers: list[str]) -> bool:
@@ -276,6 +285,9 @@ def _answer_match(prediction, answers, frac=1.0):
     When `frac >= 1.0`, require exact match (EM). Otherwise, return whether the
     maximum token-level F1 across answers is at least `frac`.
     """
+    if not answers:
+        return False
+
     if frac >= 1.0:
         return EM(prediction, answers)
 
@@ -286,11 +298,11 @@ def answer_exact_match(example, pred, trace=None, frac=1.0):
     """Evaluate exact match or F1-thresholded match for an example/prediction pair.
 
     If `example.answer` is a string, compare `pred.answer` against it. If it's a list,
-    compare against any of the references. When `frac >= 1.0` (default), use EM;
+    tuple, or set, compare against any of the references. When `frac >= 1.0` (default), use EM;
     otherwise require that the maximum F1 across references is at least `frac`.
 
     Args:
-        example: `dspy.Example` object with field `answer` (str or list[str]).
+        example: `dspy.Example` object with field `answer` (str or list[str] | tuple[str, ...] | set[str]).
         pred: `dspy.Prediction` object with field `answer` (str).
         trace: Unused; reserved for compatibility.
         frac (float, optional): Threshold in [0.0, 1.0]. `1.0` means EM.
@@ -311,8 +323,8 @@ def answer_exact_match(example, pred, trace=None, frac=1.0):
     """
     if isinstance(example.answer, str):
         return _answer_match(pred.answer, [example.answer], frac=frac)
-    elif isinstance(example.answer, list):
-        return _answer_match(pred.answer, example.answer, frac=frac)
+    elif isinstance(example.answer, (list, tuple, set)):
+        return _answer_match(pred.answer, list(example.answer), frac=frac)
 
     raise ValueError(f"Invalid answer type: {type(example.answer)}")
 
@@ -323,8 +335,8 @@ def answer_passage_match(example, pred, trace=None):
     Strings are normalized (and passages also use DPR normalization internally).
 
     Args:
-        example: `dspy.Example` object with field `answer` (str or list[str]).
-        pred: `dspy.Prediction` object with field `context` (list[str]) containing passages.
+        example: `dspy.Example` object with field `answer` (str or list[str] | tuple[str, ...] | set[str]).
+        pred: `dspy.Prediction` object with field `context` (str or list[str] | tuple[str, ...] | set[str]) containing passages.
         trace: Unused; reserved for compatibility.
 
     Returns:
@@ -341,8 +353,20 @@ def answer_passage_match(example, pred, trace=None):
         ```
     """
     if isinstance(example.answer, str):
-        return _passage_match(pred.context, [example.answer])
-    elif isinstance(example.answer, list):
-        return _passage_match(pred.context, example.answer)
+        answers = [example.answer]
+    elif isinstance(example.answer, (list, tuple, set)):
+        answers = list(example.answer)
+    else:
+        raise ValueError(f"Invalid answer type: {type(example.answer)}")
 
-    raise ValueError(f"Invalid answer type: {type(example.answer)}")
+    context = getattr(pred, "context", None)
+    if context is None:
+        return False
+    if isinstance(context, str):
+        context = [context]
+    elif isinstance(context, (list, tuple, set)):
+        context = list(context)
+    else:
+        return False
+
+    return _passage_match(context, answers)
