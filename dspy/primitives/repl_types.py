@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Iterator
 import pydantic
 from pydantic import Field
 
-from dspy.adapters.types.base_type import _MARKER_PATTERN
+from dspy.adapters.types.base_type import _MARKER_PATTERN, CUSTOM_TYPE_END_IDENTIFIER, CUSTOM_TYPE_START_IDENTIFIER
 from dspy.adapters.utils import serialize_for_json
 
 if TYPE_CHECKING:
@@ -26,6 +26,13 @@ if TYPE_CHECKING:
     from dspy.signatures.signature import Signature
 
 __all__ = ["REPLVariable", "REPLEntry", "REPLHistory"]
+
+
+def _escape_repl_markers(text: str) -> str:
+    """Keep rendered REPL text from becoming media or host-file parts; call after truncation/formatting."""
+    return text.replace(CUSTOM_TYPE_START_IDENTIFIER, "[CUSTOM-TYPE-START]").replace(
+        CUSTOM_TYPE_END_IDENTIFIER, "[CUSTOM-TYPE-END]"
+    )
 
 
 class REPLVariable(pydantic.BaseModel):
@@ -165,7 +172,7 @@ class REPLEntry(pydantic.BaseModel):
         limit = self.max_output_chars if max_output_chars is None else max_output_chars
         reasoning_line = f"Reasoning: {self.reasoning}\n" if self.reasoning else ""
         code_block = f"```python\n{self.code}\n```"
-        return (
+        return _escape_repl_markers(
             f"=== Step {index + 1} ===\n{reasoning_line}Code:\n{code_block}\n{self.format_output(self.output, limit)}"
         )
 
@@ -270,7 +277,7 @@ def format_repl_event(adapter: Adapter, signature: type[Signature], message: dic
         # Replay is a text preview, not media transport. Elide after formatting so live values,
         # JSON-restored markers, and nested containers follow the same rule without changing stored outputs.
         text = _MARKER_PATTERN.sub("<media omitted from replay>", text)
-        return [Message.assistant(text)]
+        return [Message.assistant(_escape_repl_markers(text))]
 
     messages = []
     user_content = adapter.format_user_message_content(
@@ -285,13 +292,14 @@ def format_repl_event(adapter: Adapter, signature: type[Signature], message: dic
     if reasoning_name is not None:
         assistant_values[reasoning_name] = repl_entry.reasoning
         action_fields = {reasoning_name: (str, OutputField()), **action_fields}
-    messages.append(Message.assistant(adapter.format_assistant_message_content(Signature(action_fields), assistant_values)))
+    text = adapter.format_assistant_message_content(Signature(action_fields), assistant_values)
+    messages.append(Message.assistant(_escape_repl_markers(text)))
 
     content = adapter.format_user_message_content(
         Signature({"repl_output": (str, InputField())}),
         {"repl_output": REPLEntry.format_output(repl_entry.output, repl_entry.max_output_chars)},
     )
-    messages.append(user_message(content))
+    messages.append(user_message(_escape_repl_markers(content)))
     return messages
 
 

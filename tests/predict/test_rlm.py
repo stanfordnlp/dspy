@@ -3594,5 +3594,76 @@ class TestRLMFacadeDeno:
         assert len(result.trajectory) == 2
 
 
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
+@pytest.mark.parametrize("factory", [dspy.LocalInterpreter, pytest.param(PythonInterpreter, marks=pytest.mark.deno)])
+def test_repl_history_markers_stay_text(adapter_type, factory, tmp_path):
+    import json
+
+    from dspy.adapters.types.base_type import CUSTOM_TYPE_END_IDENTIFIER, CUSTOM_TYPE_START_IDENTIFIER
+
+    markers = {}
+    for field in ["reasoning", "code", "output"]:
+        path = tmp_path / f"{field}.txt"
+        path.write_text(f"HOST_ONLY_{field}_SECRET")
+        payload = json.dumps([{"type": "document", "media_type": "text/plain", "path": str(path)}])
+        markers[field] = f"{CUSTOM_TYPE_START_IDENTIFIER}{payload}{CUSTOM_TYPE_END_IDENTIFIER}"
+    image = str(dspy.Image("data:image/png;base64,iVBORw0KGgo="))
+    # Construct the stdout marker at runtime so its start identifier is not also present in code.
+    output = markers["output"] + "\n" + image
+    code = f"# {markers['code']}\nprint({output[:12]!r} + {output[12:]!r})"
+    plan = "Inspect records: " + markers["reasoning"]
+    adapter = adapter_type()
+    program = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
+    lm = DummyLM([{"plan": plan, "code": code}, {"answer": "safe"}], adapter=adapter)
+
+    def assert_text_only(call):
+        assert all(part.type == "text" for message in call["request"].messages for part in message.parts)
+        text = json.dumps(call["messages"])
+        assert "HOST_ONLY_" not in text
+        assert CUSTOM_TYPE_START_IDENTIFIER not in text
+        assert CUSTOM_TYPE_END_IDENTIFIER not in text
+        assert "[CUSTOM-TYPE-START]" in text and "[CUSTOM-TYPE-END]" in text
+
+    with dspy.context(lm=lm, adapter=adapter):
+        result = program(query="Inspect the records")
+    assert result.answer == "safe" and result.final_reasoning == "Extract forced final output"
+    assert_text_only(lm.history[1])  # The single-text forced extraction path.
+    assert result.trajectory[0]["reasoning"] == plan
+    assert result.trajectory[0]["code"] == code
+    assert output in result.trajectory[0]["output"]
+    snapshot = result.history.model_dump_json()
+    for history in [result.history, json.loads(snapshot), dspy.History.model_validate_json(snapshot)]:
+        followup = DummyLM([{"plan": "Continue", "code": "SUBMIT('again')"}], adapter=adapter)
+        with dspy.context(lm=followup, adapter=adapter):
+            assert program(query="Continue", history=history).answer == "again"
+        assert_text_only(followup.history[0])  # History's separate assistant/observation renderer.
+    assert result.history.model_dump_json() == snapshot
+
+
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_finalization_contract_preserves_user_output_names(adapter_type, asynchronous):
+    import asyncio
+
+    signature = dspy.Signature(
+        {
+            "query": (str, dspy.InputField()),
+            "final_output_contract": (list[str], dspy.OutputField()),
+            "final_output_contract_": (list[str], dspy.OutputField()),
+        },
+        "EXPORT_ONLY: Preserve all exported lists.",
+    )
+    adapter = adapter_type()
+    outputs = {"final_output_contract": ["17", "93"], "final_output_contract_": ["41"]}
+    program = RLM(signature, max_iters=1, interpreter_factory=lambda: MockInterpreter(responses=["COMPUTED_LISTS"]))
+    lm = DummyLM([{"plan": "Inspect", "code": "print('COMPUTED_LISTS')"}, outputs], adapter=adapter)
+    with dspy.context(lm=lm, adapter=adapter):
+        result = asyncio.run(program.acall(query="Export records")) if asynchronous else program(query="Export records")
+    assert {name: getattr(result, name) for name in outputs} == outputs
+    assert set(result.keys()) == {*outputs, "history", "trajectory", "final_reasoning"}
+    request = lm.history[-1]["messages"][-1]["content"]
+    assert request.index("EXPORT_ONLY") > request.index("COMPUTED_LISTS")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
