@@ -8,7 +8,8 @@ that executes no sandboxed code byte-compiles each archive once, so sandboxes st
 - ``dspy-<digest>.zip``, for sandboxes whose code imports dspy (``PythonInterpreter.provide_dspy``), which have no
   network to install packages with. It holds dspy and every package its installed metadata says it needs: those
   Pyodide ships as Pyodide builds them (checked against Pyodide's lock file), the others from this environment if
-  they are pure Python. There is one per set of sources.
+  they are pure Python, and the packages of Pyodide's ``PythonInterpreter(sandbox_packages=...)`` asks for, by
+  default Pillow, for ``dspy.Image.to_pil``. There is one per set of sources and packages.
 
 ``DSPY_SANDBOX_CACHE=0`` or ``PythonInterpreter(sandbox_cache=False)`` turns the cache off, for environments where
 writing files is unwelcome: nothing is written under the cache directory. Pyodide then starts from its own standard
@@ -101,11 +102,21 @@ def prepare_stdlib(deno_command: list[str], deno_dir: str | None, runner: str) -
         return _guarded(_prepare_stdlib, tuple(deno_command), deno_dir, runner)
 
 
-def prepare_bundle(deno_command: list[str], deno_dir: str | None, runner: str, root: Path | None = None) -> Path:
-    """Return the dspy bundle for the current sources, building it in ``root`` (by default the cache) if it is
-    missing. Thread-safe."""
+def prepare_bundle(
+    deno_command: list[str], deno_dir: str | None, runner: str, root: Path | None = None, packages: tuple[str, ...] = ()
+) -> Path:
+    """Return the dspy bundle for the current sources, with ``packages`` of Pyodide's and what they need, building it
+    in ``root`` (by default the cache) if it is missing. Thread-safe."""
+    packages = tuple(sorted({_normalize(name) for name in packages}))  # one bundle, whatever their order or spelling
     with _lock:
-        return _guarded(_prepare_bundle, tuple(deno_command), deno_dir, runner, root or bundle_root())
+        # Raised past _guarded: a name Pyodide doesn't have is a mistake to fix, not a bundle to start without.
+        unknown = [name for name in packages if name not in _guarded(_pyodide_lock, deno_dir)]
+        if unknown:
+            raise ValueError(
+                f"Pyodide {PYODIDE_VERSION} has no package named {', '.join(map(repr, unknown))}. sandbox_packages "
+                f"takes names from https://pyodide.org/en/{PYODIDE_VERSION}/usage/packages-in-pyodide.html"
+            )
+        return _guarded(_prepare_bundle, tuple(deno_command), deno_dir, runner, root or bundle_root(), packages)
 
 
 @functools.cache
@@ -141,9 +152,11 @@ def _prepare_stdlib(deno_command: tuple[str, ...], deno_dir: str | None, runner:
     return target
 
 
-def _prepare_bundle(deno_command: tuple[str, ...], deno_dir: str | None, runner: str, root: Path) -> Path:
+def _prepare_bundle(
+    deno_command: tuple[str, ...], deno_dir: str | None, runner: str, root: Path, packages: tuple[str, ...] = ()
+) -> Path:
     root.mkdir(parents=True, exist_ok=True)
-    wheels, files = _contents(root, deno_dir)
+    wheels, files = _contents(root, deno_dir, packages)  # the digest covers the wheels, so each set has its own
     stamp = [_FORMAT, PYODIDE_VERSION, wheels, [(name, path.stat().st_size, path.stat().st_mtime_ns) for path, name in files]]
     target = root / f"dspy-{hashlib.sha256(json.dumps(stamp).encode()).hexdigest()[:16]}.zip"
     if target.exists():
@@ -189,13 +202,13 @@ def _build(deno_command: tuple[str, ...], deno_dir: str | None, runner: str, tar
         temp.unlink(missing_ok=True)
 
 
-def _contents(root: Path, deno_dir: str | None) -> tuple[list[str], list[tuple[Path, str]]]:
+def _contents(root: Path, deno_dir: str | None, packages: tuple[str, ...]) -> tuple[list[str], list[tuple[Path, str]]]:
     """The Pyodide wheels and the files of this environment that make up the bundle."""
-    lock, needed, files = _plan(deno_dir)
+    lock, needed, files = _plan(deno_dir, packages)
     if _planned_at.setdefault(deno_dir, _folder_times(files)) != _folder_times(files):
         # A file was added, removed or renamed in a folder the plan lists files from: list them again.
         _plan.cache_clear()
-        lock, needed, files = _plan(deno_dir)
+        lock, needed, files = _plan(deno_dir, packages)
         _planned_at[deno_dir] = _folder_times(files)
     return [_fetch_wheel(root, lock[name], deno_dir) for name in needed], files
 
@@ -217,7 +230,7 @@ def _folder_times(files: list[tuple[Path, str]]) -> list[int | None]:
 
 
 @functools.cache
-def _plan(deno_dir: str | None) -> tuple[dict, list[str], list[tuple[Path, str]]]:
+def _plan(deno_dir: str | None, packages: tuple[str, ...] = ()) -> tuple[dict, list[str], list[tuple[Path, str]]]:
     """Which packages come from Pyodide and which files from this environment, once per process and again when the
     files' folders change (see ``_contents``). The files' sizes and times are read on every call, so an edited file
     still makes a new bundle."""
@@ -229,6 +242,7 @@ def _plan(deno_dir: str | None) -> tuple[dict, list[str], list[tuple[Path, str]]
             shipped.append(name)
         else:
             files += _files(dist)
+    shipped += packages
     needed: list[str] = []
     while shipped:  # with what they need, by Pyodide's lock file
         name = _normalize(shipped.pop())
@@ -357,6 +371,7 @@ def _last_used(path: Path) -> float | None:
         return None
 
 
+@functools.cache
 def _pyodide_lock(deno_dir: str | None) -> dict:
     local = _npm_dir(deno_dir) / "pyodide-lock.json" if deno_dir else None
     if local is not None and local.exists():
