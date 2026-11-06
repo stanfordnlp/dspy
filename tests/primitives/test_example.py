@@ -93,6 +93,15 @@ def test_example_hash_is_order_insensitive():
     assert hash(example1) == hash(example2)
 
 
+def test_example_hash_with_list_context_and_history():
+    history = dspy.History(messages=[{"question": "q", "answer": "a"}])
+    example1 = Example(question="capital?", context=["Paris is in France"], history=history)
+    example2 = Example(question="capital?", context=["Paris is in France"], history=history)
+    assert example1 == example2
+    assert hash(example1) == hash(example2)
+    assert len({example1, example2}) == 1
+
+
 def test_example_set_and_dict_lookup_after_reorder():
     # Direct consequence of the hash contract: equal Examples constructed in
     # different field orders must deduplicate in sets and look up in dicts.
@@ -100,6 +109,40 @@ def test_example_set_and_dict_lookup_after_reorder():
     example2 = Example(b=2, a=1)
     assert len({example1, example2}) == 1
     assert {example1: "v"}.get(example2) == "v"
+
+
+class _ValueBox:
+    def __init__(self, n):
+        self.n = n
+
+    def __eq__(self, other):
+        return isinstance(other, _ValueBox) and self.n == other.n
+
+
+def test_example_hash_mixed_dict_keys():
+    example1 = Example(meta={1: "a", "1": "b"})
+    example2 = Example(meta={"1": "b", 1: "a"})
+    assert hash(example1) == hash(example2)
+    assert example1 in {example2}
+    assert {example1: "v"}.get(example2) == "v"
+
+
+def test_example_hash_equal_unhashable_objects():
+    example1 = Example(box=_ValueBox(3))
+    example2 = Example(box=_ValueBox(3))
+    assert example1 == example2
+    assert hash(example1) == hash(example2)
+    assert example1 in {example2}
+    assert {example1: "v"}.get(example2) == "v"
+
+
+def test_example_hash_stable_after_nested_mutation():
+    example = Example(context=["Paris"])
+    bucket = {example}
+    lookup = {example: "v"}
+    example.context.append("France")
+    assert example in bucket
+    assert lookup.get(example) == "v"
 
 
 def test_example_keys_values_items():
