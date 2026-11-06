@@ -4,6 +4,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Callable, get_args
 
 import pydantic
+from pydantic.fields import PydanticUndefined
 
 import dspy
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls
@@ -107,9 +108,17 @@ class ReAct(Module):
     def _make_react_signature(self) -> type[Signature]:
         fields = {}
         for name, field in self.signature.input_fields.items():
+            # Carry optional-field defaults over: `Predict` only fills
+            # `FieldInfo.default` for missing inputs, and dropping
+            # `default_factory` here would leave such an input empty.
+            kwargs = {}
+            if field.default is not PydanticUndefined:
+                kwargs["default"] = field.default
+            if field.default_factory is not None:
+                kwargs["default_factory"] = field.default_factory
             fields[name] = (
                 _optional_annotation(field.annotation),
-                dspy.InputField(desc=field.json_schema_extra.get("desc")),
+                dspy.InputField(desc=field.json_schema_extra.get("desc"), **kwargs),
             )
 
         fields["history"] = (dspy.History, dspy.InputField())
@@ -140,6 +149,19 @@ class ReAct(Module):
         max_iters = input_args.pop("max_iters", self.max_iters)
         history = _coerce_history(input_args.pop("history", None))
         pending_inputs = {name: input_args[name] for name in self.signature.input_fields if name in input_args}
+        # Apply optional-field defaults once, at the agent boundary. Filling them
+        # per-turn (inside the inner Predict) would inject a fresh factory value
+        # into every later turn and override the caller's earlier explicit value.
+        defaulted_inputs: set[str] = set()
+        for name, field in self.signature.input_fields.items():
+            if name in pending_inputs:
+                continue
+            if field.default is not PydanticUndefined:
+                pending_inputs[name] = field.default
+                defaulted_inputs.add(name)
+            elif field.default_factory is not None:
+                pending_inputs[name] = field.default_factory()
+                defaulted_inputs.add(name)
 
         break_reason = "max_iters"
         for turn_index in range(max_iters):
@@ -170,7 +192,7 @@ class ReAct(Module):
             if final_outputs is not None:
                 event.update(final_outputs)
             _append_history_event(history, event)
-            pending_inputs = {}
+            pending_inputs = {name: value for name, value in pending_inputs.items() if name in defaulted_inputs}
 
             if final_outputs is not None:
                 return Prediction(**final_outputs, history=history, termination_reason="submit")
@@ -181,6 +203,19 @@ class ReAct(Module):
         max_iters = input_args.pop("max_iters", self.max_iters)
         history = _coerce_history(input_args.pop("history", None))
         pending_inputs = {name: input_args[name] for name in self.signature.input_fields if name in input_args}
+        # Apply optional-field defaults once, at the agent boundary. Filling them
+        # per-turn (inside the inner Predict) would inject a fresh factory value
+        # into every later turn and override the caller's earlier explicit value.
+        defaulted_inputs: set[str] = set()
+        for name, field in self.signature.input_fields.items():
+            if name in pending_inputs:
+                continue
+            if field.default is not PydanticUndefined:
+                pending_inputs[name] = field.default
+                defaulted_inputs.add(name)
+            elif field.default_factory is not None:
+                pending_inputs[name] = field.default_factory()
+                defaulted_inputs.add(name)
 
         break_reason = "max_iters"
         for turn_index in range(max_iters):
@@ -211,7 +246,7 @@ class ReAct(Module):
             if final_outputs is not None:
                 event.update(final_outputs)
             _append_history_event(history, event)
-            pending_inputs = {}
+            pending_inputs = {name: value for name, value in pending_inputs.items() if name in defaulted_inputs}
 
             if final_outputs is not None:
                 return Prediction(**final_outputs, history=history, termination_reason="submit")

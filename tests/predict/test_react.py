@@ -692,3 +692,100 @@ def test_tool_observation_preserves_custom_type():
     ]
     assert len(images) == 2
     assert result.answer == "done"
+
+
+def test_react_preserves_input_default_factory():
+    """A user input field with default_factory must survive the signature
+    rebuild and be applied when the input is omitted (#10803)."""
+    def default_x() -> int:
+        return 42
+
+    class Add(dspy.Signature):
+        "Return y=x+1"
+
+        x: int = dspy.InputField(default_factory=default_x)
+        y: int = dspy.OutputField()
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "done",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"y": 5}}]
+                ),
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        dspy.ReAct(signature=Add, tools=[])()
+
+    # The factory ran: x carried 42 into the prompt the inner Predict rendered.
+
+    inner_field = dspy.ReAct(signature=Add, tools=[]).react.signature.input_fields["x"]
+    assert inner_field.default_factory is not None
+
+
+def test_react_default_factory_value_stable_across_turns():
+    """A default_factory value is applied once at the agent boundary and reused
+    for every turn; a changing factory must not inject new values per turn, and
+    an explicit caller value must not be overridden (greptile P1 on #10804)."""
+    counter = {"n": 0}
+
+    def changing_x() -> int:
+        counter["n"] += 1
+        return counter["n"]
+
+    class Add(dspy.Signature):
+        "Return y=x+1"
+
+        x: int = dspy.InputField(default_factory=changing_x)
+        y: int = dspy.OutputField()
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "need data",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"q": "a"}}]),
+            },
+            {
+                "next_thought": "done",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"y": 5}}]),
+            },
+        ]
+    )
+
+    from dspy.adapters.json_adapter import JSONAdapter
+
+    seen: list[dict] = []
+    original_format = JSONAdapter.format
+
+    def spy_format(self, signature, demos, inputs):
+        p = original_format(self, signature, demos, inputs)
+        seen.append(dict(inputs))
+        return p
+
+    with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
+        try:
+            JSONAdapter.format = spy_format
+            dspy.ReAct(signature=Add, tools=[lambda q: "r"])()
+        finally:
+            JSONAdapter.format = original_format
+
+    xs = [call.get("x") for call in seen]
+    assert len(xs) == 2
+    assert xs[0] == xs[1], f"factory value changed between turns: {xs}"
+
+    # Explicit caller value wins over the factory.
+    counter["n"] = 0
+    seen.clear()
+    lm2 = dspy.utils.DummyLM(
+        [{"next_thought": "done", "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"y": 9}}])}]
+    )
+    with dspy.context(lm=lm2, adapter=dspy.JSONAdapter()):
+        try:
+            JSONAdapter.format = spy_format
+            dspy.ReAct(signature=Add, tools=[])(x=7)
+        finally:
+            JSONAdapter.format = original_format
+    assert seen[0].get("x") == 7
