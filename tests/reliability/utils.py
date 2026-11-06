@@ -78,7 +78,7 @@ def judge_dspy_configuration(**extra_judge_config):
     adapter = get_adapter(reliability_conf)
     judge_params = reliability_conf.models.get(JUDGE_MODEL_NAME)
     if judge_params is None:
-        raise ValueError(f"No LiteLLM configuration found for judge model: {JUDGE_MODEL_NAME}")
+        raise ValueError(f"No LM configuration found for judge model: {JUDGE_MODEL_NAME}")
 
     with dspy.context(lm=dspy.LM(**judge_params, **extra_judge_config), adapter=adapter):
         yield
@@ -130,9 +130,9 @@ def parse_reliability_conf_yaml(conf_file_path: str) -> ReliabilityTestConf:
             if model_name is None:
                 raise ValueError("Model name missing in reliability_conf.yaml")
 
-            litellm_params = conf_entry.get("litellm_params")
-            if litellm_params is not None:
-                model_dict[model_name] = litellm_params
+            lm_params = conf_entry.get("lm_params")
+            if lm_params is not None:
+                model_dict[model_name] = lm_params
 
         adapter = conf.get("adapter")
         if adapter is None:
@@ -140,7 +140,7 @@ def parse_reliability_conf_yaml(conf_file_path: str) -> ReliabilityTestConf:
 
         return ReliabilityTestConf(adapter=adapter, models=model_dict)
     except Exception as e:
-        raise ValueError(f"Error parsing LiteLLM configuration file: {conf_file_path}") from e
+        raise ValueError(f"Error parsing LM configuration file: {conf_file_path}") from e
 
 
 def get_adapter(reliability_conf: ReliabilityTestConf) -> dspy.Adapter:

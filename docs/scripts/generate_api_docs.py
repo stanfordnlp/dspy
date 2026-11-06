@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import dspy
+import dspy.experimental
 
 API_MAPPING = {
     "models": [
@@ -38,7 +39,6 @@ API_MAPPING = {
         dspy.ChainOfThought,
         dspy.ReAct,
         dspy.ReActV2,
-        dspy.ProgramOfThought,
         dspy.MultiChainComparison,
         dspy.Parallel,
         dspy.BestOfN,

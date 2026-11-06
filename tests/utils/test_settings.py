@@ -5,9 +5,9 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
 import pytest
-from litellm import Choices, Message, ModelResponse
 
 import dspy
+from tests.test_utils.engines import make_response
 
 
 def test_basic_dspy_settings():
@@ -68,9 +68,9 @@ def test_dspy_context_with_dspy_parallel():
                 assert dspy.settings.lm.model == lm.model
                 return self.predict(question=question)
 
-    with mock.patch("litellm.completion") as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content="[[ ## answer ## ]]\nParis"))],
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            "[[ ## answer ## ]]\nParis",
             model="openai/gpt-4o-mini",
         )
 
@@ -85,12 +85,13 @@ def test_dspy_context_with_dspy_parallel():
         # Verify mock was called correctly
         assert mock_completion.call_count == 2
         for call_args in mock_completion.call_args_list:
-            if "France" in call_args.kwargs["messages"][-1]["content"]:
+            request = call_args.args[0]
+            if "France" in request.messages[-1].text:
                 # France question uses gpt-4o-mini
-                assert call_args.kwargs["model"] == "openai/gpt-4o-mini"
+                assert request.model == "openai/gpt-4o-mini"
             else:
                 # Germany question uses gpt-4o
-                assert call_args.kwargs["model"] == "openai/gpt-4o"
+                assert request.model == "openai/gpt-4o"
 
         # The main thread is not affected by the context
         assert dspy.settings.lm.model == "openai/gpt-4o"
@@ -118,9 +119,9 @@ async def test_dspy_context_with_async_task_group():
     module = MyModule()
 
     with dspy.context(lm=dspy.LM("openai/gpt-4.1", cache=False), adapter=dspy.ChatAdapter()):
-        with mock.patch("litellm.acompletion") as mock_completion:
-            mock_completion.return_value = ModelResponse(
-                choices=[Choices(message=Message(content="[[ ## answer ## ]]\nParis"))],
+        with mock.patch("dspy.clients.engines.AsyncLM15Engine.complete") as mock_completion:
+            mock_completion.return_value = make_response(
+                "[[ ## answer ## ]]\nParis",
                 model="openai/gpt-4o-mini",
             )
 
@@ -140,14 +141,19 @@ async def test_dspy_context_with_async_task_group():
         assert results[2].answer == "Paris"
         assert results[3].answer == "Paris"
 
-        # Verify mock was called correctly
+        # Concurrent calls can arrive in any order. Check the association,
+        # not just model counts, so leaked task-local settings still fail.
         assert mock_completion.call_count == 4
-        # France question uses gpt-4o-mini
-        assert mock_completion.call_args_list[0].kwargs["model"] == "openai/gpt-4o-mini"
-        assert mock_completion.call_args_list[1].kwargs["model"] == "openai/gpt-4o-mini"
-        # Germany question uses gpt-4o
-        assert mock_completion.call_args_list[2].kwargs["model"] == "openai/gpt-4o"
-        assert mock_completion.call_args_list[3].kwargs["model"] == "openai/gpt-4o"
+        seen = {"France": 0, "Germany": 0}
+        for call in mock_completion.call_args_list:
+            request = call.args[0]
+            content = request.messages[-1].text
+            country = "France" if "France" in content else "Germany"
+            assert country in content
+            expected = "openai/gpt-4o-mini" if country == "France" else "openai/gpt-4o"
+            assert request.model == expected
+            seen[country] += 1
+        assert seen == {"France": 2, "Germany": 2}
 
         # The main thread is not affected by the context
         assert dspy.settings.lm.model == "openai/gpt-4.1"

@@ -1,7 +1,12 @@
+import queue
+import threading
 import time
+from collections import deque
 from concurrent.futures import Future
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import dspy.utils.unbatchify as unbatchify_module
 from dspy.utils.unbatchify import Unbatchify
 
 
@@ -72,26 +77,39 @@ def test_unbatchify_timeout_trigger():
     unbatcher.close()
 
 
-def test_unbatchify_honors_max_wait_time_under_trickling_input():
-    """A batch must flush within max_wait_time of the FIRST item arriving, even if
-    later items keep trickling in just under max_wait_time apart from each other.
-    Each queue.get() must wait only the time remaining in the window, not the full
-    max_wait_time again - otherwise the total wait can be a multiple of the budget."""
-    batch_fn_mock = MagicMock(wraps=simple_batch_processor)
-    wait_time = 0.1
-    unbatcher = Unbatchify(batch_fn=batch_fn_mock, max_batch_size=10, max_wait_time=wait_time)
+def test_unbatchify_honors_max_wait_time_under_trickling_input(monkeypatch):
+    """Later arrivals must not extend the batch's timeout window."""
+    clock = SimpleNamespace(now=0.0)
+    arrivals = deque([0.0, 8.0, 16.0])
+    ready = threading.Event()
+    batches = []
 
-    start = time.time()
-    future_1 = unbatcher.submit(1)
-    time.sleep(wait_time * 0.8)  # arrives well within the window, but close to its edge
-    future_2 = unbatcher.submit(2)
+    class ScheduledQueue(queue.Queue):
+        def get(self, block=True, timeout=None):
+            if not block:  # Preserve get_nowait() for shutdown cleanup.
+                return super().get(block=False)
+            if not ready.wait(timeout=2):
+                raise queue.Empty
+            deadline = clock.now + timeout
+            if arrivals and arrivals[0] <= deadline:
+                clock.now = arrivals.popleft()
+                return super().get(block=False)
+            clock.now = deadline
+            raise queue.Empty
 
-    results = [future_1.result(timeout=2), future_2.result(timeout=2)]
-    elapsed = time.time() - start
+    def process(batch):
+        batches.append((batch, clock.now))
+        return simple_batch_processor(batch)
 
-    assert results == [2, 3]
-    # Generous slack for scheduling jitter, but must stay well under 2x the budget
-    # (which is what the unfixed code produces for this timing).
-    assert elapsed < wait_time * 1.5
+    # Patch only this module's clock and queue, not threading's real timeouts.
+    monkeypatch.setattr(unbatchify_module, "time", SimpleNamespace(time=lambda: clock.now, sleep=time.sleep))
+    monkeypatch.setattr(unbatchify_module, "queue", SimpleNamespace(Queue=ScheduledQueue, Empty=queue.Empty))
 
-    unbatcher.close()
+    with Unbatchify(batch_fn=process, max_batch_size=10, max_wait_time=10.0) as unbatcher:
+        futures = [unbatcher.submit(item) for item in (1, 2, 3)]
+        ready.set()
+        assert [future.result(timeout=2) for future in futures] == [2, 3, 4]
+
+    # The arrival at 16 belongs to the next window. Re-arming the full timeout
+    # would instead include it in the first batch and flush that batch at 16.
+    assert batches == [([1, 2], 10.0), ([3], 20.0)]

@@ -6,14 +6,12 @@ Falls back to cached (or hardcoded) values on any API failure.
 """
 
 import json
-import os
+import logging
 import re
 import time
-import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.request import Request, urlopen
-from urllib.error import URLError
 
 log = logging.getLogger("mkdocs.hooks.fetch_stats")
 
@@ -72,9 +70,8 @@ def _load_cache():
 def _save_cache(stats):
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        stats["_ts"] = time.time()
-        stats["_cache_version"] = CACHE_VERSION
-        CACHE_FILE.write_text(json.dumps(stats, indent=2))
+        cached = {**stats, "_ts": time.time(), "_cache_version": CACHE_VERSION}
+        CACHE_FILE.write_text(json.dumps(cached, indent=2))
     except Exception as e:
         log.warning("Could not write stats cache: %s", e)
 
@@ -129,9 +126,7 @@ def _fetch_contributors():
 
 
 def _fetch_discord():
-    data, _ = _get(
-        f"https://discord.com/api/v9/invites/{DISCORD_INVITE}?with_counts=true"
-    )
+    data, _ = _get(f"https://discord.com/api/v9/invites/{DISCORD_INVITE}?with_counts=true")
     return {"discord_members": _fmt(data["approximate_member_count"])}
 
 
@@ -167,18 +162,23 @@ def _fetch_all():
     return stats
 
 
+def fetch_stats():
+    """Return the cached or freshly fetched build-time homepage statistics."""
+    cached = _load_cache()
+    if cached:
+        return {key: value for key, value in cached.items() if not key.startswith("_")}
+
+    stats = _fetch_all()
+    _save_cache(stats)
+    return stats
+
+
 # ── MkDocs hook entry point ──────────────────────────────────────────────────
+
 
 def on_config(config):
     log.info("Fetching live stats for home page...")
-
-    cached = _load_cache()
-    if cached:
-        stats = {k: v for k, v in cached.items() if not k.startswith("_")}
-    else:
-        stats = _fetch_all()
-        _save_cache(stats)
-
+    stats = fetch_stats()
     config.setdefault("extra", {})["stats"] = stats
     log.info("Stats injected: %s", stats)
     return config

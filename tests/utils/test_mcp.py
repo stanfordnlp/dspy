@@ -2,10 +2,12 @@ import asyncio
 import importlib
 import sys
 from importlib.metadata import version
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+import dspy
 from dspy import Tool
 from dspy.utils.mcp import _convert_mcp_tool_result, convert_mcp_tool
 
@@ -220,3 +222,70 @@ async def test_convert_mcp_tool():
             assert current_datetime_tool.arg_types == {}
             assert current_datetime_tool.arg_desc == {}
             assert await current_datetime_tool.acall() == "2025-07-23T09:10:10.0+00:00"
+
+
+@pytest.mark.asyncio
+@pytest.mark.extra
+async def test_react_native_mcp_end_to_end():
+    """Exercise native messages and a real stdio MCP server without an API key."""
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    from dspy.lm15 import ToolResultPart
+    from tests.test_utils.engines import make_response
+
+    class SyncRefused:
+        supports_function_calling = True
+
+        def complete(self, request):
+            pytest.fail("ReAct must use the async LM path")
+
+    class NativeMCPEngine:
+        def __init__(self):
+            self.requests = []
+
+        async def complete(self, request):
+            self.requests.append(request)
+            if len(self.requests) == 1:
+                calls = [
+                    ("mcp_error", "wrong_tool", {}),
+                    ("mcp_add", "add", {"a": 25, "b": 17}),
+                ]
+            else:
+                observations = {
+                    part.id: "".join(p.text for p in part.content)
+                    for message in request.messages if message.role == "tool"
+                    for part in message.parts_of(ToolResultPart)
+                }
+                assert "error!" in observations["mcp_error"]
+                assert observations["mcp_add"] == "42"
+                calls = [("final", "submit", {"answer": int(observations["mcp_add"])})]
+            return make_response(tool_calls=calls, model=request.model)
+
+    def native_mcp_lm():
+        return dspy.LM("native-mcp-test", engine=SyncRefused(), async_engine=NativeMCPEngine(), cache=False)
+
+    server_params = StdioServerParameters(
+        command=sys.executable,
+        args=[str(Path(__file__).parent / "resources" / "mcp_server.py")],
+    )
+    lm = native_mcp_lm()
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await asyncio.wait_for(session.initialize(), timeout=5)
+            response = await session.list_tools()
+            tools = [Tool.from_mcp_tool(session, tool) for tool in response.tools]
+            with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=True)):
+                pred = await asyncio.wait_for(
+                    dspy.ReAct("question -> answer: int", tools=tools).acall(question="What is 25 + 17?"),
+                    timeout=15,
+                )
+
+    assert pred.answer == 42
+    assert pred.termination_reason == "submit"
+    requests = lm.async_engine.requests
+    assert len(requests) == 2
+    assert {t.name for t in requests[0].tools} == {tool.name for tool in tools} | {"submit"}
+    results = pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results
+    assert [(r.call_id, r.is_error) for r in results] == [("mcp_error", True), ("mcp_add", False)]
+    assert results[1].value == "42"

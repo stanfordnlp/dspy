@@ -1,536 +1,694 @@
-import re
+import asyncio
 
 import pytest
 from pydantic import BaseModel
 
 import dspy
-import dspy.adapters.base as adapter_base
-import dspy.adapters.utils as adapter_utils
-from dspy.utils.dummies import DummyLM
 from dspy.utils.exceptions import ContextWindowExceededError
+from tests.test_utils.engines import make_response, recording_lm
+
+
+class ReasoningDummyLM(dspy.utils.DummyLM):
+    @property
+    def supports_reasoning(self):
+        return True
+
+
+def test_react_submit_tool_returns_original_output_fields():
+    react = dspy.ReAct("question -> answer", tools=[])
+
+    assert react.tools["submit"](answer="Paris") == {"answer": "Paris"}
+    assert "tool_call_results" not in react.react.signature.input_fields
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_react_preserves_output_field_metadata_in_lm_request(native):
+    class Task(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(desc="Return the answer in Spanish.")
+        confidence: int = dspy.OutputField(desc="An integer confidence percentage from 0 to 100.", ge=0, le=100)
+
+    outputs = {"answer": "París", "confidence": 95}
+    if native:
+        lm = recording_lm([make_response(tool_calls=[("submit_1", "submit", outputs)])])
+    else:
+        lm = dspy.utils.DummyLM([{
+            "next_thought": "Done.",
+            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": outputs}]),
+        }])
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=native)):
+        result = dspy.ReAct(Task, tools=[])(question="What is the capital of France?")
+
+    assert result.answer == "París"
+    assert result.confidence == 95
+    if native:
+        submit = next(tool for tool in lm.engine.requests[0].tools if tool.name == "submit")
+        assert submit.parameters["properties"] == {
+            "answer": {"type": "string", "description": "Return the answer in Spanish."},
+            "confidence": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100,
+                "description": "An integer confidence percentage from 0 to 100.",
+            },
+        }
+    else:
+        prompt = str(lm.history[0]["messages"])
+        assert "Return the answer in Spanish." in prompt
+        assert "An integer confidence percentage from 0 to 100." in prompt
+
+
+def test_react_text_mock_lm_loop_records_inputs_once():
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "I should look this up.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "lookup", "args": {"query": "cats"}}]
+                ),
+            },
+            {
+                "next_thought": "I can answer now.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"answer": "found cats"}}]
+                ),
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReAct("question -> answer", tools=[lookup])(question="cats")
+
+    assert pred.answer == "found cats"
+    assert pred.termination_reason == "submit"
+    assert sum("question" in event for event in pred.history.messages) == 1
+    assert pred.history.messages[0]["tool_calls"].tool_calls[0].id == "call_0_0"
+    assert "tool_call_results" not in pred.history.messages[0]
+    assert pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results[0].call_id == "call_0_0"
+
+
+def test_react_continuation_omits_missing_original_inputs():
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "I should look this up.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "lookup", "args": {"query": "cats"}}]
+                ),
+            },
+            {
+                "next_thought": "I can answer now.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"answer": "found cats"}}]
+                ),
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReAct("question -> answer", tools=[lookup])(question="cats")
+
+    assert pred.answer == "found cats"
+    second_call_messages = lm.history[1]["messages"]
+    second_current_user_message = second_call_messages[-1]["content"]
+    assert "[[ ## question ## ]]\nNone" not in second_current_user_message
+    assert "[[ ## question ## ]]" not in second_current_user_message
+    assert any("[[ ## question ## ]]\ncats" in message["content"] for message in second_call_messages)
+
+
+def test_react_text_mode_accepts_top_level_tool_arguments():
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "I should look this up.",
+                "tool_calls": {"name": "lookup", "arguments": {"query": "cats"}},
+            },
+            {
+                "next_thought": "I can answer now.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"answer": "found cats"}}]
+                ),
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=False)):
+        pred = dspy.ReAct("question -> answer", tools=[lookup])(question="cats")
+
+    assert pred.answer == "found cats"
+    assert pred.termination_reason == "submit"
+    assert pred.history.messages[0]["tool_calls"].tool_calls[0].args == {"query": "cats"}
+
+
+def test_react_text_mode_accepts_wrapped_submit_arguments():
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "I can answer now.",
+                "tool_calls": {"tool_calls": [{"name": "submit", "arguments": {"answer": "done"}}]},
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=False)):
+        pred = dspy.ReAct("question -> answer", tools=[])(question="cats")
+
+    assert pred.answer == "done"
+    assert pred.termination_reason == "submit"
+
+
+def test_react_unknown_tool_observation_can_continue():
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "Try a missing tool.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "missing_tool", "args": {"query": "cats"}}]
+                ),
+            },
+            {
+                "next_thought": "Recover with a final answer.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"answer": "done"}}]
+                ),
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReAct("question -> answer", tools=[])(question="cats")
+
+    first_result = pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results[0]
+    assert first_result.is_error is True
+    assert first_result.call_id == "call_0_0"
+    assert "Unknown tool" in first_result.value
+    assert pred.answer == "done"
+
+
+def test_react_accepts_serialized_history_input():
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "I can answer.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"answer": "done"}}]
+                ),
+            }
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReAct("question -> answer", tools=[])(history={"messages": [{"question": "old"}]})
+
+    assert pred.answer == "done"
+    assert pred.history.messages[0] == {"question": "old"}
+    assert all(event for event in pred.history.messages)
+
+
+def test_react_forced_submit_on_empty_tool_calls():
+    lm = ReasoningDummyLM(
+        [
+            {"next_thought": "No action.", "tool_calls": dspy.ToolCalls(tool_calls=[])},
+            {
+                "next_thought": "Forced final.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"answer": "forced"}}]
+                ),
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReAct("question -> answer", tools=[])(question="cats")
+
+    assert pred.answer == "forced"
+    assert pred.termination_reason == "forced_submit"
+    assert lm.history[0]["request"].config.reasoning.effort == "low"
+    assert lm.history[1]["request"].config.tool_choice is None
+    assert lm.history[1]["request"].config.reasoning is None
+
+
+@pytest.mark.parametrize("adapter", [None, dspy.JSONAdapter()], ids=["default", "json"])
+def test_react_forced_submit_with_native_flag_but_unsupported_lm(adapter):
+    lm = dspy.utils.DummyLM(
+        [
+            {"next_thought": "No action.", "tool_calls": dspy.ToolCalls(tool_calls=[])},
+            {
+                "next_thought": "Forced final.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"answer": "forced"}}]
+                ),
+            },
+        ],
+        adapter=adapter,
+    )
+    assert lm.supports_function_calling is False
+
+    with dspy.context(lm=lm, adapter=adapter):
+        pred = dspy.ReAct("question -> answer", tools=[])(question="cats")
+
+    assert pred.answer == "forced"
+    assert pred.termination_reason == "forced_submit"
+    assert "tool_choice" not in lm.history[1]["kwargs"]
+    assert "tools" not in lm.history[1]["kwargs"]
+
+
+class _ToolCallEngine:
+    """Answer the first request with the given tool calls, then submit."""
+
+    def __init__(self, first_calls, final_answer):
+        self.first_calls = first_calls
+        self.final_answer = final_answer
+        self.requests = []
+        self.supports_function_calling = True
+
+    def complete(self, request):
+        self.requests.append(request)
+        if len(self.requests) == 1:
+            calls = self.first_calls
+        else:
+            calls = [("call_submit", "submit", {"answer": self.final_answer})]
+        return make_response(tool_calls=calls, model=request.model)
+
+
+class _ToolCallLM(dspy.LM):
+    @property
+    def calls(self):
+        from dspy.clients.lm15_boundary import request_kwargs
+
+        return [{"messages": request_kwargs(r, "chat")["messages"], "request": r} for r in self.engine.requests]
+
+
+def NativeToolLM():
+    engine = _ToolCallEngine([("call_provider_1", "lookup", {"query": "cats"})], "found cats")
+    return _ToolCallLM("native-tool-lm", engine=engine, cache=False)
+
+
+def ParallelNativeToolLM():
+    engine = _ToolCallEngine(
+        [("call_provider_1", "lookup", {"query": "cats"}), ("call_provider_2", "lookup", {"query": "dogs"})],
+        "found cats and found dogs",
+    )
+    return _ToolCallLM("parallel-native-tool-lm", engine=engine, cache=False)
+
+
+@pytest.mark.parametrize(
+    "adapter", [None, dspy.ChatAdapter(use_native_function_calling=True)], ids=["default", "chat"]
+)
+@pytest.mark.parametrize("max_iters", [1, 20])
+def test_react_native_tool_loop_replays_tool_result_with_provider_id(adapter, max_iters):
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = NativeToolLM()
+
+    with dspy.context(lm=lm, adapter=adapter):
+        pred = dspy.ReAct("question -> answer", tools=[lookup], max_iters=max_iters)(question="cats")
+
+    assert pred.answer == "found cats"
+    assert {tool.name for tool in lm.engine.requests[0].tools} == {"lookup", "submit"}
+    assert pred.termination_reason == ("forced_submit" if max_iters == 1 else "submit")
+    if max_iters == 1:
+        assert lm.engine.requests[-1].config.tool_choice.allowed == ("submit",)
+    assert pred.history.messages[0]["tool_calls"].tool_calls[0].id == "call_provider_1"
+    assert "tool_call_results" not in pred.history.messages[0]
+    assert pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results[0].call_id == "call_provider_1"
+    assert any(
+        message["role"] == "tool" and message["tool_call_id"] == "call_provider_1"
+        for message in lm.calls[1]["messages"]
+    )
+
+
+@pytest.mark.parametrize(
+    "adapter",
+    [None, dspy.ChatAdapter(use_native_function_calling=True, parallel_tool_calls=True)],
+    ids=["default", "chat"],
+)
+def test_react_native_parallel_tool_calls_are_requested_and_replayed(adapter):
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = ParallelNativeToolLM()
+
+    with dspy.context(lm=lm, adapter=adapter):
+        pred = dspy.ReAct("question -> answer", tools=[lookup])(question="cats and dogs")
+
+    assert pred.answer == "found cats and found dogs"
+    if adapter is not None:
+        assert lm.calls[0]["request"].config.tool_choice.parallel is True
+    else:
+        assert lm.calls[0]["request"].config.tool_choice is None
+    assert [call.id for call in pred.history.messages[0]["tool_calls"].tool_calls] == [
+        "call_provider_1",
+        "call_provider_2",
+    ]
+    assert [
+        result.call_id
+        for result in pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results
+    ] == [
+        "call_provider_1",
+        "call_provider_2",
+    ]
+    assert [
+        message["tool_call_id"]
+        for message in lm.calls[1]["messages"]
+        if message["role"] == "tool"
+    ] == [
+        "call_provider_1",
+        "call_provider_2",
+    ]
+
+
+@pytest.mark.parametrize("reserved", ["history", "termination_reason"])
+def test_react_rejects_reserved_output_field_names(reserved):
+    with pytest.raises(ValueError, match=reserved):
+        dspy.ReAct(f"question -> answer, {reserved}: str", tools=[])
+
+
+@pytest.mark.parametrize("reserved", ["history", "tools", "turn_budget"])
+def test_react_rejects_reserved_input_field_names(reserved):
+    with pytest.raises(ValueError, match=reserved):
+        dspy.ReAct(f"{reserved}: str -> answer: str", tools=[])
+
+
+def _lookup_turn(query):
+    return {
+        "next_thought": f"Look up {query}.",
+        "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": query}}]),
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_async", [False, True])
+async def test_react_shows_current_turn_budget_each_call(use_async):
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = dspy.utils.DummyLM(
+        [
+            _lookup_turn("cats"),
+            _lookup_turn("dogs"),
+            {
+                "next_thought": "Out of turns.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "pets"}}]),
+            },
+        ]
+    )
+    react = dspy.ReAct("question -> answer", tools=[lookup], max_iters=20)
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        if use_async:
+            pred = await react.acall(question="pets", max_iters=2)
+        else:
+            pred = react(question="pets", max_iters=2)
+
+    assert pred.termination_reason == "forced_submit"
+    assert "how many turns remain before you must submit" in lm.history[0]["messages"][0]["content"]
+    expected = [
+        "Turn 1 of 2 (1 more after this one).",
+        "Turn 2 of 2 (this is your last turn).",
+        "No turns remain. Call `submit` now with your final outputs.",
+    ]
+    for call, budget in zip(lm.history, expected, strict=True):
+        assert f"[[ ## turn_budget ## ]]\n{budget}" in call["messages"][-1]["content"]
+    # Each turn's budget is stored with that turn so replay rebuilds the exact request.
+    assert [event["turn_budget"] for event in pred.history.messages] == expected
+
+
+def test_react_native_requests_are_prefixes_for_prompt_caching():
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = NativeToolLM()
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=True)):
+        pred = dspy.ReAct("question -> answer", tools=[lookup])(question="cats")
+
+    assert pred.answer == "found cats"
+    first, second = (call["messages"] for call in lm.calls)
+    assert second[: len(first)] == first
+    assert "[[ ## turn_budget ## ]]\nTurn 2 of 20" in second[-1]["content"]
+
+
+def test_react_agent_pickled_before_turn_budget_keeps_old_behavior():
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "Done.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "done"}}]),
+            }
+        ]
+    )
+    react = dspy.ReAct("question -> answer", tools=[])
+    # An agent pickled before this field existed restores its old inner signature without `__init__`.
+    react.react.signature = react.react.signature.delete("turn_budget")
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = react(question="cats")
+
+    assert pred.answer == "done"
+    assert all("turn_budget" not in message["content"] for message in lm.history[0]["messages"][1:])
+    assert all("turn_budget" not in event for event in pred.history.messages)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_async", [False, True])
+@pytest.mark.parametrize("break_reason", ["max_iters", "empty_tool_calls", "parse_error", "context_window_exceeded"])
+@pytest.mark.parametrize("forced_result", ["no_submit", "missing_field", "parse_error", "context_window_exceeded"])
+async def test_react_failed_termination_raises(mocker, break_reason, forced_result, use_async):
+    react = dspy.ReAct("question -> answer: str, count: int", tools=[], max_iters=1)
+    empty = dspy.Prediction(tool_calls=dspy.ToolCalls(tool_calls=[]))
+    incomplete = dspy.Prediction(
+        tool_calls=dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "partial"}}])
+    )
+    outcomes = {
+        "max_iters": incomplete,
+        "empty_tool_calls": empty,
+        "no_submit": empty,
+        "missing_field": incomplete,
+        "parse_error": ValueError("invalid tool calls"),
+        "context_window_exceeded": ContextWindowExceededError(message="too long"),
+    }
+    mocker.patch.object(
+        react.react,
+        "aforward" if use_async else "forward",
+        side_effect=[outcomes[break_reason], outcomes[forced_result]],
+    )
+
+    history = dspy.History(messages=[])
+    error_type = ContextWindowExceededError if forced_result == "context_window_exceeded" else ValueError
+    with pytest.raises(error_type) as exc:
+        if use_async:
+            await react.acall(question="cats", history=history)
+        else:
+            react(question="cats", history=history)
+
+    if forced_result in {"parse_error", "context_window_exceeded"}:
+        assert exc.value is outcomes[forced_result]
+    else:
+        assert f"failed to produce final outputs after {break_reason}" in str(exc.value)
+    if forced_result == "no_submit":
+        assert "no submit call" in str(exc.value)
+    if forced_result == "missing_field":
+        assert "Missing required final output field(s): count" in str(exc.value)
+        event = history.messages[-1]
+        assert event["tool_calls"].tool_calls[0].args == {"answer": "partial"}
+        assert event["tool_calls"].tool_call_results.tool_call_results[0].is_error is True
+
+
+def test_react_evaluate_reports_submission_failure(caplog):
+    lm = dspy.utils.DummyLM([{"next_thought": "No answer.", "tool_calls": dspy.ToolCalls(tool_calls=[])}] * 2)
+
+    def metric(example, pred, trace=None):
+        pytest.fail("A failed submission must not reach the metric")
+
+    evaluate = dspy.Evaluate(
+        devset=[dspy.Example(question="cats", answer="felines").with_inputs("question")],
+        metric=metric,
+        num_threads=1,
+        max_errors=1,
+        display_progress=False,
+    )
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        with pytest.raises(Exception, match="Execution cancelled due to errors"):
+            evaluate(dspy.ReAct("question -> answer", tools=[]))
+    assert "failed to produce final outputs after empty_tool_calls: no submit call" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_react_async_mixed_tools_run_sequentially_and_recover():
+    executed = []
+
+    async def lookup(query: str) -> str:
+        await asyncio.sleep(0)
+        executed.append(query)
+        return f"found {query}"
+
+    def fail() -> str:
+        executed.append("fail")
+        raise ValueError("lookup unavailable")
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "Look up both.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [
+                        {"name": "lookup", "args": {"query": "cats"}},
+                        {"name": "missing", "args": {}},
+                        {"name": "fail", "args": {}},
+                        {"name": "lookup", "args": {"query": "dogs"}},
+                    ]
+                ),
+            },
+            {
+                "next_thought": "Done.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [
+                        {"name": "submit", "args": {"answer": "cats and dogs", "count": 2}},
+                    ]
+                ),
+            },
+        ]
+    )
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = await dspy.ReAct("question -> answer: str, count: int", tools=[lookup, fail]).acall(
+            question="pets",
+            history={"messages": [{"question": "old"}]},
+        )
+
+    assert (pred.answer, pred.count, pred.termination_reason) == ("cats and dogs", 2, "submit")
+    assert executed == ["cats", "fail", "dogs"]
+    assert pred.history.messages[0] == {"question": "old"}
+    assert pred.history.messages[1]["question"] == "pets"
+    assert "question" not in pred.history.messages[2]
+    results = pred.history.messages[1]["tool_calls"].tool_call_results.tool_call_results
+    assert [r.call_id for r in results] == ["call_0_0", "call_0_1", "call_0_2", "call_0_3"]
+    assert [r.is_error for r in results] == [False, True, True, False]
+    assert results[0].value == "found cats"
+    assert results[1].value == "Unknown tool: missing"
+    assert "lookup unavailable" in results[2].value
+    assert results[3].value == "found dogs"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("max_iters", [0, 1])
+async def test_react_async_forced_submit_filters_other_tools(mocker, max_iters):
+    def forbidden() -> str:
+        pytest.fail("Forced submit must not execute other tools")
+
+    react = dspy.ReAct("question -> answer", tools=[forbidden], max_iters=20)
+    empty = dspy.Prediction(tool_calls=dspy.ToolCalls(tool_calls=[]))
+    final = dspy.Prediction(
+        tool_calls=dspy.ToolCalls.from_dict_list(
+            [
+                {"name": "forbidden", "args": {}},
+                {"name": "submit", "args": {"answer": "forced"}},
+            ]
+        )
+    )
+    predictor = mocker.patch.object(react.react, "aforward", side_effect=[empty] * max_iters + [final])
+
+    pred = await react.acall(question="cats", max_iters=max_iters)
+
+    assert pred.answer == "forced"
+    assert pred.termination_reason == "forced_submit"
+    assert pred.history.messages[0]["question"] == "cats"
+    assert pred.history.messages[0]["tool_calls"].tool_calls[0].id == f"call_{max_iters}_1"
+    assert predictor.call_args.kwargs["config"] == {
+        "tool_choice": {"type": "function", "function": {"name": "submit"}},
+        "reasoning_effort": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_react_async_tool_cancellation_propagates(mocker):
+    async def cancel() -> str:
+        raise asyncio.CancelledError
+
+    react = dspy.ReAct("question -> answer", tools=[cancel])
+    predictor = mocker.patch.object(
+        react.react,
+        "aforward",
+        return_value=dspy.Prediction(
+            tool_calls=dspy.ToolCalls.from_dict_list([{"name": "cancel", "args": {}}]),
+        ),
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await react.acall(question="cats")
+    assert predictor.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_async", [False, True])
+async def test_tool_calling_with_pydantic_args(use_async):
+    class CalendarEvent(BaseModel):
+        name: str
+        participants: list[str]
+
+    def invite(event: CalendarEvent) -> str:
+        return f"{', '.join(event.participants)}: {event.name}"
+
+    async def async_invite(event: CalendarEvent) -> str:
+        return invite(event)
+
+    tool = dspy.Tool(async_invite if use_async else invite, name="invite")
+    lm = dspy.utils.DummyLM([
+        {
+            "next_thought": "Invite the participants.",
+            "tool_calls": dspy.ToolCalls.from_dict_list([
+                {"name": "invite", "args": {"event": {"name": "Science Fair", "participants": ["Alice", "Bob"]}}},
+            ]),
+        },
+        {
+            "next_thought": "Done.",
+            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "invited"}}]),
+        },
+    ])
+    agent = dspy.ReAct("question -> answer", tools=[tool])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        result = await agent.acall(question="Invite everyone") if use_async else agent(question="Invite everyone")
+    observation = result.history.messages[0]["tool_calls"].tool_call_results.tool_call_results[0]
+    assert observation.is_error is False
+    assert observation.value == "Alice, Bob: Science Fair"
+    assert result.answer == "invited"
 
 
 @pytest.mark.extra
 def test_tool_observation_preserves_custom_type():
-    pytest.importorskip("PIL.Image")
-    from PIL import Image
-
-    captured_calls = []
-
-    class SpyChatAdapter(dspy.ChatAdapter):
-        def format_user_message_content(self, signature, inputs, *args, **kwargs):
-            captured_calls.append((signature, dict(inputs)))
-            return super().format_user_message_content(signature, inputs, *args, **kwargs)
+    image = pytest.importorskip("PIL.Image")
 
     def make_images():
-        return dspy.Image("https://example.com/test.png"), dspy.Image(Image.new("RGB", (100, 100), "red"))
+        return dspy.Image("https://example.com/test.png"), dspy.Image(image.new("RGB", (100, 100), "red"))
 
-
-    adapter = SpyChatAdapter()
-    lm = DummyLM(
-        [
-            {
-                "next_thought": "I should call the image tool.",
-                "next_tool_name": "make_images",
-                "next_tool_args": {},
-            },
-            {
-                "next_thought": "I now have the image so I can finish.",
-                "next_tool_name": "finish",
-                "next_tool_args": {},
-            },
-            {"reasoning": "image ready", "answer": "done"},
-        ],
-        adapter=adapter,
-    )
-    dspy.configure(lm=lm, adapter=adapter)
-
-    react = dspy.ReAct("question -> answer", tools=[make_images])
-    react(question="Draw me something red")
-
-    sigs_with_obs = [sig for sig, inputs in captured_calls if "observation_0" in inputs]
-    assert sigs_with_obs, "Expected ReAct to format a trajectory containing observation_0"
-
-    observation_content = lm.history[1]["messages"][1]["content"]
-    assert sum(1 for part in observation_content if isinstance(part, dict) and part.get("type") == "image_url") == 2
-
-
-def test_tool_calling_with_pydantic_args():
-    class CalendarEvent(BaseModel):
-        name: str
-        date: str
-        participants: dict[str, str]
-
-    def write_invitation_letter(participant_name: str, event_info: CalendarEvent):
-        if participant_name not in event_info.participants:
-            return None
-        return f"It's my honor to invite {participant_name} to event {event_info.name} on {event_info.date}"
-
-    class InvitationSignature(dspy.Signature):
-        participant_name: str = dspy.InputField(desc="The name of the participant to invite")
-        event_info: CalendarEvent = dspy.InputField(desc="The information about the event")
-        invitation_letter: str = dspy.OutputField(desc="The invitation letter to be sent to the participant")
-
-    react = dspy.ReAct(InvitationSignature, tools=[write_invitation_letter])
-
-    lm = DummyLM(
-        [
-            {
-                "next_thought": "I need to write an invitation letter for Alice to the Science Fair event.",
-                "next_tool_name": "write_invitation_letter",
-                "next_tool_args": {
-                    "participant_name": "Alice",
-                    "event_info": {
-                        "name": "Science Fair",
-                        "date": "Friday",
-                        "participants": {"Alice": "female", "Bob": "male"},
-                    },
-                },
-            },
-            {
-                "next_thought": (
-                    "I have successfully written the invitation letter for Alice to the Science Fair. Now "
-                    "I can finish the task."
-                ),
-                "next_tool_name": "finish",
-                "next_tool_args": {},
-            },
-            {
-                "reasoning": "This is a very rigorous reasoning process, trust me bro!",
-                "invitation_letter": "It's my honor to invite Alice to the Science Fair event on Friday.",
-            },
-        ]
-    )
-    dspy.configure(lm=lm)
-
-    outputs = react(
-        participant_name="Alice",
-        event_info=CalendarEvent(
-            name="Science Fair",
-            date="Friday",
-            participants={"Alice": "female", "Bob": "male"},
-        ),
-    )
-    assert outputs.invitation_letter == "It's my honor to invite Alice to the Science Fair event on Friday."
-
-    expected_trajectory = {
-        "thought_0": "I need to write an invitation letter for Alice to the Science Fair event.",
-        "tool_name_0": "write_invitation_letter",
-        "tool_args_0": {
-            "participant_name": "Alice",
-            "event_info": {
-                "name": "Science Fair",
-                "date": "Friday",
-                "participants": {"Alice": "female", "Bob": "male"},
-            },
+    lm = dspy.utils.DummyLM([
+        {
+            "next_thought": "Get the images.",
+            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "make_images", "args": {}}]),
         },
-        "observation_0": "It's my honor to invite Alice to event Science Fair on Friday",
-        "thought_1": "I have successfully written the invitation letter for Alice to the Science Fair. Now I can finish the task.",
-        "tool_name_1": "finish",
-        "tool_args_1": {},
-        "observation_1": "Completed.",
-    }
-    assert outputs.trajectory == expected_trajectory
-
-
-def test_react_with_tools_skips_native_response_issubclass_for_generic_alias(monkeypatch):
-    def get_user_info(name: str):
-        return {"name": name}
-
-    class CustomerService(dspy.Signature):
-        user_request: str = dspy.InputField()
-        process_result: str = dspy.OutputField()
-
-    react = dspy.ReAct(CustomerService, tools=[get_user_info])
-    problem_annotation = react.react.signature.output_fields["next_tool_args"].annotation
-
-    def guarded_issubclass(cls, class_or_tuple):
-        if cls == problem_annotation:
-            raise TypeError("issubclass() arg 1 must be a class")
-        return issubclass(cls, class_or_tuple)
-
-    monkeypatch.setattr(adapter_base, "issubclass", guarded_issubclass, raising=False)
-    monkeypatch.setattr(adapter_utils, "issubclass", guarded_issubclass, raising=False)
-
-    lm = DummyLM(
-        [
-            {
-                "next_thought": "I should look up the user first.",
-                "next_tool_name": "get_user_info",
-                "next_tool_args": {"name": "Adam"},
-            },
-            {
-                "next_thought": "I have the information I need, so I can finish now.",
-                "next_tool_name": "finish",
-                "next_tool_args": {},
-            },
-            {
-                "reasoning": "I fetched the user profile and can answer the request.",
-                "process_result": "Resolved Adam's request.",
-            },
-        ]
-    )
-
-    with dspy.context(lm=lm):
-        result = react(user_request="Help me, my name is Adam")
-
-    assert result.process_result == "Resolved Adam's request."
-    assert result.trajectory["tool_name_0"] == "get_user_info"
-    assert result.trajectory["tool_args_0"] == {"name": "Adam"}
-
-
-def test_tool_calling_without_typehint():
-    def foo(a, b):
-        """Add two numbers."""
-        return a + b
-
-    react = dspy.ReAct("a, b -> c:int", tools=[foo])
-    lm = DummyLM(
-        [
-            {"next_thought": "I need to add two numbers.", "next_tool_name": "foo", "next_tool_args": {"a": 1, "b": 2}},
-            {"next_thought": "I have the sum, now I can finish.", "next_tool_name": "finish", "next_tool_args": {}},
-            {"reasoning": "I added the numbers successfully", "c": 3},
-        ]
-    )
-    dspy.configure(lm=lm)
-    outputs = react(a=1, b=2)
-
-    expected_trajectory = {
-        "thought_0": "I need to add two numbers.",
-        "tool_name_0": "foo",
-        "tool_args_0": {
-            "a": 1,
-            "b": 2,
+        {
+            "next_thought": "Done.",
+            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "done"}}]),
         },
-        "observation_0": 3,
-        "thought_1": "I have the sum, now I can finish.",
-        "tool_name_1": "finish",
-        "tool_args_1": {},
-        "observation_1": "Completed.",
-    }
-    assert outputs.trajectory == expected_trajectory
+    ])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        result = dspy.ReAct("question -> answer", tools=[make_images])(question="Draw something red")
 
-
-def test_trajectory_truncation():
-    # Create a simple tool for testing
-    def echo(text: str) -> str:
-        return f"Echoed: {text}"
-
-    # Create ReAct instance with our echo tool
-    react = dspy.ReAct("input_text -> output_text", tools=[echo])
-
-    # Mock react.react to simulate multiple tool calls
-    call_count = 0
-
-    def mock_react(**kwargs):
-        nonlocal call_count
-        call_count += 1
-
-        if call_count < 3:
-            # First 2 calls use the echo tool
-            return dspy.Prediction(
-                next_thought=f"Thought {call_count}",
-                next_tool_name="echo",
-                next_tool_args={"text": f"Text {call_count}"},
-            )
-        elif call_count == 3:
-            # The 3rd call raises context window exceeded error
-            raise ContextWindowExceededError()
-        else:
-            # The 4th call finishes
-            return dspy.Prediction(next_thought="Final thought", next_tool_name="finish", next_tool_args={})
-
-    react.react = mock_react
-    react.extract = lambda **kwargs: dspy.Prediction(output_text="Final output")
-
-    # Call forward and get the result
-    result = react(input_text="test input")
-
-    # Verify that older entries in the trajectory were truncated
-    assert "thought_0" not in result.trajectory
-    assert "thought_2" in result.trajectory
-    assert result.output_text == "Final output"
-
-
-def test_truncate_trajectory_raises_on_single_tool_call():
-    # A trajectory with exactly one tool call has 4 keys (thought, tool_name, tool_args,
-    # observation). Per truncate_trajectory's own docstring/error message, this is the
-    # smallest trajectory that cannot be truncated further, so it must raise instead of
-    # silently popping every key and returning an empty trajectory.
-    react = dspy.ReAct("input_text -> output_text", tools=[])
-    trajectory = {
-        "thought_0": "Thought 0",
-        "tool_name_0": "finish",
-        "tool_args_0": {},
-        "observation_0": "Completed.",
-    }
-
-    with pytest.raises(ContextWindowExceededError):
-        react.truncate_trajectory(trajectory)
-
-
-def test_truncation_exhausted_raises_context_window_exceeded_error():
-    def echo(text: str) -> str:
-        return f"Echoed: {text}"
-
-    react = dspy.ReAct("input_text -> output_text", tools=[echo])
-
-    def always_exceed(**kwargs):
-        raise ContextWindowExceededError()
-
-    trajectory = {}
-    for i in range(4):
-        trajectory[f"thought_{i}"] = f"Thought {i}"
-        trajectory[f"tool_name_{i}"] = "echo"
-        trajectory[f"tool_args_{i}"] = {"text": f"Text {i}"}
-        trajectory[f"observation_{i}"] = f"Echoed: Text {i}"
-
-    with pytest.raises(ContextWindowExceededError, match="even after 3 attempts") as exc_info:
-        react._call_with_potential_trajectory_truncation(always_exceed, trajectory, input_text="test input")
-
-    assert isinstance(exc_info.value.__cause__, ContextWindowExceededError)
-
-
-@pytest.mark.asyncio
-async def test_context_window_exceeded_after_retries():
-    def echo(text: str) -> str:
-        return f"Echoed: {text}"
-
-    react = dspy.ReAct("input_text -> output_text", tools=[echo])
-
-    def mock_react(**kwargs):
-        raise ContextWindowExceededError()
-
-    # Test sync version
-    extract_calls = []
-
-    def mock_extract(**kwargs):
-        extract_calls.append(kwargs)
-        return dspy.Prediction(output_text="Fallback output")
-
-    react.react = mock_react
-    react.extract = mock_extract
-
-    result = react(input_text="test input")
-    assert result.trajectory == {}
-    assert result.output_text == "Fallback output"
-    assert len(extract_calls) == 1
-    assert extract_calls[0]["input_text"] == "test input"
-    assert "trajectory" in extract_calls[0]
-
-    # Test async version
-    async_extract_calls = []
-
-    async def mock_react_async(**kwargs):
-        raise ContextWindowExceededError()
-
-    async def mock_extract_async(**kwargs):
-        async_extract_calls.append(kwargs)
-        return dspy.Prediction(output_text="Fallback output")
-
-    react.react.acall = mock_react_async
-    react.extract.acall = mock_extract_async
-
-    result = await react.acall(input_text="test input")
-    assert result.trajectory == {}
-    assert result.output_text == "Fallback output"
-    assert len(async_extract_calls) == 1
-    assert async_extract_calls[0]["input_text"] == "test input"
-    assert "trajectory" in async_extract_calls[0]
-
-
-def test_error_retry():
-    # --- a tiny tool that always fails -------------------------------------
-    def foo(a, b):
-        raise Exception("tool error")
-
-    # --- program under test -------------------------------------------------
-    react = dspy.ReAct("a, b -> c:int", tools=[foo])
-    lm = DummyLM(
-        [
-            {
-                "next_thought": "I need to add two numbers.",
-                "next_tool_name": "foo",
-                "next_tool_args": {"a": 1, "b": 2},
-            },
-            {
-                "next_thought": "I need to add two numbers.",
-                "next_tool_name": "foo",
-                "next_tool_args": {"a": 1, "b": 2},
-            },
-            # (The model *would* succeed on the 3rd turn, but max_iters=2 stops earlier.)
-            {"reasoning": "I added the numbers successfully", "c": 3},
-        ]
-    )
-    dspy.configure(lm=lm)
-
-    outputs = react(a=1, b=2, max_iters=2)
-    traj = outputs.trajectory
-
-    # --- exact-match checks (thoughts + tool calls) -------------------------
-    control_expected = {
-        "thought_0": "I need to add two numbers.",
-        "tool_name_0": "foo",
-        "tool_args_0": {"a": 1, "b": 2},
-        "thought_1": "I need to add two numbers.",
-        "tool_name_1": "foo",
-        "tool_args_1": {"a": 1, "b": 2},
-    }
-    for k, v in control_expected.items():
-        assert traj[k] == v, f"{k} mismatch"
-
-    # --- flexible checks for observations ----------------------------------
-    # We only care that each observation mentions our error string; we ignore
-    # any extra traceback detail or differing prefixes.
-    for i in range(2):
-        obs = traj[f"observation_{i}"]
-        assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
-
-
-def test_tool_error_observation_format():
-    def failing_tool():
-        raise ValueError("tool blew up")
-
-    react = dspy.ReAct("question -> answer", tools=[failing_tool])
-    lm = DummyLM(
-        [
-            {
-                "next_thought": "I will call the tool.",
-                "next_tool_name": "failing_tool",
-                "next_tool_args": {},
-            },
-            {"reasoning": "The tool failed.", "answer": "n/a"},
-        ]
-    )
-    dspy.configure(lm=lm)
-
-    outputs = react(question="What happens?", max_iters=1)
-    obs = outputs.trajectory["observation_0"]
-
-    assert obs.startswith("Execution error in failing_tool: \nTraceback (most recent call last):")
-    assert obs.endswith("ValueError: tool blew up")
-
-
-@pytest.mark.asyncio
-async def test_async_tool_calling_with_pydantic_args():
-    class CalendarEvent(BaseModel):
-        name: str
-        date: str
-        participants: dict[str, str]
-
-    async def write_invitation_letter(participant_name: str, event_info: CalendarEvent):
-        if participant_name not in event_info.participants:
-            return None
-        return f"It's my honor to invite {participant_name} to event {event_info.name} on {event_info.date}"
-
-    class InvitationSignature(dspy.Signature):
-        participant_name: str = dspy.InputField(desc="The name of the participant to invite")
-        event_info: CalendarEvent = dspy.InputField(desc="The information about the event")
-        invitation_letter: str = dspy.OutputField(desc="The invitation letter to be sent to the participant")
-
-    react = dspy.ReAct(InvitationSignature, tools=[write_invitation_letter])
-
-    lm = DummyLM(
-        [
-            {
-                "next_thought": "I need to write an invitation letter for Alice to the Science Fair event.",
-                "next_tool_name": "write_invitation_letter",
-                "next_tool_args": {
-                    "participant_name": "Alice",
-                    "event_info": {
-                        "name": "Science Fair",
-                        "date": "Friday",
-                        "participants": {"Alice": "female", "Bob": "male"},
-                    },
-                },
-            },
-            {
-                "next_thought": (
-                    "I have successfully written the invitation letter for Alice to the Science Fair. Now "
-                    "I can finish the task."
-                ),
-                "next_tool_name": "finish",
-                "next_tool_args": {},
-            },
-            {
-                "reasoning": "This is a very rigorous reasoning process, trust me bro!",
-                "invitation_letter": "It's my honor to invite Alice to the Science Fair event on Friday.",
-            },
-        ]
-    )
-    with dspy.context(lm=lm):
-        outputs = await react.acall(
-            participant_name="Alice",
-            event_info=CalendarEvent(
-                name="Science Fair",
-                date="Friday",
-                participants={"Alice": "female", "Bob": "male"},
-            ),
-        )
-    assert outputs.invitation_letter == "It's my honor to invite Alice to the Science Fair event on Friday."
-
-    expected_trajectory = {
-        "thought_0": "I need to write an invitation letter for Alice to the Science Fair event.",
-        "tool_name_0": "write_invitation_letter",
-        "tool_args_0": {
-            "participant_name": "Alice",
-            "event_info": {
-                "name": "Science Fair",
-                "date": "Friday",
-                "participants": {"Alice": "female", "Bob": "male"},
-            },
-        },
-        "observation_0": "It's my honor to invite Alice to event Science Fair on Friday",
-        "thought_1": "I have successfully written the invitation letter for Alice to the Science Fair. Now I can finish the task.",
-        "tool_name_1": "finish",
-        "tool_args_1": {},
-        "observation_1": "Completed.",
-    }
-    assert outputs.trajectory == expected_trajectory
-
-
-@pytest.mark.asyncio
-async def test_async_error_retry():
-    # A tiny tool that always fails
-    async def foo(a, b):
-        raise Exception("tool error")
-
-    react = dspy.ReAct("a, b -> c:int", tools=[foo])
-    lm = DummyLM(
-        [
-            {
-                "next_thought": "I need to add two numbers.",
-                "next_tool_name": "foo",
-                "next_tool_args": {"a": 1, "b": 2},
-            },
-            {
-                "next_thought": "I need to add two numbers.",
-                "next_tool_name": "foo",
-                "next_tool_args": {"a": 1, "b": 2},
-            },
-            # (The model *would* succeed on the 3rd turn, but max_iters=2 stops earlier.)
-            {"reasoning": "I added the numbers successfully", "c": 3},
-        ]
-    )
-    with dspy.context(lm=lm):
-        outputs = await react.acall(a=1, b=2, max_iters=2)
-    traj = outputs.trajectory
-
-    # Exact-match checks (thoughts + tool calls)
-    control_expected = {
-        "thought_0": "I need to add two numbers.",
-        "tool_name_0": "foo",
-        "tool_args_0": {"a": 1, "b": 2},
-        "thought_1": "I need to add two numbers.",
-        "tool_name_1": "foo",
-        "tool_args_1": {"a": 1, "b": 2},
-    }
-    for k, v in control_expected.items():
-        assert traj[k] == v, f"{k} mismatch"
-
-    # Flexible checks for observations
-    # We only care that each observation mentions our error string; we ignore
-    # any extra traceback detail or differing prefixes.
-    for i in range(2):
-        obs = traj[f"observation_{i}"]
-        assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+    images = [
+        part
+        for message in lm.history[1]["messages"]
+        if isinstance(message["content"], list)
+        for part in message["content"]
+        if isinstance(part, dict) and part.get("type") == "image"
+    ]
+    assert len(images) == 2
+    assert result.answer == "done"

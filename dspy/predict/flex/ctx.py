@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import ast
+import math
 import types
 import typing
 from dataclasses import dataclass, field
 from typing import Any, get_args, get_origin
+
+from dspy.primitives.facade import is_reserved_sandbox_name
+from dspy.signatures.field import PYDANTIC_CONSTRAINT_MAP
 
 
 @dataclass
@@ -25,10 +29,10 @@ class FlexContext:
                     f"referenced by name in the generated code — but got {name!r}. Use a `def` "
                     f"function or `dspy.Tool(func, name='my_tool')`."
                 )
-            if name == "dspy" or name.startswith(("_dspy", "__dspy")):
+            if is_reserved_sandbox_name(name):
                 raise ValueError(
-                    f"Tool name {name!r} is reserved: 'dspy' and names starting with '_dspy' belong "
-                    f"to the dspy.Flex sandbox. Rename it, e.g. `dspy.Tool(func, name='my_tool')`."
+                    f"Tool name {name!r} is reserved: 'dspy' and names starting with '_dspy' belong to the "
+                    "sandbox. Rename it, e.g. `dspy.Tool(func, name='my_tool')`."
                 )
             out[name] = tool
         return out
@@ -73,6 +77,39 @@ class FlexContext:
 
         return f"{_render(cls.input_fields)} -> {_render(cls.output_fields)}"
 
+    def field_kwargs(self) -> dict[str, dict[str, Any]]:
+        """Each field's InputField/OutputField kwargs that the string form drops: its desc and constraints."""
+        out: dict[str, dict[str, Any]] = {}
+        for fname, finfo in self.signature_cls.fields.items():
+            desc = (finfo.json_schema_extra or {}).get("desc", "")
+            kwargs = {"desc": desc} if desc and not desc.startswith("${") else {}
+            for m in finfo.metadata:
+                for k in PYDANTIC_CONSTRAINT_MAP:
+                    # Only plain numbers can be written into source and sent back as JSON (not Decimal or inf).
+                    if isinstance(v := getattr(m, k, None), int | float) and math.isfinite(v):
+                        kwargs[k] = v
+            out[fname] = kwargs
+        return out
+
+    def render_signature_class(self, class_name: str) -> str:
+        """Render a class-based ``dspy.Signature`` that keeps each field's desc and constraints."""
+        cls = self.signature_cls
+        custom = self.custom_types()
+        lines = [f"class {class_name}(dspy.Signature):"]
+        instructions = (getattr(cls, "instructions", "") or "").strip()
+        if instructions:
+            lines += [f"    {instructions!r}", ""]
+        for fname, kwargs in self.field_kwargs().items():
+            ctor = "InputField" if fname in cls.input_fields else "OutputField"
+            field = f"dspy.{ctor}({', '.join(f'{k}={v!r}' for k, v in kwargs.items())})"
+            try:
+                ann = render_annotation(cls.fields[fname].annotation, custom)
+            except ValueError:
+                lines.append(f"    {fname} = {field}")
+                continue
+            lines.append(f"    {fname}: {ann} = {field}")
+        return "\n".join(lines)
+
     def custom_types(self) -> dict[str, type]:
         cls = self.signature_cls
         out: dict[str, type] = {}
@@ -92,10 +129,16 @@ class FlexContext:
             parts.append("Available tools (in scope by name):\n" + "\n".join(tool_lines))
         if sandboxed:
             parts.append(
-                "This module runs in a sandbox: only the tools listed above may be passed to "
-                "dspy.ReActV2/dspy.RLM (their functions live on the host). A function you define inside "
-                "the module can be called directly in forward, but cannot be handed to those predictors."
+                "This module runs in a sandbox: the tools listed above run on the host, and functions you "
+                "define inside the module run in the sandbox. Either kind can be called directly in forward "
+                "or passed to dspy.ReAct/dspy.RLM."
             )
+            if custom := [name for name, t in self.custom_types().items() if _is_user_type(t)]:
+                parts.append(
+                    f"In the sandbox, values of {', '.join(sorted(custom))} are plain data, the JSON the type writes, "
+                    "like a dict of a model's fields: read them that way, and where the signature names the type, return "
+                    "such data, which the host reads as the type. The types' methods and properties stay on the host."
+                )
         return "\n\n".join(parts) if parts else "(no extra context)"
 
 
@@ -106,6 +149,13 @@ def _type_name(t: Any) -> str:
     if name:
         return name
     return str(t).replace("typing.", "")
+
+
+def _is_user_type(t: type) -> bool:
+    """A type of the user's, whose values are plain data in the sandbox (see ``facade.HostValues``)."""
+    from dspy.primitives.facade import _import_path
+
+    return _import_path(t) is None
 
 
 def _collect_custom_types(annotation: Any, out: dict[str, type]) -> None:

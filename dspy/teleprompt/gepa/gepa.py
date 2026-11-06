@@ -11,7 +11,13 @@ from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
 
 from dspy.clients.lm import LM
 from dspy.primitives import Example, Module, Prediction
-from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
+from dspy.teleprompt.gepa.gepa_utils import (
+    CodeProposalFn,
+    DspyAdapter,
+    DSPyTrace,
+    PredictorFeedbackFn,
+    ScoreWithFeedback,
+)
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.annotation import experimental
 
@@ -257,35 +263,49 @@ class GEPA(Teleprompter):
             a strong reflection model. Consider using `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)`
             for optimal performance.
         skip_perfect_score: Whether to skip examples with perfect scores during reflection. Default is True.
-        instruction_proposer: Optional custom instruction proposer implementing GEPA's ProposalFn protocol.
-            **Default: None (recommended for most users)** - Uses GEPA's proven instruction proposer from
-            the [GEPA library](https://github.com/gepa-ai/gepa), which implements the
-            [`ProposalFn`](https://github.com/gepa-ai/gepa/blob/main/src/gepa/core/adapter.py). This default
-            proposer is highly capable and was validated across diverse experiments reported in the GEPA
-            paper and tutorials.
+        instruction_proposer: The proposer that writes new instructions, implementing GEPA's ProposalFn
+            protocol. **Default: None** - builds `InstructionProposer()` from `dspy.teleprompt.gepa`, the
+            built-in proposer. It asks the reflection LM for a new instruction through `dspy.Predict` with
+            a `JSONAdapter`, using GEPA's standard reflection prompt, and sends `dspy.Image` and other
+            `dspy.Type` inputs to the reflection LM as structured content.
 
-            See documentation on custom instruction proposers
+            To configure the built-in proposer, pass an `InstructionProposer(...)` instance. Its options:
+            - `skills`: reference material (skill files, directories with `SKILL.md`, or inline text)
+              shown to the reflection LM
+            - `additional_instructions`: guidance applied to every proposal
+            - `base_instructions`: replaces the reflection prompt
+            - `max_chars`: character limit validated with Pydantic after one compression attempt;
+              an oversized result raises instead of being returned or truncated
+            - `truncate_history_outputs`: shorten long tool results in `dspy.History` inputs and long outputs in
+              `REPLHistory` inputs before rendering
+            - `adapter`: the adapter for the proposer's own LM calls (default `JSONAdapter()`)
+
+            See documentation on instruction proposers
             [here](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#custom-instruction-proposers).
 
-            **Advanced Feature**: Only needed for specialized scenarios:
-            - **Multi-modal handling**: Processing dspy.Image inputs alongside textual information
-            - **Nuanced control over constraints**: Fine-grained control over instruction length, format,
-              and structural requirements beyond standard feedback mechanisms
-            - **Domain-specific knowledge injection**: Specialized terminology or context that cannot be
-              provided through feedback_func alone
-            - **Provider-specific prompting**: Optimizations for specific LLM providers (OpenAI, Anthropic)
-              with unique formatting preferences
-            - **Coupled component updates**: Coordinated updates of multiple components together rather
-              than independent optimization
-            - **External knowledge integration**: Runtime access to databases, APIs, or knowledge bases
-
-            The default proposer handles the vast majority of use cases effectively. Use
-            MultiModalInstructionProposer() from dspy.teleprompt.gepa.instruction_proposal for visual
-            content or implement custom ProposalFn for highly specialized requirements.
+            Implement a custom ProposalFn only for needs the built-in options do not cover, such as
+            coupled updates of several components or runtime access to external knowledge.
 
             Note: When both instruction_proposer and reflection_lm are set, the instruction_proposer is called
             in the reflection_lm context. However, reflection_lm is optional when using a custom instruction_proposer.
             Custom instruction proposers can invoke their own LLMs if needed.
+        code_proposer: Optional custom proposer for `dspy.Flex` code components, implementing the
+            `CodeProposalFn` protocol from `dspy.teleprompt.gepa.gepa_utils`.
+            **Default: None** - Uses the built-in code proposer, which rewrites each Flex
+            submodule's full `module_src` from the failing examples and feedback.
+
+            A custom code proposer is called once per reflection round with the code components to
+            update, the current candidate, the reflective dataset, and per-component task
+            descriptions (the rendered Flex signature) and context blurbs (available tools and
+            style notes). It must return a complete replacement `dspy.Module` subclass source per
+            component. It is invoked inside the reflection_lm context, so predictors it creates
+            use the reflection LM unless it selects a different one with `dspy.context(lm=...)`.
+            Unlike instruction_proposer, it does not satisfy the requirement for a reflection
+            provider: GEPA still requires reflection_lm or instruction_proposer to be set.
+
+            Only Flex components are routed to it; regular predictors keep going to
+            instruction_proposer (or the default instruction proposer). This parameter has no
+            effect on programs without `dspy.Flex` submodules.
         component_selector: Custom component selector implementing the [ReflectionComponentSelector](https://github.com/gepa-ai/gepa/blob/main/src/gepa/proposer/reflective_mutation/base.py) protocol,
             or a string specifying a built-in selector strategy. Controls which components (predictors) are selected
             for optimization at each iteration. Defaults to 'round_robin' strategy which cycles through components
@@ -391,6 +411,7 @@ class GEPA(Teleprompter):
         skip_perfect_score: bool = True,
         add_format_failure_as_feedback: bool = False,
         instruction_proposer: "ProposalFn | None" = None,
+        code_proposer: "CodeProposalFn | None" = None,
         component_selector: "ReflectionComponentSelector | str" = "round_robin",
         # Merge-based configuration
         use_merge: bool = True,
@@ -474,6 +495,7 @@ class GEPA(Teleprompter):
         self.seed = seed
 
         self.custom_instruction_proposer = instruction_proposer
+        self.custom_code_proposer = code_proposer
         self.component_selector = component_selector
         self.gepa_kwargs = gepa_kwargs or {}
 
@@ -484,7 +506,8 @@ class GEPA(Teleprompter):
             raise ValueError(
                 "reflection_prompt_template cannot be passed via gepa_kwargs when using dspy.GEPA. "
                 "DspyAdapter implements its own propose_new_texts, so reflection_prompt_template is unused. "
-                "To customize reflection behavior, pass a custom ProposalFn via the instruction_proposer parameter instead."
+                "To customize the reflection prompt, pass "
+                "instruction_proposer=InstructionProposer(base_instructions=...) instead."
             )
 
     def auto_budget(
@@ -619,6 +642,7 @@ class GEPA(Teleprompter):
             rng=rng,
             reflection_lm=self.reflection_lm,
             custom_instruction_proposer=self.custom_instruction_proposer,
+            custom_code_proposer=self.custom_code_proposer,
             warn_on_score_mismatch=self.warn_on_score_mismatch,
             reflection_minibatch_size=self.reflection_minibatch_size,
         )

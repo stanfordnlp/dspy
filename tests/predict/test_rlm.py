@@ -7,7 +7,9 @@ Test organization:
 """
 
 import base64
-from contextlib import contextmanager
+import io
+import sys
+from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 
 import pytest
@@ -15,11 +17,18 @@ import pytest
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.predict.rlm import RLM, _strip_code_fences
-from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.primitives.code_interpreter import (
+    CodeExecutionError,
+    CodeInterpreterError,
+    FinalOutput,
+    resolve_interpreter_factory,
+)
+from dspy.primitives.local_interpreter import LocalInterpreter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from dspy.primitives.sandbox_serializable import SandboxSerializable
+from dspy.utils.dummies import DummyLM
 from tests.mock_interpreter import MockInterpreter, MockInterpreterFactory
 
 # ============================================================================
@@ -119,6 +128,33 @@ class TestMockInterpreter:
 # ============================================================================
 # Unit Tests: RLM Module (no interpreter needed)
 # ============================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_mode", [False, True])
+@pytest.mark.parametrize("mode", ["native", "omitted", "unsupported"])
+async def test_default_reasoning_trajectory(mode, async_mode):
+    class Model(DummyLM):
+        @property
+        def supports_reasoning(self):
+            return mode != "unsupported"
+
+    responses = [{"code": "print(13)"}, {"code": "print(missing)"}, {"code": "SUBMIT(13)"}]
+    if mode == "unsupported":
+        for response in responses:
+            response["plan"] = "Check the value before submitting."
+    lm = Model(responses, reasoning=mode == "native")
+    factory = MockInterpreterFactory(responses=[
+        "13", CodeExecutionError("name 'missing' is not defined"), FinalOutput({"answer": 13}),
+    ])
+    program = RLM("query -> answer: int", max_iters=3, interpreter_factory=factory)
+    with dspy.context(lm=lm):
+        result = await program.acall(query="Return thirteen") if async_mode else program(query="Return thirteen")
+    expected = "Some reasoning" if mode == "native" else "" if mode == "omitted" else responses[0]["plan"]
+    assert result.answer == 13
+    assert result.final_reasoning == expected
+    assert len(result.trajectory) == 3
+    assert all(entry["reasoning"] == expected and isinstance(entry["reasoning"], str) for entry in result.trajectory)
 
 
 class TestRLMInitialization:
@@ -229,7 +265,10 @@ class TestRLMInitialization:
         rlm = RLM("context -> answer")
         assert rlm.max_llm_calls == 50
         assert rlm.sub_lm is None
+        # PythonInterpreter is the public default; the resolver lets the configured factory
+        # override it on each forward.
         assert rlm._interpreter_factory is PythonInterpreter
+        assert resolve_interpreter_factory(rlm._interpreter_factory) is PythonInterpreter
 
         # Test custom values
         mock_lm = dspy.LM("openai/gpt-4o-mini")
@@ -258,7 +297,7 @@ class TestRLMInitialization:
         assert "c" in str(exc_info.value)
 
     def test_interpreter_instance_is_rejected_as_factory(self):
-        with pytest.raises(TypeError, match="first positional argument when calling the module"):
+        with pytest.raises(TypeError, match="already implements CodeInterpreter"):
             RLM("context -> answer", interpreter_factory=MockInterpreter())
 
     def test_constructor_interpreter_keyword_is_removed(self):
@@ -268,21 +307,24 @@ class TestRLMInitialization:
     def test_factory_return_value_is_validated(self):
         rlm = RLM("query -> answer", interpreter_factory=lambda: None)
 
-        with pytest.raises(TypeError, match="interpreter_factory must return a CodeInterpreter, not NoneType"):
+        with pytest.raises(TypeError, match="interpreter must implement CodeInterpreter, not NoneType"):
             rlm(query="test")
 
-    def test_keyword_interpreter_override_has_clear_error(self):
+    @pytest.mark.asyncio
+    async def test_positional_interpreter_factory_is_rejected(self):
         rlm = RLM("query -> answer")
 
-        with pytest.raises(TypeError, match="first positional argument"):
-            rlm(query="test", interpreter=MockInterpreter())
+        with pytest.raises(TypeError):
+            rlm(MockInterpreterFactory(), query="test")
+        with pytest.raises(TypeError):
+            await rlm.acall(MockInterpreterFactory(), query="test")
 
     def test_llm_query_returns_legacy_response_text(self):
         from dspy.utils.dummies import DummyLM
 
         tools = RLM("context -> answer", sub_lm=DummyLM([{"answer": "legacy answer"}]))._make_llm_tools()
 
-        assert tools["llm_query"]("test prompt") == "[[ ## answer ## ]]\nlegacy answer"
+        assert tools["llm_query"]("test prompt") == "<answer>\nlegacy answer\n</answer>"
 
     def test_llm_query_returns_typed_response_text(self):
         import dspy
@@ -293,14 +335,14 @@ class TestRLMInitialization:
         with dspy.context(experimental=True):
             result = tools["llm_query"]("test prompt")
 
-        assert result == "[[ ## answer ## ]]\ntyped answer"
+        assert result == "<answer>\ntyped answer\n</answer>"
 
     def test_llm_query_rejects_unsupported_response_shape(self):
         from unittest.mock import MagicMock
 
         tools = RLM("context -> answer", sub_lm=MagicMock(return_value="untyped response"))._make_llm_tools()
 
-        with pytest.raises(TypeError, match="Sub-LM must return dspy.LMResponse or a non-empty list"):
+        with pytest.raises(TypeError, match="Sub-LM must return dspy.lm15.Response or a non-empty list"):
             tools["llm_query"]("test prompt")
 
     def test_llm_query_reports_textless_response_type(self):
@@ -443,18 +485,16 @@ class TestRLMInterpreterLifecycle:
         class StopLMCall(BaseException):
             pass
 
-        class CapturingLM(dspy.BaseLM):
-            forward_contract = "typed_lm"
-
+        class CapturingEngine:
             def __init__(self):
-                super().__init__("snapshot-model", temperature=0.0, max_tokens=1000, cache=False)
                 self.request = None
 
-            def forward(self, request):
+            def complete(self, request):
                 self.request = request
                 raise StopLMCall
 
-        lm = CapturingLM()
+        engine = CapturingEngine()
+        lm = dspy.LM("snapshot-model", engine=engine, temperature=0.0, max_tokens=1000, cache=False)
         rlm = RLM("query -> answer", interpreter_factory=PythonInterpreter)
 
         with pytest.raises(StopLMCall), dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
@@ -464,10 +504,16 @@ class TestRLMInterpreterLifecycle:
                 iteration="1/20",
             )
 
-        request = lm.request.model_dump_json(indent=2).encode()
-        snapshot = Path(__file__).with_name("snapshots") / "rlm_python_interpreter_lm_request.json"
+        import json
 
-        assert request == snapshot.read_bytes().removesuffix(b"\n")
+        snapshot = Path(__file__).with_name("snapshots") / "rlm_python_interpreter_lm_request.json"
+        recorded = json.loads(snapshot.read_text())
+        expected = [{"role": message["role"], "content": "".join(part["text"] for part in message["parts"])}
+                    for message in recorded["messages"]]
+        sent = [{"role": "system", "content": engine.request.system}] + [
+            {"role": message.role, "content": message.text} for message in engine.request.messages
+        ]
+        assert sent == expected
 
     def test_interpreter_remains_available_as_signature_input(self):
         factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "CPython"})])
@@ -501,29 +547,83 @@ class TestRLMInterpreterLifecycle:
                 interpreter.execute("print('closed')")
 
     @pytest.mark.asyncio
-    async def test_caller_owned_interpreter_can_be_reused_across_sequential_calls(self):
+    async def test_call_time_factory_overrides_constructor_and_context_without_mutating_module(self):
+        constructor = MockInterpreterFactory(responses=[FinalOutput({"answer": "constructor"})])
+        configured = MockInterpreterFactory()
+        factory = MockInterpreterFactory(responses=["exploring", FinalOutput({"answer": "override"})])
+        factory.execution_instructions = "Call-time runtime guidance."
+        rlm = RLM("query -> answer", max_iters=2, interpreter_factory=constructor)
+        signatures = []
+
+        class Action:
+            def __call__(self, **kwargs):
+                signatures.append(kwargs["signature"].instructions)
+                return dspy.Prediction(reasoning="Return answer", code="SUBMIT(answer)")
+
+            async def acall(self, **kwargs):
+                return self(**kwargs)
+
+        rlm.generate_action = Action()
+        original_signature = rlm._action_signature.instructions
+        with dspy.context(interpreter_factory=configured):
+            sync_result = rlm(query="sync", interpreter_factory=factory)
+            async_result = await rlm.acall(query="async", interpreter_factory=factory)
+            assert rlm(query="default").answer == "constructor"
+
+        assert sync_result.answer == async_result.answer == "override"
+        assert configured.instances == []
+        assert len(constructor.instances) == 1
+        assert len(factory.instances) == 2
+        assert factory.instances[0] is not factory.instances[1]
+        assert all("Call-time runtime guidance." in signature for signature in signatures[:4])
+        assert "Call-time runtime guidance." not in signatures[4]
+        assert rlm._action_signature.instructions == original_signature
+        for interpreter in factory.instances:
+            assert interpreter.call_count == 2
+            with pytest.raises(CodeInterpreterError, match="shutdown"):
+                interpreter.execute("print('closed')")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("factory", [MockInterpreter(), 123, lambda: None])
+    async def test_invalid_call_time_factory_is_rejected(self, factory):
+        rlm = RLM("query -> answer")
+        with pytest.raises(TypeError):
+            rlm(query="sync", interpreter_factory=factory)
+        with pytest.raises(TypeError):
+            await rlm.acall(query="async", interpreter_factory=factory)
+
+    def test_interpreter_factory_is_reserved_as_signature_input(self):
+        with pytest.raises(ValueError, match="'interpreter_factory' is reserved"):
+            RLM("interpreter_factory -> answer")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("phase", ["setup", "prediction", "extraction", "cancellation"])
+    async def test_call_time_factory_cleanup_on_failure(self, phase, monkeypatch):
+        import asyncio
+
+        error = asyncio.CancelledError() if phase == "cancellation" else ValueError(phase)
+
+        class RaisingPredictor:
+            async def acall(self, **kwargs):
+                raise error
+
         factory = MockInterpreterFactory()
-        interpreter = MockInterpreter(
-            responses=[
-                FinalOutput({"answer": "first"}),
-                FinalOutput({"answer": "second"}),
-            ]
-        )
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return answer", "code": "SUBMIT(answer)"},
-        ])
+        rlm = RLM("query -> answer", max_iters=0 if phase == "extraction" else 1)
+        rlm.generate_action = RaisingPredictor()
+        rlm.extract = RaisingPredictor()
+        if phase == "setup":
+            def fail_setup(*args):
+                raise error
 
-        try:
-            sync_result = rlm(interpreter, query="sync")
-            async_result = await rlm.acall(interpreter, query="async")
+            monkeypatch.setattr(rlm, "_inject_execution_context", fail_setup)
 
-            assert sync_result.answer == "first"
-            assert async_result.answer == "second"
-            assert factory.instances == []
-            assert interpreter.execute("print('still open')") == ""
-        finally:
-            interpreter.shutdown()
+        with pytest.raises(type(error)) as exc:
+            await rlm.acall(query="test", interpreter_factory=factory)
+
+        assert exc.value is error
+        assert len(factory.instances) == 1
+        with pytest.raises(CodeInterpreterError, match="shutdown"):
+            factory.instances[0].execute("print('closed')")
 
     def test_factory_interpreter_is_shutdown_when_prediction_raises(self):
         class RaisingPredictor:
@@ -698,6 +798,15 @@ class TestREPLTypes:
         # True original length shown in header
         assert "200 chars" in formatted
 
+    @pytest.mark.parametrize(
+        ("limit", "head", "tail"),
+        [(1, "", "f"), (5, "ab", "def"), (0, "", "abcdef"), (-1, "abcde", "bcdef")],
+    )
+    def test_repl_entry_truncation_limits(self, limit, head, tail):
+        formatted = REPLEntry.format_output("abcdef", max_output_chars=limit)
+
+        assert formatted == f"Output (6 chars):\n{head}\n\n... ({6 - limit} characters omitted) ...\n\n{tail}"
+
     def test_repl_entry_format_no_truncation(self):
         """Test REPLEntry.format() passes short output through without truncation."""
         output = "a" * 50
@@ -729,6 +838,15 @@ class TestREPLTypes:
         assert var.preview.startswith("a" * 25)
         assert var.preview.endswith("b" * 25)
         assert "..." in var.preview
+
+    @pytest.mark.parametrize(
+        ("limit", "expected"),
+        [(1, "...f"), (5, "ab...def"), (0, "...abcdef"), (-1, "abcde...bcdef")],
+    )
+    def test_repl_variable_truncation_limits(self, limit, expected):
+        var = REPLVariable.from_value("value", "abcdef", preview_chars=limit)
+
+        assert var.preview == expected
 
     def test_repl_variable_with_field_info(self):
         """Test REPLVariable includes desc and constraints from field_info."""
@@ -789,7 +907,7 @@ class TestRLMCallMethod:
             {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
         ])
 
-        result = rlm(mock, query="What is the answer?")
+        result = rlm(query="What is the answer?", interpreter_factory=lambda: mock)
         assert result.answer == "42"
 
 
@@ -814,7 +932,7 @@ class TestRLMMaxIterationsFallback:
             {"answer": "extracted_answer"},
         ])
 
-        result = rlm.forward(mock, query="test")
+        result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "extracted_answer"
         assert result.final_reasoning == "Extract forced final output"
 
@@ -837,7 +955,7 @@ class TestRLMToolExceptions:
             {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
         ])
 
-        result = rlm.forward(mock, query="test")
+        result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "recovered"
 
     def test_runtime_error_history_uses_stripped_code(self):
@@ -852,7 +970,7 @@ class TestRLMToolExceptions:
             {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
         ])
 
-        result = rlm.forward(mock, query="test")
+        result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "recovered"
         first_step = result.trajectory[0]
         assert first_step["code"] == "print(x)"
@@ -869,7 +987,7 @@ class TestRLMToolExceptions:
             {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
         ])
 
-        result = rlm.forward(mock, query="test")
+        result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "recovered"
         assert result.trajectory[0]["output"].startswith("[Error] invalid syntax")
 
@@ -884,7 +1002,7 @@ class TestRLMToolExceptions:
             {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
         ])
 
-        result = rlm.forward(mock, query="test")
+        result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "recovered"
         assert result.trajectory[0]["output"].startswith("[Error]")
 
@@ -903,7 +1021,8 @@ class TestRLMToolExceptions:
         rlm.extract = make_mock_predictor([{"answer": "hallucinated"}])
 
         with pytest.raises(CodeInterpreterError, match="protocol corrupt"):
-            rlm.forward(mock, query="test")
+            rlm.forward(query="test", interpreter_factory=lambda: mock)
+        assert mock._shutdown
 
     @pytest.mark.asyncio
     async def test_interpreter_failure_propagates_async(self):
@@ -921,7 +1040,8 @@ class TestRLMToolExceptions:
         rlm.extract = make_mock_predictor([{"answer": "hallucinated"}])
 
         with pytest.raises(CodeInterpreterError, match="protocol corrupt"):
-            await rlm.aforward(mock, query="test")
+            await rlm.aforward(query="test", interpreter_factory=lambda: mock)
+        assert mock._shutdown
 
 
 class TestRLMDynamicSignature:
@@ -1181,7 +1301,7 @@ class TestRLMAsyncMock:
             {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
         ])
 
-        result = await rlm.aforward(mock, query="What is the answer?")
+        result = await rlm.aforward(query="What is the answer?", interpreter_factory=lambda: mock)
         assert result.answer == "42"
 
     @pytest.mark.asyncio
@@ -1193,7 +1313,7 @@ class TestRLMAsyncMock:
             {"reasoning": "Return count", "code": "SUBMIT(42)"},
         ])
 
-        result = await rlm.aforward(mock, query="count items")
+        result = await rlm.aforward(query="count items", interpreter_factory=lambda: mock)
         assert result.count == 42
         assert isinstance(result.count, int)
 
@@ -1210,7 +1330,7 @@ class TestRLMAsyncMock:
             {"reasoning": "Now finish", "code": 'SUBMIT("done")'},
         ])
 
-        result = await rlm.aforward(mock, query="test")
+        result = await rlm.aforward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "done"
 
 
@@ -1232,7 +1352,7 @@ class TestRLMTypeCoercionMock:
             {"reasoning": "Return value", "code": code},
         ])
 
-        result = rlm.forward(mock, query="test")
+        result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert getattr(result, output_field) == expected
 
     def test_type_error_retries(self):
@@ -1247,7 +1367,7 @@ class TestRLMTypeCoercionMock:
             {"reasoning": "Try yes", "code": 'SUBMIT("yes")'},
         ])
 
-        result = rlm.forward(mock, query="is it yes?")
+        result = rlm.forward(query="is it yes?", interpreter_factory=lambda: mock)
         assert result.answer == "yes"
 
 
@@ -1272,25 +1392,25 @@ class TestRLMTypeCoercion:
         ("data", "dict[str, str]", 'SUBMIT({"key": "value"})', {"key": "value"}, dict),
         ("answer", "Literal['yes', 'no']", 'SUBMIT("yes")', "yes", str),
     ])
-    def test_type_coercion(self, output_field, output_type, code, expected, expected_type, pooled_interpreter):
+    def test_type_coercion(self, output_field, output_type, code, expected, expected_type):
         """Test RLM type coercion for various types with PythonInterpreter."""
         rlm = RLM(f"query -> {output_field}: {output_type}", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return value", "code": code},
         ])
 
-        result = rlm.forward(pooled_interpreter, query="test")
+        result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert getattr(result, output_field) == expected
         assert isinstance(getattr(result, output_field), expected_type)
 
-    def test_submit_extracts_typed_value(self, pooled_interpreter):
+    def test_submit_extracts_typed_value(self):
         """Test RLM SUBMIT correctly extracts typed value."""
         rlm = RLM("query -> count: int", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Compute and return", "code": "result = 42\nSUBMIT(result)"},
         ])
 
-        result = rlm.forward(pooled_interpreter, query="count items")
+        result = rlm.forward(query="count items", interpreter_factory=PythonInterpreter)
         assert result.count == 42
         assert isinstance(result.count, int)
 
@@ -1307,42 +1427,42 @@ class TestRLMMultipleOutputs:
     Tests SUBMIT() calling patterns with multi-output signatures.
     """
 
-    def test_multi_output_final_kwargs(self, pooled_interpreter):
+    def test_multi_output_final_kwargs(self):
         """SUBMIT(field1=val1, field2=val2) with keyword args."""
         rlm = RLM("query -> name: str, count: int", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return both outputs", "code": 'SUBMIT(name="alice", count=5)'},
         ])
 
-        result = rlm.forward(pooled_interpreter, query="test")
+        result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.name == "alice"
         assert result.count == 5
         assert isinstance(result.count, int)
 
-    def test_multi_output_final_positional(self, pooled_interpreter):
+    def test_multi_output_final_positional(self):
         """SUBMIT(val1, val2) with positional args mapped to field order."""
         rlm = RLM("query -> name: str, count: int", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return both outputs positionally", "code": 'SUBMIT("bob", 10)'},
         ])
 
-        result = rlm.forward(pooled_interpreter, query="test")
+        result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.name == "bob"
         assert result.count == 10
 
-    def test_multi_output_three_fields(self, pooled_interpreter):
+    def test_multi_output_three_fields(self):
         """Signature with 3+ output fields of different types."""
         rlm = RLM("query -> name: str, age: int, active: bool", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return all three", "code": 'SUBMIT(name="carol", age=30, active=True)'},
         ])
 
-        result = rlm.forward(pooled_interpreter, query="test")
+        result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.name == "carol"
         assert result.age == 30
         assert result.active is True
 
-    def test_multi_output_final_missing_field_errors(self, pooled_interpreter):
+    def test_multi_output_final_missing_field_errors(self):
         """SUBMIT() with missing field should return error in output."""
         rlm = RLM("query -> name: str, count: int", max_iters=3)
         rlm.generate_action = make_mock_predictor([
@@ -1351,29 +1471,29 @@ class TestRLMMultipleOutputs:
         ])
 
         # RLM should retry after getting error for missing field
-        result = rlm.forward(pooled_interpreter, query="test")
+        result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.name == "alice"
         assert result.count == 5
 
-    def test_multi_output_submit_vars(self, pooled_interpreter):
+    def test_multi_output_submit_vars(self):
         """SUBMIT can pass variables directly for multiple outputs."""
         rlm = RLM("query -> name: str, count: int", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Use SUBMIT", "code": 'n = "dave"\nc = 15\nSUBMIT(n, c)'},
         ])
 
-        result = rlm.forward(pooled_interpreter, query="test")
+        result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.name == "dave"
         assert result.count == 15
 
-    def test_multi_output_type_coercion(self, pooled_interpreter):
+    def test_multi_output_type_coercion(self):
         """Each output field is coerced to its declared type."""
         rlm = RLM("query -> count: int, ratio: float, flag: bool", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return mixed types", "code": "SUBMIT(count=42, ratio=3.14, flag=True)"},
         ])
 
-        result = rlm.forward(pooled_interpreter, query="test")
+        result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.count == 42
         assert isinstance(result.count, int)
         assert result.ratio == 3.14
@@ -1395,53 +1515,58 @@ class TestRLMWithDummyLM:
     typed output_fields for SUBMIT based on the signature.
     """
 
-    def test_simple_computation_e2e(self, pooled_interpreter):
+    def test_simple_computation_e2e(self):
         """Test full RLM pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
+        configured = MockInterpreterFactory()
         with dummy_lm_context([
-            {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
+            {"plan": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
         ]):
             rlm = RLM("query -> answer: int", max_iters=3)
-            result = rlm.forward(pooled_interpreter, query="What is 2 + 3?")
+            with dspy.context(interpreter_factory=configured):
+                result = rlm(query="What is 2 + 3?", interpreter_factory=PythonInterpreter)
 
             assert result.answer == 5
             assert isinstance(result.answer, int)
+            assert configured.instances == []
 
-    def test_multi_turn_computation_e2e(self, pooled_interpreter):
+    def test_multi_turn_computation_e2e(self):
         """Test RLM with multiple turns before SUBMIT."""
         with dummy_lm_context([
-            {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-            {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+            {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
         ]):
             rlm = RLM("query -> answer: int", max_iters=5)
-            result = rlm.forward(pooled_interpreter, query="Double ten")
+            result = rlm.forward(query="Double ten", interpreter_factory=PythonInterpreter)
 
             assert result.answer == 20
             assert len(result.trajectory) == 2
 
-    def test_with_input_variables_e2e(self, pooled_interpreter):
+    def test_with_input_variables_e2e(self):
         """Test RLM with input variables passed to sandbox."""
         with dummy_lm_context([
-            {"reasoning": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
+            {"plan": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
         ]):
             rlm = RLM("numbers: list[int] -> total: int", max_iters=3)
-            result = rlm.forward(pooled_interpreter, numbers=[1, 2, 3, 4, 5])
+            result = rlm.forward(numbers=[1, 2, 3, 4, 5], interpreter_factory=PythonInterpreter)
 
             assert result.total == 15
 
-    def test_with_tool_e2e(self, pooled_interpreter):
+    def test_with_tool_e2e(self):
         """Test RLM calling a host-side tool through the sandbox."""
         def lookup(key: str) -> str:
             return {"apple": "red", "banana": "yellow"}.get(key, "unknown")
 
         with dummy_lm_context([
-            {"reasoning": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
+            {"plan": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
         ]):
             rlm = RLM("fruit -> color: str", max_iters=3, tools=[lookup])
-            result = rlm.forward(pooled_interpreter, fruit="apple")
+            result = rlm.forward(fruit="apple", interpreter_factory=PythonInterpreter)
 
             assert result.color == "red"
 
-    def test_dspy_tool_execution_semantics_e2e(self, pooled_interpreter):
+    # Once REPL code imports dspy, its tools are dspy.Tools that call the host: the same semantics apply.
+    @pytest.mark.parametrize("prefix", ["", "import dspy\n"], ids=["plain", "after-import-dspy"])
+    def test_dspy_tool_execution_semantics_e2e(self, prefix):
         import inspect
 
         from pydantic import BaseModel
@@ -1475,12 +1600,12 @@ class TestRLMWithDummyLM:
 
         with dummy_lm_context([
             {
-                "reasoning": "Call the tool",
-                "code": 'result = score_payload({"value": 3})\nSUBMIT(result)',
+                "plan": "Call the tool",
+                "code": prefix + 'result = score_payload({"value": 3})\nSUBMIT(result)',
             },
         ]):
             with dspy.context(callbacks=[Recorder()]):
-                result = rlm.forward(pooled_interpreter, query="test")
+                result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
 
         assert result.answer == 6
         assert len(received) == 1
@@ -1493,7 +1618,7 @@ class TestRLMWithDummyLM:
     async def test_aforward_simple_computation_e2e(self):
         """Test aforward() full pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
         with dummy_lm_context([
-            {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
+            {"plan": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
         ]):
             rlm = RLM("query -> answer: int", max_iters=3)
             result = await rlm.aforward(query="What is 2 + 3?")
@@ -1505,8 +1630,8 @@ class TestRLMWithDummyLM:
     async def test_aforward_multi_turn_e2e(self):
         """Test aforward() with multiple turns before SUBMIT."""
         with dummy_lm_context([
-            {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-            {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            {"plan": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+            {"plan": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
         ]):
             rlm = RLM("query -> answer: int", max_iters=5)
             result = await rlm.aforward(query="Double ten")
@@ -1518,12 +1643,42 @@ class TestRLMWithDummyLM:
     async def test_aforward_with_input_variables_e2e(self):
         """Test aforward() with input variables passed to sandbox."""
         with dummy_lm_context([
-            {"reasoning": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
+            {"plan": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
         ]):
             rlm = RLM("numbers: list[int] -> total: int", max_iters=3)
             result = await rlm.aforward(numbers=[1, 2, 3, 4, 5])
 
             assert result.total == 15
+
+    @pytest.mark.asyncio
+    async def test_acall_awaits_async_tools_e2e(self):
+        """Async tools run under acall's event loop, keep the caller's context, and raise into the sandbox."""
+        import asyncio
+        import contextvars
+
+        request = contextvars.ContextVar("request", default="missing")
+        request.set("req-7")
+
+        async def lookup(sku: str) -> str:
+            await asyncio.sleep(0)
+            return f"{sku}:{request.get()}"
+
+        async def explode(sku: str) -> str:
+            await asyncio.sleep(0)
+            raise KeyError(f"no such sku {sku}")
+
+        code = (
+            "try:\n"
+            "    explode(sku=sku)\n"
+            "except RuntimeError as e:\n"
+            "    error = str(e)\n"
+            "SUBMIT(lookup(sku=sku) + ' | ' + error)"
+        )
+        with dummy_lm_context([{"plan": "Look up the SKU", "code": code}]):
+            rlm = RLM("sku -> answer: str", max_iters=1, tools=[lookup, explode])
+            result = await rlm.acall(sku="A1")
+
+        assert result.answer == "A1:req-7 | KeyError: 'no such sku A1'"
 
 
 # ============================================================================
@@ -1632,7 +1787,7 @@ class TestPrepareSerializableVars:
 
     def test_separates_serializable_from_regular(self):
         """Serializable values are injected; regular values are returned."""
-        mock = MockInterpreter(responses=["", FinalOutput({"answer": "42"})])
+        mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM("data, query -> answer", max_iters=3)
 
         stub = _StubSerializable("payload")
@@ -1724,7 +1879,7 @@ class TestPrepareSerializableVars:
         ])
 
         stub = _StubSerializable("test_payload")
-        result = rlm.forward(mock, data=stub, query="test")
+        result = rlm.forward(data=stub, query="test", interpreter_factory=lambda: mock)
         assert result.answer == "done"
 
         # First call should be the serializable setup, second should be the iteration
@@ -1760,6 +1915,377 @@ class TestLargeSerializableRoundTrip:
 
         assert str(len(large_text)) in result
         assert "abc123" in result
+
+
+# ============================================================================
+# Sub-agents (the sandbox dspy facade)
+# ============================================================================
+
+
+class _Submit(Exception):  # noqa: N818 - control-flow signal, not an error
+    def __init__(self, outputs: dict):
+        self.outputs = outputs
+
+
+class _InProcessInterpreter:
+    """Minimal interpreter for tests that executes in the host process, like a real in-process backend."""
+
+    def __init__(self):
+        self.tools = {}
+        self.output_fields = None
+        self._namespace = {}
+
+    def start(self) -> None:
+        pass
+
+    def execute(self, code: str, variables: dict | None = None):
+        self._namespace.update(self.tools)
+        self._namespace.update(variables or {})
+        output_names = [field["name"] for field in self.output_fields or []]
+
+        def SUBMIT(*args, **kwargs):  # noqa: N802 - sandbox API name
+            outputs = dict(zip(output_names, args, strict=False))
+            outputs.update(kwargs)
+            raise _Submit(outputs)
+
+        self._namespace["SUBMIT"] = SUBMIT
+        buffer = io.StringIO()
+        try:
+            with redirect_stdout(buffer):
+                exec(code, self._namespace)
+        except _Submit as submit:
+            return FinalOutput(submit.outputs)
+        except Exception as e:
+            raise CodeExecutionError(f"{type(e).__name__}: {e}") from e
+        return buffer.getvalue()
+
+    def shutdown(self) -> None:
+        pass
+
+
+def _recording_predictor(code: str):
+    """Mock action predictor that records the signature RLM hands each call."""
+    seen = []
+
+    class Recording:
+        def __call__(self, signature=None, **kwargs):
+            seen.append(signature)
+            return Prediction(reasoning="Done", code=code)
+
+        async def acall(self, signature=None, **kwargs):
+            return self(signature=signature, **kwargs)
+
+    return Recording(), seen
+
+
+def _repl_rlm(code: str, **kwargs):
+    """An RLM on LocalInterpreter whose single REPL step runs ``code`` and submits ``answer``."""
+    rlm = RLM("query -> answer", max_iters=1, interpreter_factory=LocalInterpreter, **kwargs)
+    rlm.generate_action, _ = _recording_predictor(code + "\nSUBMIT(answer)")
+    return rlm
+
+
+class TestRLMSubAgents:
+    def test_prompt_offers_sub_agents(self):
+        instructions = RLM("query -> answer", interpreter_factory=MockInterpreterFactory()).generate_action.signature.instructions
+
+        assert "Sub-agents (dspy)" in instructions
+        assert 'dspy.RLM("context, query -> answer")' in instructions
+        assert "functions you define in the REPL" in instructions
+        assert "interpreter_factory=" not in instructions
+        assert "dspy.configure" not in instructions
+
+    @pytest.mark.parametrize("use_async", [False, True])
+    def test_bridge_is_installed_into_every_factory_interpreter(self, use_async):
+        import asyncio
+
+        from dspy.primitives import facade
+        from dspy.primitives.sandbox_guest import LM_TOOL
+
+        factory = MockInterpreterFactory()
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
+        rlm.generate_action, seen = _recording_predictor('SUBMIT("42")')
+        factory.responses = [FinalOutput({"answer": "42"})]
+
+        result = asyncio.run(rlm.acall(query="q")) if use_async else rlm(query="q")
+
+        assert result.answer == "42"
+        interpreter = factory.instances[0]
+        assert [code for code, _ in interpreter.setup_history] == [facade.BOOTSTRAP]
+        assert LM_TOOL in interpreter.tools
+        assert "Sub-agents (dspy)" in seen[0].instructions
+
+    @pytest.mark.parametrize("use_async", [False, True])
+    def test_call_time_factory_hosts_the_bridge(self, use_async):
+        import asyncio
+
+        from dspy.primitives import facade
+
+        configured, override = MockInterpreterFactory(), MockInterpreterFactory([FinalOutput({"answer": "42"})])
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=configured)
+        rlm.generate_action, seen = _recording_predictor('SUBMIT("42")')
+
+        call = rlm.acall(query="q", interpreter_factory=override) if use_async else None
+        result = asyncio.run(call) if use_async else rlm(query="q", interpreter_factory=override)
+
+        assert result.answer == "42"
+        assert configured.instances == []
+        assert [code for code, _ in override.instances[0].setup_history] == [facade.BOOTSTRAP]
+        assert "Sub-agents (dspy)" in seen[0].instructions
+
+    def test_interpreter_in_the_host_memory_uses_the_host_dspy(self, caplog):
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessInterpreter)
+        rlm.generate_action, seen = _recording_predictor('import dspy\nSUBMIT(dspy.Predict("q -> a")(q="x").a)')
+
+        with caplog.at_level("WARNING", logger="dspy.predict.rlm"), dspy.context(lm=DummyLM([{"a": "42"}])):
+            assert rlm(query="q").answer == "42"
+
+        assert sys.modules["dspy"] is dspy
+        assert "Sub-agents (dspy)" in seen[0].instructions
+        assert "unavailable" not in caplog.text
+
+    def test_in_process_sub_agents_use_sub_lm_and_draw_on_max_llm_calls(self):
+        rlm = RLM(
+            "query -> answer", max_iters=1, max_llm_calls=2, interpreter_factory=_InProcessInterpreter,
+            sub_lm=DummyLM([{"answer": "from sub_lm"}] * 3),
+        )
+        rlm.generate_action, _ = _recording_predictor(
+            "import dspy\n"
+            "llm_query('a')\n"
+            "second = dspy.Predict('question -> answer')(question='b').answer\n"
+            "try:\n"
+            "    dspy.Predict('question -> answer')(question='c')\n"
+            "    third = 'no limit'\n"
+            "except Exception as e:\n"
+            "    third = str(e)\n"
+            "SUBMIT(second + ' | ' + third)"
+        )
+        with dspy.context(lm=DummyLM([{"answer": "from the main lm"}])):
+            answer = rlm(query="q").answer
+        # llm_query and the first sub-agent call fill the limit, each counted once.
+        assert answer.startswith("from sub_lm | ") and "LLM call limit exceeded: 2 + 1 > 2" in answer
+
+    def test_sub_agent_calls_join_the_host_trace(self):
+        rlm = _repl_rlm('answer = dspy.Predict("question -> answer")(question="ping").answer')
+        with dspy.context(lm=DummyLM([{"answer": "pong"}]), trace=[]):
+            assert rlm(query="q").answer == "pong"
+            [(predictor, inputs, prediction)] = dspy.settings.trace
+        assert list(predictor.signature.input_fields) == ["question"]
+        assert (inputs, prediction.answer) == ({"question": "ping"}, "pong")
+
+    def test_interpreter_that_rejects_the_bootstrap_as_syntax_error_runs_without_sub_agents(self, caplog):
+        # Restricted compilers (e.g. RestrictedPython) reject the bootstrap's `__dspy_*` names at compile time.
+        from dspy.primitives import facade
+        from dspy.primitives.sandbox_guest import LM_TOOL
+
+        def execute(code, variables):
+            if code == facade.BOOTSTRAP:
+                raise SyntaxError('"__dspy_bootstrap" is an invalid variable name because it starts with "_"')
+            return FinalOutput({"answer": "42"})
+
+        factory = MockInterpreterFactory(execute_fn=execute)
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
+        rlm.generate_action, seen = _recording_predictor('SUBMIT("42")')
+
+        with caplog.at_level("WARNING", logger="dspy.predict.rlm"):
+            assert rlm(query="q").answer == "42"
+
+        assert "Sub-agents (dspy)" not in seen[0].instructions
+        assert LM_TOOL not in factory.instances[0].tools
+        assert "sub-agents are unavailable on MockInterpreter" in caplog.text
+
+    def test_bridge_reserves_sandbox_names(self):
+        with pytest.raises(ValueError, match="conflict"):
+            RLM("dspy -> answer")
+        # Bridge internals and host-injected variables live under the _dspy/__dspy prefixes.
+        for reserved in ("_dspy_host", "__dspy_code", "__dspy_lm__"):
+            with pytest.raises(ValueError, match="conflicts with built-in sandbox function"):
+                RLM("query -> answer", tools=[dspy.Tool(lambda: "", name=reserved)])
+
+        # The factory is the host's to choose, so its old marker name is an ordinary tool name.
+        def dspy_interpreter_factory() -> str:
+            """Unrelated user tool."""
+            return ""
+
+        RLM("query -> answer", tools=[dspy_interpreter_factory])
+
+    def test_sub_agents_run_in_the_repl_on_the_host_lm(self):
+        rlm = _repl_rlm('answer = dspy.Predict("question -> answer")(question="ping").answer')
+        with dspy.context(lm=DummyLM([{"answer": "bridged"}])):
+            assert rlm(query="q").answer == "bridged"
+
+    def test_sub_agent_lm_calls_draw_on_max_llm_calls(self):
+        rlm = _repl_rlm(
+            "first = llm_query('a')\n"
+            "try:\n"
+            "    dspy.Predict('question -> answer')(question='b')\n"
+            "    answer = 'no limit'\n"
+            "except Exception as e:\n"
+            "    answer = str(e)",
+            max_llm_calls=1,
+        )
+        with dspy.context(lm=DummyLM([{"answer": "one"}, {"answer": "two"}])):
+            assert "LLM call limit exceeded: 1 + 1 > 1" in rlm(query="q").answer
+
+    def test_sub_agent_n_completions_draw_n_calls(self):
+        rlm = _repl_rlm(
+            "try:\n"
+            "    dspy.Predict('question -> answer', n=3)(question='b')\n"
+            "    answer = 'no limit'\n"
+            "except Exception as e:\n"
+            "    answer = str(e)",
+            max_llm_calls=2,
+        )
+        lm = DummyLM([{"answer": "first"}, {"answer": "second"}, {"answer": "third"}])
+        with dspy.context(lm=lm):
+            assert "LLM call limit exceeded: 2 + 1 > 2" in rlm(query="q").answer
+        assert len(lm.history) == 2
+
+    def test_sub_agents_use_sub_lm(self):
+        rlm = _repl_rlm(
+            'answer = dspy.Predict("question -> answer")(question="ping").answer',
+            sub_lm=DummyLM([{"answer": "from sub_lm"}]),
+        )
+        with dspy.context(lm=DummyLM([{"answer": "from the main lm"}])):
+            assert rlm(query="q").answer == "from sub_lm"
+
+    def test_sub_agents_cannot_set_lm_routing_or_credentials(self):
+        rlm = _repl_rlm(
+            "try:\n"
+            '    dspy.Predict("question -> answer")(question="ping", config={"api_base": "http://evil.example"})\n'
+            "    answer = 'routed'\n"
+            "except Exception as e:\n"
+            "    answer = str(e)",
+        )
+        with dspy.context(lm=DummyLM([{"answer": "ok"}])):
+            assert "may not set LM option(s) ['api_base']" in rlm(query="q").answer
+
+    def test_nested_rlm_gets_a_fresh_interpreter_from_the_rlm_factory(self):
+        made = []
+
+        def factory():
+            made.append(LocalInterpreter())
+            return made[-1]
+
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
+        rlm.generate_action, _ = _recording_predictor(
+            "marker = 'outer'\n"
+            "inner = dspy.RLM('question -> answer', max_iters=1)\n"
+            "answer = inner(question='ping').answer + ' ' + marker\n"
+            "SUBMIT(answer)"
+        )
+        lm = DummyLM([{"plan": "submit", "code": "SUBMIT(answer=globals().get('marker', 'fresh'))"}])
+        with dspy.context(lm=lm):
+            assert rlm(query="q").answer == "fresh outer"
+        assert len(made) == 2
+
+    def test_sub_agents_get_provided_tools_and_repl_functions(self):
+        host_calls = []
+
+        def record(text: str) -> str:
+            """Record the text on the host."""
+            host_calls.append(text)
+            return "recorded"
+
+        rlm = _repl_rlm(
+            "repl_calls = []\n"
+            "def shout(text: str) -> str:\n"
+            '    """Uppercase the text."""\n'
+            "    repl_calls.append(text)\n"
+            "    return text.upper()\n"
+            "agent = dspy.ReAct('question -> answer', tools=[record, shout])\n"
+            "agent(question='hi')\n"
+            "answer = ','.join(repl_calls)",
+            tools=[record],
+        )
+        lm = DummyLM([
+            {"next_thought": "record", "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "record", "args": {"text": "x"}}])},
+            {"next_thought": "shout", "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "shout", "args": {"text": "y"}}])},
+            {"next_thought": "done", "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "ok"}}])},
+        ])
+        with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+            assert rlm(query="q").answer == "y"  # the REPL function ran in the REPL
+        assert host_calls == ["x"]  # the provided tool ran on the host
+        assert "Record the text on the host." in lm.history[0]["request"].messages[0].text
+
+
+@pytest.mark.deno
+class TestRLMFacadeDeno:
+    def test_sub_agents_run_on_the_default_sandbox(self):
+        # `dspy` is in scope in the REPL and imports the real dspy on first use.
+        rlm = RLM("query -> answer", max_iters=2, interpreter_factory=PythonInterpreter)
+        rlm.generate_action = make_mock_predictor([
+            {
+                "reasoning": "Run a sub-agent",
+                "code": (
+                    "sub = dspy.Predict('question -> answer')\n"
+                    "res = sub(question='ping')\n"
+                    "print(res.answer)"
+                ),
+            },
+            {"reasoning": "Submit", "code": "SUBMIT(res.answer)"},
+        ])
+
+        with dummy_lm_context([{"answer": "native dspy on pyodide"}]):
+            result = rlm(query="q")
+
+        assert result.answer == "native dspy on pyodide"
+
+    def test_sub_agent_lm_calls_share_the_llm_query_budget_on_the_default_sandbox(self):
+        rlm = RLM("query -> answer", max_iters=2, max_llm_calls=1, interpreter_factory=PythonInterpreter)
+        rlm.generate_action = make_mock_predictor([
+            {
+                "reasoning": "Spend the budget with llm_query, then try a sub-agent",
+                "code": (
+                    "first = llm_query('a')\n"
+                    "try:\n"
+                    "    dspy.Predict('question -> answer')(question='b')\n"
+                    "except Exception as e:\n"
+                    "    print('sub-agent:', e)\n"
+                ),
+            },
+            {"reasoning": "Submit", "code": "SUBMIT(first)"},
+        ])
+
+        with dummy_lm_context([{"answer": "one"}, {"answer": "two"}]):
+            result = rlm(query="q")
+
+        assert "LLM call limit exceeded: 1 + 1 > 1" in result.trajectory[0]["output"]
+        assert "one" in result.answer
+
+    def test_sub_agents_survive_serializable_inputs_on_the_default_sandbox(self):
+        rlm = RLM("data, query -> answer", max_iters=2, interpreter_factory=PythonInterpreter)
+        rlm.generate_action = make_mock_predictor([
+            {
+                "reasoning": "Run a sub-agent",
+                "code": "res = dspy.Predict('question -> answer')(question='ping')\nprint(res.answer)",
+            },
+            {"reasoning": "Submit", "code": "SUBMIT(res.answer)"},
+        ])
+
+        with dummy_lm_context([{"answer": "sub-agent with serializable input"}]):
+            result = rlm(data=_StubSerializable("payload"), query="q")
+
+        assert "sub-agent with serializable input" in result.trajectory[0]["output"]
+        assert len(result.trajectory) == 2
+
+    def test_dspy_is_in_scope_when_the_interpreter_already_imported_it(self):
+        def started():
+            interpreter = PythonInterpreter()
+            interpreter.provide_dspy()
+            interpreter.execute("import importlib\nimportlib.import_module('dspy')\nNone")  # imported, but not named
+            return interpreter
+
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=started)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Run a sub-agent", "code": "SUBMIT(dspy.Predict('question -> answer')(question='ping').answer)"},
+        ])
+
+        with dummy_lm_context([{"answer": "pong"}]):
+            result = rlm(query="q")
+
+        assert result.trajectory[0]["output"].startswith("FINAL"), result.trajectory[0]["output"]  # not a NameError
+        assert result.answer == "pong"
 
 
 if __name__ == "__main__":
