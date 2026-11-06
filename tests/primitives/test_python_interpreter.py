@@ -2,8 +2,10 @@ import asyncio
 import dataclasses
 import io
 import json
+import logging
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -698,6 +700,7 @@ def test_the_cache_follows_the_pyodide_release_runner_js_pins():
 
     runner = (Path(sandbox_bundle.__file__).parent / "runner.js").read_text()
     assert f'"npm:pyodide@{sandbox_bundle.PYODIDE_VERSION}/pyodide.js"' in runner
+    assert re.findall(r"npm:pyodide@[\d.]+", runner) == [f"npm:pyodide@{sandbox_bundle.PYODIDE_VERSION}"]  # pinned once
     assert sandbox_bundle.bundle_root().name == f"pyodide-{sandbox_bundle.PYODIDE_VERSION}"
     assert sandbox_bundle._pinned_pyodide(Path(sandbox_bundle.__file__).parent / "missing.js") is None  # no crash
 
@@ -1892,3 +1895,87 @@ def test_an_edited_source_file_makes_a_new_dspy_bundle(tmp_path, monkeypatch):
     assert sandbox_bundle._prepare_bundle((), None, "", root) == first  # unchanged sources reuse it
     source.write_text("value = 22\n")  # patched in place, as an installed file may be
     assert sandbox_bundle._prepare_bundle((), None, "", root) != first
+
+
+def _with_dspy() -> PythonInterpreter:
+    interpreter = PythonInterpreter()
+    interpreter.provide_dspy()
+    return interpreter
+
+
+def _flag(interpreter: PythonInterpreter, name: str) -> str | None:
+    return next((arg.split("=", 1)[1] for arg in interpreter.deno_command if arg.startswith(f"{name}=")), None)
+
+
+def test_a_sandbox_with_dspy_restores_a_snapshot_that_has_imported_it():
+    with _with_dspy() as interpreter:
+        snapshot = _flag(interpreter, "--dspy-snapshot")
+        assert snapshot is not None
+        assert interpreter.execute(
+            "import sys\n"
+            "imported = 'dspy' in sys.modules\n"
+            "import pydantic, regex, sqlite3, ssl\n"  # compiled extension modules, loaded again for the restore
+            "class Model(pydantic.BaseModel):\n"
+            "    x: int\n"
+            "[imported, Model(x='3').x, regex.match('[a-z]+', 'abc')[0],\n"
+            " sqlite3.connect(':memory:').execute('select 2').fetchone()[0]]"
+        ) == [True, 3, "abc", 2]
+        read = interpreter.execute(
+            "from js import Deno\n"
+            f"try:\n    Deno.readFileSync({snapshot!r})\n    result = 'read'\n"
+            "except Exception as e:\n    result = str(e)\n"
+            "result"
+        )
+        assert "Requires read access" in read
+
+
+def test_sandboxes_restored_from_one_snapshot_draw_different_random_numbers():
+    draws = []
+    for _ in range(2):
+        with _with_dspy() as interpreter:
+            draws.append(interpreter.execute("import random\nrandom.random()"))
+    assert draws[0] != draws[1]
+
+
+def test_a_sandbox_that_cannot_restore_its_snapshot_starts_without_it(tmp_path, monkeypatch, caplog):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "_refused", set())
+    interpreter = _with_dspy()
+    original = _flag(interpreter, "--dspy-snapshot")
+    # A copy whose recorded layout of the extension modules is off by one, as if they had landed elsewhere.
+    size = (sandbox_bundle.bundle_root() / "stdlib.zip").stat().st_size
+    data = Path(original).read_bytes()
+    assert f"[{size},".encode() in data
+    tampered = tmp_path / "tampered.snap"
+    tampered.write_bytes(data.replace(f"[{size},".encode(), f"[{size + 1},".encode()))
+    interpreter.deno_command = [arg.replace(original, str(tampered)) for arg in interpreter.deno_command]
+
+    monkeypatch.setattr(logging.getLogger("dspy"), "propagate", True)  # so that caplog sees its warnings
+    with interpreter, caplog.at_level("WARNING"):
+        assert interpreter.execute("import dspy\ndspy.Predict.__name__") == "Predict"
+    assert "without its dspy snapshot" in caplog.text
+    assert _flag(interpreter, "--dspy-snapshot") is None
+    assert not tampered.exists()  # discarded, so that the next process builds a new one
+    assert tampered.name in sandbox_bundle._refused
+
+
+def test_a_new_standard_library_archive_makes_a_new_snapshot(tmp_path, monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "_build", lambda *args, **kwargs: args[3].write_text("built"))
+    monkeypatch.setattr(sandbox_bundle, "_refused", set())
+    bundle, stdlib = tmp_path / "dspy-0123.zip", tmp_path / "stdlib.zip"
+    bundle.write_text("bundle")
+    stdlib.write_text("stdlib")
+
+    first = sandbox_bundle._prepare_snapshot((), None, "", bundle, stdlib)
+    assert sandbox_bundle._prepare_snapshot((), None, "", bundle, stdlib) == first
+    stdlib.write_text("rebuilt")
+    second = sandbox_bundle._prepare_snapshot((), None, "", bundle, stdlib)
+    assert second != first
+
+    sandbox_bundle.discard_snapshot(second)  # one a sandbox could not restore
+    assert not second.exists()
+    with pytest.raises(sandbox_bundle.SandboxBundleError):  # this process builds none in its place
+        sandbox_bundle._prepare_snapshot((), None, "", bundle, stdlib)

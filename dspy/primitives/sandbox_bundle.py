@@ -9,11 +9,13 @@ that executes no sandboxed code byte-compiles each archive once, so sandboxes st
   network to install packages with. It holds dspy and every package its installed metadata says it needs: those
   Pyodide ships as Pyodide builds them (checked against Pyodide's lock file), the others from this environment if
   they are pure Python. There is one per set of sources.
+- ``dspy-<digest>-<stamp>.snap``: the memory of a sandbox that has installed that bundle and imported dspy, which a
+  new one restores instead of doing both. There is one per bundle and standard library archive.
 
 ``DSPY_SANDBOX_CACHE=0`` or ``PythonInterpreter(sandbox_cache=False)`` turns the cache off, for environments where
 writing files is unwelcome: nothing is written under the cache directory. Pyodide then starts from its own standard
 library, and a sandbox that imports dspy, which needs the bundle, gets one built in a temporary directory of the
-process, removed when it exits.
+process, removed when it exits, and no snapshot.
 """
 
 from __future__ import annotations
@@ -71,6 +73,7 @@ _COMPILED = {".so", ".pyd", ".dylib"}
 _lock = threading.Lock()
 _failed: dict[tuple, tuple[str, float]] = {}
 _RETRY_AFTER = 60.0
+_refused: set[str] = set()  # snapshots a sandbox of this process could not restore
 
 
 class SandboxBundleError(DSPyError):
@@ -108,6 +111,20 @@ def prepare_bundle(deno_command: list[str], deno_dir: str | None, runner: str, r
         return _guarded(_prepare_bundle, tuple(deno_command), deno_dir, runner, root or bundle_root())
 
 
+def prepare_snapshot(deno_command: list[str], deno_dir: str | None, runner: str, bundle: Path, stdlib: Path) -> Path:
+    """Return the snapshot of a sandbox started from ``stdlib`` that has installed ``bundle`` and imported dspy,
+    building it if it is missing. Thread-safe."""
+    with _lock:
+        return _guarded(_prepare_snapshot, tuple(deno_command), deno_dir, runner, Path(bundle), Path(stdlib))
+
+
+def discard_snapshot(snapshot: str | Path) -> None:
+    """Delete a snapshot a sandbox could not restore, so that the next process builds a new one. This one builds no
+    other in its place."""
+    _refused.add(Path(snapshot).name)
+    Path(snapshot).unlink(missing_ok=True)
+
+
 @functools.cache
 def sandbox_modules() -> frozenset[str]:
     """The top-level modules the dspy bundle provides, by this environment's metadata."""
@@ -137,7 +154,7 @@ def _guarded(prepare, *args):
 def _prepare_stdlib(deno_command: tuple[str, ...], deno_dir: str | None, runner: str) -> Path:
     target = bundle_root() / "stdlib.zip"
     if not target.exists():
-        _build(deno_command, deno_dir, runner, target)
+        _build(deno_command, deno_dir, runner, target, "--dspy-build")
     return target
 
 
@@ -158,27 +175,55 @@ def _prepare_bundle(deno_command: tuple[str, ...], deno_dir: str | None, runner:
                         archive.writestr(item, contents.read(item))
             for path, name in files:
                 archive.write(path, name)
-        _build(deno_command, deno_dir, runner, target, source)
+        _build(deno_command, deno_dir, runner, target, "--dspy-build", {"--dspy-build-from": source})
     finally:
         source.unlink(missing_ok=True)
     _prune(root, keep=target)
     return target
 
 
-def _build(deno_command: tuple[str, ...], deno_dir: str | None, runner: str, target: Path, source: Path | None = None):
-    """Have the runner byte-compile ``source`` (by default Pyodide's standard library) into ``target``. The run
-    executes no sandboxed code and may write only a temporary file, which then replaces ``target``."""
+def _prepare_snapshot(
+    deno_command: tuple[str, ...], deno_dir: str | None, runner: str, bundle: Path, stdlib: Path
+) -> Path:
+    # The snapshot's memory refers to the standard library archive, so a rebuilt one needs a new snapshot. A new runner
+    # or dspy source already makes a new bundle.
+    stamp = hashlib.sha256(json.dumps([stdlib.stat().st_size, stdlib.stat().st_mtime_ns]).encode()).hexdigest()[:8]
+    target = bundle.with_name(f"{bundle.stem}-{stamp}.snap")
+    if target.name in _refused:
+        raise SandboxBundleError(f"A sandbox could not restore {target.name}")
+    if target.exists():
+        os.utime(target)  # in use: keep it from being pruned
+        return target
+    inputs = {"--dspy-stdlib": stdlib, "--dspy-bundle": bundle}
+    _build(deno_command, deno_dir, runner, target, "--dspy-build-snapshot", inputs)
+    _prune(bundle.parent, keep=target)
+    return target
+
+
+def _build(
+    deno_command: tuple[str, ...],
+    deno_dir: str | None,
+    runner: str,
+    target: Path,
+    mode: str,
+    inputs: dict[str, Path] | None = None,
+):
+    """Have the runner write ``target``: with ``--dspy-build``, the byte-compiled archive of ``--dspy-build-from``
+    (by default Pyodide's standard library), and with ``--dspy-build-snapshot``, a snapshot. ``inputs`` maps the
+    runner's flags to the archives it reads. The run executes no sandboxed code and may write only a temporary file,
+    which then replaces ``target``."""
+    inputs = inputs or {}
     target.parent.mkdir(parents=True, exist_ok=True)
     temp = target.with_name(f"{target.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     args = [
         *deno_command,
-        f"--allow-read={','.join(str(p) for p in (deno_dir, runner, source) if p)}",
+        f"--allow-read={','.join(str(p) for p in (deno_dir, runner, *inputs.values()) if p)}",
         f"--allow-write={temp}",
         runner,
         "",
         *([f"--dspy-deno-dir={deno_dir}"] if deno_dir else []),
-        f"--dspy-build={temp}",
-        *([f"--dspy-build-from={source}"] if source else []),
+        *(f"{flag}={path}" for flag, path in inputs.items()),
+        f"{mode}={temp}",
     ]
     try:
         result = subprocess.run(args, capture_output=True, text=True, timeout=600, env=deno_subprocess_env())
@@ -335,19 +380,21 @@ def _normalize(name: str) -> str:
 
 
 def _prune(root: Path, keep: Path, count: int = 3, min_age: float = 3600) -> None:
-    """Remove bundles beyond the ``count`` most recently used that no process has used for ``min_age`` seconds, e.g.
-    those built from earlier dspy sources. Other processes build and replace files here at the same time: their
-    temporary files are left alone, a file that is gone by the time it is looked at is skipped, and pruning never
-    fails the build it follows."""
-    bundles = sorted(
-        ((used, path) for path in root.glob("dspy-*") if path.suffix != ".tmp" and (used := _last_used(path))),
-        reverse=True,
-    )
-    for _, old in [(used, path) for used, path in bundles if path != keep][count - 1 :]:
-        # Read again right before: another process may have just taken it into use.
-        if (used := _last_used(old)) and time.time() - used > min_age:
-            with contextlib.suppress(OSError):
-                shutil.rmtree(old, ignore_errors=True) if old.is_dir() else old.unlink(missing_ok=True)
+    """Remove bundles and snapshots beyond the ``count`` most recently used of each that no process has used for
+    ``min_age`` seconds, e.g. those built from earlier dspy sources. Other processes build and replace files here at
+    the same time: their temporary files are left alone, a file that is gone by the time it is looked at is skipped,
+    and pruning never fails the build it follows."""
+    kinds: dict[str, list[tuple[float, Path]]] = {}
+    for path in root.glob("dspy-*"):
+        if path.suffix != ".tmp" and (used := _last_used(path)):
+            kinds.setdefault(path.suffix, []).append((used, path))
+    for found in kinds.values():
+        found.sort(reverse=True)
+        for _, old in [(used, path) for used, path in found if path != keep][count - 1 :]:
+            # Read again right before: another process may have just taken it into use.
+            if (used := _last_used(old)) and time.time() - used > min_age:
+                with contextlib.suppress(OSError):
+                    shutil.rmtree(old, ignore_errors=True) if old.is_dir() else old.unlink(missing_ok=True)
 
 
 def _last_used(path: Path) -> float | None:
