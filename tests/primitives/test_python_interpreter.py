@@ -681,7 +681,7 @@ def test_sandbox_wheel_download_retry_policy(monkeypatch, tmp_path, failure, fai
     name = "download_probe-1.0-py3-none-any.whl"
     info = {"file_name": name, "sha256": hashlib.sha256(payload).hexdigest()}
     monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path)
-    monkeypatch.setattr(sandbox_bundle, "_plan", lambda deno_dir: ({"download-probe": info}, ["download-probe"], []))
+    monkeypatch.setattr(sandbox_bundle, "_plan", lambda deno_dir, packages: ({"download-probe": info}, ["download-probe"], []))
     monkeypatch.setattr(sandbox_bundle, "_planned_at", {})
     monkeypatch.setattr(sandbox_bundle, "_failed", {})
 
