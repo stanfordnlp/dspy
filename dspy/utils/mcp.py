@@ -48,7 +48,7 @@ def _convert_mcp_tool_result(
     if result_mode == "structured" and _field_is_set(call_tool_result, "structured_content", "structuredContent"):
         return _get_field(call_tool_result, "structured_content", "structuredContent")
 
-    return tool_content or non_text_contents
+    return tool_content if text_contents else non_text_contents
 
 
 def convert_mcp_tool(
