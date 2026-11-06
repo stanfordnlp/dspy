@@ -188,6 +188,30 @@ def test_long_context_and_priority_rates(monkeypatch, provider, inputs):
     assert cost == pytest.approx((inputs * 1e-6 + 30 * 4e-6) * (2 if inputs > 200000 else 1))
 
 
+@pytest.mark.parametrize("inputs", [200000, 200001])
+@pytest.mark.parametrize("tier", [None, "priority"])
+def test_price_thresholds_belong_to_each_dimension_and_tier(monkeypatch, inputs, tier):
+    monkeypatch.setattr(metadata, "_data", {"vertex_ai/test": {
+        "input_cost_per_token": 1e-6,
+        "input_cost_per_token_above_100k_tokens": 2e-6,
+        "output_cost_per_token": 3e-6,
+        "input_cost_per_audio_token": 7e-6,
+        "input_cost_per_audio_token_above_200k_tokens": 9e-6,
+        "input_cost_per_token_priority": 4e-6,
+        "output_cost_per_token_priority": 6e-6,
+        "input_cost_per_audio_token_priority": 11e-6,
+        "input_cost_per_audio_token_above_300k_tokens_priority": 13e-6,
+    }})
+    response = answer("test", input_tokens=inputs, input_audio_tokens=50, cache_read_tokens=10,
+                      output_tokens=5, reasoning_tokens=2)
+    request = Request(model="test", messages=(Message.user("hi"),), config=Config(service_tier=tier))
+    cost, _ = estimate_cost(response, provider="vertex", requested_model="test", request=request)
+    # Cache/reasoning fall back to their ordinary dimension's independently selected rate.
+    expected = ((inputs - 50) * 4e-6 + 50 * 11e-6 + 5 * 6e-6 if tier else
+                (inputs - 50) * 2e-6 + 50 * (9e-6 if inputs > 200000 else 7e-6) + 5 * 3e-6)
+    assert cost == pytest.approx(expected)
+
+
 def test_unknown_price_and_malformed_metadata_do_not_fail_generation(monkeypatch):
     monkeypatch.setattr(metadata, "_data", {})
     response = answer("unknown", input_tokens=1, output_tokens=1)
