@@ -5,7 +5,8 @@ from typing import Literal, Optional, Union
 import pytest
 from pydantic import BaseModel
 
-from dspy.adapters.utils import get_annotation_name, parse_value
+import dspy
+from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value
 
 
 class Profile(BaseModel):
@@ -130,3 +131,10 @@ def test_parse_value_json_repair():
 def test_get_annotation_name_pep604_union_matches_typing_union(pep604_annotation, typing_annotation, expected):
     assert get_annotation_name(typing_annotation) == expected
     assert get_annotation_name(pep604_annotation) == expected
+
+
+def test_format_field_value_list_of_non_string_items_for_str_field():
+    field_info = dspy.Signature("context -> answer").input_fields["context"]
+
+    assert format_field_value(field_info, [7]) == "«7»"
+    assert format_field_value(field_info, [1, None, "a\nb"]) == "[1] «1»\n[2] «None»\n[3] «««\n    a\n    b\n»»»"
