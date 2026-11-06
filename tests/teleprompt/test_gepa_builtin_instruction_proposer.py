@@ -12,7 +12,7 @@ from pydantic import ValidationError
 import dspy
 from dspy.adapters.types.tool import ToolCallResults, ToolCalls
 from dspy.lm15 import ImagePart, TextPart
-from dspy.primitives.repl_types import REPLHistory
+from dspy.primitives.repl_types import REPLEntry, REPLHistory, build_repl_event
 from dspy.teleprompt.gepa import InstructionProposer
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.teleprompt.gepa.instruction_proposal import (
@@ -447,6 +447,33 @@ def test_history_and_repl_history_use_adapter_serialization():
     assert "r" * 500 + " [700 of 1,200 characters cut]" in user
     assert "r" * 501 not in user
     assert "(2,500 characters omitted)" in user
+
+
+@pytest.mark.parametrize("serialized", [False, True])
+def test_proposer_truncates_rlm_history_observations_without_mutating_history(serialized):
+    history = dspy.History(messages=[
+        build_repl_event({"question": "Inspect"}, REPLEntry(
+            reasoning="Keep my plan", code="print(data)", output="a" * 1_000 + "b" * 2_000, max_output_chars=700,
+        )),
+        build_repl_event(None, REPLEntry(code="print(other)", output="c" * 400, max_output_chars=100)),
+    ])
+    if serialized:
+        history = dspy.History.model_validate_json(history.model_dump_json())
+    original = history.model_dump_json()
+    examples = [{"Inputs": {"history": history}, "Generated Outputs": {"answer": "ok"}, "Feedback": "ok"}]
+
+    full = json_lm("Keep going.")
+    propose(InstructionProposer(), full, examples=examples)
+    assert "b" * 2_000 in last_messages(full)[1]
+
+    truncated = json_lm("Keep going.")
+    propose(InstructionProposer(truncate_history_outputs=True), truncated, examples=examples)
+    user = last_messages(truncated)[1]
+    assert "a" * 250 in user and "a" * 251 not in user
+    assert "b" * 250 in user and "b" * 251 not in user
+    assert "c" * 50 in user and "c" * 51 not in user
+    assert "Keep my plan" in user and "print(data)" in user
+    assert history.model_dump_json() == original
 
 
 # --- GEPA end to end -------------------------------------------------------------
