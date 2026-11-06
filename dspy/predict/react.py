@@ -71,6 +71,13 @@ class ReAct(Module):
             )
 
         user_tools = [tool if isinstance(tool, Tool) else Tool(tool) for tool in tools]
+        names = [tool.name for tool in user_tools]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise ValueError(
+                f"Tool names must be unique, got more than one tool named {', '.join(f'`{n}`' for n in duplicates)}. "
+                "Use `dspy.Tool(func, name=...)` to rename one of them."
+            )
         self.tools = {tool.name: tool for tool in user_tools}
         if "submit" in self.tools:
             raise ValueError("`submit` is reserved by ReAct as the final-output tool.")
