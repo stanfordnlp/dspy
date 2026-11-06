@@ -121,8 +121,10 @@ _repl_prelude: contextvars.ContextVar[str] = contextvars.ContextVar("dspy_rlm_re
 # Once the REPL has imported dspy, binds the provided tools and SUBMIT to send and read dspy's objects in the session's
 # wire form (``sandbox_guest.bind``) before each execution, as the Flex driver does before it runs: some interpreters,
 # like LocalInterpreter, define them anew for each execution.
+# Keyed on this REPL's own install, not on dspy being loaded: a sandbox restored from a snapshot has dspy loaded before
+# any session is installed in it.
 _REBIND = (
-    'if "dspy.primitives.sandbox_guest" in __import__("sys").modules: '
+    'if "__dspy_guest_spec" in globals(): '
     '__import__("sys").modules["dspy.primitives.sandbox_guest"].bind(globals())\n'
 )
 
