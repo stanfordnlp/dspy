@@ -838,3 +838,54 @@ def test_tool_calls_none_reaches_empty_tool_calls_semantics():
             raised = e
     assert raised is not None
     assert "empty_tool_calls" in str(raised), f"expected empty_tool_calls semantics, got: {raised}"
+
+
+def test_tool_from_function_with_recursive_pydantic():
+    """A self-referential (recursive) model argument must not blow the recursion limit.
+
+    `_resolve_json_schema_reference` used to inline every `$ref` unconditionally, so a
+    recursive model (tree, linked list, nested comments) looped forever and `dspy.Tool(func)`
+    raised `RecursionError`. The resolver now leaves a cyclic `$ref` in place and keeps `$defs`.
+    """
+
+    class Node(BaseModel):
+        """A tree node."""
+
+        name: str
+        children: list["Node"] = []
+
+    Node.model_rebuild()
+
+    def add_subtree(root: Node) -> str:
+        """Attach a subtree under the given node."""
+        return root.name
+
+    tool = Tool(add_subtree)
+    root = tool.args["root"]
+    assert root["type"] == "object"
+    assert root["properties"]["name"]["type"] == "string"
+    # The cyclic reference stays unresolved and $defs is retained so it is still resolvable.
+    assert root["properties"]["children"]["items"] == {"$ref": "#/$defs/Node"}
+    assert "Node" in root["$defs"]
+
+
+def test_convert_input_schema_with_recursive_ref_terminates():
+    """The MCP tool path (`convert_input_schema_to_tool_args`) must also terminate on a cycle."""
+
+    schema = {
+        "type": "object",
+        "properties": {"root": {"$ref": "#/$defs/Node"}},
+        "$defs": {
+            "Node": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "children": {"type": "array", "items": {"$ref": "#/$defs/Node"}},
+                },
+            }
+        },
+    }
+    args, arg_types, _ = convert_input_schema_to_tool_args(schema)
+    assert args["root"]["type"] == "object"
+    assert args["root"]["properties"]["children"]["items"] == {"$ref": "#/$defs/Node"}
+    assert arg_types["root"] is dict
