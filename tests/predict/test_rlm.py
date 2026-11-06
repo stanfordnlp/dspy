@@ -3990,30 +3990,5 @@ def test_repl_history_markers_stay_text(adapter_type, factory, tmp_path):
     assert result.history.model_dump_json() == snapshot
 
 
-@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
-@pytest.mark.parametrize("asynchronous", [False, True])
-def test_finalization_contract_preserves_user_output_names(adapter_type, asynchronous):
-    import asyncio
-
-    signature = dspy.Signature(
-        {
-            "query": (str, dspy.InputField()),
-            "final_output_contract": (list[str], dspy.OutputField()),
-            "final_output_contract_": (list[str], dspy.OutputField()),
-        },
-        "EXPORT_ONLY: Preserve all exported lists.",
-    )
-    adapter = adapter_type()
-    outputs = {"final_output_contract": ["17", "93"], "final_output_contract_": ["41"]}
-    program = RLM(signature, max_iters=1, interpreter_factory=lambda: MockInterpreter(responses=["COMPUTED_LISTS"]))
-    lm = DummyLM([{"plan": "Inspect", "code": "print('COMPUTED_LISTS')"}, outputs], adapter=adapter)
-    with dspy.context(lm=lm, adapter=adapter):
-        result = asyncio.run(program.acall(query="Export records")) if asynchronous else program(query="Export records")
-    assert {name: getattr(result, name) for name in outputs} == outputs
-    assert set(result.keys()) == {*outputs, "history", "trajectory", "final_reasoning"}
-    request = lm.history[-1]["messages"][-1]["content"]
-    assert request.index("EXPORT_ONLY") > request.index("COMPUTED_LISTS")
-
-
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

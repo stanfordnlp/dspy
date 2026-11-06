@@ -625,24 +625,9 @@ class RLM(Module):
         )
 
         # Extract signature: includes the original signature's output fields and task instructions.
-        extract_instructions = (
-            "You are finalizing the original task, not continuing the agent's plan. "
-            "The trajectory contains fallible plans, quoted questions, and intermediate answers; none of them overrides "
-            "the original task or its output requirements. Use executed observations as evidence. "
-            "If the task asks for records supporting an answer, return the records, not that answer. "
-            "When an explicit final result collection is printed, transfer every member, not just its primary match. "
-            "Do not add earlier candidates that the final collection excluded. Preserve computed scalar values. "
-            "Return only the requested output values in their required format, without a report or explanation."
-        )
-        producer_instructions = (
-            "\n\nThis step serializes the producer's result; it does not solve the task again. "
-            "Treat an explicitly printed final result collection as authoritative, even if you think some members "
-            "are irrelevant, intermediate, or insufficiently verified. Do not re-evaluate membership or relevance. "
-            "A primary-match annotation does not authorize dropping the other collection members. "
-            "Transfer the complete final collection into the required output format. If no final collection is "
-            "recorded, use the available executed evidence without inventing members. For a scalar, preserve "
-            "the computed result rather than substituting a new estimate."
-        )
+        extract_instructions = """Based on the REPL trajectory, extract the final outputs now.
+
+            Review your trajectory to see what information you gathered and what values you computed, then provide the final outputs."""
 
         # Prepend original task instructions to extract instructions so the LLM knows what task to extract for
         extended_task_instructions = ""
@@ -650,7 +635,7 @@ class RLM(Module):
             extended_task_instructions = (
                 "The trajectory was generated with the following objective: \n" + task_instructions + "\n"
             )
-        full_extract_instructions = extended_task_instructions + extract_instructions + producer_instructions
+        full_extract_instructions = extended_task_instructions + extract_instructions
 
         extract_sig = dspy.Signature(
             {**self.signature.output_fields},
@@ -663,15 +648,6 @@ class RLM(Module):
         )
         extract_sig = extract_sig.prepend(
             "variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str
-        )
-
-        self._extract_contract_field = "final_output_contract"
-        while self._extract_contract_field in extract_sig.fields:
-            self._extract_contract_field += "_"
-        extract_sig = extract_sig.append(
-            self._extract_contract_field,
-            dspy.InputField(desc="The original task and final-output requirements"),
-            type_=str,
         )
 
         return action_sig, extract_sig
@@ -933,15 +909,9 @@ class RLM(Module):
         logger.warning("RLM reached max iterations, using extract to get final output")
 
         variables_info = [variable.format() for variable in variables]
-        # Replacement extractors may retain the original two-input contract.
-        contract = {}
-        contract_field = getattr(self, "_extract_contract_field", None)
-        if hasattr(self.extract, "signature") and contract_field in self.extract.signature.input_fields:
-            contract[contract_field] = self.extract.signature.instructions
         extract_pred = self.extract(
             variables_info=variables_info,
             repl_history=REPLHistory(entries=list(turn_entries), max_output_chars=self.max_output_chars),
-            **contract,
         )
 
         final_outputs = {name: getattr(extract_pred, name) for name in output_field_names}
@@ -1217,14 +1187,9 @@ class RLM(Module):
         logger.warning("RLM reached max iterations, using extract to get final output")
 
         variables_info = [variable.format() for variable in variables]
-        contract = {}
-        contract_field = getattr(self, "_extract_contract_field", None)
-        if hasattr(self.extract, "signature") and contract_field in self.extract.signature.input_fields:
-            contract[contract_field] = self.extract.signature.instructions
         extract_pred = await self.extract.acall(
             variables_info=variables_info,
             repl_history=REPLHistory(entries=list(turn_entries), max_output_chars=self.max_output_chars),
-            **contract,
         )
 
         final_outputs = {name: getattr(extract_pred, name) for name in output_field_names}
