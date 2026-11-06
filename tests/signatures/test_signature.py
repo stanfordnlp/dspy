@@ -214,7 +214,7 @@ def test_signature_non_scalar_and_nan_defaults():
 
 
 def test_signature_dataframe_defaults():
-    import pandas as pd
+    pd = pytest.importorskip("pandas")
 
     class SigWithDf1(Signature):
         input: object = InputField(default=pd.DataFrame({"text": ["alpha"]}))
