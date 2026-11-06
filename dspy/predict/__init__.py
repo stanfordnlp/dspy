@@ -1,4 +1,5 @@
 from dspy.predict.aggregation import majority
+from dspy.predict.helpers import majority_k
 from dspy.predict.best_of_n import BestOfN
 from dspy.predict.chain_of_thought import ChainOfThought
 from dspy.predict.knn import KNN
@@ -12,6 +13,7 @@ from dspy.predict.rlm import RLM
 
 __all__ = [
     "majority",
+    "majority_k",
     "BestOfN",
     "ChainOfThought",
     "KNN",
