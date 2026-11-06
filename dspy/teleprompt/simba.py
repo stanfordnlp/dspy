@@ -17,12 +17,12 @@ logger = logging.getLogger(__name__)
 class SIMBA(Teleprompter):
     """
     SIMBA (Stochastic Introspective Mini-Batch Ascent) optimizer for DSPy.
-    
-    SIMBA is a DSPy optimizer that uses the LLM to analyze its own performance and 
-    generate improvement rules. It samples mini-batches, identifies challenging examples 
-    with high output variability, then either creates self-reflective rules or adds 
+
+    SIMBA is a DSPy optimizer that uses the LLM to analyze its own performance and
+    generate improvement rules. It samples mini-batches, identifies challenging examples
+    with high output variability, then either creates self-reflective rules or adds
     successful examples as demonstrations.
-    
+
     For more details, see: https://dspy.ai/api/optimizers/SIMBA/
     """
 
@@ -40,6 +40,7 @@ class SIMBA(Teleprompter):
         num_threads: int | None = None,
         temperature_for_sampling: float = 0.2,
         temperature_for_candidates: float = 0.2,
+        candidate_temperatures: list[float] | float | None = None,
     ) -> None:
         """
         Initializes SIMBA.
@@ -64,6 +65,9 @@ class SIMBA(Teleprompter):
                 programs during the trajectory-sampling step. Defaults to 0.2.
             temperature_for_candidates: Temperature used for picking
                 the source program for building new candidates. Defaults to 0.2.
+            candidate_temperatures: Temperature(s) for the resampled candidate LMs.
+                Can be a single float or a list of distinct temperatures (e.g., [0.7, 1.0, 1.2])
+                cycled across the candidate models. Defaults to None (1.0 for all models).
         """
         self.metric = metric
         self.bsize = bsize
@@ -77,6 +81,7 @@ class SIMBA(Teleprompter):
 
         self.temperature_for_sampling = temperature_for_sampling
         self.temperature_for_candidates = temperature_for_candidates
+        self.candidate_temperatures = candidate_temperatures
 
         if self.max_demos > 0:
             self.strategies = [append_a_demo(demo_input_field_maxlen), append_a_rule]
@@ -92,12 +97,12 @@ class SIMBA(Teleprompter):
     ) -> dspy.Module:
         """
         Compile and optimize the student module using SIMBA.
-        
+
         Args:
             student: The module to optimize
             trainset: Training examples for optimization
             seed: Random seed for reproducibility
-            
+
         Returns:
             The optimized module with candidate_programs and trial_logs attached
         """
@@ -184,8 +189,10 @@ class SIMBA(Teleprompter):
             instance_idx += self.bsize
 
             # We'll generate (program, model) pairs for the trajectory sampling.
-            # Prepare distinct LMs (with different temperatures, etc.) from the baseline=programs[0].
-            models = prepare_models_for_resampling(programs[0], self.num_candidates, self.teacher_settings)
+            # Prepare distinct LMs (with varied rollout_ids and configured temperatures) from the baseline=programs[0].
+            models = prepare_models_for_resampling(
+                programs[0], self.num_candidates, self.teacher_settings, temperatures=self.candidate_temperatures
+            )
             top_programs = top_k_plus_baseline(self.num_candidates)
 
             exec_pairs = []
