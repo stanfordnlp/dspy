@@ -14,6 +14,25 @@ np = require("numpy")
 logger = logging.getLogger(__name__)
 
 
+def _softmax_sample(
+    rng_obj: random.Random, program_idxs: list[int], scores: list[float], temperature: float
+) -> int:
+    if not program_idxs:
+        raise ValueError("No programs available for softmax sampling.")
+
+    max_score = max(scores)
+    # Infinite maxima cannot be shifted: inf - inf would make NaN weights.
+    if not np.isfinite(max_score):
+        return rng_obj.choice(program_idxs)
+    exps = [np.exp((s - max_score) / temperature) for s in scores]
+    sum_exps = sum(exps)
+    if sum_exps <= 0:
+        return rng_obj.choice(program_idxs)
+
+    probs = [val / sum_exps for val in exps]
+    return rng_obj.choices(program_idxs, weights=probs, k=1)[0]
+
+
 class SIMBA(Teleprompter):
     """
     SIMBA (Stochastic Introspective Mini-Batch Ascent) optimizer for DSPy.
@@ -129,21 +148,8 @@ class SIMBA(Teleprompter):
             return list(dict.fromkeys(top_k))
 
         def softmax_sample(rng_obj: random.Random, program_idxs: list[int], temperature: float) -> int:
-            if not program_idxs:
-                raise ValueError("No programs available for softmax sampling.")
-
-            # Unnormalized weights
             scores = [calc_average_score(idx) for idx in program_idxs]
-            max_score = max(scores)
-            exps = [np.exp((s - max_score) / temperature) for s in scores]
-            sum_exps = sum(exps)
-            if sum_exps <= 0:
-                # Fallback: uniform if all exps are zero
-                return rng_obj.choice(program_idxs)
-
-            # Weighted random choice
-            probs = [val / sum_exps for val in exps]
-            return rng_obj.choices(program_idxs, weights=probs, k=1)[0]
+            return _softmax_sample(rng_obj, program_idxs, scores, temperature)
 
         def register_new_program(prog: dspy.Module, score_list: list[float]) -> None:
             nonlocal next_program_idx

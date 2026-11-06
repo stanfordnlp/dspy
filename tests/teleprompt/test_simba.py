@@ -4,6 +4,7 @@ import random
 import pytest
 
 import dspy
+from dspy.teleprompt.simba import _softmax_sample
 from dspy.utils.dummies import DummyLM
 
 
@@ -80,3 +81,28 @@ def test_simba_softmax_preserves_relative_weights(monkeypatch, temperature):
     assert recorded_weights[0] == pytest.approx(
         [expected_best_probability, 1 - expected_best_probability]
     )
+
+
+@pytest.mark.parametrize("scores", [[-math.inf, -math.inf], [math.inf, math.inf], [0.5, math.inf]])
+def test_simba_softmax_samples_uniformly_with_nonfinite_maximum(scores):
+    rng = random.Random(42)
+    expected_rng = random.Random(42)
+    program_idxs = [2, 7]
+
+    sampled = [_softmax_sample(rng, program_idxs, scores, 0.2) for _ in range(32)]
+
+    assert sampled == [expected_rng.choice(program_idxs) for _ in range(32)]
+    assert set(sampled) == set(program_idxs)
+
+
+def test_simba_softmax_keeps_finite_candidates_over_failure_sentinels():
+    rng = random.Random(42)
+
+    sampled = [_softmax_sample(rng, [2, 7], [-math.inf, 0.5], 0.2) for _ in range(32)]
+
+    assert sampled == [7] * 32
+
+
+def test_simba_softmax_rejects_empty_program_pool():
+    with pytest.raises(ValueError, match="No programs available"):
+        _softmax_sample(random.Random(42), [], [], 0.2)
