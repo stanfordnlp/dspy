@@ -904,6 +904,53 @@ def test_json_adapter_on_pydantic_model():
         assert result.answer.result == "Paris"
 
 
+@pytest.mark.parametrize(
+    "completion",
+    [
+        'Thought: {"step": 1, "note": "calculating"}\n\n```json\n{"reasoning": "r", "answer": 42}\n```',
+        'Scratch: {"reasoning": "draft"}\n{"reasoning": "r", "answer": 42}',
+        '{"reasoning": "r", "answer": 42}\nHope this helps! {"note": "x"}',
+        '{"reasoning": "draft", "answer": 41}\nRevised: {"reasoning": "r", "answer": 42}',
+    ],
+)
+def test_json_adapter_parse_picks_output_object_among_several(completion):
+    signature = dspy.make_signature("question -> reasoning, answer: int")
+    assert dspy.JSONAdapter().parse(signature, completion) == {"reasoning": "r", "answer": 42}
+
+
+def test_json_adapter_parse_prefers_complete_object_over_more_optional_keys():
+    class OptionalExtras(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        note: str = dspy.OutputField(default="")
+        maybe: str | None = dspy.OutputField()
+
+    completion = '{"answer": "42"}\n{"note": "extra", "maybe": null}'
+    assert dspy.JSONAdapter().parse(OptionalExtras, completion) == {"answer": "42", "note": "", "maybe": None}
+
+
+def test_json_adapter_parse_does_not_call_default_factory_during_ranking():
+    factory_calls = 0
+
+    def counter_factory() -> int:
+        nonlocal factory_calls
+        factory_calls += 1
+        return factory_calls
+
+    class FactorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        counter: int = dspy.OutputField(default_factory=counter_factory)
+
+    completion = '{"step": 1, "note": "scratch"}\n{"answer": "42"}'
+    assert dspy.JSONAdapter().parse(FactorySignature, completion) == {"answer": "42", "counter": 1}
+    assert factory_calls == 1
+
+    completion_with_counter = '{"step": 1, "note": "scratch"}\n{"answer": "42", "counter": 99}'
+    assert dspy.JSONAdapter().parse(FactorySignature, completion_with_counter) == {"answer": "42", "counter": 99}
+    assert factory_calls == 1
+
+
 def test_json_adapter_parse_raise_error_on_mismatch_fields():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.JSONAdapter()
