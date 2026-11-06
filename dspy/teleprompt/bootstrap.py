@@ -166,10 +166,13 @@ class BootstrapFewShot(Teleprompter):
                     bootstrapped[example_idx] = True
                     break
 
-        print(
-            f"Bootstrapped {len(bootstrapped)} full traces after {example_idx} examples "
-            f"for up to {self.max_rounds} rounds, amounting to {bootstrap_attempts} attempts."
-        )
+        if self.trainset:
+            print(
+                f"Bootstrapped {len(bootstrapped)} full traces after {example_idx} examples "
+                f"for up to {self.max_rounds} rounds, amounting to {bootstrap_attempts} attempts."
+            )
+        else:
+            print("Bootstrapped 0 full traces: trainset is empty.")
 
         # Unbootstrapped training examples
 

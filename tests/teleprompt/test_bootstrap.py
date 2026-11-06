@@ -170,6 +170,21 @@ def test_validation_set_usage():
     assert len(compiled_student.predictor.demos) >= len(valset), "Validation set not used in compiled student demos"
 
 
+def test_bootstrap_empty_trainset():
+    """Test that BootstrapFewShot compiles with an empty trainset without UnboundLocalError."""
+    student = SimpleModule("input -> output")
+    teacher = SimpleModule("input -> output")
+
+    lm = DummyLM([{"output": "blue"}])
+    dspy.configure(lm=lm)
+
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
+    compiled_student = bootstrap.compile(student, teacher=teacher, trainset=[])
+
+    assert compiled_student._compiled
+    assert compiled_student.predictor.demos == []
+
+
 @pytest.mark.parametrize(
     ("metric_value", "metric_threshold", "expected_demos"),
     [
