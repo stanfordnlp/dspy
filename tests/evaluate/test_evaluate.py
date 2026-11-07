@@ -585,6 +585,7 @@ def test_evaluate_save_as_json_with_non_json_output_types(tmp_path):
                 day=datetime.date(2026, 11, 4),
                 color=Color.RED,
                 invoice=Invoice(vendor="ACME", issued=datetime.date(2026, 11, 3)),
+                by_day={datetime.date(2026, 11, 5): Color.RED},
             )
 
     json_path = tmp_path / "results.json"
@@ -602,6 +603,7 @@ def test_evaluate_save_as_json_with_non_json_output_types(tmp_path):
     assert rows[0]["day"] == "2026-11-04"
     assert rows[0]["color"] == "red"
     assert rows[0]["invoice"] == {"vendor": "ACME", "issued": "2026-11-03"}
+    assert rows[0]["by_day"] == {"2026-11-05": "red"}
 
 
 def test_evaluate_raises_on_empty_devset():

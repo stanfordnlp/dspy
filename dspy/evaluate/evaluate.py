@@ -218,11 +218,15 @@ class Evaluate:
                 else metric.__class__.__name__
             )
             data = self._prepare_results_output(results, metric_name)
+            # Convert before opening the file, so a value that can't be encoded doesn't leave it half written.
+            # Dates, enums and Pydantic models are encoded like Pydantic does, also as dict keys; other unsupported
+            # values become their string form.
+            json_data = to_jsonable_python(data, fallback=str)
             with open(
                     save_as_json,
                     "w",
             ) as f:
-                json.dump(data, f, default=_json_default)
+                json.dump(json_data, f)
 
         return EvaluationResult(
             score=round(100 * ncorrect / ntotal, 2),
@@ -329,12 +333,6 @@ def merge_dicts(d1, d2) -> dict:
             merged[k] = v
 
     return merged
-
-
-def _json_default(value):
-    # Program outputs can be dates, enums or Pydantic models holding them, which json can't encode.
-    # Encode those like Pydantic does, and only stringify the values it can't encode either.
-    return to_jsonable_python(value, fallback=str)
 
 
 def truncate_cell(content) -> str:
