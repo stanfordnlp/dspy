@@ -434,6 +434,14 @@ def _fetch_wheel(root: Path, info: dict, deno_dir: str | None) -> str:
 def _download(url: str) -> bytes:
     import requests
 
-    response = requests.get(url, timeout=60)
-    response.raise_for_status()
-    return response.content
+    # A transient connection failure should not poison the bundle's failure cache.
+    # Retry only the download, before publishing any bytes or recording a failed build.
+    for attempt in range(3):
+        try:
+            with requests.get(url, timeout=60) as response:
+                response.raise_for_status()
+                return response.content
+        except (requests.ConnectionError, requests.Timeout):
+            if attempt == 2:
+                raise
+            time.sleep(2**attempt)
