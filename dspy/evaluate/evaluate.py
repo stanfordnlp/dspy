@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
 import tqdm
+from pydantic_core import to_jsonable_python
 
 import dspy
 from dspy.primitives.prediction import Prediction
@@ -217,11 +218,15 @@ class Evaluate:
                 else metric.__class__.__name__
             )
             data = self._prepare_results_output(results, metric_name)
+            # Convert before opening the file, so a value that can't be encoded doesn't leave it half written.
+            # Dates, enums and Pydantic models are encoded like Pydantic does, also as dict keys; other unsupported
+            # values become their string form.
+            json_data = to_jsonable_python(data, fallback=str)
             with open(
                     save_as_json,
                     "w",
             ) as f:
-                json.dump(data, f)
+                json.dump(json_data, f)
 
         return EvaluationResult(
             score=round(100 * ncorrect / ntotal, 2),
