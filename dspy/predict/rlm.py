@@ -804,17 +804,18 @@ class RLM(Module):
                 )
             return result
 
+        signature = inspect.signature(tool.func)
         if inspect.iscoroutinefunction(tool.func) or inspect.iscoroutinefunction(getattr(tool.func, "__call__", None)):
 
-            async def invoke(**kwargs):
-                return checked(await tool.acall(**kwargs))
+            async def invoke(*args, **kwargs):
+                return checked(await tool.acall(**signature.bind_partial(*args).arguments, **kwargs))
         else:
 
-            def invoke(**kwargs):
-                return checked(tool(**kwargs))
+            def invoke(*args, **kwargs):
+                return checked(tool(**signature.bind_partial(*args).arguments, **kwargs))
 
         functools.update_wrapper(invoke, tool.func)
-        invoke.__signature__ = inspect.signature(tool.func)
+        invoke.__signature__ = signature
         return invoke
 
     def _prepare_execution_tools(self, budget: _LLMCallBudget | None = None, typed: bool = True) -> dict[str, Callable]:
