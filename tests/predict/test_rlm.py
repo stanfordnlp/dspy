@@ -2698,6 +2698,57 @@ def _more_numbers_untyped():
 _INTERPRETERS = [LocalInterpreter, pytest.param(PythonInterpreter, marks=pytest.mark.deno)]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("factory", _INTERPRETERS)
+@pytest.mark.parametrize("async_tool", [False, True])
+@pytest.mark.parametrize("async_call", [False, True])
+@pytest.mark.parametrize("prefix", ["", "import dspy\n"], ids=["plain", "after-import-dspy"])
+async def test_user_tool_positional_arguments_preserve_validation(factory, async_tool, async_call, prefix):
+    from pydantic import BaseModel
+
+    class Payload(BaseModel):
+        quantity: int
+
+    received = []
+
+    def quote(payload: Payload, multiplier: int = 3) -> int:
+        received.append(payload)
+        return payload.quantity * multiplier + 1
+
+    async def async_quote(payload: Payload, multiplier: int = 3) -> int:
+        return quote(payload, multiplier)
+
+    tool = Tool(async_quote if async_tool else quote, name="quote")
+    program = RLM(
+        "query -> totals: list[int], rejected: list[str]", tools=[tool], max_iters=1, interpreter_factory=factory
+    )
+    code = """
+totals = [quote({'quantity': 7}), quote({'quantity': 7}, 4),
+          quote({'quantity': 7}, multiplier=5), quote(payload={'quantity': 7}, multiplier=6)]
+rejected = []
+for label, attempt in [
+    ('duplicate', lambda: quote({'quantity': 7}, 2, multiplier=3)),
+    ('surplus', lambda: quote({'quantity': 7}, 2, 3)),
+    ('schema', lambda: quote({'quantity': 'not-an-int'})),
+    ('unknown', lambda: quote({'quantity': 7}, unexpected=1)),
+    ('missing', lambda: quote()),
+]:
+    try:
+        attempt()
+    except Exception:
+        rejected.append(label)
+SUBMIT(totals, rejected)
+"""
+    with dummy_lm_context(
+        [{"plan": "Quote and reject invalid calls", "code": prefix + code}, {"totals": [], "rejected": []}]
+    ):
+        result = await program.acall(query="Quote seven items") if async_call else program(query="Quote seven items")
+
+    assert result.totals == [22, 29, 36, 43], result.trajectory
+    assert result.rejected == ["duplicate", "surplus", "schema", "unknown", "missing"]
+    assert len(received) == 4 and all(isinstance(payload, Payload) for payload in received)
+
+
 class TestSandboxValues:
     """Values the interpreter's JSON can't carry cross on the sandbox session's wire: dspy types as themselves, and a
     SandboxSerializable rebuilt in the REPL by its own hooks."""

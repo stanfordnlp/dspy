@@ -541,6 +541,8 @@ class HostTool(Tool):
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         # Generated code may call a tool positionally, in the order the host declares its arguments.
+        if len(args) > len(self.args):
+            raise TypeError(f"{self.name} accepts at most {len(self.args)} positional arguments, got {len(args)}")
         return super().__call__(**dict(zip(self.args, args, strict=False)), **kwargs)
 
 
