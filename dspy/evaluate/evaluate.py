@@ -203,7 +203,7 @@ class Evaluate:
             )
             data = self._prepare_results_output(results, metric_name)
 
-            with open(save_as_csv, "w", newline="") as csvfile:
+            with open(save_as_csv, "w", newline="", encoding="utf-8") as csvfile:
                 fieldnames = list(dict.fromkeys(key for row in data for key in row))
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
