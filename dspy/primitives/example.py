@@ -109,7 +109,7 @@ class Example:
         self._input_keys = None
 
         # Initialize from a base Example if provided
-        if base and isinstance(base, type(self)):
+        if isinstance(base, type(self)):
             self._store = base._store.copy()
             # Preserve the input/label split so copy()/without()/Example(base=...)
             # don't silently break .inputs()/.labels() on the new instance.
@@ -119,7 +119,7 @@ class Example:
                 self._input_keys = set(base_input_keys)
 
         # Initialize from a dict if provided
-        elif base and isinstance(base, dict):
+        elif isinstance(base, dict):
             self._store = base.copy()
 
         # Update with provided kwargs

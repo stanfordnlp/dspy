@@ -52,45 +52,86 @@ def resolve_settings(
     env: Mapping[str, str] | None = None,
     *,
     provider: str = "",
-    profile: Callable[[str], str | None] | None = None,
+    profile: Callable[[str], Any] | None = None,
     endpoint: str | None = None,
+    sources: dict[str, str] | None = None,
+    unprobed_ok: bool = False,
+    problems: list[NotConfiguredError] | None = None,
 ) -> dict[str, str]:
-    """Explicit values, then ``env`` (when given), then the cloud profile
-    (``profile(name)``: the AWS shared config's ``region`` for the active
-    profile, the ADC file's ``quota_project_id`` — AUTH-10), then defaults.
-    With ``endpoint`` the settings only the URL root needed are optional."""
+    """Explicit values, then ``env`` (when given), then the cloud's own
+    configuration (``profile(name)`` → ``(value, from)``: the AWS profile's
+    ``region``; the Google project from the credential file, gcloud's
+    active configuration, the ADC file, the metadata server — AUTH-10),
+    then defaults.  With ``endpoint`` the settings only the URL root needed
+    are optional.
+
+    ``sources``, when given, receives each setting's origin in the AUTH-10
+    ``from`` vocabulary (``explicit``, ``env:<VAR>``, ``adc-env``,
+    ``gcloud-config``, ``adc-file``, ``metadata``, ``aws-profile``,
+    ``default``).  ``unprobed_ok`` (the offline doctor): a setting only a
+    network source could supply is left out and recorded as
+    ``unprobed:<from>`` instead of raising.  ``problems``, when given
+    (the doctor), receives the missing-setting errors instead of a raise,
+    and the settings that did resolve are returned."""
     out: dict[str, str] = {}
     if host is None:
         return dict(given or {})
     given = dict(given or {})
     relaxed = host.url_only_settings if endpoint else frozenset()
+    record = sources if sources is not None else {}
+    missing: NotConfiguredError | None = None
     for setting in host.settings:
         value = given.pop(setting.name, None)
+        origin = "explicit" if value else ""
         if not value and env is not None:
             for var in setting.env:
                 candidate = env.get(var)
                 if candidate:
-                    value = candidate
+                    value, origin = candidate, f"env:{var}"
                     break
+        unprobed = ""
         if not value and profile is not None:
-            value = profile(setting.name)
-        if not value:
-            value = setting.default
+            found = profile(setting.name)
+            if isinstance(found, tuple):
+                if found[0]:
+                    value, origin = found[0], found[1]
+                else:
+                    unprobed = found[1]
+            elif found:
+                value, origin = found, "profile"
+        if not value and setting.default:
+            value, origin = setting.default, "default"
         if not value:
             if setting.name in relaxed:
                 continue
+            if unprobed and unprobed_ok:
+                record[setting.name] = f"unprobed:{unprobed}"
+                continue
             hint = f"set {' or '.join(setting.env)}" if setting.env else f"pass settings={{'{setting.name}': ...}}"
+            if setting.name == "project":
+                # The Google project also comes from gcloud and the credential
+                # file; those were read and said nothing (AUTH-10).
+                hint += ", run `gcloud config set project <id>`, or pass settings={'project': ...}"
             if setting.name in host.url_only_settings and host.endpoint_env:
                 hint += f", or the endpoint: {' or '.join(host.endpoint_env)}"
-            raise NotConfiguredError(
+            record[setting.name] = "missing"
+            # Every setting is still resolved, so the doctor reports them all;
+            # the first missing one is the error.
+            missing = missing or NotConfiguredError(
                 f"{provider or 'host'}: setting {setting.name!r} is required and has no default; {hint}",
                 provider=provider or None,
                 credential_hint=hint,
             )
+            continue
         out[setting.name] = value
+        record[setting.name] = origin
     unknown = sorted(given)
     if unknown:
         raise ValueError(f"{provider or 'host'}: unknown host setting(s) {unknown}; known: {list(host.setting_names)}")
+    if missing is not None:
+        if problems is None:
+            raise missing
+        problems.append(missing)
     return out
 
 

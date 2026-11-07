@@ -1,37 +1,40 @@
-"""dspy.Flex(interpreter_factory=...) runs generated code inside a sandbox via the run-in-interpreter bridge.
+"""dspy.Flex(interpreter_factory=...) runs generated code, with the real dspy, inside an interpreter.
 
-Two layers of coverage:
-
-* Unit (no Deno): the interpreter_factory is validated; the host-side bridge callbacks
-  (``_Invocation.construct``/``.call``) build real predictors on the host, keep them in a
-  per-forward registry (never on the Flex, so parallel forwards can't clobber each other), and
-  run via the configured LM. These exercise everything the sandbox would drive, without Deno.
-* Integration (Deno required, skipped otherwise): an optimized CoT-style module — with optimizer
-  authored glue like ``import re`` — actually runs inside a ``dspy.PythonInterpreter`` with the LM call
-  bridged back to the host, and adversarial file access is contained to the sandbox.
+* The interpreter_factory is validated.
+* Behavior on LocalInterpreter (a subprocess, no Deno) and the Deno/Pyodide sandbox: predictors run in the
+  sandbox while every LM call runs on the host, which builds the request from its own LM, admits only
+  generation options, meters the call, and reports LM errors by type; provided tools are dspy.Tools there.
+* Integration (Deno required, skipped otherwise): optimizer-authored glue runs inside a
+  ``dspy.PythonInterpreter``, and adversarial file access is contained to the sandbox.
 """
 
 from __future__ import annotations
 
+import ast
+import dataclasses
 import datetime
+import decimal
 import enum
 import inspect
 import json
 import shutil
 import sys
 import textwrap
+import typing
 
 import pydantic
 import pytest
 
 import dspy
 from dspy.predict.flex import Flex, bridge
-from dspy.primitives import facade
 from dspy.primitives.code_interpreter import (
     CodeExecutionError,
     CodeInterpreterError,
     resolve_interpreter_factory,
 )
+from dspy.primitives.facade import SandboxSession, from_wire
+from dspy.primitives.sandbox_guest import GuestValues
+from dspy.signatures.signature import make_signature
 from dspy.utils.dummies import DummyLM
 from dspy.utils.exceptions import LMError, LMRateLimitError
 from tests.mock_interpreter import MockInterpreter
@@ -105,171 +108,710 @@ def test_bad_interpreter_type_raises() -> None:
 def test_tools_plus_interpreter_is_supported() -> None:
     flex = Flex(Doubler, tools=[shout], interpreter_factory=lambda: MockInterpreter())
     assert flex._bridge is not None
-    # the user tool is registered (name -> callable) so sandbox glue can call it by name
-    assert flex._bridge._tool_callables()["shout"] is shout
+    # the user tool is served by name, so sandbox glue can call it
+    assert flex._bridge.session()._tools["shout"] is shout
 
 
 # =============================================================================
-# Host bridge callbacks (no Deno) — simulate what the sandbox drives
+# The real dspy in the sandbox, wired to the host (LocalInterpreter, and Deno when installed)
 # =============================================================================
+# Sandboxed code imports the real dspy; every LM call it makes crosses to the host, which builds the
+# request from its own LM, admits only generation options, meters the call, and runs it.
+
+BACKENDS = [
+    pytest.param(dspy.LocalInterpreter, id="local"),
+    pytest.param(dspy.PythonInterpreter, marks=deno_required, id="deno"),
+]
 
 
-def _bridged_flex():
-    # MockInterpreter doesn't execute Python, so eager init attaches nothing; we drive the host
-    # bridge callbacks directly, exactly as the sandbox shim would.
-    return Flex(Doubler, interpreter_factory=lambda: MockInterpreter())
+def _module(body: str, init: str = "") -> str:
+    lines = ["class DoublerModule(dspy.Module):", "    def __init__(self):", "        super().__init__()"]
+    lines += ["        " + line for line in textwrap.dedent(init).splitlines() if line]
+    lines += ["", "    def forward(self, value):"]
+    lines += ["        " + line for line in textwrap.dedent(body).splitlines()]
+    return "\n".join(lines)
 
 
-def _bridged_flex_with(**kwargs):
-    return Flex(Doubler, interpreter_factory=lambda: MockInterpreter(), **kwargs)
-
-
-def test_construct_builds_real_predictor_in_per_forward_registry() -> None:
-    flex = _bridged_flex()
-    inv = flex._bridge.invocation()
-    handle = inv.construct("ChainOfThought", "value: int -> result: int", "solve", {})
-    assert handle == "solve"
-    assert isinstance(inv._predictors["solve"], dspy.ChainOfThought)
-    # Nothing is set on the Flex itself: the module's surface stays clean, and
-    # named_predictors() reports no tunable units — internals belong to the code.
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_predictors_run_in_the_sandbox_on_the_host_lm(factory) -> None:
+    flex = Flex(Doubler, interpreter_factory=factory)
+    flex._bind_code(_module(
+        "return dspy.Prediction(result=self.solve(value=value).result)",
+        init='self.solve = dspy.ChainOfThought("value: int -> result: int")',
+    ))
+    lm = DummyLM([{"plan": "two doubled is four", "result": "4"}])
+    with dspy.context(lm=lm):
+        assert flex(value=2).result == 4
+    assert len(lm.history) == 1  # the host LM made the call
+    # Nothing is attached to the Flex: its internals belong to the code.
     assert not hasattr(flex, "solve")
     assert flex.named_predictors() == []
 
 
-def test_construct_names_cannot_clobber_the_flex() -> None:
-    # Construction writes to the per-forward registry, never setattr on the host Flex, so a
-    # generated predictor named like a Flex attribute is just a handle — nothing to corrupt.
-    flex = _bridged_flex()
-    inv = flex._bridge.invocation()
-    for name in ("lm", "forward", "module_src", "_bridge"):
-        assert inv.construct("Predict", "value: int -> result: int", name, {}) == name
-    assert flex.lm is None  # host attributes untouched
-    assert callable(flex.forward)
-    assert isinstance(flex._bridge, bridge.BridgeRuntime)
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_sandboxed_code_cannot_set_lm_routing_or_credentials(factory) -> None:
+    flex = Flex(Doubler, interpreter_factory=factory)
+    flex._bind_code(_module(
+        'out = dspy.Predict("value: int -> result: int")(value=value, config={"api_base": "http://evil.example"})\n'
+        "return dspy.Prediction(result=out.result)"
+    ))
+    lm = DummyLM([{"result": "4"}])
+    with dspy.context(lm=lm), pytest.raises(CodeExecutionError, match=r"may not set LM option\(s\) \['api_base'\]"):
+        flex(value=2)
+    assert lm.history == []
 
 
-def test_parallel_forwards_cannot_overwrite_each_others_predictors() -> None:
-    # The regression the per-forward registry prevents: two forwards on one Flex (e.g. under
-    # Evaluate(num_threads>1)) interleave as construct(A), construct(B), call(A). With predictors
-    # attached to the shared Flex, A would run B's predictor; each invocation owning its own
-    # registry keeps them isolated.
-    flex = _bridged_flex()
-    a = flex._bridge.invocation()
-    b = flex._bridge.invocation()
-    a.construct("Predict", "value: int -> result: int", "solve", {})
-    b.construct("ChainOfThought", "question: str -> answer: str", "solve", {})  # same handle
-    assert a._predictors["solve"] is not b._predictors["solve"]
-    dspy.configure(lm=DummyLM([{"result": "4"}]))
-    fields = a.call("solve", {"value": 2})
-    assert fields == {"result": 4}  # A's own predictor and signature, not B's
+@pytest.mark.parametrize("factory", [*BACKENDS, pytest.param(lambda: _ExecInterpreter(), id="in-process")])
+def test_sandboxed_code_cannot_change_the_request_settings_the_host_owns(factory) -> None:
+    flex = Flex(Doubler, interpreter_factory=factory)
+    flex._bind_code(_module(
+        "import dataclasses\n"
+        "lm = dspy.settings.lm\n"
+        'request = lm._build_adapter_request("hi", {"temperature": 0.5})\n'
+        'config = dataclasses.replace(request.config, extensions={"custom_llm_provider": "anthropic"})\n'
+        "lm(dataclasses.replace(request, config=config))\n"
+        "return dspy.Prediction(result=0)"
+    ))
+    lm = DummyLM([{"result": "4"}])
+    with dspy.context(lm=lm), pytest.raises(Exception, match=r"may not change request setting\(s\) \['extensions'\]"):
+        flex(value=2)
+    assert lm.history == []
 
 
-def test_react_kinds_are_bridgeable_and_construct_on_host() -> None:
-    # ReAct/ReActV2 are tool-calling agents: they run NO inner code (so take no interpreter) and call
-    # named tools on the host. They just need whitelisting; the tools must be Flex-level to resolve.
-    assert "ReAct" in facade.BRIDGEABLE_KINDS and "ReActV2" in facade.BRIDGEABLE_KINDS
-    flex = Flex(ShoutSig, tools=[shout], interpreter_factory=lambda: MockInterpreter())
-    inv = flex._bridge.invocation()
-    tools_payload = [{facade.TOOL_MARKER: "shout"}]
-    inv.construct("ReAct", "text: str -> out: str", "agent", {"tools": tools_payload})
-    agent = inv._predictors["agent"]
-    assert isinstance(agent, dspy.ReAct)
-    # No interpreter is injected into a non-code-executing predictor.
-    assert not hasattr(agent, "interpreter")
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_sandboxed_code_cannot_switch_the_model(factory) -> None:
+    # The host serves every request with its own LM; a request naming another model is refused.
+    flex = Flex(Doubler, interpreter_factory=factory)
+    flex._bind_code(_module(
+        "import dataclasses\n"
+        "lm = dspy.settings.lm\n"
+        'request = dataclasses.replace(lm._build_adapter_request("hi", {}), model="openai/gpt-5-pro")\n'
+        "lm(request)\n"
+        "return dspy.Prediction(result=0)"
+    ))
+    lm = DummyLM([{"result": "4"}])
+    with dspy.context(lm=lm), pytest.raises(CodeExecutionError, match=r"Request\.model must match LM\.model"):
+        flex(value=2)
+    assert lm.history == []
 
 
-def test_reactv2_constructs_and_runs_through_the_bridge() -> None:
-    # primitives_doc recommends dspy.ReActV2 for tool-use steps, so the whole bridged path must
-    # work: a shim-style construct payload builds the real agent on the host with the resolved
-    # tool, the host LM drives the loop, and the prediction (incl. history) crosses the JSON
-    # boundary back to the sandbox.
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_sandboxed_code_cannot_have_the_host_read_its_files(factory, tmp_path) -> None:
+    secret = tmp_path / "secret.txt"
+    secret.write_text("TOP-SECRET")
+    flex = Flex(Doubler, interpreter_factory=factory)
+    flex._bind_code(_module(
+        "from pathlib import Path\n"
+        "from dspy._vendor.lm15.types import DocumentPart\n"
+        "lm = dspy.settings.lm\n"
+        f"part = DocumentPart(media_type='text/plain', path=Path({str(secret)!r}))\n"
+        "lm(dspy.lm15.Request(model=lm.model, messages=(dspy.lm15.Message.user((part,)),)))\n"
+        "return dspy.Prediction(result=0)"
+    ))
+    lm = DummyLM([{"result": "1"}])
+    with dspy.context(lm=lm), pytest.raises(CodeExecutionError, match="may not reference host files"):
+        flex(value=1)
+    assert lm.history == []
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_lm_call_budget_is_enforced_per_forward(factory) -> None:
+    flex = Flex(Doubler, interpreter_factory=factory, max_predictor_calls=2)
+    flex._bind_code(_module(
+        'p = dspy.Predict("value: int -> result: int")\n'
+        "for _ in range(int(value)):\n"
+        "    out = p(value=value)\n"
+        "return dspy.Prediction(result=out.result)"
+    ))
+    with dspy.context(lm=DummyLM([{"result": "1"}] * 10)):
+        assert flex(value=2).result == 1
+        with pytest.raises(CodeInterpreterError, match=r"budget \(2\).*Raise max_predictor_calls if this is expected"):
+            flex(value=3)
+        assert flex(value=2).result == 1  # each forward starts with a fresh budget
+
+
+def test_lm_call_budget_can_be_disabled() -> None:
+    flex = Flex(Doubler, interpreter_factory=dspy.LocalInterpreter, max_predictor_calls=None)
+    assert flex._bridge._max_predictor_calls is None
+    flex._bind_code(_module(
+        'p = dspy.Predict("value: int -> result: int")\n'
+        "for _ in range(5):\n"
+        "    out = p(value=value)\n"
+        "return dspy.Prediction(result=out.result)"
+    ))
+    with dspy.context(lm=DummyLM([{"result": "1"}] * 5)):
+        assert flex(value=1).result == 1
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_provided_tools_are_dspy_tools_with_their_host_metadata(factory) -> None:
+    # Modules built in the sandbox see the host tool's name, description and arguments, and generated code
+    # can still call it like a function, positionally or by keyword.
+    flex = Flex(ShoutSig, tools=[shout], interpreter_factory=factory)
+    flex._bind_code(textwrap.dedent(
+        """
+        class ShoutModule(dspy.Module):
+            def forward(self, text):
+                assert isinstance(shout, dspy.Tool)
+                assert (shout.name, shout.desc) == ("shout", "Uppercase helper used to exercise user tools through the bridge.")
+                assert shout.args == {"text": {"type": "string"}}
+                return dspy.Prediction(out=shout(text) + shout(text="!"))
+        """
+    ).strip())
+    assert flex(text="hi").out == "HI!"
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_react_in_the_sandbox_calls_a_host_tool_and_a_sandbox_helper(factory) -> None:
+    calls = []
+
     def lookup(query: str) -> str:
         """Look things up."""
+        calls.append(query)
         return f"found {query}"
 
-    flex = Flex(ShoutSig, tools=[lookup], interpreter_factory=lambda: MockInterpreter())
-    inv = flex._bridge.invocation()
-    inv.construct("ReActV2", "question: str -> answer: str", "agent", {"tools": [{facade.TOOL_MARKER: "lookup"}]})
-    agent = inv._predictors["agent"]
-    assert isinstance(agent, dspy.ReActV2)
-    assert not hasattr(agent, "interpreter")  # not a code-executing predictor
+    flex = Flex(ShoutSig, tools=[lookup], interpreter_factory=factory)
+    flex._bind_code(textwrap.dedent(
+        """
+        class AgentModule(dspy.Module):
+            def forward(self, text):
+                def reverse(s: str) -> str:
+                    \"\"\"Reverse a string.\"\"\"
+                    return s[::-1]
 
+                agent = dspy.ReAct("question: str -> answer: str", tools=[lookup, reverse])
+                return dspy.Prediction(out=agent(question=text).answer)
+        """
+    ).strip())
     lm = DummyLM([
-        {
-            "next_thought": "look it up",
-            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": "cats"}}]),
-        },
-        {
-            "next_thought": "answer now",
-            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
-        },
+        {"next_thought": "look", "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": "cats"}}])},
+        {"next_thought": "flip", "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "reverse", "args": {"s": "abc"}}])},
+        {"next_thought": "done", "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "cba"}}])},
     ])
     with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
-        fields = inv.call("agent", {"question": "cats"})
-    assert fields["answer"] == "found cats"
-    assert fields["termination_reason"] == "submit"
-    # The agent trace itself round-trips: both loop steps with the tool-call sequence intact.
-    tool_sequence = [
-        call["name"] for message in fields["history"]["messages"] for call in message["tool_calls"]["tool_calls"]
-    ]
-    assert tool_sequence == ["lookup", "submit"]
+        assert flex(text="cats").out == "cba"
+    assert calls == ["cats"]  # the host tool ran on the host; the helper never left the sandbox
+    assert "Look things up." in lm.history[0]["request"].messages[0].text  # the host tool's description
 
 
-def test_bridged_rlm_inherits_the_flex_factory() -> None:
-    # A bridged sub-RLM runs on the Flex factory, and sandboxed code cannot pick another.
-    def factory() -> MockInterpreter:
-        return MockInterpreter()
+def _recording(factory):
+    """``factory``, recording every interpreter it makes."""
+    made = []
+
+    def make():
+        made.append(factory())
+        return made[-1]
+
+    make.execution_instructions = factory.execution_instructions
+    return make, made
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_code_executing_modules_get_a_fresh_interpreter_from_the_flex_factory(factory) -> None:
+    # The nested RLM's REPL is a separate interpreter: what its code does to builtins, sys.modules or globals
+    # does not reach the module that built it. It still calls back into that module's functions and budget.
+    make, made = _recording(factory)
+    flex = Flex(Doubler, interpreter_factory=make, max_predictor_calls=3)
+    flex._bind_code(_module(
+        "import builtins, sys\n"
+        "def halve(n: int) -> int:\n"
+        '    """Halve n."""\n'
+        "    return n // 2\n"
+        'rlm = dspy.RLM("value: int -> result: int", max_iters=2, tools=[halve])\n'
+        "out = rlm(value=value).result\n"
+        "leaked = hasattr(builtins, 'leaked') or 'leaked' in sys.modules or 'leaked' in globals()\n"
+        "return dspy.Prediction(result=-1 if leaked else out)"
+    ))
+    code = (
+        "```python\nimport builtins, sys\nbuiltins.leaked = sys.modules['leaked'] = leaked = True\n"
+        "SUBMIT(result=halve(n=value) + (2 if llm_query('two?') else 0))\n```"
+    )
+    lm = DummyLM([{"plan": "halve it", "code": code}, {"response": "2"}])
+    with dspy.context(lm=lm):
+        assert flex(value=40).result == 22
+    assert len(made) == 2  # the Flex's own interpreter, and one for the nested RLM
+    assert len(lm.history) == 2  # the nested RLM's action and its llm_query, both on the Flex's budget
+
+
+def test_nested_interpreters_are_shut_down_with_the_forward() -> None:
+    shut = []
+
+    class Tracked(dspy.LocalInterpreter):
+        def shutdown(self):
+            shut.append(self)
+            super().shutdown()
+
+    make, made = _recording(Tracked)
+    flex = Flex(Doubler, interpreter_factory=make)
+    flex._bind_code(_module(
+        'repl = dspy.RLM("value: int -> result: int", max_iters=1)\n'
+        "return dspy.Prediction(result=repl(value=value).result)"
+    ))
+    with dspy.context(lm=DummyLM([{"plan": "p", "code": "SUBMIT(result=value)"}])):
+        assert flex(value=3).result == 3
+    assert len(made) == 2 and set(map(id, shut)) == set(map(id, made))
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_host_adapter_is_used_in_the_sandbox(factory) -> None:
+    flex = Flex(Doubler, interpreter_factory=factory)
+    lm = DummyLM([{"result": "4"}], adapter=dspy.JSONAdapter())
+    with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
+        assert flex(value=2).result == 4
+    assert "JSON" in lm.history[-1]["request"].system
+
+
+class _ShoutingAdapter(dspy.ChatAdapter):
+    def format_task_description(self, signature):
+        return "SHOUTING: " + super().format_task_description(signature)
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_a_custom_adapter_is_used_in_the_sandbox(factory) -> None:
+    flex = Flex(Doubler, interpreter_factory=factory)
+    lm = DummyLM([{"result": "4"}])
+    with dspy.context(lm=lm, adapter=_ShoutingAdapter()):
+        assert flex(value=2).result == 4
+    assert "SHOUTING:" in lm.history[-1]["request"].system
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_inner_predictor_calls_join_the_host_trace(factory) -> None:
+    flex = Flex(Doubler, interpreter_factory=factory)
+    flex._bind_code(_module(
+        "return dspy.Prediction(result=self.solve(value=value).result)",
+        init='self.solve = dspy.ChainOfThought(dspy.Signature("value: int -> result: int", "Double it."))',
+    ))
+    with dspy.context(lm=DummyLM([{"plan": "p", "result": "4"}]), trace=[]):
+        flex(value=2)
+        [(predictor, inputs, prediction)] = dspy.settings.trace
+    assert predictor.signature.instructions == "Double it."
+    assert predictor.signature.input_fields["value"].annotation is int
+    assert predictor.signature.output_fields["reasoning"].annotation is dspy.Reasoning
+    assert inputs == {"value": 2}
+    assert prediction.result == 4
+
+
+class _Address(pydantic.BaseModel):
+    postal_code: str = pydantic.Field(serialization_alias="postalCode")
+    city: str = pydantic.Field(alias="cityName")
+
+
+class _Where(dspy.Signature):
+    address: _Address = dspy.InputField()
+    code: str = dspy.OutputField()
+    same: _Address = dspy.OutputField()
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_values_of_the_users_types_reach_generated_code_as_plain_data(factory) -> None:
+    # The JSON the type writes, by field name whatever its aliases, which the host reads back as the type.
+    flex = Flex(_Where, interpreter_factory=factory)
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, address):\n"
+        "        assert isinstance(address, dict)\n"
+        "        return dspy.Prediction(code=address['postal_code'], same=address)\n"
+    )
+    address = _Address(postal_code="10001", cityName="New York")
+    out = flex(address=address)
+    assert (out.code, out.same) == ("10001", address)
+
+
+def test_an_in_process_interpreter_shares_the_hosts_objects() -> None:
+    flex = Flex(_Where, interpreter_factory=_ExecInterpreter)
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, address):\n"
+        "        return dspy.Prediction(code=address.postal_code, same=address)\n"
+    )
+    address = _Address(postal_code="10001", cityName="New York")
+    out = flex(address=address)
+    assert out.code == "10001" and out.same is address
+
+
+class _Account(pydantic.BaseModel):
+    name: str
+    token: str = pydantic.Field(default="", exclude=True)
+
+
+class _Owner(dspy.Signature):
+    account: _Account = dspy.InputField()
+    seen: str = dspy.OutputField()
+
+
+class _Keep(dspy.Signature):
+    account: _Account = dspy.InputField()
+    seen: str = dspy.OutputField()
+    same: _Account = dspy.OutputField()
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_excluded_input_fields_do_not_reach_generated_code(factory) -> None:
+    flex = Flex(_Keep, interpreter_factory=factory)
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, account):\n"
+        "        return dspy.Prediction(seen=','.join(sorted(account)), same=account)\n"
+    )
+    out = flex(account=_Account(name="a", token="secret"))
+    assert (out.seen, out.same) == ("name", _Account(name="a"))
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_generated_code_returns_plain_data_for_the_users_types(factory) -> None:
+    flex = Flex(_Keep, interpreter_factory=factory)
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, account):\n"
+        "        return dspy.Prediction(seen=account['name'], same={'name': account['name'] + '!'})\n"
+    )
+    assert flex(account=_Account(name="a")).same == _Account(name="a!")  # read as the type on the host
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, account):\n"
+        "        return dspy.Prediction(seen='x', same={'name': 5})\n"
+    )
+    with pytest.raises(CodeInterpreterError, match="output field 'same'"):
+        flex(account=_Account(name="a"))
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, account):\n"
+        "        return dspy.Prediction(seen='x', same=_Account(name='b'))\n"
+    )
+    with pytest.raises(CodeInterpreterError, match="plain data"):  # the type is named there, its values are data
+        flex(account=_Account(name="a"))
+
+
+def _tagged(allowed: set[str]) -> type[dspy.Signature]:
+    class Tag(pydantic.BaseModel):
+        name: str
+
+        @pydantic.field_validator("name")
+        @classmethod
+        def _known(cls, value):
+            if value not in allowed:
+                raise ValueError(f"not one of {sorted(allowed)}")
+            return value
+
+    # Built from the types themselves: this file's annotations are strings, which can't name a local class.
+    return make_signature({"tag": (Tag, dspy.InputField()), "name": (str, dspy.OutputField())})
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_inputs_of_a_type_defined_in_a_function_reach_generated_code_as_plain_data(factory) -> None:
+    signature = _tagged({"red"})
+    flex = Flex(signature, interpreter_factory=factory)
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, tag):\n"
+        "        return dspy.Prediction(name=f'{type(tag).__name__} {tag[\"name\"]}')\n"
+    )
+    assert flex(tag=signature.input_fields["tag"].annotation(name="red")).name == "dict red"
+
+
+class _Placed(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(strict=True)
+    coordinates: tuple[int, int]
+    data: bytes = b""
+
+
+class _Where2(dspy.Signature):
+    place: _Placed = dspy.InputField()
+    report: str = dspy.OutputField()
+    same: _Placed = dspy.OutputField()
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_strict_models_cross_as_the_json_pydantic_wrote(factory) -> None:
+    flex = Flex(_Where2, interpreter_factory=factory)
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, place):\n"
+        "        return dspy.Prediction(report=f\"{place['coordinates']} {place['data']}\", same=place)\n"
+    )
+    place = _Placed(coordinates=(1, 2), data=b"hi")
+    out = flex(place=place)
+    assert (out.report, out.same) == ("[1, 2] hi", place)
+
+
+def test_the_optimizer_is_told_the_users_types_are_plain_data_in_the_sandbox() -> None:
+    blurb = Flex(_Owner)._flex_ctx.render_context_blurb(sandboxed=True)
+    assert "In the sandbox, values of _Account are plain data" in blurb
+    assert "plain data" not in Flex("q -> a")._flex_ctx.render_context_blurb(sandboxed=True)
+
+
+class _Color(str, enum.Enum):
+    RED = "red"
+    BLUE = "blue"
+
+
+class _Point(pydantic.BaseModel, frozen=True):
+    x: int
+
+
+class _Shape(pydantic.BaseModel):
+    color: _Color
+    points: set[_Point]
+    groups: set[frozenset[int]]
+    span: tuple[int, ...]
+    data: bytes
+    amount: decimal.Decimal
+    tags: set[str] = pydantic.Field(default_factory=set)
+
+
+class _Size(pydantic.RootModel[int]):
+    pass
+
+
+@dataclasses.dataclass
+class _Frame:
+    width: int
+    tags: set[str] = dataclasses.field(default_factory=set)
+
+
+class _Corner(typing.NamedTuple):
+    x: int
+    y: int = 0
+
+
+class _Canvas(pydantic.BaseModel):
+    size: _Size
+    frame: _Frame
+    corner: _Corner
+
+
+class _Paint(dspy.Signature):
+    canvas: _Canvas = dspy.InputField()
+    report: str = dspy.OutputField()
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_root_models_dataclasses_and_named_tuples_reach_generated_code_as_their_json(factory) -> None:
+    flex = Flex(_Paint, interpreter_factory=factory)
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, canvas):\n"
+        "        size, width, (x, y) = canvas['size'], canvas['frame']['width'], canvas['corner']\n"
+        "        return dspy.Prediction(report=f'{size} {width + 1} {x} {y}')\n"
+    )
+    assert flex(canvas=_Canvas(size=_Size(3), frame=_Frame(4), corner=_Corner(5))).report == "3 5 5 0"
+
+
+@pydantic.dataclasses.dataclass
+class _Place:
+    postal_code: str = pydantic.Field(alias="postal code")
+
+
+class _Locate(dspy.Signature):
+    text: str = dspy.InputField()
+    place: _Place = dspy.OutputField()
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_dataclass_outputs_parse_under_their_alias(factory) -> None:
+    key = "postal code"  # as on the host, which reads this field by its alias only
+    flex = Flex(_Locate, interpreter_factory=factory)
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, text):\n"
+        "        return dspy.Prediction(place=dspy.Predict('text -> place: _Place')(text=text).place)\n"
+    )
+    with dspy.context(lm=DummyLM([{"place": json.dumps({key: "10001"})}])):
+        assert flex(text="t").place.postal_code == "10001"
+
+
+class _Nested(pydantic.BaseModel):
+    x: int = pydantic.Field(validation_alias=pydantic.AliasPath("data", "x"))
+
+
+class _Unwrap(dspy.Signature):
+    value: int = dspy.InputField()
+    nested: _Nested = dspy.OutputField()
+
+
+@pytest.mark.parametrize("factory", [*BACKENDS, pytest.param(lambda: _ExecInterpreter(), id="in-process")])
+def test_models_with_alias_paths_return_to_the_host_by_field_name(factory) -> None:
+    flex = Flex(_Unwrap, interpreter_factory=factory)
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, value):\n"
+        "        return dspy.Prediction(nested={'x': value})\n"
+    )
+    assert flex(value=7).nested.x == 7
+
+
+class _Tone(str, enum.Enum):
+    WARM = "warm"
+    COOL = "cool"
+
+
+class _Swatch(pydantic.BaseModel):
+    tone: _Tone
+
+
+class _Mark(pydantic.BaseModel):
+    name: str
+    id: str = pydantic.Field(default_factory=lambda: "host-made")
+
+
+class _Match(dspy.Signature):
+    swatch: _Swatch = dspy.InputField()
+    wanted: _Tone = dspy.InputField()
+    same: bool = dspy.OutputField()
+    mark: _Mark = dspy.OutputField()
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_enum_values_compare_as_data_and_the_host_makes_defaults(factory) -> None:
+    flex = Flex(_Match, interpreter_factory=factory)
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, swatch, wanted):\n"
+        "        return dspy.Prediction(same=swatch['tone'] == wanted, mark={'name': 'm'})\n"
+    )
+    out = flex(swatch=_Swatch(tone=_Tone.COOL), wanted=_Tone.COOL)
+    assert (out.same, out.mark.id) == (True, "host-made")
+
+
+class _Sides(pydantic.BaseModel):  # both fields' alias choices include the same name
+    left: int = pydantic.Field(validation_alias=pydantic.AliasChoices(pydantic.AliasPath("left", "value"), "value"))
+    right: int = pydantic.Field(validation_alias=pydantic.AliasChoices(pydantic.AliasPath("right", "value"), "value"))
+
+
+class _Compare(dspy.Signature):
+    sides: _Sides = dspy.InputField()
+    diff: int = dspy.OutputField()
+    same: _Sides = dspy.OutputField()
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_fields_whose_alias_choices_share_a_name_keep_their_own_values(factory) -> None:
+    flex = Flex(_Compare, interpreter_factory=factory)
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, sides):\n"
+        "        return dspy.Prediction(diff=sides['left'] - sides['right'], same=sides)\n"
+    )
+    sides = _Sides.model_validate({"left": {"value": 1}, "right": {"value": 2}})
+    out = flex(sides=sides)
+    assert (out.diff, out.same) == (-1, sides)
+
+
+class _Draw(dspy.Signature):
+    shape: _Shape = dspy.InputField()
+    report: str = dspy.OutputField()
+    same: _Shape = dspy.OutputField()
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_model_inputs_reach_generated_code_as_their_json_and_come_back_as_the_model(factory) -> None:
+    flex = Flex(_Draw, interpreter_factory=factory)
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, shape):\n"
+        "        report = f\"{shape['color']} {shape['points']} {shape['span']} {shape['data']} {shape['amount']}\"\n"
+        "        return dspy.Prediction(report=report, same=shape)\n"
+    )
+    shape = _Shape(color=_Color.BLUE, points={_Point(x=1)}, groups={frozenset({1})}, span=(1, 2), data=b"ab",
+                   amount=decimal.Decimal("1.5"))
+    out = flex(shape=shape)
+    assert out.report == "blue [{'x': 1}] [1, 2] ab 1.5"
+    assert out.same == shape
+
+
+class _Order(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(ser_json_bytes="hex", val_json_bytes="hex")
+    items: pydantic.Json[list[int]]
+    secret: str = pydantic.Field(default="", exclude=True)
+    marks: set[str] = pydantic.Field(default_factory=set, exclude=True)
+    note: bytes = b"ab"
+
+
+class _Ship(pydantic.BaseModel):
+    order: _Order
+    count: int = pydantic.Field(validation_alias=pydantic.AliasChoices("n", "count_"))
+
+
+class _Pack(dspy.Signature):
+    ship: _Ship = dspy.InputField()
+    report: str = dspy.OutputField()
+
+
+class _Packed(dspy.Signature):
+    ship: _Ship = dspy.InputField()
+    report: str = dspy.OutputField()
+    same: _Ship = dspy.OutputField()
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_json_fields_exclusions_and_settings_cross_as_the_type_writes_them(factory) -> None:
+    flex = Flex(_Packed, interpreter_factory=factory)
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, ship):\n"
+        "        order = ship['order']\n"
+        "        return dspy.Prediction(report=f\"{order['items']} {order['note']} {ship['count']} {sorted(order)}\", "
+        "same=ship)\n"
+    )
+    out = flex(ship=_Ship(order=_Order(items="[1, 2]", secret="s"), count_=3))
+    assert out.report == "[1,2] 6162 3 ['items', 'note']"  # the type's round-trip JSON: no excluded field in it
+    assert (out.same.order.items, out.same.order.note, out.same.count, out.same.order.secret) == ([1, 2], b"ab", 3, "")
+
+
+def test_a_two_step_adapter_serves_the_sandbox_from_the_host() -> None:
+    main = DummyLM([{"result": "four, I think"}], adapter=dspy.ChatAdapter())
+    extraction = DummyLM([{"result": "4"}], adapter=dspy.ChatAdapter())
+    flex = Flex(Doubler, interpreter_factory=dspy.LocalInterpreter)
+    with dspy.context(lm=main, adapter=dspy.TwoStepAdapter(extraction)):
+        assert flex(value=2).result == 4
+    assert len(main.history) == len(extraction.history) == 1
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_each_best_of_n_attempt_reaches_the_host_with_its_own_rollout(factory) -> None:
+    seen = []
+
+    class Recording(DummyLM):
+        def __call__(self, prompt=None, cache=None, rollout_id=None, **options):
+            seen.append(rollout_id)
+            return super().__call__(prompt, cache=cache, rollout_id=rollout_id, **options)
 
     flex = Flex(Doubler, interpreter_factory=factory)
-    inv = flex._bridge.invocation()
-    inv.construct("RLM", "value: int -> result: int", "rlm", {})
-
-    sub_rlm = inv._predictors["rlm"]
-    assert sub_rlm._interpreter_factory is factory
-    assert "Sub-agents (dspy)" in sub_rlm.generate_action.signature.instructions
-    with pytest.raises(CodeInterpreterError, match="cannot choose its interpreter_factory"):
-        inv.construct("RLM", "value: int -> result: int", "chosen", {"interpreter_factory": "LocalInterpreter"})
-
-
-def test_call_runs_predictor_via_host_lm() -> None:
-    flex = _bridged_flex()
-    inv = flex._bridge.invocation()
-    inv.construct("ChainOfThought", "value: int -> result: int", "solve", {})
-    dspy.configure(lm=DummyLM([{"reasoning": "two doubled is four", "result": "4"}]))
-    fields = inv.call("solve", {"value": 2})
-    assert fields["result"] == 4
-    assert "reasoning" in fields
+    flex._bind_code(_module(
+        "return dspy.Prediction(result=self.best(value=value).result)",
+        init='self.best = dspy.BestOfN(dspy.Predict("value: int -> result: int"), N=3, '
+             "reward_fn=lambda args, pred: 0.0, threshold=1.0)",
+    ))
+    with dspy.context(lm=Recording([{"result": "4"}] * 3)):
+        flex(value=2)
+    assert seen == [0, 1, 2]  # so a cached first attempt does not answer the others
 
 
-def test_bridged_predictors_cannot_set_lm_routing_or_credentials() -> None:
-    flex = _bridged_flex()
-    inv = flex._bridge.invocation()
-    inv.construct("Predict", "value: int -> result: int", "solve", {"api_base": "http://evil.example", "api_key": "sk-x"})
-    dspy.configure(lm=DummyLM([{"result": "4"}]))
-    with pytest.raises(TypeError, match=r"may not set LM option\(s\) \['api_base', 'api_key'\]"):
-        inv.call("solve", {"value": 2})
-    inv.construct("Predict", "value: int -> result: int", "tuned", {"temperature": 0.7})
-    assert inv.call("tuned", {"value": 2}) == {"result": 4}
+def test_best_of_n_winning_attempt_joins_the_host_trace() -> None:
+    flex = Flex(Doubler, interpreter_factory=dspy.LocalInterpreter)
+    flex._bind_code(_module(
+        "return dspy.Prediction(result=self.best(value=value).result)",
+        init='self.best = dspy.BestOfN(dspy.Predict("value: int -> result: int"), N=2, '
+             "reward_fn=lambda args, pred: 1.0, threshold=1.0)",
+    ))
+    with dspy.context(lm=DummyLM([{"result": "4"}] * 2), trace=[]):
+        assert flex(value=2).result == 4
+        [(_, inputs, prediction)] = dspy.settings.trace
+    assert (inputs, prediction.result) == ({"value": 2}, 4)
 
 
-def test_call_unknown_handle_raises() -> None:
-    flex = _bridged_flex()
-    with pytest.raises(CodeInterpreterError):
-        flex._bridge.invocation().call("nope", {"value": 1})
+def test_parallel_forwards_run_in_their_own_sandboxes() -> None:
+    from concurrent.futures import ThreadPoolExecutor
 
-
-def test_tool_name_markers_resolve_to_real_tools() -> None:
-    # The shim passes tools to a bridged sub-predictor by name; the host resolves them back.
-    flex = Flex(Doubler, tools=[shout], interpreter_factory=lambda: MockInterpreter())
-    assert flex._bridge.invocation()._decode_tools([{"__dspy_tool__": "shout"}]) == [shout]
-    with pytest.raises(CodeInterpreterError):
-        flex._bridge.invocation()._decode_tools({"__dspy_tool__": "not_a_tool"})  # module-authored / unknown tool
+    flex = Flex(Doubler, interpreter_factory=dspy.LocalInterpreter)
+    flex._bind_code(_module("return dspy.Prediction(result=value * 2)"))
+    with ThreadPoolExecutor(4) as pool:
+        assert list(pool.map(lambda v: flex(value=v).result, range(8))) == [v * 2 for v in range(8)]
 
 
 def test_interpreter_is_not_serialized() -> None:
-    flex = _bridged_flex()
-    inv = flex._bridge.invocation()
-    inv.construct("ChainOfThought", "value: int -> result: int", "solve", {})
+    flex = Flex(Doubler, interpreter_factory=dspy.LocalInterpreter)
     state = flex.dump_state()
     assert state.get("module_src")  # the code persists
     assert "interpreter" not in json.dumps(state)  # the runtime sandbox does not
@@ -294,16 +836,9 @@ def test_parse_module_class_name_prefers_forward() -> None:
     assert bridge.parse_module_class_name(src) == "MyModule"
 
 
-def test_prediction_to_fields_rejects_non_jsonable() -> None:
-    assert facade.prediction_to_fields(dspy.Prediction(a=1, b="x")) == {"a": 1, "b": "x"}
-    with pytest.raises(CodeInterpreterError):
-        facade.prediction_to_fields(dspy.Prediction(a=object()))
-
-
-def test_prediction_to_fields_serializes_json_mode_values() -> None:
-    # Everything dspy.Predict can output must cross the boundary: datetimes, enums, and pydantic
-    # models holding them serialize in JSON mode (python-mode model_dump used to leave them as
-    # live objects, and Flex rejected outputs a plain Predict returns and parses just fine).
+def test_outputs_cross_with_their_types() -> None:
+    # Everything dspy.Predict can output crosses the boundary: datetimes, enums and dspy types as themselves, and a
+    # value of the user's types as the JSON it writes, which the host reads back as the type.
     class Color(enum.Enum):
         RED = "red"
 
@@ -311,218 +846,135 @@ def test_prediction_to_fields_serializes_json_mode_values() -> None:
         when: datetime.datetime
         color: Color
 
-    fields = facade.prediction_to_fields(
-        dspy.Prediction(
-            event=Event(when=datetime.datetime(2026, 1, 1), color=Color.RED),
-            when=datetime.datetime(2026, 1, 2),
-            color=Color.RED,
+    values = {
+        "event": Event(when=datetime.datetime(2026, 1, 1), color=Color.RED),
+        "when": datetime.datetime(2026, 1, 2),
+        "image": dspy.Image(url="https://example.com/x.png"),
+    }
+    session, guest = SandboxSession({}), GuestValues()
+    inside = guest.decode(json.loads(json.dumps(session.encode(values))))
+    assert inside["event"] == {"when": "2026-01-01T00:00:00", "color": "red"}
+    assert (inside["when"], inside["image"]) == (values["when"], values["image"])
+    back = session.decode(json.loads(json.dumps(guest.encode(inside))))
+    assert back["image"] is values["image"] and from_wire(back["event"], Event) == values["event"]
+
+
+class _ExecInterpreter:
+    """Runs code with exec() in the host process, in a private namespace; leaves sys.modules alone."""
+
+    def __init__(self):
+        self.tools = {}
+        self._namespace = {}
+
+    def start(self) -> None:
+        pass
+
+    def execute(self, code: str, variables: dict | None = None):
+        self._namespace.update(self.tools, **(variables or {}))
+        tree = ast.parse(code)
+        last = tree.body.pop() if tree.body and isinstance(tree.body[-1], ast.Expr) else None
+        exec(compile(tree, "<flex>", "exec"), self._namespace)
+        return eval(compile(ast.Expression(last.value), "<flex>", "eval"), self._namespace) if last else None
+
+    def shutdown(self) -> None:
+        self._namespace.clear()
+
+
+def test_in_process_interpreter_uses_the_host_dspy_on_the_metered_lm() -> None:
+    def louder(text: str) -> str:
+        """Uppercase the text."""
+        return text.upper()
+
+    flex = Flex(ShoutSig, tools=[louder], interpreter_factory=_ExecInterpreter, max_predictor_calls=1)
+    flex._bind_code(
+        textwrap.dedent(
+            """
+            class Shout(dspy.Module):
+                def __init__(self):
+                    self.draft = dspy.Predict("text -> out")
+
+                def forward(self, text):
+                    out = self.draft(text=text).out
+                    if text == "twice":
+                        self.draft(text=text)
+                    return dspy.Prediction(out=louder(text=out))
+            """
         )
     )
-    assert fields["event"] == {"when": "2026-01-01T00:00:00", "color": "red"}
-    assert fields["when"] == "2026-01-02T00:00:00"
-    assert fields["color"] == "red"
+    with dspy.context(lm=DummyLM([{"out": "hello"}] * 3)):
+        assert flex(text="hi").out == "HELLO"
+        with pytest.raises(CodeInterpreterError, match="budget"):
+            flex(text="twice")
+    assert sys.modules["dspy"] is dspy
+    assert dspy.settings.lm is None  # the host's settings are untouched
 
 
 # =============================================================================
-# Backend-agnostic shim + predictor-call budget (Phase 2, no Deno)
+# LM infrastructure errors keep their type across the boundary
 # =============================================================================
+# The boundary flattens a sandbox exception into a message string, so a provider failure would surface as a
+# generic CodeExecutionError. The host stashes the typed error and stamps a tag into the message that crosses
+# the boundary; forward() re-raises the typed error only when the failure that killed the run carries that
+# tag. Infrastructure failures are not the generated code's fault, and callers discriminate by type (e.g.
+# catching dspy.LMError to retry) — but a failure the generated code recovered from must not repaint a later,
+# unrelated crash as an infrastructure error.
 
 
-def test_shim_reaches_host_only_via_registered_tools() -> None:
-    # The bridge must not depend on Deno/Pyodide internals — only on the CodeInterpreter.tools
-    # contract — so any backend (a local microVM, gVisor, ...) can drive it.
-    shim = facade.SHIM_SETUP
-    assert "pyodide" not in shim.lower()
-    assert "_js_tool_call" not in shim
-    assert "run_sync" not in shim
-    # It does call the registered host tools by name.
-    assert facade.CONSTRUCT_TOOL in shim
-    assert facade.CALL_TOOL in shim
-
-
-def test_shim_file_literals_match_bridge_constants() -> None:
-    # The shim lives in a sibling .py file with literal protocol strings (no interpolation); guard
-    # against drift between those literals and bridge.py's host-side constants.
-    shim = facade.SHIM_SETUP
-    for token in (facade.CONSTRUCT_TOOL, facade.CALL_TOOL, facade.TOOL_MARKER, facade.SIGNATURE_MARKER):
-        assert token in shim, f"{token!r} missing from the shim file"
-    for kind in facade.BRIDGEABLE_KINDS:
-        assert kind in shim, f"bridgeable kind {kind!r} missing from the shim file"
-
-
-def test_max_predictor_calls_is_plumbed_to_bridge() -> None:
-    flex = _bridged_flex_with(max_predictor_calls=7)
-    assert flex._bridge._max_predictor_calls == 7
-
-
-def test_predictor_call_budget_is_enforced() -> None:
-    # The budget lives in the per-forward _Invocation, so every forward starts fresh.
-    flex = _bridged_flex_with(max_predictor_calls=2)
-    dspy.configure(lm=DummyLM([{"reasoning": "r", "result": str(i)} for i in range(3)]))
-    inv = flex._bridge.invocation()
-    inv.construct("ChainOfThought", "value: int -> result: int", "solve", {})
-    inv.call("solve", {"value": 1})  # 1st
-    inv.call("solve", {"value": 1})  # 2nd
-    with pytest.raises(CodeInterpreterError, match=r"budget.*Raise max_predictor_calls if this is expected"):
-        inv.call("solve", {"value": 1})  # 3rd exceeds the cap
-    # A new forward gets a new budget — and its own registry, so it constructs anew.
-    fresh = flex._bridge.invocation()
-    fresh.construct("ChainOfThought", "value: int -> result: int", "solve", {})
-    fresh.call("solve", {"value": 1})
-
-
-def test_predictor_call_budget_can_be_disabled() -> None:
-    flex = _bridged_flex_with(max_predictor_calls=None)
-    assert flex._bridge._max_predictor_calls is None
-    dspy.configure(lm=DummyLM([{"reasoning": "r", "result": str(i)} for i in range(5)]))
-    inv = flex._bridge.invocation()
-    inv.construct("ChainOfThought", "value: int -> result: int", "solve", {})
-    for _ in range(5):  # no cap -> all calls go through
-        inv.call("solve", {"value": 1})
-
-
-# =============================================================================
-# LM infrastructure errors keep their type across the boundary (no Deno)
-# =============================================================================
-# The JSON-RPC boundary flattens a host-tool exception into a message string, so a bridged
-# predictor's provider failure would surface as a generic CodeExecutionError. The bridge stashes
-# the typed error on the _Invocation and stamps a tag into the message that crosses the boundary;
-# forward() re-raises the typed error only when the failure that killed the run carries that tag.
-# Infrastructure failures are not the generated code's fault, and callers discriminate by type
-# (e.g. catching dspy.LMError to retry) — but a failure the generated code recovered from must
-# not repaint a later, unrelated crash as an infrastructure error.
-
-
-class _RateLimitedLM(DummyLM):
+def _rate_limited_lm(_answers=None):
     """A host LM whose provider is down: every call raises a typed LM infrastructure error."""
+    from tests.test_utils.engines import failing_lm
 
-    def forward(self, *args, **kwargs):
-        raise LMRateLimitError("429 from the provider", model="dummy")
+    return failing_lm(LMRateLimitError("429 from the provider", model="dummy"))
 
 
-def _boundary_flex(drive):
-    """A Flex whose MockInterpreter drives the bridge callbacks the way the sandbox shim would.
-
-    ``drive(tools)`` plays the generated forward. Any exception it lets escape is flattened to a
-    ``CodeExecutionError`` carrying only the type name in its message, exactly like the real
-    boundary (``PythonInterpreter._handle_tool_call`` + the execute error path).
+LM_FAILURE_MODULE = textwrap.dedent(
     """
-    interps: list[MockInterpreter] = []
+    class DoublerModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.solve = dspy.Predict("value: int -> result: int")
 
-    def execute_fn(code, variables):
-        if not variables:
-            return ""  # the shim-setup and class-definition steps
-        try:
-            drive(interps[-1].tools)
-        except Exception as e:
-            raise CodeExecutionError(f"{type(e).__name__}: {e}") from None
-        return ""
+        def forward(self, **inputs):
+            r = self.solve(value=inputs["value"])
+            return dspy.Prediction(result=r.result)
+    """
+).strip()
 
-    def factory():
-        interps.append(MockInterpreter(execute_fn=execute_fn))
-        return interps[-1]
+RECOVERED_LM_FAILURE_MODULE = textwrap.dedent(
+    """
+    class DoublerModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.solve = dspy.Predict("value: int -> result: int")
 
-    return Flex(Doubler, interpreter_factory=factory)
+        def forward(self, **inputs):
+            try:
+                r = self.solve(value=inputs["value"])
+            except dspy.LMRateLimitError:
+                pass  # recover from the provider failure, caught by its type...
+            return oops  # ...then crash locally (NameError)
+    """
+).strip()
 
 
-def test_bridged_lm_failure_keeps_its_type_across_the_boundary() -> None:
-    # An uncaught provider failure inside the generated forward reaches the caller as the real
-    # typed error, not as a CodeExecutionError that merely mentions the type name — so it can't
-    # be mistaken for (or absorbed as) a broken code candidate.
-    def drive(tools):
-        tools[facade.CONSTRUCT_TOOL](
-            kind="Predict", signature="value: int -> result: int", attr_name="solve", kwargs={}
-        )
-        tools[facade.CALL_TOOL](handle="solve", inputs={"value": 2})
-
-    flex = _boundary_flex(drive)
-    dspy.configure(lm=_RateLimitedLM([]))
-    with pytest.raises(LMRateLimitError) as err:
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_lm_failure_keeps_its_type_across_the_boundary(factory) -> None:
+    flex = Flex(Doubler, interpreter_factory=factory)
+    flex._bind_code(LM_FAILURE_MODULE)
+    with dspy.context(lm=_rate_limited_lm()), pytest.raises(LMRateLimitError) as err:
         flex(value=2)
     assert isinstance(err.value, LMError)  # catchable by the family callers actually handle
     assert isinstance(err.value.__cause__, CodeExecutionError)  # the sandbox error stays attached
 
 
-def test_recovered_lm_failure_does_not_hijack_a_later_crash() -> None:
-    # If the generated code catches the LM failure and keeps going (proven by a later bridge
-    # callback), a subsequent crash is its own bug: the stale LMError must not repaint a
-    # candidate error as an infrastructure one.
-    def drive(tools):
-        tools[facade.CONSTRUCT_TOOL](
-            kind="Predict", signature="value: int -> result: int", attr_name="solve", kwargs={}
-        )
-        try:
-            tools[facade.CALL_TOOL](handle="solve", inputs={"value": 2})
-        except Exception:
-            pass  # the generated code swallows the flattened boundary error and falls back
-        tools[facade.CONSTRUCT_TOOL](kind="Predict", signature="q -> a", attr_name="fallback", kwargs={})
-        raise NameError("name 'oops' is not defined")
-
-    flex = _boundary_flex(drive)
-    dspy.configure(lm=_RateLimitedLM([]))
-    with pytest.raises(CodeExecutionError, match="NameError"):
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_recovered_lm_failure_does_not_hijack_a_later_crash(factory) -> None:
+    flex = Flex(Doubler, interpreter_factory=factory)
+    flex._bind_code(RECOVERED_LM_FAILURE_MODULE)
+    with dspy.context(lm=_rate_limited_lm()), pytest.raises(CodeInterpreterError) as err:
         flex(value=2)
-
-
-def test_recovered_lm_failure_does_not_hijack_a_local_later_crash() -> None:
-    # Same recovery, but with NO bridge call between it and the crash — the host can't observe
-    # the recovery, so only the tag correlation tells the stale LMError apart from the local bug.
-    def drive(tools):
-        tools[facade.CONSTRUCT_TOOL](
-            kind="Predict", signature="value: int -> result: int", attr_name="solve", kwargs={}
-        )
-        try:
-            tools[facade.CALL_TOOL](handle="solve", inputs={"value": 2})
-        except Exception:
-            pass  # the generated code recovers from the provider failure
-        raise NameError("later sandbox bug")
-
-    flex = _boundary_flex(drive)
-    dspy.configure(lm=_RateLimitedLM([]))
-    with pytest.raises(CodeExecutionError, match="NameError"):
-        flex(value=2)
-
-
-# =============================================================================
-# Code-executing sub-predictors inherit the Flex sandbox backend (no Deno)
-# =============================================================================
-# A bridged CodeAct/ProgramOfThought/RLM runs its OWN inner code. It must run that code in the
-# sandbox backend chosen for Flex (via the Flex interpreter factory), not a separate default
-# Deno/Pyodide sandbox — otherwise sandboxing the Flex glue but not the code its sub-predictors
-# execute would be a hole.
-
-
-def test_accepts_interpreter_factory_only_for_code_executing_kinds() -> None:
-    # Introspection-based, not a hardcoded list, so it tracks the real constructors.
-    assert facade._accepts_interpreter_factory(dspy.CodeAct)
-    assert facade._accepts_interpreter_factory(dspy.ProgramOfThought)
-    assert facade._accepts_interpreter_factory(dspy.RLM)  # type: ignore[arg-type]  # dspy re-exports RLM oddly
-    # Pure-LM and tool-calling predictors run no inner code, so no interpreter factory is injected.
-    assert not facade._accepts_interpreter_factory(dspy.Predict)
-    assert not facade._accepts_interpreter_factory(dspy.ChainOfThought)
-    assert not facade._accepts_interpreter_factory(dspy.ReAct)
-    assert not facade._accepts_interpreter_factory(dspy.ReActV2)  # type: ignore[arg-type]  # re-export quirk
-
-
-def test_bridged_codeact_inherits_flex_interpreter_backend() -> None:
-    # CodeAct requires function tools; `shout` is a Flex-level tool, resolvable on the host.
-    flex = Flex(ShoutSig, tools=[shout], interpreter_factory=lambda: MockInterpreter())
-    inv = flex._bridge.invocation()
-    tools_payload = [{facade.TOOL_MARKER: "shout"}]  # how the shim passes a tool by name
-    inv.construct("CodeAct", "text: str -> out: str", "act", {"tools": tools_payload})
-    # The sub-predictor makes its per-forward interpreter from the Flex factory (the configured
-    # backend), not a default PythonInterpreter.
-    act = inv._predictors["act"]
-    assert isinstance(act, dspy.CodeAct)
-    assert act._interpreter_factory is flex._bridge._factory
-    assert isinstance(act._interpreter_factory(), MockInterpreter)
-
-
-def test_code_executing_sub_predictors_get_the_flex_interpreter_factory() -> None:
-    flex = _bridged_flex()  # a real factory (lambda: MockInterpreter())
-    inv = flex._bridge.invocation()
-    inv.construct("RLM", "value: int -> result: int", "inner", {})
-    assert inv._predictors["inner"]._interpreter_factory is flex._bridge._factory
+    assert not isinstance(err.value, LMError)  # the local NameError is not repainted as infra
+    assert "NameError" in str(err.value) or "oops" in str(err.value)
 
 
 # =============================================================================
@@ -553,7 +1005,7 @@ COT_GLUE_MODULE = textwrap.dedent(
 
 @deno_required
 def test_optimized_cot_runs_in_sandbox_with_lm_bridged() -> None:
-    dspy.configure(lm=DummyLM([{"reasoning": "double of 21 is 42", "result": "the result is 42"}]))
+    dspy.configure(lm=DummyLM([{"plan": "double of 21 is 42", "result": "the result is 42"}]))
     flex = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
     flex._bind_code(COT_GLUE_MODULE)
     # forward() runs entirely in the sandbox; self.solve(...) bridges to the host DummyLM, and the
@@ -614,7 +1066,7 @@ def test_forward_runs_on_a_fresh_instance_each_call() -> None:
 
 @deno_required
 def test_bridged_program_survives_save_load(tmp_path) -> None:
-    dspy.configure(lm=DummyLM([{"reasoning": "double of 21 is 42", "result": "the result is 42"}]))
+    dspy.configure(lm=DummyLM([{"plan": "double of 21 is 42", "result": "the result is 42"}]))
     program = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
     path = tmp_path / "prog.json"
     program._bind_code(COT_GLUE_MODULE)
@@ -672,7 +1124,7 @@ RUNAWAY_MODULE = textwrap.dedent(
 
 @deno_required
 def test_runaway_glue_is_stopped_by_budget_in_sandbox() -> None:
-    dspy.configure(lm=DummyLM([{"reasoning": "r", "result": "1"} for _ in range(50)]))
+    dspy.configure(lm=DummyLM([{"plan": "r", "result": "1"} for _ in range(50)]))
     flex = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter(), max_predictor_calls=3)
     flex._bind_code(RUNAWAY_MODULE)
     with pytest.raises(Exception) as excinfo:  # the budget error propagates out of the sandbox
@@ -680,101 +1132,9 @@ def test_runaway_glue_is_stopped_by_budget_in_sandbox() -> None:
     assert "budget" in str(excinfo.value).lower()
 
 
-# The real-boundary counterparts of the fake-boundary LM-error tests above: the tag call() stamps
-# into the boundary message must survive the actual Deno/Pyodide JSON-RPC round trip.
-LM_FAILURE_MODULE = textwrap.dedent(
-    """
-    class DoublerModule(dspy.Module):
-        def __init__(self):
-            super().__init__()
-            self.solve = dspy.Predict("value: int -> result: int")
-
-        def forward(self, **inputs):
-            r = self.solve(value=inputs["value"])
-            return dspy.Prediction(result=r.result)
-    """
-).strip()
-
-RECOVERED_LM_FAILURE_MODULE = textwrap.dedent(
-    """
-    class DoublerModule(dspy.Module):
-        def __init__(self):
-            super().__init__()
-            self.solve = dspy.Predict("value: int -> result: int")
-
-        def forward(self, **inputs):
-            try:
-                r = self.solve(value=inputs["value"])
-            except Exception:
-                pass  # recover from the provider failure...
-            return oops  # ...then crash locally, with no bridge call in between (NameError)
-    """
-).strip()
-
-
-@deno_required
-def test_lm_failure_type_survives_the_real_sandbox_boundary() -> None:
-    flex = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
-    flex._bind_code(LM_FAILURE_MODULE)
-    dspy.configure(lm=_RateLimitedLM([]))
-    with pytest.raises(LMRateLimitError):
-        flex(value=2)
-
-
-@deno_required
-def test_recovered_lm_failure_does_not_hijack_through_the_real_sandbox() -> None:
-    flex = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
-    flex._bind_code(RECOVERED_LM_FAILURE_MODULE)
-    dspy.configure(lm=_RateLimitedLM([]))
-    with pytest.raises(CodeInterpreterError) as err:
-        flex(value=2)
-    assert not isinstance(err.value, LMError)  # the local NameError is not repainted as infra
-    assert "NameError" in str(err.value) or "oops" in str(err.value)
-
-
-# A module that constructs and calls a dspy.CodeAct with a Flex-level tool. CodeAct runs its own
-# LM-authored code in an interpreter; under the bridge that interpreter is a fresh instance from the
-# Flex factory, so CodeAct's code runs in the SAME sandbox backend configured for Flex.
-CODEACT_MODULE = textwrap.dedent(
-    """
-    class ShoutModule(dspy.Module):
-        def __init__(self):
-            super().__init__()
-            self.act = dspy.CodeAct("text: str -> out: str", tools=[shout])
-
-        def forward(self, **inputs):
-            r = self.act(text=inputs["text"])
-            return dspy.Prediction(out=r.out)
-    """
-).strip()
-
-
-@deno_required
-def test_bridged_codeact_runs_in_flex_sandbox() -> None:
-    # CodeAct generates code that calls the (Flex-level) `shout` tool, then extracts the answer.
-    dspy.configure(
-        lm=DummyLM(
-            [
-                {"generated_code": "```python\nprint(shout('hello'))\n```", "finished": True},
-                {"reasoning": "the code printed HELLO", "out": "HELLO"},
-            ]
-        )
-    )
-
-    def backend_factory():
-        return dspy.PythonInterpreter()
-
-    flex = Flex(ShoutSig, tools=[shout], interpreter_factory=backend_factory)
-    flex._bind_code(CODEACT_MODULE)
-    out = flex(text="hello")
-    assert out.out == "HELLO"
-    # (That the sub-CodeAct builds its interpreter from the very factory Flex was given is
-    # asserted in test_bridged_codeact_inherits_flex_interpreter_backend.)
-
-
 # A module that constructs and calls a dspy.ReAct with a Flex-level tool. ReAct runs no code of its
-# own: the LM picks a tool, the host runs it, and the LM extracts the answer — all bridged from the
-# sandbox where the module's glue runs.
+# own: the LM picks a tool, the host runs it, and the LM submits the answer; the agent itself runs in
+# the sandbox, and only the tool call and the LM calls cross to the host.
 REACT_MODULE = textwrap.dedent(
     """
     class ShoutModule(dspy.Module):
@@ -794,9 +1154,14 @@ def test_bridged_react_runs_in_flex_sandbox() -> None:
     dspy.configure(
         lm=DummyLM(
             [
-                {"next_thought": "shout it", "next_tool_name": "shout", "next_tool_args": {"text": "hello"}},
-                {"next_thought": "done", "next_tool_name": "finish", "next_tool_args": {}},
-                {"reasoning": "the tool returned HELLO", "out": "HELLO"},
+                {
+                    "next_thought": "shout it",
+                    "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "shout", "args": {"text": "hello"}}]),
+                },
+                {
+                    "next_thought": "the tool returned HELLO",
+                    "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"out": "HELLO"}}]),
+                },
             ]
         )
     )
@@ -823,6 +1188,44 @@ def test_adversarial_host_file_access_is_contained(tmp_path) -> None:
     # The sandbox could not reach the host file; the secret never crossed the boundary.
     assert "TOP-SECRET" not in str(out.result)
     assert str(out.result).startswith("BLOCKED")
+
+
+@deno_required
+def test_sandboxed_code_reads_no_host_secret_and_has_the_host_import_nothing(tmp_path, monkeypatch) -> None:
+    # Signature strings naming host objects or modules, built in the sandbox and recorded to the host's trace; and the
+    # host LM's settings, credentials among them, which requests built for the sandbox carry.
+    (tmp_path / "planted_module.py").write_text("")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setenv("DSPY_TEST_HOST_SECRET", "env-host-secret")
+
+    class Leak(dspy.Signature):
+        value: int = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    flex = Flex(Leak, interpreter_factory=dspy.PythonInterpreter)
+    flex._bind_code(
+        "class M(dspy.Module):\n"
+        "    def forward(self, value):\n"
+        "        seen = []\n"
+        "        for annotation in ('os.environ', 'dspy.settings.lm.kwargs', 'Literal[os.environ]', 'planted_module'):\n"
+        "            signature = 'x: ' + annotation + ' -> y'\n"
+        "            try:\n"
+        "                seen.append(repr(dspy.Predict(signature).signature.fields))\n"
+        "            except Exception as e:\n"
+        "                seen.append(str(e))\n"
+        "            entry = {'signature': {'signature': signature, 'types': {}, 'inputs': ['x'], 'outputs': ['y']},\n"
+        "                     'inputs': {'x': '1'}}\n"
+        "            seen.append(repr(dspy.settings.trace._host(entry=entry)))\n"
+        "        seen.append(repr(dspy.settings.lm._build_adapter_request('hi', {})))\n"
+        "        return dspy.Prediction(result='\\n'.join(seen))\n"
+    )
+    lm = dspy.LM("openai/gpt-4o-mini", api_key="sk-host-secret", aws_secret_access_key="aws-host-secret")
+    with dspy.context(lm=lm, trace=[]):
+        out = flex(value=1).result  # no LM call: building a request does not reach the provider
+        trace = dspy.settings.trace
+    assert "host-secret" not in out
+    assert "planted_module" not in sys.modules
+    assert len(trace) == 4 and all(predictor.signature.fields["x"].annotation is str for predictor, *_ in trace)
 
 
 @deno_required
@@ -877,8 +1280,8 @@ def test_nested_rlm_tool_provenance() -> None:
     dspy.configure(
         lm=DummyLM(
             [
-                {"reasoning": "probe here, then spawn the sub-agent", "code": outer_code},
-                {"reasoning": "probe from the sub-agent", "code": inner_code},
+                {"plan": "probe here, then spawn the sub-agent", "code": outer_code},
+                {"plan": "probe from the sub-agent", "code": inner_code},
             ]
         )
     )

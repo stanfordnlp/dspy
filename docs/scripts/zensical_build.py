@@ -14,12 +14,15 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+from datetime import date
 from html import escape
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import yaml
+
+HOME_TITLE = "DSPy: Program, don't prompt, your LLMs"
 
 
 def load_config(path: Path) -> dict[str, object]:
@@ -111,6 +114,57 @@ def write_redirects(site: Path, redirects: dict[str, str]) -> None:
         elif not relative.endswith("/"):
             relative += "/"
         destination.write_text(redirect_document(relative))
+
+
+def source_dates(docs: Path) -> dict[str, date]:
+    """Map each current page source, keyed by its Markdown path, to the date of its last commit.
+
+    Deleted sources are skipped, so an old page cannot supply the date for a new page at the same route.
+    """
+    try:
+        log = subprocess.run(
+            ["git", "-c", "core.quotePath=false", "log", "--format=%x00%cs", "--name-only", "--relative", "--", "."],
+            cwd=docs,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return {}
+    dates: dict[str, date] = {}
+    for entry in log.split("\0")[1:]:
+        day, *names = entry.strip().splitlines()
+        for name in names:
+            source = Path(name)
+            if source.suffix in (".md", ".ipynb", ".py") and (docs / source).is_file():
+                dates.setdefault(source.with_suffix(".md").as_posix(), date.fromisoformat(day))
+    return dates
+
+
+def add_revision_dates(docs: Path, dates: dict[str, date]) -> None:
+    """Add a `revision_date` that the theme shows as the page's last update."""
+    for source, day in dates.items():
+        path = docs / source
+        if not path.is_file():
+            continue
+        text = path.read_text()
+        line = f'revision_date: "{day:%B} {day.day}, {day.year}"\n'
+        if text.startswith("---\n"):
+            if not re.search(r"(?m)^revision_date:", text.split("\n---", 1)[0]):
+                path.write_text(f"---\n{line}{text[4:]}")
+        else:
+            path.write_text(f"---\n{line}---\n\n{text}")
+
+
+def add_sitemap_dates(sitemap: Path, site_url: str, dates: dict[str, date]) -> None:
+    """Zensical's sitemap template has no `lastmod`, so add it from the page dates."""
+    by_url = {urljoin(site_url, route_for_source(source).lstrip("/")): day for source, day in dates.items()}
+
+    def replace(match: re.Match[str]) -> str:
+        day = by_url.get(match.group(1))
+        return f"{match.group(0)}<lastmod>{day.isoformat()}</lastmod>" if day else match.group(0)
+
+    sitemap.write_text(re.sub(r"<loc>([^<]+)</loc>", replace, sitemap.read_text()))
 
 
 NOTEBOOK_LINK = re.compile(r"\]\((?P<target>[^)\s#]+)\.ipynb(?P<suffix>#[^)\s]*)?\)")
@@ -208,6 +262,69 @@ def generate_llms(docs: Path, output: Path, site_url: str, settings: dict[str, o
                 parts.append(f"{line}: {description}" if description else line)
         parts.append("")
     output.write_text("\n".join(parts))
+
+
+MARKDOWN_EXCLUDED_CLASSES = {"headerlink", "twemoji", "tabbed-labels", "doc-labels"}
+
+
+def page_markdown(html: str, page_url: str, site_url: str, markdown_urls: dict[str, str]) -> str | None:
+    """Convert a rendered page's article to Markdown, as mkdocs-llmstxt did for Material builds.
+
+    `markdown_urls` maps page URLs, including static redirects, to the Markdown copy they resolve to.
+    """
+    import mdformat
+    from bs4 import BeautifulSoup
+    from markdownify import ATX, MarkdownConverter
+
+    article = BeautifulSoup(html, "html.parser").find("article")
+    if article is None:
+        return None
+    for element in article.find_all(["img", "svg"]):
+        element.decompose()
+    for element in article.find_all(class_=lambda value: value in MARKDOWN_EXCLUDED_CLASSES):
+        element.decompose()
+    for element in article.find_all("div", class_="doc-md-description"):
+        element.replace_with(element.get_text().strip())
+    for element in article.find_all("table", class_="highlighttable"):
+        code = element.find("code")
+        element.replace_with(BeautifulSoup(f"<pre>{escape(code.get_text() if code else '')}</pre>", "html.parser"))
+    for link in article.find_all("a", href=True):
+        href = link["href"]
+        if href.startswith(("#", "//")) or urlparse(href).scheme:
+            continue
+        # Root-relative links stay within the version, as build_docs.py scopes them in HTML.
+        target = urljoin(site_url, href.lstrip("/")) if href.startswith("/") else urljoin(page_url, href)
+        path, _, fragment = target.partition("#")
+        markdown_url = markdown_urls.get(path) or markdown_urls.get(f"{path}/")
+        link["href"] = f"{markdown_url}{'#' + fragment if fragment else ''}" if markdown_url else target
+
+    def language(tag) -> str:
+        classes = [*(tag.get("class") or ()), *((tag.parent.get("class") or ()) if tag.parent else ())]
+        return next((name.removeprefix("language-") for name in classes if name.startswith("language-")), "")
+
+    converter = MarkdownConverter(
+        bullets="-", code_language_callback=language, escape_underscores=False, heading_style=ATX
+    )
+    return mdformat.text(converter.convert_soup(article), options={"wrap": "no"}, extensions=("tables",))
+
+
+def write_page_markdown(site: Path, site_url: str, redirects: dict[str, str]) -> None:
+    """Write `<route>/index.md` beside every rendered page so llms.txt links resolve."""
+    pages = {
+        page: urljoin(site_url, "" if route == "." else f"{route}/")
+        for page in site.rglob("index.html")
+        if "<article" in page.read_text()
+        for route in [page.parent.relative_to(site).as_posix()]
+    }
+    markdown_urls = {url: f"{url}index.md" for url in pages.values()}
+    for source, target in redirects.items():
+        target_url = urljoin(site_url, route_for_source(target.replace(".ipynb", ".md")).lstrip("/"))
+        if target_url in markdown_urls:
+            markdown_urls[urljoin(site_url, route_for_source(source).lstrip("/"))] = markdown_urls[target_url]
+    for page, url in pages.items():
+        markdown = page_markdown(page.read_text(), url, site_url, markdown_urls)
+        if markdown is not None:
+            page.with_suffix(".md").write_text(markdown)
 
 
 class HeadParser(HTMLParser):
@@ -320,7 +437,10 @@ def social_cards(site: Path, site_url: str, titles: dict[str, str], logo: Path) 
 HREF = re.compile(r"""href=["']?([^"'\s>]+)""")
 
 
-def validate_output(site: Path, notebook_routes: set[str], redirects: dict[str, str]) -> None:
+LLMS_LINK = re.compile(r"^- \[.*\]\((?P<url>[^)\s]+)\)(?::.*)?$", re.MULTILINE)
+
+
+def validate_output(site: Path, notebook_routes: set[str], redirects: dict[str, str], site_url: str) -> None:
     """Fail the build when an existing documentation feature has no output."""
     required = ("index.html", "api/index.html", "search.json", "llms.txt", "sitemap.xml", "sitemap.xml.gz")
     missing = [path for path in required if not (site / path).is_file()]
@@ -329,6 +449,11 @@ def validate_output(site: Path, notebook_routes: set[str], redirects: dict[str, 
         route_for_source(source).lstrip("/") + "index.html"
         for source in redirects
         if not (site / (route_for_source(source).lstrip("/") + "index.html")).is_file()
+    )
+    missing.extend(
+        url
+        for url in LLMS_LINK.findall((site / "llms.txt").read_text() if (site / "llms.txt").is_file() else "")
+        if not url.startswith(site_url) or not (site / url.removeprefix(site_url)).is_file()
     )
     if missing:
         raise RuntimeError(f"Zensical output is missing required files: {', '.join(sorted(missing))}")
@@ -381,6 +506,8 @@ def build_zensical_site(
         remove_redirect_sources(prepared_docs, prepared)
         notebook_routes = convert_notebooks(prepared_docs)
         add_missing_titles(prepared_docs, nav_entries(prepared.get("nav", [])))
+        dates = source_dates(source_docs)
+        add_revision_dates(prepared_docs, dates)
 
         subprocess.run(
             [str(python), "-m", "zensical", "build", "--clean", "--config-file", prepared_config],
@@ -397,13 +524,15 @@ def build_zensical_site(
             str(source_config["site_url"]),
             llms,
         )
+        write_page_markdown(output, str(source_config["site_url"]), redirect_maps(prepared))
         social_cards(output, str(source_config["site_url"]), titles, project / "docs" / "static" / "img" / "logo.png")
         sitemap = output / "sitemap.xml"
+        add_sitemap_dates(sitemap, str(source_config["site_url"]), dates)
         with gzip.open(output / "sitemap.xml.gz", "wb") as compressed:
             compressed.write(sitemap.read_bytes())
         home = output / "index.html"
-        home.write_text(re.sub(r"<title>Index\s+-\s+DSPy</title>", "<title>DSPy</title>", home.read_text(), count=1))
-        validate_output(output, notebook_routes, redirect_maps(prepared))
+        home.write_text(re.sub(r"<title>[^<]*</title>", f"<title>{HOME_TITLE}</title>", home.read_text(), count=1))
+        validate_output(output, notebook_routes, redirect_maps(prepared), str(source_config["site_url"]))
         return notebook_routes
     finally:
         if temporary:

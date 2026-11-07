@@ -26,6 +26,17 @@ Both live outside the subtree to keep its contents faithful to upstream.
 The full upstream package is imported, including any non-Python files tracked
 there. Packaging determines which files ship to users.
 
+For a temporary downstream patch stack, import its exact tested integration
+commit, not fork main. After the updater runs, record `upstream_tag`,
+`upstream_commit` and comma-separated, ordered `patches` commit IDs in
+`lm15-provenance.txt`. These identify the release base and source fixes;
+`commit` remains the exact patched source tip. Keep each patch's motivation,
+regression tests and upstream contribution status in the source repository
+(currently `DOWNSTREAM_PATCHES.md`). The package version alone does not imply
+an unmodified upstream release. The updater regenerates the provenance file,
+so review and record these fields for each patched import; omit them when
+returning to an unpatched release. Keep fork main an unpatched release mirror.
+
 Use DSPy's normal **squash-and-merge** workflow for import/update PRs.
 The updater does not require subtree commits or their messages to survive.
 It fetches the previously recorded Python commit, reproduces its package split,

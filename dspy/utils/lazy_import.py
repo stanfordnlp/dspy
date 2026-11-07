@@ -44,7 +44,7 @@ _INSTALL_HINTS: dict[str, str] = {
     "weaviate": "weaviate",
     "anthropic": "anthropic",
     "numpy": "numpy",
-    "litellm": "litellm",
+    "openai": "openai",
 }
 
 
@@ -95,9 +95,18 @@ class _LazyModule(types.ModuleType):
         self._dspy_lazy_lock = lock
 
     def _load(self) -> types.ModuleType:
+        # Reuse the cached module while sys.modules still holds it, so a later replacement is picked up.
+        module = self.__dict__.get("_dspy_lazy_module")
+        if module is not None and sys.modules.get(self.__name__) is module:
+            return module
+
         # Keep proxies out of sys.modules so Python owns package initialization and submodule imports.
         with self._dspy_lazy_lock:
-            return importlib.import_module(self.__name__)
+            module = importlib.import_module(self.__name__)
+            # A module still initializing may replace itself in sys.modules, and other threads must wait for it.
+            if not getattr(getattr(module, "__spec__", None), "_initializing", False):
+                self._dspy_lazy_module = module
+            return module
 
     def __getattr__(self, attr: str) -> Any:
         return getattr(self._load(), attr)
@@ -155,7 +164,7 @@ def require(module: str, *, extra: str | None = None, feature: str | None = None
             f"{top} is required to use {feat}. "
             f"Install with `pip install {dist}[{ext}]` or `pip install {top}`."
         )
-        parent = inspect.stack()[1]
+        parent = inspect.getframeinfo(sys._getframe(1))
         frame_data = {
             "filename": parent.filename,
             "lineno": parent.lineno,

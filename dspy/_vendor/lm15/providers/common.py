@@ -3,10 +3,13 @@ from __future__ import annotations
 import base64
 import json
 import urllib.parse
-from typing import Any
+from typing import TYPE_CHECKING, Any, Callable, Mapping
 
 from ..models import ModelInfo, ModelOrigin
 from ..transports import TransportRequest
+
+if TYPE_CHECKING:
+    from ..errors import ProviderError
 from ..types import (
     AudioPart,
     BinaryPart,
@@ -22,10 +25,134 @@ from ..types import (
     TokenLogprob,
     ToolResultPart,
     TopLogprob,
+    Usage,
     VideoPart,
+    Request,
+    usage_inconsistency,
+    Response,
 )
 
 JsonPayload = dict[str, Any] | list[Any]
+
+
+def wire_count(value: Any, name: str) -> int | None:
+    """A token counter as the wire sent it: ``None`` when absent, else an int.
+
+    The Number rule's int coercion (an integral float reads as an int); any
+    other value is refused, the same as ``Usage`` itself refuses it.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be an integer")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    raise ValueError(f"{name} must be an integer")
+
+
+def wire_sum(*counts: int | None) -> int | None:
+    """The exact sum of counters, or ``None`` when any of them is unknown
+    (MAP-19 rule 2: a canonical counter is a provider count or an exact sum of
+    provider counts, never a partial sum)."""
+    if any(c is None for c in counts):
+        return None
+    return sum(c for c in counts if c is not None)
+
+
+def settle_usage(
+    *,
+    input_tokens: int | None,
+    output_tokens: int | None,
+    total_tokens: int | None = None,
+    cache_read_tokens: int | None = None,
+    cache_write_tokens: int | None = None,
+    reasoning_tokens: int | None = None,
+    input_audio_tokens: int | None = None,
+    output_audio_tokens: int | None = None,
+) -> Usage:
+    """MAP-19 rule 3: build ``Usage`` from canonical-meaning counters, and
+    withhold what the provider's numbers do not determine.
+
+    A part larger than its whole means the wire's counting is not the one
+    the adapter declared, so the whole is withheld (``None``): input when a
+    cache or audio counter exceeds it, output when reasoning or output audio
+    does. A provider total that is not input + output means the provider
+    counted tokens lm15 does not place, so both input and output are
+    withheld and the provider's total stays. Never raises for a provider's
+    inconsistency; the parts and the provider's numbers in ``provider_data``
+    stay visible.
+    """
+    def broken(**kw: int | None) -> bool:
+        return usage_inconsistency(input_tokens=kw.get("i"), output_tokens=kw.get("o"), total_tokens=None,
+                                   cache_read_tokens=kw.get("cr"), cache_write_tokens=kw.get("cw"),
+                                   reasoning_tokens=kw.get("r"), input_audio_tokens=kw.get("ia"),
+                                   output_audio_tokens=kw.get("oa")) is not None
+
+    if input_tokens is not None and broken(i=input_tokens, cr=cache_read_tokens, cw=cache_write_tokens,
+                                           ia=input_audio_tokens):
+        input_tokens = None
+    if output_tokens is not None and broken(o=output_tokens, r=reasoning_tokens, oa=output_audio_tokens):
+        output_tokens = None
+    if (
+        total_tokens is not None
+        and input_tokens is not None
+        and output_tokens is not None
+        and total_tokens != input_tokens + output_tokens
+    ):
+        input_tokens = output_tokens = None
+    return Usage(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        cache_read_tokens=cache_read_tokens,
+        cache_write_tokens=cache_write_tokens,
+        reasoning_tokens=reasoning_tokens,
+        input_audio_tokens=input_audio_tokens,
+        output_audio_tokens=output_audio_tokens,
+    )
+
+
+def usage_from_responses(usage_data: Any) -> Usage:
+    """MAP-19, OpenAI Responses and Realtime: ``input_tokens`` already includes
+    the cached and written tokens (``input_tokens_details`` is a breakdown of
+    it) and ``output_tokens`` already includes reasoning, so every counter
+    keeps its value. Realtime spells the details ``*_token_details``."""
+    if not isinstance(usage_data, dict):
+        usage_data = {}
+    u_in = usage_data.get("input_tokens_details") or usage_data.get("input_token_details") or {}
+    u_out = usage_data.get("output_tokens_details") or usage_data.get("output_token_details") or {}
+    if not isinstance(u_in, dict):
+        u_in = {}
+    if not isinstance(u_out, dict):
+        u_out = {}
+    return settle_usage(
+        input_tokens=wire_count(usage_data.get("input_tokens"), "input_tokens"),
+        output_tokens=wire_count(usage_data.get("output_tokens"), "output_tokens"),
+        total_tokens=wire_count(usage_data.get("total_tokens"), "total_tokens"),
+        reasoning_tokens=wire_count(u_out.get("reasoning_tokens"), "reasoning_tokens"),
+        cache_read_tokens=wire_count(u_in.get("cached_tokens"), "cached_tokens"),
+        cache_write_tokens=wire_count(u_in.get("cache_write_tokens"), "cache_write_tokens"),
+        input_audio_tokens=wire_count(u_in.get("audio_tokens"), "input audio_tokens"),
+        output_audio_tokens=wire_count(u_out.get("audio_tokens"), "output audio_tokens"),
+    )
+
+
+def tool_description(description: str | None) -> dict[str, str]:
+    """MAP-17: a function tool's description field for any wire.
+
+    ``{"description": text}`` when the tool has one, ``{}`` when it does not.
+    An absent description is left off the wire, never sent as ``null``:
+    every tool wire documents the field as an optional *string*, and
+    Anthropic and Groq refuse ``null`` (400, receipts
+    lm15-contract/receipts/2026-10-02-tool-description/).  ``""`` is the
+    same value as ``None`` in canonical JSON (omit-empty, spec/types.md), so
+    it is left off too: two requests that serialize identically must build
+    the same wire.  Splat it between the name and the schema to keep the
+    documented key order: ``{"name": ..., **tool_description(d), ...}``.
+    """
+    return {"description": description} if description else {}
 
 
 # The FileReadiness fold for every OpenAI-shaped file object (api.openai.com,
@@ -154,6 +281,38 @@ def check_tool_result_media(provider: str, part: ToolResultPart, policy: str, *,
             )
 
 
+# MAP-10 for message parts, the cells where a dialect has no slot at all.
+# Found 2026-09-24 (lm15-contract changes/2026-09-24-message-media.md): the
+# builders below turned such a part into an empty text block or dropped it,
+# silently. lm15-rs refused; this is the same preflight, before any wire.
+_NO_MESSAGE_SLOT = {
+    # The Messages API has image and document blocks only, in either role.
+    "anthropic": lambda role, kind: kind in ("audio", "video", "binary"),
+    # Assistant content is output text (and refusals) on both OpenAI wires.
+    "openai": lambda role, kind: role == "assistant",
+    "openai_chat": lambda role, kind: role == "assistant",
+}
+
+
+def check_message_media(request: Request, *, dialect: str, provider: str) -> None:
+    """Raise before any wire when a message holds a media part this dialect
+    has no content slot for in that role (MAP-10: natively or raises).
+    ``feature`` is the part's path, as MAP-13.4b addresses refusals."""
+    from ..errors import UnsupportedFeatureError
+
+    gap = _NO_MESSAGE_SLOT.get(dialect)
+    if gap is None:
+        return
+    for i, message in enumerate(request.messages):
+        for j, part in enumerate(message.parts):
+            if part.type in MEDIA_KINDS and gap(message.role, part.type):
+                raise UnsupportedFeatureError(
+                    f"{provider}: messages[{i}].parts[{j}]: the program depends on this "
+                    f"{message.role} {part.type} part; no native {dialect} content slot carries it (MAP-10)",
+                    provider=provider, feature=f"messages[{i}].parts[{j}]",
+                )
+
+
 def tool_result_error_text(part: ToolResultPart, text: str) -> str:
     """MAP-10 rule 5 on wires with no error flag: the text carries it."""
     return f"[error] {text}" if part.is_error else text
@@ -246,7 +405,7 @@ def model_infos_from_entries(
     *,
     provider: str,
     api_family: str,
-    id_of: "callable",
+    id_of: Callable[[dict[str, Any]], object],
 ) -> tuple[ModelInfo, ...]:
     """Map a provider's list-models entries to canonical ModelInfo.
 
@@ -405,6 +564,33 @@ def openai_token_logprobs(entries: Any) -> tuple[TokenLogprob, ...]:
     return tuple(out)
 
 
+def with_partial_usage(
+    error: "ProviderError", data: Mapping[str, Any], *, model: str | None,
+    parse_usage: Callable[[dict[str, Any]], Usage],
+) -> "ProviderError":
+    """Attach accounting from an already decoded reply, without reading its
+    output again. The dialect supplies its normal usage reader. Invalid
+    telemetry must never replace the original provider/parsing failure.
+    This intentionally carries no generated content or successful finish.
+    """
+    usage_data = data.get("usage")
+    resolved_model = data.get("model") or model
+    if error.partial is not None or not isinstance(usage_data, dict) or not resolved_model:
+        return error
+    try:
+        error.partial = Response(
+            id=str(data["id"]) if data.get("id") else None,
+            model=str(resolved_model),
+            message=Message.assistant(""),
+            finish_reason="error",
+            usage=parse_usage(usage_data),
+        )
+    except (AttributeError, TypeError, ValueError):
+        # Bad counters or nested detail objects are not usable accounting.
+        pass
+    return error
+
+
 def unnamed_tool_call_error(provider: str, path: str) -> "ProviderError":
     """MAP-9 on the complete path (changes/2026-09-07-complete-tool-call-no-guess.md):
     a tool call the provider sent without a name is not actionable, and lm15
@@ -527,11 +713,4 @@ def multipart_related_body(
 # both providers 2026-09-02 (research/reasoning).  Provider floors and
 # ceilings are the provider's: Anthropic rejects < 1024, Gemini 2.5 Flash
 # rejects > 24576 — loudly.
-EFFORT_THINKING_BUDGETS: dict[str, int] = {
-    "minimal": 1024,
-    "low": 2048,
-    "medium": 8192,
-    "high": 16384,
-    "xhigh": 24576,
-    "max": 32768,
-}
+from ..types import EFFORT_THINKING_BUDGETS as EFFORT_THINKING_BUDGETS  # noqa: E402  (one table, in types)

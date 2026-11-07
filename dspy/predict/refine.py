@@ -5,7 +5,7 @@ from typing import Callable
 import orjson
 
 import dspy
-from dspy.adapters.utils import get_field_description_string
+from dspy.adapters.utils import _get_adapter, get_field_description_string
 from dspy.predict.predict import Prediction
 from dspy.signatures import InputField, OutputField, Signature
 
@@ -101,7 +101,7 @@ class Refine(Module):
         rollout_ids = [start + i for i in range(self.N)]
         best_pred, best_trace, best_reward = None, None, -float("inf")
         advice = None
-        adapter = dspy.settings.adapter or dspy.ChatAdapter()
+        adapter = _get_adapter()
 
         for idx, rid in enumerate(rollout_ids):
             lm_ = lm.copy(rollout_id=rid, temperature=1.0)

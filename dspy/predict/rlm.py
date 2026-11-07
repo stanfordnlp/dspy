@@ -11,6 +11,7 @@ Reference: "Recursive Language Models" (Zhang, Kraska, Khattab, 2025)
 from __future__ import annotations
 
 import base64
+import contextlib
 import contextvars
 import functools
 import inspect
@@ -37,11 +38,13 @@ from dspy.primitives.code_interpreter import (
     _validate_interpreter_factory,
     resolve_interpreter_factory,
 )
-from dspy.primitives.facade import CALL_TOOL, CONSTRUCT_TOOL, FacadeInvocation, is_reserved_sandbox_name
+from dspy.primitives.facade import SandboxLM, SandboxSession, is_reserved_sandbox_name
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
+from dspy.primitives.sandbox_bundle import SandboxBundleError
+from dspy.primitives.sandbox_guest import INTERPRETER_TOOL, LM_TOOL
 from dspy.primitives.sandbox_serializable import SandboxSerializable, build_repl_variable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
@@ -78,21 +81,25 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 
 You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
 
-# Appended to the interpreter rules whenever RLM installs the sandbox dspy facade (every factory-made interpreter).
+# Appended to the interpreter rules whenever RLM bridges dspy into its interpreter (every factory-made interpreter).
 SUB_AGENT_INSTRUCTIONS = """
 Sub-agents (dspy):
 You may `import dspy` and build sub-agents in the REPL for subtasks that need structured inputs/outputs.
 - `dspy.Predict("question -> answer")(question=...)` or `dspy.ChainOfThought(...)` - single-step sub-agents.
-- `dspy.ReActV2("question -> answer", tools=[...])(question=...)` - a multi-step tool-using sub-agent.
-  Only the provided tools listed above may be passed; functions you define in the REPL cannot cross to the host.
+- `dspy.ReAct("question -> answer", tools=[...])(question=...)` - a multi-step tool-using sub-agent.
+  Pass it the provided tools listed above or functions you define in the REPL.
 - `dspy.RLM("context, query -> answer")(context=..., query=...)` - a recursive sub-agent with its own
   REPL on the same interpreter backend as yours; it cannot be given another `interpreter_factory`.
   This is the heaviest option: reserve it for deep subtasks whose input is itself too large or
-  structured to prompt directly, and prefer Predict/ChainOfThought/ReActV2 for everything else.
+  structured to prompt directly, and prefer Predict/ChainOfThought/ReAct for everything else.
 Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured, tool-using, or
 recursive subtasks.
 """
 _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
+
+
+# The sandbox session scope of the RLM call running in this context (see ``RLM._setup_facade``).
+_repl_scope: contextvars.ContextVar[Callable[[], Any] | None] = contextvars.ContextVar("dspy_rlm_repl_scope", default=None)
 
 
 class _LLMCallBudget:
@@ -324,6 +331,9 @@ class RLM(Module):
 
         def _query_lm(prompt: str) -> str:
             target_lm = lm if lm is not None else dspy.settings.lm
+            # In an in-process REPL that is the metered stand-in for sub-agents; llm_query already reserved this call.
+            if isinstance(target_lm, SandboxLM) and target_lm._reserve == budget.reserve:
+                target_lm = target_lm._lm
             if target_lm is None:
                 raise dspy.LMNotConfiguredError(
                     "No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM."
@@ -419,7 +429,8 @@ class RLM(Module):
             .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
             .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)
             .append("iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iters"), type_=str)
-            .append("reasoning", dspy.OutputField(desc="Think step-by-step: what do you know? What remains? Plan your next action."), type_=str)
+            .append("reasoning", dspy.OutputField(desc="A short plan for the next action."), type_=dspy.Reasoning)
+            .with_updated_fields("reasoning", __dspy_reasoning_fallback="plan")
             .append("code", dspy.OutputField(desc="Python code to execute. Use markdown code block format: ```python\\n<code>\\n```"), type_=str)
         )
 
@@ -574,27 +585,36 @@ class RLM(Module):
 
         return regular_args
 
+    @contextmanager
     def _setup_facade(
         self, repl: CodeInterpreter, budget: _LLMCallBudget, interpreter_factory: Callable[[], CodeInterpreter]
-    ) -> str:
-        """Install the sandbox dspy facade into this invocation's interpreter; return its sub-agent guidance.
+    ) -> Iterator[str]:
+        """Bridge the real dspy into this invocation's interpreter; yield its sub-agent guidance.
 
-        Nested code-executing sub-agents get their interpreters from ``interpreter_factory``, the factory this
-        invocation runs on. The facade resolves ``sub_lm`` (else ``dspy.settings.lm``) per call, like
-        ``llm_query``, and charges ``max_llm_calls``.
+        REPL code that imports dspy calls the host's LM: ``sub_lm`` (else ``dspy.settings.lm``) per call, like
+        ``llm_query``, charged against ``max_llm_calls``. Each code-executing sub-agent it builds gets a fresh
+        interpreter from ``interpreter_factory``, shut down on exit.
         """
-        invocation = FacadeInvocation(
-            self._user_tools, interpreter_factory, None, lm=self.sub_lm, reserve=budget.reserve
+        session = SandboxSession(
+            self._user_tools, lm=self.sub_lm, reserve=budget.reserve, interpreter_factory=interpreter_factory
         )
         try:
-            invocation.install(repl)
-        except CodeExecutionError as e:
-            # The runtime cannot host the shim (e.g. it runs code in the host's memory): no sub-agents this call.
-            for name in (CONSTRUCT_TOOL, CALL_TOOL):
-                repl.tools.pop(name, None)
+            session.install(repl, import_dspy=False)
+        except (CodeExecutionError, SyntaxError, SandboxBundleError) as e:
+            # The runtime cannot host dspy (e.g. a restricted compiler, or no bundle offline): no sub-agents this call.
+            repl.tools.pop(LM_TOOL, None)
+            repl.tools.pop(INTERPRETER_TOOL, None)
             logger.warning("RLM sub-agents are unavailable on %s: %s", type(repl).__name__, e)
-            return ""
-        return SUB_AGENT_INSTRUCTIONS
+            yield ""
+            return
+        # An interpreter in the host's memory runs sub-agents on the host's dspy: scope its executions on the
+        # metered sub-agent LM.
+        token = _repl_scope.set(session.scope)
+        try:
+            yield SUB_AGENT_INSTRUCTIONS
+        finally:
+            _repl_scope.reset(token)
+            session.close()
 
     # =========================================================================
     # CodeInterpreter Lifecycle
@@ -733,25 +753,27 @@ class RLM(Module):
         Returns:
             Prediction if FINAL was called successfully, else updated REPLHistory
         """
+        # Providers may omit a native reasoning summary; trajectories stay string-valued.
+        reasoning = str(pred.reasoning) if pred.reasoning is not None else ""
         # Handle error strings from caught exceptions
         if isinstance(result, str) and result.startswith("[Error]"):
             output = self._format_output(result)
-            return history.append(reasoning=pred.reasoning, code=code, output=output)
+            return history.append(reasoning=reasoning, code=code, output=output)
 
         # Handle FINAL output
         if isinstance(result, FinalOutput):
             parsed_outputs, error = self._process_final_output(result, output_field_names)
 
             if error:
-                return history.append(reasoning=pred.reasoning, code=code, output=error)
+                return history.append(reasoning=reasoning, code=code, output=error)
 
             final_history = history.append(
-                reasoning=pred.reasoning, code=code, output=f"FINAL: {parsed_outputs}"
+                reasoning=reasoning, code=code, output=f"FINAL: {parsed_outputs}"
             )
             return Prediction(
                 **parsed_outputs,
                 trajectory=[e.model_dump() for e in final_history],
-                final_reasoning=pred.reasoning,
+                final_reasoning=reasoning,
             )
 
         # Format non-final result as output
@@ -763,7 +785,7 @@ class RLM(Module):
         output = self._format_output(output)
         if self.verbose:
             logger.info(REPLEntry.format_output(output, self.max_output_chars))
-        return history.append(reasoning=pred.reasoning, code=code, output=output)
+        return history.append(reasoning=reasoning, code=code, output=output)
 
     def _execute_code(
         self,
@@ -772,8 +794,10 @@ class RLM(Module):
         input_args: dict[str, Any],
     ) -> Any:
         """Execute code in the interpreter, returning the result or an error string."""
+        scope = _repl_scope.get()
         try:
-            return repl.execute(code, variables=dict(input_args))
+            with scope() if scope is not None else contextlib.nullcontext():
+                return repl.execute(code, variables=dict(input_args))
         except (CodeExecutionError, SyntaxError) as e:
             return f"[Error] {format_error_for_lm(e)}"
 
@@ -843,8 +867,10 @@ class RLM(Module):
         execution_tools = self._prepare_execution_tools(budget)
         variables = self._build_variables(**input_args)
 
-        with self._interpreter_context(execution_tools, interpreter_factory) as repl:
-            sub_agent_rules = self._setup_facade(repl, budget, interpreter_factory)
+        with (
+            self._interpreter_context(execution_tools, interpreter_factory) as repl,
+            self._setup_facade(repl, budget, interpreter_factory) as sub_agent_rules,
+        ):
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
@@ -941,8 +967,10 @@ class RLM(Module):
         execution_tools = self._prepare_execution_tools(budget)
         variables = self._build_variables(**input_args)
 
-        with self._interpreter_context(execution_tools, interpreter_factory) as repl:
-            sub_agent_rules = self._setup_facade(repl, budget, interpreter_factory)
+        with (
+            self._interpreter_context(execution_tools, interpreter_factory) as repl,
+            self._setup_facade(repl, budget, interpreter_factory) as sub_agent_rules,
+        ):
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)
 

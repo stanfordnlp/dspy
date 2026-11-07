@@ -22,7 +22,7 @@ def configure_cache(
     disk_cache_dir: str | None = DISK_CACHE_DIR,
     disk_size_limit_bytes: int | None = DISK_CACHE_LIMIT,
     memory_max_entries: int = 1000000,
-    restrict_pickle: bool = False,
+    restrict_pickle: bool = True,
     safe_types: list[type[Any]] | None = None,
 ):
     """Configure the cache for DSPy.
@@ -34,8 +34,8 @@ def configure_cache(
         disk_size_limit_bytes: The size limit of the on-disk cache.
         memory_max_entries: The maximum number of entries in the in-memory cache. To allow the cache to grow without
                             bounds, set this parameter to `math.inf` or a similar value.
-        restrict_pickle: When True, restrict pickle deserialization to a known-safe
-            set of types. When False (default), use unrestricted pickle.
+        restrict_pickle: When True (default), restrict pickle deserialization to a known-safe
+            set of types. When False, use unrestricted pickle.
         safe_types: Additional types to allow when restrict_pickle is True.
     """
 

@@ -93,8 +93,8 @@ Reads a minibatch of low-scoring traces and emits a candidate instruction for th
 **`reflection_minibatch_size`** — examples shown to the reflection LM per mutation
 Default `3`. Larger minibatches give the proposer more context (better proposals) at the cost of longer reflection prompts (more tokens).
 
-**`instruction_proposer`** — custom proposer hook
-A callable matching the `gepa.ProposalFn` protocol: takes a `{predictor_name: current_instruction}` dict, a reflective dataset of low-scoring examples, and a list of components to update; returns a new `{predictor_name: new_instruction}` dict. Override when the default proposer doesn’t handle your modality (signatures with `dspy.Image` fields, say) or when you want domain-specific constraints on the instructions.
+**`instruction_proposer`** — the proposer that writes new instructions
+A callable matching the `gepa.ProposalFn` protocol: takes a `{predictor_name: current_instruction}` dict, a reflective dataset of low-scoring examples, and a list of components to update; returns a new `{predictor_name: new_instruction}` dict. Defaults to `InstructionProposer()` from `dspy.teleprompt.gepa`, which handles `dspy.Image` inputs and takes options for reference skills, extra guidance, a replacement prompt, length caps, and compaction of long tool outputs. Pass a configured `InstructionProposer(...)` for those; write your own callable only for needs the options don't cover. See [Custom Instruction Proposers](../api/optimizers/GEPA/GEPA_Advanced.md#custom-instruction-proposers).
 
 **`code_proposer`** — custom proposer hook for `dspy.Flex` code components
 The code-side counterpart. Receives the same `candidate` and `reflective_dataset` as `instruction_proposer`, plus two per-component maps: `task_descriptions` (the component's signature — name, objective, and input/output fields) and `context_blurbs` (the tools in scope and the sandbox rules for using them). Returns a full replacement `dspy.Module` source per component. Only `Flex` submodules route to it, so it does nothing on programs without them. See [Custom Code Proposers](../api/optimizers/GEPA/GEPA_Advanced.md#custom-code-proposers).

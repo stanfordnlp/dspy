@@ -81,11 +81,13 @@ class CodeInterpreter(Protocol):
         For interpreter pooling, call start() to pre-warm instances, then
         distribute execute() calls across the pool.
 
-    Sandbox dspy facade:
-        dspy.Flex and dspy.RLM install a ``dspy`` shim whose predictors are built and
-        run on the host, so registered tools must be callable as globals in executed
-        code and state must persist across execute() calls. The shim refuses an
-        interpreter that runs code in the host's memory (the host process or a fork).
+    Sandbox dspy bridge:
+        dspy.Flex and dspy.RLM let executed code import the real ``dspy`` and route its LM
+        calls to the host through a registered tool, so executed code must be able to import
+        the host's ``dspy`` (``PythonInterpreter.provide_dspy`` arranges it in Pyodide),
+        registered tools must be callable as globals, and state must persist across
+        execute() calls. An interpreter that runs code in the host's memory keeps using the
+        host's ``dspy`` module as is.
     """
 
     @property

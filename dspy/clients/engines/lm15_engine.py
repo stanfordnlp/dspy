@@ -26,7 +26,7 @@ from dspy.lm15 import (
 def timeouts_for(timeout) -> Timeouts | None:
     """lm15 ``Timeouts`` from an LM ``timeout`` setting, or None for lm15's own defaults.
 
-    A number of seconds bounds every wait the way LiteLLM's ``timeout`` did:
+    A number of seconds bounds every wait:
     the next byte (read), the send (write), and a free connection (pool).
     Connecting keeps lm15's short default. An ``httpx.Timeout`` maps each of
     its components. In httpx a component set to ``None`` means "wait
@@ -42,7 +42,7 @@ def timeouts_for(timeout) -> Timeouts | None:
         if disabled:
             raise UnsupportedFeatureError(
                 f"timeout disables {', '.join(disabled)} (None means wait forever); the native engine "
-                "bounds every wait, so pass a number of seconds for each component or use engine='litellm'",
+                "bounds every wait, so pass a number of seconds for each component",
                 feature="timeout",
             )
     else:
@@ -62,7 +62,7 @@ def timeouts_for(timeout) -> Timeouts | None:
 def _model_string(model: str, model_type: str, providers=()) -> str:
     """Keep endpoint selection deliberate, including model ids containing ':' .
 
-    A ``provider/model`` prefix is a LiteLLM spelling lm15 has a door for, or
+    A ``provider/model`` prefix is a routing alias lm15 has a door for, or
     a provider declared on this engine's config, by id or alias in either
     spelling.
     """
@@ -128,8 +128,7 @@ class _Routing:
 
         Offline like ``resolve``: no credential is read or invoked, so a
         model with no key configured still plans. Raises the refusal the
-        call would raise, so engine selection can fall back before any I/O
-        instead of after a failed attempt.
+        call would raise, before any inference I/O.
         """
         validate_request(request)
         resolution = self.resolve(request.model)
@@ -150,8 +149,10 @@ class LM15Engine(_Routing):
         self.router = LMRouter(self.config)
 
     def complete(self, request: Request) -> Response:
+        from dspy.clients.lm15_boundary import repair_tool_arguments
+
         provider, routed = self._target(request)
-        return provider.complete(routed)
+        return repair_tool_arguments(provider.complete(routed))
 
     def stream(self, request: Request) -> Iterator[StreamEvent]:
         provider, routed = self._target(request, streaming=True)
@@ -181,9 +182,11 @@ class AsyncLM15Engine(_Routing):
     async def complete(self, request: Request) -> Response:
         import asyncio
 
+        from dspy.clients.lm15_boundary import repair_tool_arguments
+
         # Construction may load or refresh credentials synchronously.
         provider, routed = await asyncio.to_thread(self._target, request)
-        return await provider.complete(routed)
+        return repair_tool_arguments(await provider.complete(routed))
 
     async def stream(self, request: Request) -> AsyncIterator[StreamEvent]:
         import asyncio

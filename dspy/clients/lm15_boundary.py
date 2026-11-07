@@ -1,15 +1,30 @@
-"""Typed direct calls using the exact lm15 objects bundled with DSPy.
+"""Conversions at the edge of the Request/Response contract, with lm15's own code.
 
-Execution controls (response caching, retries and history) stay in DSPy. The
-provider-neutral Request contains only what is sent to the model.
+Engines that speak an OpenAI-shaped SDK (LiteLLM) serialize Requests and read
+responses here; fine-tuning files and history displays reuse the same writers.
+No credentials are resolved and no network I/O happens here.
 """
 
 import json
+import mimetypes
+from dataclasses import replace
+from typing import Any
 
 from dspy._vendor.lm15.providers.base import HttpResponse
+from dspy._vendor.lm15.providers.common import media_base64, media_data_uri
+from dspy._vendor.lm15.providers.openai_chat import _chat_content_parts
 from dspy._vendor.lm15.serde import part_to_dict
-from dspy.clients.legacy_outputs import plain
-from dspy.lm15 import OpenAIChatLM, OpenAILM, Request, response_from_openai_chat
+from dspy.lm15 import (
+    CitationPart,
+    Message,
+    OpenAIChatLM,
+    OpenAILM,
+    Request,
+    TokenLogprob,
+    TopLogprob,
+    UnsupportedFeatureError,
+    response_from_openai_chat,
+)
 
 
 class _NoTransport:
@@ -17,21 +32,99 @@ class _NoTransport:
         raise RuntimeError("The typed conversion boundary must not perform network I/O")
 
 
+class _SDKChatLM(OpenAIChatLM):
+    """Preserve SDK/export media slots missing from the bundled Chat writer."""
+
+    # TODO(upstream-lm15): Add native Chat audio/file serialization to lm15,
+    # then remove this temporary subclass once the bundled version includes it.
+    def _build_messages(self, request, compat, *, breakpoint_index=None):
+        rows = []
+        for index, message in enumerate(request.messages):
+            media = message.role == "user" and any(part.type in {"audio", "document"} for part in message.parts)
+            # Delegate every other message shape, including multi-row tool
+            # results and system-prefix caching, to the bundled writer.
+            rendered = super()._build_messages(
+                replace(request, messages=(Message.user("") if media else message,),
+                        system=request.system if index == 0 else None),
+                compat, breakpoint_index=0 if index == breakpoint_index else None,
+            )
+            if media:
+                content = []
+                for part in message.parts:
+                    if part.type == "audio":
+                        if part.url is not None or part.file_id is not None:
+                            raise UnsupportedFeatureError("Chat input_audio requires inline data or a local path")
+                        format_ = part.media_type.split("/", 1)[-1].removeprefix("x-")
+                        format_ = "mp3" if format_ == "mpeg" else format_
+                        content.append({"type": "input_audio", "input_audio": {"data": media_base64(part), "format": format_}})
+                    elif part.type == "document":
+                        if part.url is not None:
+                            raise UnsupportedFeatureError("Chat file inputs require file_id, inline data or a local path")
+                        file = {"file_id": part.file_id} if part.file_id is not None else {
+                            "file_data": media_data_uri(part),
+                            "filename": "file" + (mimetypes.guess_extension(part.media_type) or ".bin"),
+                        }
+                        content.append({"type": "file", "file": file})
+                    else:
+                        content.extend(_chat_content_parts(replace(message, parts=(part,)), force_array=True))
+                if index == breakpoint_index:
+                    if not content or content[-1]["type"] != "text":
+                        raise UnsupportedFeatureError("A Chat cache breakpoint requires a final text content block")
+                    content[-1]["prompt_cache_breakpoint"] = {"mode": "explicit"}
+                rendered[-1]["content"] = content
+            rows.extend(rendered)
+        return rows
+
+
+def plain(obj: Any):
+    """Read SDK fields without invoking deferred Pydantic serializers."""
+    from pydantic import BaseModel
+
+    if isinstance(obj, BaseModel):
+        obj = dict(obj)
+    if isinstance(obj, dict):
+        return {key: plain(item) for key, item in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [plain(item) for item in obj]
+    return obj
+
+
 def request_kwargs(request: Request, model_type: str) -> dict:
-    """Serialize with lm15's dialect, never a second copy of its type system."""
-    if "n" in (request.config.extensions or {}):
-        raise ValueError("A typed Request produces one Response; do not put n in Config.extensions.")
+    """Serialize a Request as the keyword arguments of an OpenAI-shaped SDK call."""
     if model_type not in {"chat", "responses", "text"}:
         raise ValueError(f"Unsupported model_type: {model_type!r}")
     # Private dialect mapping is confined here because lm15 does not expose a
-    # public outbound-body converter. No credentials are resolved or sent.
+    # public outbound-body converter.
     dialect = OpenAIChatLM(api_key="conversion-only", transport=_NoTransport())
+    if model_type == "chat":
+        dialect = _SDKChatLM(api_key="unused", transport=_NoTransport())
     if model_type == "responses":
         dialect = OpenAILM(api_key="conversion-only", transport=_NoTransport())
     data = dialect._payload(request, stream=False)
     data.pop("model", None)
     data.pop("stream", None)
+    if model_type == "text":
+        # Text-completion endpoints take one prompt; the conversation is
+        # flattened the way DSPy always did for them.
+        data["prompt"] = text_prompt(data.pop("messages"))
+        if "max_completion_tokens" in data:
+            data["max_tokens"] = data.pop("max_completion_tokens")
+        if request.config.logprobs is not None:
+            data["logprobs"] = request.config.logprobs
+            data.pop("top_logprobs", None)
     return data
+
+
+def text_prompt(messages: list[dict]) -> str:
+    lines = []
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, list):
+            if any(block.get("type") != "text" for block in content):
+                raise UnsupportedFeatureError("Text-completion prompts cannot carry non-text content blocks")
+            content = "".join(block["text"] for block in content)
+        lines.append(content or "")
+    return "\n\n".join([*lines, "BEGIN RESPONSE:"])
 
 
 def snapshot_request(request: Request) -> Request:
@@ -77,17 +170,103 @@ def history_messages(request: Request) -> list[dict]:
     return messages
 
 
+def repair_tool_arguments(response, raw_arguments=None):
+    """Restore DSPy's JSON repair at the wire boundary, with raw provenance.
+
+    ``partial_json`` is also a legitimate tool parameter. Only a malformed
+    original argument string proves that lm15's input is a parser fallback.
+    Streaming callers supply (id, name, raw) from their accumulator instead.
+    """
+    import json_repair
+
+    from dspy.lm15 import ToolCallPart
+
+    if not response.tool_calls:
+        return response
+    if raw_arguments is None:
+        raw_arguments = _raw_tool_arguments(response.provider_data or {})
+    wire_arguments = {
+        (call_id, name, raw)
+        for call_id, name, raw in raw_arguments
+        if isinstance(call_id, str) and isinstance(name, str) and isinstance(raw, str)
+    }
+    parts = list(response.message.parts)
+    for index, part in enumerate(parts):
+        if not isinstance(part, ToolCallPart) or set(part.input) != {"partial_json"}:
+            continue
+        raw = part.input["partial_json"]
+        if not isinstance(raw, str) or (part.id, part.name, raw) not in wire_arguments:
+            continue
+        try:
+            json.loads(raw)
+        except json.JSONDecodeError:
+            value = json_repair.loads(raw)
+            if isinstance(value, dict):
+                parts[index] = replace(part, input=value)
+    if tuple(parts) == response.message.parts:
+        return response
+    return replace(response, message=replace(response.message, parts=tuple(parts)))
+
+
+def _raw_tool_arguments(body):
+    """Read only Chat/Responses function argument fields, correlated by call id."""
+    for choice in body.get("choices", []) or []:
+        message = choice.get("message") if isinstance(choice, dict) else None
+        if not isinstance(message, dict):
+            continue
+        for call in message.get("tool_calls", []) or []:
+            if isinstance(call, dict) and call.get("type", "function") == "function":
+                function = call.get("function")
+                if isinstance(function, dict):
+                    yield call.get("id"), function.get("name"), function.get("arguments")
+    for item in body.get("output", []) or []:
+        if isinstance(item, dict) and item.get("type") == "function_call":
+            yield item.get("call_id") or item.get("id"), item.get("name"), item.get("arguments")
+
+
 def response_value(response, model_type: str, request: Request):
+    """Read an OpenAI-shaped SDK response (Chat, Responses or text) as a Response."""
     body = plain(response)
+    hidden = getattr(response, "_hidden_params", None) or {}
+    if hidden.get("response_cost") is not None:
+        # Carry the reported price, not the SDK's other private client data.
+        body = {**body, "_hidden_params": {"response_cost": hidden["response_cost"]}}
     if model_type == "responses":
         dialect = OpenAILM(api_key="conversion-only", transport=_NoTransport())
-        return dialect.parse_response(request, HttpResponse(
+        return repair_tool_arguments(dialect.parse_response(request, HttpResponse(
             status=200, reason="OK", headers=[], body=json.dumps(body).encode(),
-        ))
+        )))
     if model_type == "text":
         body = dict(body)
         body["choices"] = [
             {**choice, "message": {"role": "assistant", "content": choice.get("text")}}
             for choice in body.get("choices", [])
         ]
-    return response_from_openai_chat(body, model=request.model)
+    parsed = response_from_openai_chat(body, model=request.model)
+    if model_type == "text" and body.get("choices"):
+        scores = body["choices"][0].get("logprobs")
+        if scores is not None:
+            tokens = scores.get("tokens") or []
+            probabilities = scores.get("token_logprobs") or [None] * len(tokens)
+            alternatives = scores.get("top_logprobs") or [None] * len(tokens)
+            # Unknown scores (e.g. the first echoed token) cannot be invented.
+            # The original arrays and offsets remain in provider_data.
+            parsed = replace(parsed, logprobs=tuple(
+                TokenLogprob(token=token, logprob=probability, top=tuple(
+                    TopLogprob(token=alternative, logprob=score) for alternative, score in (top or {}).items()
+                )) for token, probability, top in zip(tokens, probabilities, alternatives, strict=True)
+                if probability is not None
+            ), logprobs_complete=all(probability is not None for probability in probabilities))
+    citations = []
+    for choice in body.get("choices", []):
+        fields = (choice.get("message") or {}).get("provider_specific_fields") or {}
+        for group in fields.get("citations") or []:
+            for citation in group if isinstance(group, list) else [group]:
+                citations.append(CitationPart(
+                    text=citation.get("cited_text") or citation.get("text") or citation.get("supported_text"),
+                    title=citation.get("document_title") or citation.get("title"),
+                    url=citation.get("url"),
+                ))
+    if citations:
+        parsed = replace(parsed, message=replace(parsed.message, parts=(*parsed.message.parts, *citations)))
+    return repair_tool_arguments(parsed)

@@ -28,10 +28,10 @@ To turn our Signature into a callable function, we use `dspy.Predict`. Predict i
 `haiku_generator` is now callable. Calling `haiku_generator(subject="computer science")` kicks off the following process:
 
 1. The DSPy settings are checked to ensure an `LM` is configured.  
-2. An [`Adapter`](../diving-deeper/adapters.md) is used to render the `Signature` and its inputs into messages the `LM` can consume. By default, this is the `ChatAdapter`, but there are JSON, XML, and other variants to format your messages suitable for a given `LM`.  
-3. The `ChatAdapter` builds the prompt, which includes the `Signature` instructions, the field schema describing the inputs and outputs, formatting instructions, and the provided input (in this case, “computer science”).   
+2. An [`Adapter`](../diving-deeper/adapters.md) renders the `Signature` and its inputs into messages the `LM` can consume. The default is `XMLAdapter`.  
+3. The `XMLAdapter` builds the prompt, which includes the `Signature` instructions, the field schema describing the inputs and outputs, formatting instructions, and the provided input (in this case, “computer science”).   
 4. The messages are sent to the `LM`. Caching is enabled by default so identical calls return cached responses.  
-5. A response is returned, which the `ChatAdapter` parses to extract the output fields.  
+5. A response is returned, which the `XMLAdapter` parses to extract the output fields.  
 6. The `Predict` module returns a `Prediction` object with accessible output fields. Calling `result.haiku` returns the generated haiku.  
 7. The call is recorded in `LM` history, which can be inspected later with `dspy.inspect_history()`.
 
@@ -54,39 +54,39 @@ Your input fields are:
 1. `subject` (str):
 Your output fields are:
 1. `haiku` (str):
-All interactions will be structured in the following way, with the appropriate values filled in.
-
-[[ ## subject ## ]]
-{subject}
-
-[[ ## haiku ## ]]
+Output format (replace placeholders):
+<haiku>
 {haiku}
-
-[[ ## completed ## ]]
+</haiku>
 In adhering to this structure, your objective is: 
-    Given the fields `subject`, produce the fields `haiku`.
+        Given the fields `subject`, produce the fields `haiku`.
 ```
 
-The brackets and hashes style is how the default `ChatAdapter` structures the prompt, demarcating inputs and sections. 
+`XMLAdapter` uses tags to delimit fields.
 
 Next, the adapter templated our input into a user message:
 
 ```
-[[ ## subject ## ]]
+<subject>
 computer science
+</subject>
 
-Respond with the corresponding output fields, starting with the field `[[ ## haiku ## ]]`, and then ending with the marker for `[[ ## completed ## ]]`.
+Output format (replace placeholders):
+<haiku>
+{haiku}
+</haiku>
+
+Use this format for text outputs. Put field tags on separate lines. Write string values literally, without XML or JSON escaping.
 ```
 
 DSPy sent both to the `lm`, which produced this response:
 
 ```
-[[ ## haiku ## ]]
+<haiku>
 Silent code unfolds
 Logic threads through hidden paths
 Bugs bloom, then resolve
-
-[[ ## completed ## ]]
+</haiku>
 ```
 
 In DSPy, to produce a prompt you compose a signature and the messages are written for you.

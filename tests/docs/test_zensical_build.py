@@ -1,5 +1,8 @@
 import gzip
 import json
+import os
+import subprocess
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -7,6 +10,8 @@ import pytest
 from docs.hooks import fetch_stats as stats_hook
 from docs.scripts.zensical_build import (
     add_missing_titles,
+    add_revision_dates,
+    add_sitemap_dates,
     convert_notebooks,
     generate_llms,
     load_config,
@@ -16,7 +21,9 @@ from docs.scripts.zensical_build import (
     redirect_maps,
     remove_redirect_sources,
     social_cards,
+    source_dates,
     validate_output,
+    write_page_markdown,
     write_redirects,
 )
 
@@ -113,6 +120,43 @@ def test_llms_generation_uses_the_configured_inventory(tmp_path):
     assert "Excluded" not in result
 
 
+def test_page_markdown_is_written_beside_rendered_pages(tmp_path):
+    for module in ("bs4", "markdownify", "mdformat"):
+        pytest.importorskip(module)
+    guide = tmp_path / "guides" / "first" / "index.html"
+    guide.parent.mkdir(parents=True)
+    guide.write_text(
+        "<html><body><nav>Navigation</nav><article>"
+        '<h1 id="first">First<a class="headerlink" href="#first">¶</a></h1>'
+        '<p>See <a href="../second/#setup">Second</a>, <a href="../../learn/">Learn</a>,'
+        ' <a href="/learn#steps">Steps</a>, <a href="../../gone/">Gone</a>'
+        ' and <a href="https://example.com/">elsewhere</a>.</p>'
+        "<div class=\"highlight\"><pre><code>print('hi')</code></pre></div>"
+        "</article></body></html>"
+    )
+    second = tmp_path / "guides" / "second" / "index.html"
+    second.parent.mkdir()
+    second.write_text("<article><h1>Second</h1></article>")
+    redirect = tmp_path / "learn" / "index.html"
+    redirect.parent.mkdir()
+    redirect.write_text('<meta http-equiv="refresh" content="0; url=../guides/first/">')
+
+    write_page_markdown(tmp_path, "https://dspy.ai/current/", {"learn/index.md": "guides/second.md"})
+
+    markdown = (tmp_path / "guides" / "first" / "index.md").read_text()
+    assert markdown.startswith("# First\n")
+    assert "Navigation" not in markdown
+    assert "¶" not in markdown
+    assert "[Second](https://dspy.ai/current/guides/second/index.md#setup)" in markdown
+    assert "[Learn](https://dspy.ai/current/guides/second/index.md)" in markdown
+    assert "[Steps](https://dspy.ai/current/guides/second/index.md#steps)" in markdown
+    assert "[Gone](https://dspy.ai/current/gone/)" in markdown
+    assert "[elsewhere](https://example.com/)" in markdown
+    assert "```\nprint('hi')\n```" in markdown
+    assert (tmp_path / "guides" / "second" / "index.md").read_text() == "# Second\n"
+    assert not (tmp_path / "learn" / "index.md").exists()
+
+
 def test_public_stats_api_does_not_leak_cache_metadata(tmp_path, monkeypatch):
     cache = tmp_path / "stats.json"
     fetched = {"stars": "10k"}
@@ -207,8 +251,85 @@ def test_output_validation_covers_native_and_compatibility_features(tmp_path):
     cards.mkdir(parents=True)
     (cards / "home.png").write_bytes(b"card")
 
-    validate_output(tmp_path, {"tutorial/index.html"}, {"old.md": "index.md"})
+    (tmp_path / "llms.txt").write_text("- [Home](https://dspy.ai/current/index.md): Overview\n")
+    (tmp_path / "index.md").write_text("# Home\n")
+    site_url = "https://dspy.ai/current/"
 
+    validate_output(tmp_path, {"tutorial/index.html"}, {"old.md": "index.md"}, site_url)
+
+    (tmp_path / "index.md").unlink()
+    with pytest.raises(RuntimeError, match=r"missing required files: https://dspy.ai/current/index.md"):
+        validate_output(tmp_path, {"tutorial/index.html"}, {"old.md": "index.md"}, site_url)
+
+    (tmp_path / "index.md").write_text("# Home\n")
     (tmp_path / "search.json").write_text(json.dumps({"items": []}))
     with pytest.raises(RuntimeError, match="search index is empty"):
-        validate_output(tmp_path, {"tutorial/index.html"}, {"old.md": "index.md"})
+        validate_output(tmp_path, {"tutorial/index.html"}, {"old.md": "index.md"}, site_url)
+
+
+def test_source_dates_use_the_last_commit_for_each_page(tmp_path):
+    docs = tmp_path / "docs"
+    (docs / "guide").mkdir(parents=True)
+
+    def commit(day: str) -> None:
+        env = {"GIT_AUTHOR_DATE": f"{day}T12:00:00", "GIT_COMMITTER_DATE": f"{day}T12:00:00"}
+        subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+        subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", day],
+            cwd=tmp_path,
+            check=True,
+            env={**os.environ, **env},
+        )
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (docs / "index.md").write_text("# Home")
+    (docs / "guide" / "notebook.ipynb").write_text("{}")
+    (docs / "rag.md").write_text("# Old RAG")
+    commit("2026-01-02")
+    (docs / "index.md").write_text("# Home, updated")
+    (docs / "rag.md").unlink()
+    (docs / "rag").mkdir()
+    (docs / "rag" / "index.md").write_text("# New RAG")
+    commit("2026-03-04")
+
+    # The deleted rag.md shares /rag/ with its replacement and must not supply a date.
+    assert source_dates(docs) == {
+        "index.md": date(2026, 3, 4),
+        "guide/notebook.md": date(2026, 1, 2),
+        "rag/index.md": date(2026, 3, 4),
+    }
+    assert source_dates(tmp_path / "missing") == {}
+
+
+def test_revision_dates_merge_into_front_matter(tmp_path):
+    (tmp_path / "plain.md").write_text("# Plain")
+    (tmp_path / "front.md").write_text("---\ntemplate: home.html\n---\n\nBody")
+
+    add_revision_dates(
+        tmp_path, {"plain.md": date(2026, 3, 4), "front.md": date(2026, 1, 2), "gone.md": date(2026, 1, 2)}
+    )
+
+    assert (tmp_path / "plain.md").read_text() == '---\nrevision_date: "March 4, 2026"\n---\n\n# Plain'
+    assert (tmp_path / "front.md").read_text() == (
+        '---\nrevision_date: "January 2, 2026"\ntemplate: home.html\n---\n\nBody'
+    )
+    assert not (tmp_path / "gone.md").exists()
+
+
+def test_sitemap_dates_match_page_routes(tmp_path):
+    sitemap = tmp_path / "sitemap.xml"
+    sitemap.write_text(
+        "<urlset><url><loc>https://dspy.ai/current/</loc></url>"
+        "<url><loc>https://dspy.ai/current/guide/notebook/</loc></url>"
+        "<url><loc>https://dspy.ai/current/undated/</loc></url></urlset>"
+    )
+
+    add_sitemap_dates(
+        sitemap, "https://dspy.ai/current/", {"index.md": date(2026, 3, 4), "guide/notebook.md": date(2026, 1, 2)}
+    )
+
+    assert sitemap.read_text() == (
+        "<urlset><url><loc>https://dspy.ai/current/</loc><lastmod>2026-03-04</lastmod></url>"
+        "<url><loc>https://dspy.ai/current/guide/notebook/</loc><lastmod>2026-01-02</lastmod></url>"
+        "<url><loc>https://dspy.ai/current/undated/</loc></url></urlset>"
+    )
