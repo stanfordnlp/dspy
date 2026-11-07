@@ -174,8 +174,16 @@ class Completions:
         return key in self._completions
 
     def __eq__(self, other):
-        if isinstance(other, Completions):
-            return self._completions == other._completions and self.signature == other.signature
+        if not isinstance(other, Completions):
+            return False
+        if self._completions != other._completions:
+            return False
+        if self.signature == other.signature:
+            return True
+        if hasattr(self.signature, "equals") and callable(self.signature.equals):
+            return bool(self.signature.equals(other.signature))
+        if hasattr(other.signature, "equals") and callable(other.signature.equals):
+            return bool(other.signature.equals(self.signature))
         return False
 
     def __repr__(self):

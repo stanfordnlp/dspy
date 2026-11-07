@@ -76,6 +76,22 @@ def test_completions_equality():
     assert c1[0:1] == c4
 
 
+def test_completions_equality_with_signature():
+    import dspy
+
+    sig1 = dspy.Signature("question -> answer")
+    sig2 = dspy.Signature("question -> answer")
+    sig3 = dspy.Signature("context, question -> answer")
+
+    c1 = Completions([{"answer": "yes"}], signature=sig1)
+    c2 = Completions([{"answer": "yes"}], signature=sig2)
+    c3 = Completions([{"answer": "yes"}], signature=sig3)
+
+    assert c1 == c2
+    assert c1 != c3
+    assert c1 != Completions([{"answer": "yes"}], signature=None)
+
+
 def test_prediction_from_completions_indexing():
     pred = Prediction.from_completions([{"a": 1}, {"a": 2}, {"a": 3}])
     assert pred.completions is not None
