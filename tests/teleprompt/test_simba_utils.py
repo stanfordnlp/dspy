@@ -29,6 +29,16 @@ def test_prepare_models_without_teacher_lm_does_not_mutate_student():
     assert "rollout_id" not in student.kwargs
 
 
+def test_prepare_models_teacher_copy_keeps_its_own_temperature():
+    student = DummyLM([{"answer": "a"}])
+    teacher = DummyLM([{"answer": "t"}])
+    teacher.kwargs["temperature"] = 0.3
+    models = prepare_models_for_resampling(_program(student), 3, {"lm": teacher})
+    assert models[0].kwargs["temperature"] == 0.3
+    assert models[1].kwargs["temperature"] == 1.0
+    assert teacher.kwargs["temperature"] == 0.3
+
+
 def test_prepare_models_preserves_existing_rollout_id():
     student = DummyLM([{"answer": "a"}])
     student.kwargs["rollout_id"] = 5
@@ -68,7 +78,14 @@ def test_wrap_program_numpy_scalar_scores(name, expected):
 def test_wrap_program_unsupported_scores_warn_and_score_zero(value, caplog):
     with caplog.at_level(logging.WARNING, logger="dspy.teleprompt.simba_utils"):
         assert _run(value)["score"] == 0.0
-    assert caplog.records  # a warning naming the type was logged
+    assert "unsupported type" in caplog.text
+
+
+def test_wrap_program_prediction_without_score_warns_and_scores_zero(caplog):
+    with caplog.at_level(logging.WARNING, logger="dspy.teleprompt.simba_utils"):
+        out = _run(dspy.Prediction(feedback="no score"))
+    assert out["score"] == 0.0
+    assert "must contain a `score` field" in caplog.text
 
 
 def test_wrap_program_prediction_score_unchanged():
