@@ -261,6 +261,87 @@ def test_provided_tools_are_dspy_tools_with_their_host_metadata(factory) -> None
     assert flex(text="hi").out == "HI!"
 
 
+class Numbers(dspy.SandboxSerializable):
+    """Numbers sent as JSON text and rebuilt with the module their setup imports."""
+
+    def __init__(self, items: list[int]):
+        self.items = items
+
+    def sandbox_setup(self) -> str:
+        return "import json as numbers_json"
+
+    def to_sandbox(self) -> bytes:
+        return json.dumps(self.items).encode()
+
+    def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
+        return f"{var_name} = numbers_json.loads({data_expr})"
+
+    def rlm_preview(self, max_chars: int = 500) -> str:
+        return f"{len(self.items)} numbers"
+
+
+class SumNumbers(dspy.Signature):
+    nums: Numbers = dspy.InputField()
+    total: int = dspy.OutputField()
+
+
+def more_numbers():
+    """Return more numbers."""
+    return Numbers([4, 5])
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_sandbox_serializable_inputs_and_tool_results_are_rebuilt_in_the_sandbox(factory) -> None:
+    flex = Flex(SumNumbers, tools=[more_numbers], interpreter_factory=factory)
+    flex._bind_code(textwrap.dedent(
+        """
+        class SumModule(dspy.Module):
+            def forward(self, nums):
+                more = more_numbers()
+                assert type(nums) is list and type(more) is list
+                return dspy.Prediction(total=sum(nums) + sum(more))
+        """
+    ).strip())
+    assert flex(nums=Numbers([3, 8, -2])).total == 18
+
+
+@pytest.mark.parametrize("factory", BACKENDS)
+def test_the_host_refuses_a_sandbox_serializable_made_in_the_sandbox(factory, monkeypatch) -> None:
+    # Only the sandbox runs a SandboxSerializable's setup and assignment: the host never runs code the sandbox wrote.
+    monkeypatch.delenv("DSPY_TEST_HOST_RAN_SANDBOX_CODE", raising=False)
+    seen = []
+
+    def echo(value) -> str:
+        """Echo a value."""
+        seen.append(value)
+        return "echoed"
+
+    flex = Flex(ShoutSig, tools=[echo], interpreter_factory=factory)
+    flex._bind_code(textwrap.dedent(
+        """
+        class Planted(dspy.SandboxSerializable):
+            def sandbox_setup(self):
+                return "import os; os.environ['DSPY_TEST_HOST_RAN_SANDBOX_CODE'] = '1'"
+            def to_sandbox(self):
+                return b"1"
+            def sandbox_assignment(self, var_name, data_expr):
+                return f"{var_name} = {data_expr}"
+            def rlm_preview(self, max_chars=500):
+                return "planted"
+
+        class EchoModule(dspy.Module):
+            def forward(self, text):
+                try:
+                    return dspy.Prediction(out=echo(Planted()))
+                except Exception as e:
+                    return dspy.Prediction(out=str(e))
+        """
+    ).strip())
+    assert "Only the sandbox rebuilds a SandboxSerializable value" in flex(text="hi").out
+    assert seen == []
+    assert "DSPY_TEST_HOST_RAN_SANDBOX_CODE" not in __import__("os").environ
+
+
 @pytest.mark.parametrize("factory", BACKENDS)
 def test_react_in_the_sandbox_calls_a_host_tool_and_a_sandbox_helper(factory) -> None:
     calls = []

@@ -43,6 +43,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
 import pydantic
+import pydantic_core
 from pydantic.json_schema import GenerateJsonSchema
 
 import dspy
@@ -74,6 +75,7 @@ from dspy.primitives.sandbox_guest import (
     decode_prompt,
     encode_options,
 )
+from dspy.primitives.sandbox_serializable import KEEP_IN_DUMP, SandboxSerializable
 from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import make_signature
 from dspy.utils.exceptions import LMError, LMNotConfiguredError
@@ -442,6 +444,7 @@ class SandboxSession:
         self._sealed: list[dict[str, Any]] = []  # see _seal
         self.lm_error: tuple[LMError, str] | None = None
         self.in_host = False
+        self.id: str | None = None  # the session's id in the interpreter, once installed
 
     def install(self, interpreter: Any, *, import_dspy: bool) -> None:
         """Bootstrap the bridge in ``interpreter``; with ``import_dspy``, import dspy there right away."""
@@ -455,14 +458,14 @@ class SandboxSession:
         # Inside a sandbox, the host already gave this interpreter the host's own interpreter tool.
         if self._interpreter_factory is not None and not isinstance(interpreter, HostInterpreter):
             interpreter.tools[INTERPRETER_TOOL] = self._serve_interpreter
-        session = secrets.token_hex(8)
+        session = self.id = secrets.token_hex(8)
         spec = self._spec(session)
         interpreter.execute(BOOTSTRAP, variables={"__dspy_spec": spec})
         namespace = _in_host.pop(session, None)
         if namespace is not None:
             # Code in the host's memory has the host's own types and values: nothing crosses.
             self.in_host = True
-            self._values = InMemory()
+            self._values = InMemory(namespace)
             namespace["__dspy_guest_spec"] = spec
             namespace["__dspy_values"] = self._values
             namespace["__dspy_types"] = dict(self._custom_types)
@@ -539,7 +542,9 @@ class SandboxSession:
             raise CodeInterpreterError(f"Unknown tool {tool!r}")
         registered = (getattr(self._interpreter, "tools", None) or {}).get(tool)
         function = registered if callable(registered) else _entrypoint(self._tools[tool])
-        result = function(**self._values.decode(arguments or {}))
+        declared = (self._tools[tool] if isinstance(self._tools[tool], Tool) else Tool(self._tools[tool])).arg_types
+        kwargs = {name: _as_declared(value, declared.get(name)) for name, value in self._values.decode(arguments or {}).items()}
+        result = function(**kwargs)
         if asyncio.iscoroutine(result):
             from dspy.primitives.python_interpreter import _await_in_sync
 
@@ -730,6 +735,17 @@ def from_wire(value: Any, annotation: Any) -> Any:
             return parse_value(value, annotation)
 
 
+def _as_declared(value: Any, annotation: Any) -> Any:
+    """A tool argument as the type the tool declares, when it came as plain data (as a value of the user's types
+    crosses), or as it came: the tool then checks it as sent."""
+    if annotation in (None, Any) or not isinstance(value, (dict, list)):
+        return value
+    try:
+        return from_wire(value, annotation)
+    except Exception:
+        return value
+
+
 def _typed(value: Any, field: Any) -> Any:
     """``value`` as its field's declared type, or as is if it does not parse."""
     if field is None:
@@ -764,7 +780,7 @@ class HostValues(Wire):
 
     def encode_object(self, value: Any, fields: dict[str, Any]) -> Any:
         if _import_path(type(value)) is None:  # the user's: plain data, as its type writes it for a round trip
-            return self.encode(_jsonable(value))
+            return self.encode(_plain_data(value))
         return {**super().encode_object(value, fields), "ref": self._keep(value)}
 
     def find_class(self, node: dict[str, Any]) -> Any:
@@ -800,6 +816,44 @@ class HostValues(Wire):
             ref = self._refs[id(value)] = len(self._objects)
             self._objects.append(value)  # kept for the session, so its id stays its own
         return ref
+
+
+def _plain_data(value: Any) -> Any:
+    """``value`` as plain data, as its type writes it for a round trip, except that a ``SandboxSerializable`` it holds
+    stays itself where the dump has its str, to cross in its own form: its str can't rebuild it. Where a serializer of
+    the user's reads what one writes (a wrap serializer of its field, say), the dump is as before, from the str."""
+    kept: dict[str, Any] = {}
+
+    def keep(item: Any) -> str:  # a placeholder no serializer can turn into another
+        placeholder = secrets.token_hex(16)
+        kept[placeholder] = item
+        return placeholder
+
+    try:
+        marked = pydantic_core.to_jsonable_python(
+            value,
+            by_alias=False,
+            round_trip=True,
+            context={KEEP_IN_DUMP: keep},  # in a model's fields
+            fallback=lambda item: keep(item) if isinstance(item, SandboxSerializable) else str(item),  # in other values
+        )
+    except pydantic_core.PydanticSerializationError:
+        marked = None  # a serializer that fails on a placeholder, or fails anyway
+    if marked is not None and not kept:
+        return marked  # holds no SandboxSerializable: the dump as before
+    plain = _jsonable(value)
+
+    def merge(marked: Any, plain: Any) -> Any:
+        # A placeholder no serializer changed, where the dump as before has the value's str, is the value.
+        if isinstance(marked, str) and marked in kept and plain == str(kept[marked]):
+            return kept[marked]
+        if isinstance(marked, list) and isinstance(plain, list) and len(marked) == len(plain):
+            return [merge(m, p) for m, p in zip(marked, plain, strict=True)]
+        if isinstance(marked, dict) and isinstance(plain, dict) and marked.keys() == plain.keys():
+            return {key: merge(marked[key], plain[key]) for key in plain}
+        return plain
+
+    return plain if marked is None else merge(marked, plain)
 
 
 def _type_binding(t: Any) -> dict[str, Any]:
