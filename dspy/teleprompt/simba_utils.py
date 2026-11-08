@@ -21,8 +21,7 @@ def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings
     start_rollout_idx, models = 0, []
     # If we have a teacher model, use this as the first model
     if teacher_settings:
-        teacher_lm = teacher_settings.get("lm") or lm
-        teacher_lm.kwargs["rollout_id"] = rollout_ids[start_rollout_idx]
+        teacher_lm = (teacher_settings.get("lm") or lm).copy(rollout_id=rollout_ids[start_rollout_idx])
         models.append(teacher_lm)
         start_rollout_idx += 1
 
