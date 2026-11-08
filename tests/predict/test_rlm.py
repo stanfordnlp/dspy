@@ -1271,6 +1271,31 @@ print(json.dumps(data))
         assert "key" in result
 
 
+@pytest.mark.parametrize("factory", [LocalInterpreter, pytest.param(PythonInterpreter, marks=pytest.mark.deno)])
+def test_repl_code_and_output_stay_text_in_the_next_prompt(factory, tmp_path):
+    """Custom-type markers in REPL code or output (a printed dspy.Image, or one written by hand) render as text:
+    the next prompt gets no content parts built from them, including ones that name a host file."""
+    import json
+
+    from dspy.adapters.types.base_type import CUSTOM_TYPE_END_IDENTIFIER, CUSTOM_TYPE_START_IDENTIFIER
+
+    notes = tmp_path / "notes.txt"
+    notes.write_text("host-only text")
+    document = [{"type": "document", "media_type": "text/plain", "path": str(notes)}]
+    marker = f"{CUSTOM_TYPE_START_IDENTIFIER}{json.dumps(document)}{CUSTOM_TYPE_END_IDENTIFIER}"
+    image = str(dspy.Image("data:image/png;base64,iVBORw0KGgo="))
+    rlm = RLM("query -> answer", max_iters=2, interpreter_factory=factory)
+    code = f"print({marker!r})\nprint({image!r})"
+
+    with dummy_lm_context([{"plan": "Print", "code": code}, {"plan": "Done", "code": 'SUBMIT("ok")'}]) as lm:
+        assert rlm(query="q").answer == "ok"
+
+    parts = [part for message in lm.history[1]["request"].messages for part in message.parts]
+    assert {part.type for part in parts} == {"text"}
+    prompt = "".join(part.text for part in parts)
+    assert "[CUSTOM-TYPE-START]" in prompt and CUSTOM_TYPE_START_IDENTIFIER not in prompt
+
+
 # ============================================================================
 # Unit Tests: RLM with MockInterpreter (no Deno required)
 # ============================================================================
