@@ -1,4 +1,5 @@
 import asyncio
+from collections import defaultdict
 from typing import Any
 
 import pytest
@@ -442,6 +443,12 @@ def test_tool_call_reads_json_arguments_as_json_and_validates_instances():
     window.span = (9, 1)
     with pytest.raises(ValueError, match="start after end"):
         tool(windows=[window])
+
+    # A Python container that only looks like JSON, such as a defaultdict, keeps its own behavior.
+    def missing(counts: defaultdict[str, int]) -> int:
+        return counts["present"] + counts["absent"]
+
+    assert Tool(missing)(counts=defaultdict(lambda: 7, present=3)) == 10
 
 
 def test_tool_call_kwarg():

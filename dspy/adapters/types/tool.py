@@ -61,10 +61,11 @@ def _json_schema_instance(value: Any) -> Any:
 
 
 def _is_json(value: Any) -> bool:
-    """Whether ``value`` is plain JSON data: dicts with string keys, lists, strings, numbers, booleans and None."""
-    if isinstance(value, dict):
+    """Whether ``value`` is plain JSON data: dicts with string keys, lists, strings, numbers, booleans and None. Not
+    their subclasses, like a defaultdict, which JSON can't carry."""
+    if type(value) is dict:
         return all(type(key) is str and _is_json(item) for key, item in value.items())
-    if isinstance(value, list):
+    if type(value) is list:
         return all(_is_json(item) for item in value)
     return value is None or type(value) in (str, int, float, bool)
 
@@ -206,7 +207,7 @@ class Tool(Type):
                 # Create a pydantic model wrapper with a dummy field `value` to parse the arg to the correct type.
                 # This is specifically useful for handling nested Pydantic models like `list[list[MyPydanticModel]]`
                 pydantic_wrapper = create_model("Wrapper", value=(self.arg_types[k], ...))
-                if isinstance(v, (dict, list)) and _is_json(v):
+                if type(v) in (dict, list) and _is_json(v):
                     # JSON data, as an LM or a sandbox sends: read as JSON, where a strict model's tuple is a list.
                     parsed = pydantic_wrapper.model_validate_json(json.dumps({"value": v}))
                 else:
