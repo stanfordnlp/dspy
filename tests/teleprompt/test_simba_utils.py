@@ -1,5 +1,11 @@
+import decimal
+import fractions
+import logging
+
+import pytest
+
 import dspy
-from dspy.teleprompt.simba_utils import prepare_models_for_resampling
+from dspy.teleprompt.simba_utils import prepare_models_for_resampling, wrap_program
 from dspy.utils.dummies import DummyLM
 
 
@@ -36,3 +42,35 @@ def test_prepare_models_no_teacher_returns_n_copies_at_temperature_1():
     models = prepare_models_for_resampling(_program(student), 2, None)
     assert len(models) == 2 and all(m is not student for m in models)
     assert all(m.kwargs["temperature"] == 1.0 for m in models)
+
+
+def _run(metric_output):
+    dspy.configure(lm=DummyLM([{"answer": "x"}] * 2))
+    ex = dspy.Example(question="q", answer="x").with_inputs("question")
+    return wrap_program(dspy.Predict("question -> answer"), lambda e, p: metric_output)(ex)
+
+
+@pytest.mark.parametrize("value,expected", [(True, 1.0), (False, 0.0), (0.25, 0.25), (3, 3.0),
+    (decimal.Decimal("0.5"), 0.5), (fractions.Fraction(1, 4), 0.25)])
+def test_wrap_program_numeric_scores(value, expected):
+    out = _run(value)
+    assert out["score"] == expected and type(out["score"]) is float
+
+
+@pytest.mark.parametrize("name,expected", [("bool_", 1.0), ("int64", 7.0), ("float32", 0.5)])
+def test_wrap_program_numpy_scalar_scores(name, expected):
+    np = pytest.importorskip("numpy")
+    value = {"bool_": np.bool_(True), "int64": np.int64(7), "float32": np.float32(0.5)}[name]
+    assert _run(value)["score"] == expected
+
+
+@pytest.mark.parametrize("value", ["0.8", None, [1.0], {"score": 1}])
+def test_wrap_program_unsupported_scores_warn_and_score_zero(value, caplog):
+    with caplog.at_level(logging.WARNING, logger="dspy.teleprompt.simba_utils"):
+        assert _run(value)["score"] == 0.0
+    assert caplog.records  # a warning naming the type was logged
+
+
+def test_wrap_program_prediction_score_unchanged():
+    out = _run(dspy.Prediction(score=0.75, feedback="ok"))
+    assert out["score"] == 0.75 and out["output_metadata"] == {"feedback": "ok"}

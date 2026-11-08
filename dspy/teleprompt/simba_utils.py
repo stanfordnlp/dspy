@@ -46,9 +46,8 @@ def wrap_program(program: dspy.Module, metric: Callable):
 
         try:
             output = metric(example, prediction)
-            if isinstance(output, (int, float)):
-                score = output
-            elif isinstance(output, dspy.Prediction):
+            # Check dspy.Prediction first: it defines __float__, but its score lives in the `score` field.
+            if isinstance(output, dspy.Prediction):
                 if not hasattr(output, "score"):
                     raise ValueError("When `metric` returns a `dspy.Prediction`, it must contain a `score` field.")
                 score = output.score
@@ -56,6 +55,14 @@ def wrap_program(program: dspy.Module, metric: Callable):
                 output_metadata = {
                     k: v for k, v in output.items() if k != "score"
                 }
+            elif not isinstance(output, (str, bytes)) and hasattr(type(output), "__float__"):
+                # Any real-valued number (bool, int, float, Decimal, Fraction, numpy scalars) becomes a builtin float.
+                score = float(output)
+            else:
+                raise TypeError(
+                    f"metric returned unsupported type {type(output).__name__}; "
+                    "expected a number or dspy.Prediction(score=...)"
+                )
         except Exception as e:
             logger.warning(e)
 
