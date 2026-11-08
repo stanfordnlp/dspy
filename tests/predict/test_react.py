@@ -708,3 +708,14 @@ def test_react_rejects_duplicate_tool_names():
 
     react = dspy.ReAct("question -> answer", tools=[Orders().search, dspy.Tool(Customers().search, name="search_customers")])
     assert list(react.tools) == ["search", "search_customers", "submit"]
+
+
+def test_react_allows_the_same_tool_twice():
+    def search(query: str) -> str:
+        return "results"
+
+    tool = dspy.Tool(search)
+    for tools in ([search, search], [tool, tool], [search, tool]):
+        react = dspy.ReAct("question -> answer", tools=tools)
+        assert list(react.tools) == ["search", "submit"]
+        assert react.tools["search"].func is search
