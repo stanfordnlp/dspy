@@ -4212,5 +4212,46 @@ def test_history_json_preserves_live_custom_values():
     assert restored.model_dump_json() == saved
 
 
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
+@pytest.mark.parametrize("serialized", [False, True])
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_image_extraction_history_remains_a_text_preview(adapter_type, serialized, asynchronous):
+    """Image-valued extraction fallback must not dump pixels into root replay."""
+    import asyncio
+
+    pytest.importorskip("PIL")  # to make the test image on the host
+    from PIL import Image as PILImage
+
+    buffer = io.BytesIO()
+    PILImage.new("RGB", (8, 12), (12, 63, 247)).save(buffer, "PNG")
+    photo = dspy.Image(buffer.getvalue())
+    adapter = adapter_type()
+    program = dspy.RLM("photo: dspy.Image -> answer: str, crop: dspy.Image", max_iters=1,
+                       interpreter_factory=dspy.LocalInterpreter)
+
+    def call(**kwargs):
+        return asyncio.run(program.acall(**kwargs)) if asynchronous else program(**kwargs)
+
+    lm = DummyLM([{"plan": "Inspect", "code": "print('No submission this time')"},
+                  {"answer": "extracted", "crop": {"url": photo.url}}], adapter=adapter)
+    with dspy.context(lm=lm, adapter=adapter):
+        first = call(photo=photo)
+    assert first.final_reasoning == "Extract forced final output"
+    assert first.answer == "extracted" and isinstance(first.crop, dspy.Image)
+    snapshot = first.history.model_dump_json()
+    history = dspy.History.model_validate_json(snapshot) if serialized else first.history
+    followup = DummyLM([{"plan": "Continue", "code": "SUBMIT('continued', photo)"}], adapter=adapter)
+    with dspy.context(lm=followup, adapter=adapter):
+        second = call(photo=photo, history=history)
+    assert second.answer == "continued" and second.crop.url == photo.url
+    assert first.history.model_dump_json() == snapshot
+    assert history.model_dump_json() == snapshot
+    request = followup.history[0]["request"]
+    assert all(part.type == "text" for message in request.messages for part in message.parts)
+    text = "\n".join(part.text for message in request.messages for part in message.parts)
+    assert "extracted" in text and "crop" in text
+    assert photo.url.split(",", 1)[1] not in text, "Fallback replay leaked full image base64 into root text"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
