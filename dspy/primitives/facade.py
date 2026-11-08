@@ -820,31 +820,44 @@ class HostValues(Wire):
 
 def _plain_data(value: Any) -> Any:
     """``value`` as plain data, as its type writes it for a round trip, except that a ``SandboxSerializable`` it holds
-    stays itself, to cross in its own form: its str, the dump's otherwise, can't rebuild it."""
+    stays itself, to cross in its own form: its str, the dump's otherwise, can't rebuild it. If a serializer of the
+    user's reads what one writes (a wrap serializer of its field, say), the value is its dump as before, with the str."""
     token, kept = secrets.token_hex(8), []
 
     def keep(item: Any) -> dict[str, int]:
         kept.append(item)
         return {token: len(kept) - 1}
 
-    data = pydantic_core.to_jsonable_python(
-        value,
-        by_alias=False,
-        round_trip=True,
-        context={KEEP_IN_DUMP: keep},  # in a model's fields
-        fallback=lambda item: keep(item) if isinstance(item, SandboxSerializable) else str(item),  # in other values
-    )
+    try:
+        data = pydantic_core.to_jsonable_python(
+            value,
+            by_alias=False,
+            round_trip=True,
+            context={KEEP_IN_DUMP: keep},  # in a model's fields
+            fallback=lambda item: keep(item) if isinstance(item, SandboxSerializable) else str(item),  # in other values
+        )
+    except pydantic_core.PydanticSerializationError:
+        return _jsonable(value)  # a serializer that read the placeholder, or one that fails anyway, as before
+    if not kept:
+        return data
+    read = False
 
     def restore(node: Any) -> Any:
+        nonlocal read
         if isinstance(node, list):
             return [restore(item) for item in node]
+        if isinstance(node, str):
+            read = read or token in node
+            return node
         if not isinstance(node, dict):
             return node
         if len(node) == 1 and token in node:
             return kept[node[token]]
+        read = read or any(token in key for key in node)
         return {key: restore(item) for key, item in node.items()}
 
-    return restore(data) if kept else data
+    restored = restore(data)
+    return _jsonable(value) if read else restored
 
 
 def _type_binding(t: Any) -> dict[str, Any]:

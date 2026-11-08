@@ -2743,6 +2743,16 @@ def _pack() -> _NumbersBox:
     return _NumbersBox(nums=_Numbers([4, 5]), scale=2)
 
 
+class _ShoutedNumbersBox(pydantic.BaseModel):
+    """A user's model whose wrap serializer reads what its sandbox value writes."""
+
+    nums: _Numbers
+
+    @pydantic.field_serializer("nums", mode="wrap")
+    def _shout(self, value: _Numbers, handler: Any) -> str:
+        return handler(value).upper()
+
+
 _INTERPRETERS = [LocalInterpreter, pytest.param(PythonInterpreter, marks=pytest.mark.deno)]
 
 
@@ -2954,6 +2964,13 @@ class TestSandboxValues:
         # The field serializer and exclude=True apply, by field name; the numbers are rebuilt, not their str.
         expected = [(["nums", "scale"], 3, 107), (["nums", "scale"], 9, 102)]
         assert rlm(box=_NumbersBox(nums=_Numbers([1, 2]), scale=7)).answer == repr(expected)
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_a_users_serializer_that_reads_a_sandbox_value_gets_its_str(self, factory):
+        rlm = RLM("box -> answer", max_iters=1, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "r", "code": "SUBMIT(box['nums'])"}])
+        nums = _Numbers([1, 2])
+        assert rlm(box=_ShoutedNumbersBox(nums=nums)).answer == str(nums).upper()
 
     def test_an_interpreter_in_the_host_memory_gets_tool_results_as_themselves(self):
         shot = dspy.Image("https://example.com/x.png")
