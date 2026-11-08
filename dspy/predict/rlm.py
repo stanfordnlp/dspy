@@ -1160,7 +1160,7 @@ class RLM(Module):
                 )
                 self._append_history_with_event(history, history_event)
 
-                if final_outputs:
+                if final_outputs is not None:
                     history.messages[-1].update(final_outputs)  # Add output fields to last history event
                     return Prediction(
                         **final_outputs,
@@ -1313,7 +1313,7 @@ class RLM(Module):
                 )
                 self._append_history_with_event(history, history_event)
 
-                if final_outputs:
+                if final_outputs is not None:
                     history.messages[-1].update(final_outputs)  # Add output fields to last history event
                     return Prediction(
                         **final_outputs,

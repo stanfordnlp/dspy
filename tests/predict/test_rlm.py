@@ -2700,6 +2700,54 @@ _INTERPRETERS = [LocalInterpreter, pytest.param(PythonInterpreter, marks=pytest.
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("factory", _INTERPRETERS)
+@pytest.mark.parametrize("async_call", [False, True])
+async def test_empty_submission_finishes_without_repeating_tools(factory, async_call):
+    received = []
+
+    def record(value: str) -> str:
+        received.append(value)
+        return value
+
+    program = RLM("query ->", tools=[record], max_iters=2, interpreter_factory=factory)
+    action = {"plan": "Record once and finish", "code": "record('once'); SUBMIT()"}
+    with dummy_lm_context([action, action, {}]):
+        result = await program.acall(query="Record once") if async_call else program(query="Record once")
+
+    assert received == ["once"]
+    assert len(result.history.messages) == len(result.trajectory) == 1
+    assert result.trajectory[0]["output"] == "FINAL: {}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("factory", _INTERPRETERS)
+@pytest.mark.parametrize("async_call", [False, True])
+async def test_custom_input_history_json_round_trip_continues(factory, async_call):
+    nums = _Numbers([2, 9])
+    nested = {"items": [nums], "keep": 7}
+    program = RLM("nums, nested -> total: int", max_iters=1, interpreter_factory=factory)
+    action = {"plan": "Sum both inputs", "code": "SUBMIT(sum(nums) + sum(nested['items'][0]) + nested['keep'])"}
+    with dummy_lm_context([action, action]):
+        first = await program.acall(nums=nums, nested=nested) if async_call else program(nums=nums, nested=nested)
+        saved = first.history.model_dump_json()
+        restored = dspy.History.model_validate_json(saved)
+        second = (
+            await program.acall(nums=nums, nested=nested, history=restored)
+            if async_call
+            else program(nums=nums, nested=nested, history=restored)
+        )
+
+    assert first.total == second.total == 29
+    assert first.history.messages[0]["nums"] is nums
+    assert first.history.messages[0]["nested"] is nested
+    assert restored.messages[0]["nums"] == str(nums)
+    assert restored.messages[0]["nested"] == {"items": [str(nums)], "keep": 7}
+    assert restored.model_dump_json() == saved
+    assert len(second.history.messages) == 2
+    assert second.history.model_dump_json()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("factory", _INTERPRETERS)
 @pytest.mark.parametrize("async_tool", [False, True])
 @pytest.mark.parametrize("async_call", [False, True])
 @pytest.mark.parametrize("prefix", ["", "import dspy\n"], ids=["plain", "after-import-dspy"])

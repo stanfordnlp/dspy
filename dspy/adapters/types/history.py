@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import pydantic
+from pydantic_core import PydanticSerializationError
 
 if TYPE_CHECKING:
     from dspy.adapters.base import Adapter
@@ -74,6 +75,16 @@ class History(pydantic.BaseModel):
         validate_assignment=True,
         extra="forbid",
     )
+
+    @pydantic.field_serializer("messages", mode="wrap", when_used="json")
+    def _serialize_messages(self, messages: list[dict[str, Any]], handler: pydantic.SerializerFunctionWrapHandler):
+        """Keep normal serialization; unsupported values use the adapter's text fallback, without mutating History."""
+        from dspy.adapters.utils import serialize_for_json
+
+        try:
+            return handler(messages)
+        except PydanticSerializationError:
+            return handler(serialize_for_json(messages))
 
     def _remap_fields(self, names: dict[str, str]) -> History:
         """Copy recorded field names to match the adapter's adapted signature, without mutating the caller."""

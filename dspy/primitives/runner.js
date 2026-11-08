@@ -68,8 +68,8 @@ def ${toolName}(${signature}):
 // Generate SUBMIT function with output field signature.
 // Outputs is an array of {name, type?} objects.
 const makeSubmitWrapper = (outputs) => {
-  if (!outputs || outputs.length === 0) {
-    // Fallback to single-arg SUBMIT if no outputs defined
+  if (!outputs) {
+    // Omitted output fields use single-arg SUBMIT; an explicit [] defines SUBMIT().
     return `
 def SUBMIT(output):
     raise _DSPyFinalOutput({"output": output})
