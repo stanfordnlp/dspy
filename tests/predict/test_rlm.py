@@ -14,6 +14,7 @@ from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from typing import Any
 
+import pydantic
 import pytest
 
 import dspy
@@ -2725,6 +2726,23 @@ def _more_numbers_untyped():
     return _Numbers([4, 5])
 
 
+class _NumbersBox(pydantic.BaseModel):
+    """A user's model holding a sandbox value, with its own serialization."""
+
+    nums: _Numbers
+    scale: int = pydantic.Field(serialization_alias="scaleAlias")
+    secret: str = pydantic.Field(default="hidden", exclude=True)
+
+    @pydantic.field_serializer("scale")
+    def _scale(self, value: int) -> int:
+        return value + 100
+
+
+def _pack() -> _NumbersBox:
+    """Pack some numbers."""
+    return _NumbersBox(nums=_Numbers([4, 5]), scale=2)
+
+
 _INTERPRETERS = [LocalInterpreter, pytest.param(PythonInterpreter, marks=pytest.mark.deno)]
 
 
@@ -2917,12 +2935,25 @@ class TestSandboxValues:
             "from __future__ import annotations\n"
             "def snap() -> 'dspy.Image':\n"
             '    """Take a snapshot."""\n'
-            "    return shot\n",
+            "    return shot\n"
+            "class Camera:\n"  # a callable object, whose __call__ declares the return type
+            "    async def __call__(self) -> 'dspy.Image':\n"
+            "        return shot\n",
             namespace,
         )
-        rlm = RLM("q -> answer", tools=[namespace["snap"]], max_iters=1, interpreter_factory=factory)
-        rlm.generate_action = make_mock_predictor([{"reasoning": "Use it", "code": "SUBMIT(type(snap()).__name__)"}])
-        assert rlm(q="x").answer == "Image"
+        for tool in (namespace["snap"], Tool(namespace["Camera"](), name="snap")):  # each the only tool
+            rlm = RLM("q -> answer", tools=[tool], max_iters=1, interpreter_factory=factory)
+            rlm.generate_action = make_mock_predictor([{"reasoning": "Use it", "code": "SUBMIT(type(snap()).__name__)"}])
+            assert rlm(q="x").answer == "Image"
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_a_users_model_crosses_as_its_own_dump_with_the_sandbox_values_it_holds(self, factory):
+        rlm = RLM("box -> answer", tools=[_pack], max_iters=1, interpreter_factory=factory)
+        code = "SUBMIT(repr([(sorted(b), sum(b['nums']), b['scale']) for b in (box, _pack())]))"
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Use them", "code": code}])
+        # The field serializer and exclude=True apply, by field name; the numbers are rebuilt, not their str.
+        expected = [(["nums", "scale"], 3, 107), (["nums", "scale"], 9, 102)]
+        assert rlm(box=_NumbersBox(nums=_Numbers([1, 2]), scale=7)).answer == repr(expected)
 
     def test_an_interpreter_in_the_host_memory_gets_tool_results_as_themselves(self):
         shot = dspy.Image("https://example.com/x.png")

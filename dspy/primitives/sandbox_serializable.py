@@ -99,12 +99,22 @@ class SandboxSerializable(ABC):
         """Pass-through schema so subclasses work as ``dspy.Signature`` annotations."""
         return core_schema.no_info_plain_validator_function(
             lambda v: v,
-            serialization=core_schema.plain_serializer_function_ser_schema(lambda v: str(v)),
+            serialization=core_schema.plain_serializer_function_ser_schema(_serialize, info_arg=True),
         )
 
     def to_repl_variable(self, name: str, field_info: FieldInfo | None = None) -> REPLVariable:
         """Build a REPLVariable using the default RLM helper."""
         return build_repl_variable(self, name, field_info=field_info)
+
+
+# The serialization context key under which a sandbox session's wire, dumping a value that holds a
+# ``SandboxSerializable``, passes a function that keeps the value itself, to cross in its own form (``facade.HostValues``).
+KEEP_IN_DUMP = "dspy.sandbox_serializable.keep"
+
+
+def _serialize(value: SandboxSerializable, info: Any) -> Any:
+    keep = info.context.get(KEEP_IN_DUMP) if isinstance(info.context, dict) else None
+    return keep(value) if keep is not None else str(value)
 
 
 def build_repl_variable(

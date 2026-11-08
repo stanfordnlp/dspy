@@ -43,6 +43,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
 import pydantic
+import pydantic_core
 from pydantic.json_schema import GenerateJsonSchema
 
 import dspy
@@ -74,6 +75,7 @@ from dspy.primitives.sandbox_guest import (
     decode_prompt,
     encode_options,
 )
+from dspy.primitives.sandbox_serializable import KEEP_IN_DUMP, SandboxSerializable
 from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import make_signature
 from dspy.utils.exceptions import LMError, LMNotConfiguredError
@@ -778,7 +780,7 @@ class HostValues(Wire):
 
     def encode_object(self, value: Any, fields: dict[str, Any]) -> Any:
         if _import_path(type(value)) is None:  # the user's: plain data, as its type writes it for a round trip
-            return self.encode(_jsonable(value))
+            return self.encode(_plain_data(value))
         return {**super().encode_object(value, fields), "ref": self._keep(value)}
 
     def find_class(self, node: dict[str, Any]) -> Any:
@@ -814,6 +816,35 @@ class HostValues(Wire):
             ref = self._refs[id(value)] = len(self._objects)
             self._objects.append(value)  # kept for the session, so its id stays its own
         return ref
+
+
+def _plain_data(value: Any) -> Any:
+    """``value`` as plain data, as its type writes it for a round trip, except that a ``SandboxSerializable`` it holds
+    stays itself, to cross in its own form: its str, the dump's otherwise, can't rebuild it."""
+    token, kept = secrets.token_hex(8), []
+
+    def keep(item: Any) -> dict[str, int]:
+        kept.append(item)
+        return {token: len(kept) - 1}
+
+    data = pydantic_core.to_jsonable_python(
+        value,
+        by_alias=False,
+        round_trip=True,
+        context={KEEP_IN_DUMP: keep},  # in a model's fields
+        fallback=lambda item: keep(item) if isinstance(item, SandboxSerializable) else str(item),  # in other values
+    )
+
+    def restore(node: Any) -> Any:
+        if isinstance(node, list):
+            return [restore(item) for item in node]
+        if not isinstance(node, dict):
+            return node
+        if len(node) == 1 and token in node:
+            return kept[node[token]]
+        return {key: restore(item) for key, item in node.items()}
+
+    return restore(data) if kept else data
 
 
 def _type_binding(t: Any) -> dict[str, Any]:

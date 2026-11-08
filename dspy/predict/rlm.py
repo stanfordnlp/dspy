@@ -151,10 +151,12 @@ def _wire_variable(name: str, value: Any, field_info: Any = None) -> REPLVariabl
 def _tool_returns(tool: Any) -> Any:
     """The return type a provided tool's function declares, or ``Any``."""
     func = getattr(tool, "func", tool)
+    # A callable object's return type is its __call__'s, as Tool reads its arguments.
+    hinted = func if inspect.isfunction(func) or inspect.ismethod(func) else func.__call__
     try:  # resolves quoted and postponed annotations fully, as Tool does for arguments
-        return typing.get_type_hints(func)["return"]
+        return typing.get_type_hints(hinted)["return"]
     except Exception:
-        pass  # a callable object, say, whose return type its __call__ declares
+        pass
     try:
         annotation = inspect.signature(func, eval_str=True).return_annotation
     except Exception:
