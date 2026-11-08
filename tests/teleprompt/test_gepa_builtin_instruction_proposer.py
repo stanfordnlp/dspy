@@ -472,6 +472,9 @@ def test_proposer_truncates_rlm_history_observations_without_mutating_history(se
     assert "a" * 250 in user and "a" * 251 not in user
     assert "b" * 250 in user and "b" * 251 not in user
     assert "c" * 50 in user and "c" * 51 not in user
+    assert "2,500 characters omitted" in user
+    assert "300 characters omitted" in user
+    assert "36 characters omitted" not in user
     assert "Keep my plan" in user and "print(data)" in user
     assert history.model_dump_json() == original
 

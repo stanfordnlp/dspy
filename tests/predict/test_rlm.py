@@ -856,12 +856,18 @@ class TestREPLTypes:
 
     def test_repl_entry_format(self):
         """Test REPLEntry formatting."""
-        entry = REPLEntry(reasoning="test reason", code="print(1)", output="1", max_output_chars=100)
+        entry = REPLEntry(reasoning="test reason", code="print(1)", output="1")
         formatted = entry.format(index=0)
         assert "Step 1" in formatted
         assert "test reason" in formatted
         assert "print(1)" in formatted
         assert "1" in formatted
+
+        long_entry = REPLEntry(code="print(data)", output="a" * 6_000 + "b" * 6_000)
+        rendered = long_entry.format(index=0)
+        assert "a" * 5_000 in rendered and "a" * 5_001 not in rendered
+        assert "b" * 5_000 in rendered and "b" * 5_001 not in rendered
+        assert "2,000 characters omitted" in rendered
 
     def test_repl_entry_format_truncation(self):
         """Test REPLEntry.format() truncates with head+tail and shows true length."""

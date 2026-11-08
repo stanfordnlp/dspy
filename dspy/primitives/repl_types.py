@@ -124,7 +124,7 @@ class REPLEntry(pydantic.BaseModel):
     code: str
     output: str
 
-    max_output_chars: int
+    max_output_chars: int = 10_000
 
     model_config = pydantic.ConfigDict(frozen=True)
 
