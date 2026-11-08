@@ -820,16 +820,17 @@ class HostValues(Wire):
 
 def _plain_data(value: Any) -> Any:
     """``value`` as plain data, as its type writes it for a round trip, except that a ``SandboxSerializable`` it holds
-    stays itself, to cross in its own form: its str, the dump's otherwise, can't rebuild it. If a serializer of the
-    user's reads what one writes (a wrap serializer of its field, say), the value is its dump as before, with the str."""
-    token, kept = secrets.token_hex(8), []
+    stays itself where the dump has its str, to cross in its own form: its str can't rebuild it. Where a serializer of
+    the user's reads what one writes (a wrap serializer of its field, say), the dump is as before, from the str."""
+    kept: dict[str, Any] = {}
 
-    def keep(item: Any) -> dict[str, int]:
-        kept.append(item)
-        return {token: len(kept) - 1}
+    def keep(item: Any) -> str:  # a placeholder no serializer can turn into another
+        placeholder = secrets.token_hex(16)
+        kept[placeholder] = item
+        return placeholder
 
     try:
-        data = pydantic_core.to_jsonable_python(
+        marked = pydantic_core.to_jsonable_python(
             value,
             by_alias=False,
             round_trip=True,
@@ -837,27 +838,22 @@ def _plain_data(value: Any) -> Any:
             fallback=lambda item: keep(item) if isinstance(item, SandboxSerializable) else str(item),  # in other values
         )
     except pydantic_core.PydanticSerializationError:
-        return _jsonable(value)  # a serializer that read the placeholder, or one that fails anyway, as before
-    if not kept:
-        return data
-    read = False
+        marked = None  # a serializer that fails on a placeholder, or fails anyway
+    if marked is not None and not kept:
+        return marked  # holds no SandboxSerializable: the dump as before
+    plain = _jsonable(value)
 
-    def restore(node: Any) -> Any:
-        nonlocal read
-        if isinstance(node, list):
-            return [restore(item) for item in node]
-        if isinstance(node, str):
-            read = read or token in node
-            return node
-        if not isinstance(node, dict):
-            return node
-        if len(node) == 1 and token in node:
-            return kept[node[token]]
-        read = read or any(token in key for key in node)
-        return {key: restore(item) for key, item in node.items()}
+    def merge(marked: Any, plain: Any) -> Any:
+        # A placeholder no serializer changed, where the dump as before has the value's str, is the value.
+        if isinstance(marked, str) and marked in kept and plain == str(kept[marked]):
+            return kept[marked]
+        if isinstance(marked, list) and isinstance(plain, list) and len(marked) == len(plain):
+            return [merge(m, p) for m, p in zip(marked, plain, strict=True)]
+        if isinstance(marked, dict) and isinstance(plain, dict) and marked.keys() == plain.keys():
+            return {key: merge(marked[key], plain[key]) for key in plain}
+        return plain
 
-    restored = restore(data)
-    return _jsonable(value) if read else restored
+    return plain if marked is None else merge(marked, plain)
 
 
 def _type_binding(t: Any) -> dict[str, Any]:
