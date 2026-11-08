@@ -2,7 +2,17 @@ import asyncio
 from typing import Any
 
 import pytest
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, Json, RootModel, TypeAdapter, field_serializer
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    Json,
+    RootModel,
+    TypeAdapter,
+    field_serializer,
+    model_validator,
+)
 
 import dspy
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls, convert_input_schema_to_tool_args
@@ -406,6 +416,32 @@ def test_tool_call_parses_nested_list_of_pydantic_model():
 
     result = tool(**args)
     assert result == [[DummyModel(field1="hello", field2=123)]]
+
+
+def test_tool_call_reads_json_arguments_as_json_and_validates_instances():
+    class Window(BaseModel):
+        model_config = ConfigDict(strict=True)
+        span: tuple[int, int]
+        runs: int = 0
+
+        @model_validator(mode="after")
+        def _ordered(self):
+            if self.span[0] > self.span[1]:
+                raise ValueError("start after end")
+            self.runs += 1
+            return self
+
+    def widths(windows: list[Window], spare: Window | None = None) -> list[tuple[int, int]]:
+        return [(w.span[1] - w.span[0], w.runs) for w in windows + ([spare] if spare else [])]
+
+    tool = Tool(widths)
+    # JSON data, as an LM or a sandbox sends: a strict tuple comes as a list, and each model is validated once.
+    assert tool(windows=[{"span": [2, 9]}], spare={"span": [1, 4]}) == [(7, 1), (3, 1)]
+    # A model instance is validated as given, so a change that breaks its validator is still caught.
+    window = Window(span=(2, 9))
+    window.span = (9, 1)
+    with pytest.raises(ValueError, match="start after end"):
+        tool(windows=[window])
 
 
 def test_tool_call_kwarg():

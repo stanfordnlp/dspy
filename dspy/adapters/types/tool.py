@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import json
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
 
@@ -57,6 +58,15 @@ def _json_schema_instance(value: Any) -> Any:
     if isinstance(value, (list, tuple, set, frozenset)):
         return [_json_schema_instance(v) for v in value]
     return value
+
+
+def _is_json(value: Any) -> bool:
+    """Whether ``value`` is plain JSON data: dicts with string keys, lists, strings, numbers, booleans and None."""
+    if isinstance(value, dict):
+        return all(type(key) is str and _is_json(item) for key, item in value.items())
+    if isinstance(value, list):
+        return all(_is_json(item) for item in value)
+    return value is None or type(value) in (str, int, float, bool)
 
 
 def _holds_model(value: Any) -> bool:
@@ -192,15 +202,15 @@ class Tool(Type):
         # Parse the args to the correct type.
         parsed_kwargs = {}
         for k, v in kwargs.items():
-            declared = self.arg_types.get(k)
-            if isinstance(declared, type) and issubclass(declared, BaseModel) and isinstance(v, declared):
-                # Already the declared model, validated when it was built: pydantic would rerun its model validators.
-                parsed_kwargs[k] = v
-            elif k in self.arg_types and self.arg_types[k] != Any:
+            if k in self.arg_types and self.arg_types[k] != Any:
                 # Create a pydantic model wrapper with a dummy field `value` to parse the arg to the correct type.
                 # This is specifically useful for handling nested Pydantic models like `list[list[MyPydanticModel]]`
                 pydantic_wrapper = create_model("Wrapper", value=(self.arg_types[k], ...))
-                parsed = pydantic_wrapper.model_validate({"value": v})
+                if isinstance(v, (dict, list)) and _is_json(v):
+                    # JSON data, as an LM or a sandbox sends: read as JSON, where a strict model's tuple is a list.
+                    parsed = pydantic_wrapper.model_validate_json(json.dumps({"value": v}))
+                else:
+                    parsed = pydantic_wrapper.model_validate({"value": v})
                 parsed_kwargs[k] = parsed.value
             else:
                 parsed_kwargs[k] = v
