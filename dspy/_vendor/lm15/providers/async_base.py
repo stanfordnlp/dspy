@@ -214,8 +214,9 @@ class AsyncBaseProviderLM:
                     _attach_error_metadata(error, resp.headers)
                     raise error
                 try:
+                    reader = self._inner.stream_reader(request)
                     async for raw in aparse_sse(_aiter_lines(resp)):
-                        for event in self._inner.parse_stream_events(request, raw):
+                        for event in reader.feed(raw):
                             if event is not None:
                                 yield _stream_error_metadata(event, resp.headers)
                 except ProviderError as error:
