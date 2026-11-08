@@ -559,7 +559,7 @@ class PythonInterpreter:
                 })
             params["tools"] = tools_info
 
-        if self.output_fields:
+        if self.output_fields is not None:
             params["outputs"] = self.output_fields
 
         # Skip if nothing to register
