@@ -540,10 +540,15 @@ class SandboxSession:
         so a call is the same whether sandboxed code makes it through dspy or directly."""
         if tool not in self._tools:
             raise CodeInterpreterError(f"Unknown tool {tool!r}")
+        provided = self._tools[tool]
         registered = (getattr(self._interpreter, "tools", None) or {}).get(tool)
-        function = registered if callable(registered) else _entrypoint(self._tools[tool])
-        declared = (self._tools[tool] if isinstance(self._tools[tool], Tool) else Tool(self._tools[tool])).arg_types
-        kwargs = {name: _as_declared(value, declared.get(name)) for name, value in self._values.decode(arguments or {}).items()}
+        function = registered if callable(registered) else _entrypoint(provided)
+        kwargs = self._values.decode(arguments or {})
+        # A dspy.Tool (an RLM's registered tools call theirs) reads its arguments as declared itself: reading them here
+        # too would validate a model twice. Only a plain function gets them as declared from here.
+        if not isinstance(provided, Tool):
+            declared = Tool(provided).arg_types
+            kwargs = {name: _as_declared(value, declared.get(name)) for name, value in kwargs.items()}
         result = function(**kwargs)
         if asyncio.iscoroutine(result):
             from dspy.primitives.python_interpreter import _await_in_sync
