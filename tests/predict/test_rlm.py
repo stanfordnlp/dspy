@@ -2744,9 +2744,11 @@ def _pack() -> _NumbersBox:
 
 
 class _Order(pydantic.BaseModel):
-    """A user's model whose validator changes what it reads."""
+    """A user's strict model, with a tuple JSON carries as a list, whose validator changes what it reads."""
 
+    model_config = pydantic.ConfigDict(strict=True)
     qty: int
+    size: tuple[int, int]
 
     @pydantic.model_validator(mode="after")
     def _double(self) -> "_Order":
@@ -2754,9 +2756,9 @@ class _Order(pydantic.BaseModel):
         return self
 
 
-def _place(order: _Order) -> int:
+def _place(order: _Order) -> str:
     """Place an order."""
-    return order.qty
+    return f"{order.qty} {order.size}"
 
 
 class _ShoutedNumbersBox(pydantic.BaseModel):
@@ -2986,8 +2988,9 @@ class TestSandboxValues:
     def test_a_tool_validates_its_model_arguments_once(self, factory):
         # The numbers input has the REPL call tools through dspy's sandbox bridge.
         rlm = RLM("nums -> answer", tools=[_place], max_iters=1, interpreter_factory=factory)
-        rlm.generate_action = make_mock_predictor([{"reasoning": "r", "code": "SUBMIT(str(_place(order={'qty': 3})))"}])
-        assert rlm(nums=_Numbers([1])).answer == "6"
+        code = "SUBMIT(_place(order={'qty': 3, 'size': [1, 2]}))"
+        rlm.generate_action = make_mock_predictor([{"reasoning": "r", "code": code}])
+        assert rlm(nums=_Numbers([1])).answer == "6 (1, 2)"
 
     @pytest.mark.parametrize("factory", _INTERPRETERS)
     def test_a_users_serializer_that_reads_a_sandbox_value_gets_its_str(self, factory):

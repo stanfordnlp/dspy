@@ -192,7 +192,11 @@ class Tool(Type):
         # Parse the args to the correct type.
         parsed_kwargs = {}
         for k, v in kwargs.items():
-            if k in self.arg_types and self.arg_types[k] != Any:
+            declared = self.arg_types.get(k)
+            if isinstance(declared, type) and issubclass(declared, BaseModel) and isinstance(v, declared):
+                # Already the declared model, validated when it was built: pydantic would rerun its model validators.
+                parsed_kwargs[k] = v
+            elif k in self.arg_types and self.arg_types[k] != Any:
                 # Create a pydantic model wrapper with a dummy field `value` to parse the arg to the correct type.
                 # This is specifically useful for handling nested Pydantic models like `list[list[MyPydanticModel]]`
                 pydantic_wrapper = create_model("Wrapper", value=(self.arg_types[k], ...))

@@ -543,12 +543,16 @@ class SandboxSession:
         provided = self._tools[tool]
         registered = (getattr(self._interpreter, "tools", None) or {}).get(tool)
         function = registered if callable(registered) else _entrypoint(provided)
+        # Arguments come as JSON-shaped data, so read them as declared from JSON (a strict model's tuple comes as a list).
+        # A dspy.Tool (an RLM's registered tools call theirs) validates the rest itself, and takes a model argument
+        # read here as is; validating anything twice would rerun its validators.
+        through_tool = isinstance(provided, Tool)
+        declared = (provided if through_tool else Tool(provided)).arg_types
         kwargs = self._values.decode(arguments or {})
-        # A dspy.Tool (an RLM's registered tools call theirs) reads its arguments as declared itself: reading them here
-        # too would validate a model twice. Only a plain function gets them as declared from here.
-        if not isinstance(provided, Tool):
-            declared = Tool(provided).arg_types
-            kwargs = {name: _as_declared(value, declared.get(name)) for name, value in kwargs.items()}
+        for name, value in kwargs.items():
+            annotation = declared.get(name)
+            if not through_tool or (isinstance(annotation, type) and issubclass(annotation, pydantic.BaseModel)):
+                kwargs[name] = _as_declared(value, annotation)
         result = function(**kwargs)
         if asyncio.iscoroutine(result):
             from dspy.primitives.python_interpreter import _await_in_sync
