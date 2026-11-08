@@ -10,14 +10,16 @@ Reference: "Recursive Language Models" (Zhang, Kraska, Khattab, 2025)
 
 from __future__ import annotations
 
-import base64
+import ast
 import contextlib
 import contextvars
 import functools
 import inspect
+import json
 import keyword
 import logging
 import threading
+import typing
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
@@ -27,6 +29,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator
 import pydantic
 
 import dspy
+from dspy.adapters.types.base_type import Type
 from dspy.adapters.types.decision import Choice, Noul, Score
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
@@ -34,6 +37,7 @@ from dspy.primitives.code_interpreter import (
     SIMPLE_TYPES,
     CodeExecutionError,
     CodeInterpreter,
+    CodeInterpreterError,
     FinalOutput,
     _validate_interpreter,
     _validate_interpreter_factory,
@@ -53,7 +57,7 @@ from dspy.primitives.repl_types import (
     restore_repl_events,
 )
 from dspy.primitives.sandbox_bundle import SandboxBundleError
-from dspy.primitives.sandbox_guest import INTERPRETER_TOOL, LM_TOOL
+from dspy.primitives.sandbox_guest import INTERPRETER_TOOL, LM_TOOL, read_wire
 from dspy.primitives.sandbox_serializable import SandboxSerializable, build_repl_variable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
@@ -106,8 +110,92 @@ recursive subtasks.
 _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
 
 
-# The sandbox session scope of the RLM call running in this context (see ``RLM._setup_facade``).
-_repl_scope: contextvars.ContextVar[Callable[[], Any] | None] = contextvars.ContextVar("dspy_rlm_repl_scope", default=None)
+# The sandbox session of the RLM call running in this context, and the code run before each of its REPL executions
+# (see ``RLM._setup_facade``).
+_repl_session: contextvars.ContextVar[SandboxSession | None] = contextvars.ContextVar("dspy_rlm_repl_session", default=None)
+_repl_prelude: contextvars.ContextVar[str] = contextvars.ContextVar("dspy_rlm_repl_prelude", default="")
+# Once the REPL has imported dspy, binds the provided tools and SUBMIT to send and read dspy's objects in the session's
+# wire form (``sandbox_guest.bind``) before each execution, as the Flex driver does before it runs: some interpreters,
+# like LocalInterpreter, define them anew for each execution.
+# Keyed on this REPL's own install, not on dspy being loaded: a sandbox restored from a snapshot has dspy loaded before
+# any session is installed in it.
+_REBIND = (
+    'if "__dspy_guest_spec" in globals(): '
+    '__import__("sys").modules["dspy.primitives.sandbox_guest"].bind(globals())\n'
+)
+
+
+def _with_prelude(prelude: str, code: str) -> str:
+    """``code`` with ``prelude`` run first: after its ``from __future__`` imports, which must come first."""
+    if not prelude:
+        return code
+    try:
+        body = ast.parse(code).body
+    except SyntaxError:
+        return prelude + code
+    futures = [node for node in body if isinstance(node, ast.ImportFrom) and node.module == "__future__"]
+    if not futures:
+        return prelude + code
+    lines = code.splitlines(keepends=True)
+    end = futures[-1].end_lineno or 0
+    return "".join(lines[:end]) + ("" if lines[end - 1].endswith("\n") else "\n") + prelude + "".join(lines[end:])
+
+
+def _wire_variable(name: str, value: Any, field_info: Any = None) -> REPLVariable:
+    """The REPL variable for an input that crosses in the wire form, previewed by its repr: a dspy type's str is its
+    prompt rendering, whose base64 a cut preview would split."""
+    var = REPLVariable.from_value(name, repr(value), field_info=field_info)
+    return var.model_copy(update={"type_name": type(value).__name__})
+
+
+def _tool_returns(tool: Any) -> Any:
+    """The return type a provided tool's function declares, or ``Any``."""
+    func = getattr(tool, "func", tool)
+    # A callable object's return type is its __call__'s, as Tool reads its arguments.
+    hinted = func if inspect.isfunction(func) or inspect.ismethod(func) else func.__call__
+    try:  # resolves quoted and postponed annotations fully, as Tool does for arguments
+        return typing.get_type_hints(hinted)["return"]
+    except Exception:
+        pass
+    try:
+        annotation = inspect.signature(func, eval_str=True).return_annotation
+    except Exception:
+        return Any
+    return Any if annotation is inspect.Signature.empty else annotation
+
+
+# The values the interpreter's own JSON can't carry, which cross the REPL boundary in the sandbox session's wire form
+# instead (``sandbox_guest.Wire``): dspy's types, and values with their own sandbox form.
+_WIRE_TYPES = (Type, SandboxSerializable)
+
+
+def _crosses_wire(value: Any) -> bool:
+    """Whether ``value`` is, or holds in its lists, sets, dicts or model fields, a value of ``_WIRE_TYPES``."""
+    if isinstance(value, _WIRE_TYPES):
+        return True
+    if isinstance(value, pydantic.BaseModel):
+        items = [getattr(value, name) for name in type(value).model_fields] + list((value.model_extra or {}).values())
+    elif isinstance(value, dict):
+        items = value.values()
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        items = value
+    else:
+        return False
+    return any(not isinstance(item, (str, int, float)) and _crosses_wire(item) for item in items)
+
+
+def _annotation_crosses_wire(annotation: Any, _seen: frozenset = frozenset()) -> bool:
+    """Whether values of ``annotation`` may cross in the wire form: it involves a type of ``_WIRE_TYPES``, in its type
+    arguments or a plain model's fields."""
+    if typing.get_origin(annotation) is None and isinstance(annotation, type):
+        if issubclass(annotation, _WIRE_TYPES):
+            return True
+        if issubclass(annotation, pydantic.BaseModel) and annotation not in _seen:
+            return any(
+                _annotation_crosses_wire(field.annotation, _seen | {annotation})
+                for field in annotation.model_fields.values()
+            )
+    return any(_annotation_crosses_wire(arg, _seen) for arg in typing.get_args(annotation))
 
 
 class _LLMCallBudget:
@@ -594,6 +682,8 @@ class RLM(Module):
             field_info = self.signature.input_fields.get(name)
             if isinstance(value, SandboxSerializable):
                 var = build_repl_variable(value, name, field_info=field_info)
+            elif _crosses_wire(value):
+                var = _wire_variable(name, value, field_info=field_info)
             else:
                 var = REPLVariable.from_value(name, value, field_info=field_info)
             variables.append(var)
@@ -620,62 +710,55 @@ class RLM(Module):
         input_args: dict[str, Any],
         repl: CodeInterpreter,
     ) -> dict[str, Any]:
-        """Inject SandboxSerializable values into the interpreter.
+        """Inject the inputs the interpreter's JSON can't carry into the interpreter, once.
 
-        For each SandboxSerializable value in input_args, serializes it and
-        executes setup + assignment code in the interpreter. Returns the
-        remaining non-serializable args (for per-iteration use).
+        They cross in the wire form of the call's sandbox session, which the REPL's side reads back
+        (``sandbox_guest.GuestValues``), as Flex inputs and tool results do: a dspy type as itself, and a
+        SandboxSerializable rebuilt in the REPL by its own setup and assignment. An interpreter in the host's
+        memory takes them as the session's ``InMemory`` values. Returns the other args, which every execution gets.
         """
         repl.start()
+        session = _repl_session.get()
         regular_args = {}
         for name, value in input_args.items():
-            if not isinstance(value, SandboxSerializable):
+            if not _crosses_wire(value):
                 regular_args[name] = value
                 continue
-
-            payload = value.to_sandbox()
-            setup = value.sandbox_setup()
-            raw_var_name = f"_raw_{name}"
-            assignment = value.sandbox_assignment(name, raw_var_name)
-            code_lines = []
-            payload_vars: dict[str, str] = {}
-            if isinstance(payload, bytes):
-                try:
-                    payload_vars[raw_var_name] = payload.decode("utf-8")
-                except UnicodeDecodeError:
-                    encoded_var_name = f"{raw_var_name}_base64"
-                    payload_vars[encoded_var_name] = base64.b64encode(payload).decode("ascii")
-                    code_lines.extend(
-                        [
-                            "import base64",
-                            f"{raw_var_name} = base64.b64decode({encoded_var_name})",
-                        ]
-                    )
+            if session is None:
+                raise CodeInterpreterError(
+                    f"Input {name!r} ({type(value).__name__}) crosses into the REPL through dspy's sandbox bridge, which "
+                    f"{type(repl).__name__} could not load (see the warning above). Pass plain JSON values instead."
+                )
+            raw = f"_raw_{name}"
+            if session.in_host:
+                repl.execute(f"{name} = {raw}", variables={raw: session.encode(value)})
             else:
-                payload_vars[raw_var_name] = str(payload)
-
-            if setup:
-                code_lines.append(setup)
-            code_lines.append(assignment)
-            repl.execute("\n".join(code_lines), variables=payload_vars)
-
+                repl.execute(
+                    f'{name} = __dspy_values.decode(__import__("json").loads({raw}))',
+                    variables={raw: json.dumps(session.encode(value))},
+                )
         return regular_args
 
     @contextmanager
     def _setup_facade(
-        self, repl: CodeInterpreter, budget: _LLMCallBudget, interpreter_factory: Callable[[], CodeInterpreter]
+        self,
+        repl: CodeInterpreter,
+        budget: _LLMCallBudget,
+        interpreter_factory: Callable[[], CodeInterpreter],
+        typed: bool,
     ) -> Iterator[str]:
         """Bridge the real dspy into this invocation's interpreter; yield its sub-agent guidance.
 
         REPL code that imports dspy calls the host's LM: ``sub_lm`` (else ``dspy.settings.lm``) per call, like
         ``llm_query``, charged against ``max_llm_calls``. Each code-executing sub-agent it builds gets a fresh
-        interpreter from ``interpreter_factory``, shut down on exit.
+        interpreter from ``interpreter_factory``, shut down on exit. When ``typed`` (see ``_crosses_wire_types``),
+        dspy is imported right away, so values the interpreter's JSON can't carry cross in the session's wire form.
         """
         session = SandboxSession(
             self._user_tools, lm=self.sub_lm, reserve=budget.reserve, interpreter_factory=interpreter_factory
         )
         try:
-            session.install(repl, import_dspy=False)
+            session.install(repl, import_dspy=typed)
         except (CodeExecutionError, SyntaxError, SandboxBundleError) as e:
             # The runtime cannot host dspy (e.g. a restricted compiler, or no bundle offline): no sub-agents this call.
             repl.tools.pop(LM_TOOL, None)
@@ -685,37 +768,63 @@ class RLM(Module):
             return
         # An interpreter in the host's memory runs sub-agents on the host's dspy: scope its executions on the
         # metered sub-agent LM.
-        token = _repl_scope.set(session.scope)
+        token = _repl_session.set(session)
+        # Code may import dspy itself, in any execution: the prelude rebinds once it has, and does nothing before.
+        prelude = _repl_prelude.set("" if session.in_host else _REBIND)
         try:
             yield SUB_AGENT_INSTRUCTIONS
         finally:
-            _repl_scope.reset(token)
+            _repl_prelude.reset(prelude)
+            _repl_session.reset(token)
             session.close()
+
+    def _crosses_wire_types(self, input_args: dict[str, Any]) -> bool:
+        """Whether values the interpreter's JSON can't carry may cross the REPL boundary this call: in an input, or as
+        an output or tool result whose declared type involves one (``_annotation_crosses_wire``)."""
+        annotations = [field.annotation for field in self.signature.output_fields.values()]
+        annotations += [_tool_returns(tool) for tool in self._user_tools.values()]
+        return any(_crosses_wire(value) for value in input_args.values()) or any(
+            _annotation_crosses_wire(annotation) for annotation in annotations
+        )
 
     # =========================================================================
     # CodeInterpreter Lifecycle
     # =========================================================================
 
-    def _make_interpreter_tool(self, tool: Tool) -> Callable:
-        """Preserve function metadata while routing execution through Tool."""
+    def _make_interpreter_tool(self, tool: Tool, typed: bool = True) -> Callable:
+        """Preserve function metadata while routing execution through Tool.
+
+        Unless ``typed``, the REPL has no wire to read a result the interpreter's JSON can't carry: such a result
+        raises, rather than reaching the code as its string (``_crosses_wire_types`` reads tools' return types).
+        """
+
+        def checked(result: Any) -> Any:
+            if not typed and _crosses_wire(result):
+                raise TypeError(
+                    f"Tool {tool.name!r} returned {type(result).__name__}, which reaches RLM's REPL only when the "
+                    f"tool's return annotation names it, e.g. `-> {type(result).__name__}`."
+                )
+            return result
+
+        signature = inspect.signature(tool.func)
         if inspect.iscoroutinefunction(tool.func) or inspect.iscoroutinefunction(getattr(tool.func, "__call__", None)):
 
-            async def invoke(**kwargs):
-                return await tool.acall(**kwargs)
+            async def invoke(*args, **kwargs):
+                return checked(await tool.acall(**signature.bind_partial(*args).arguments, **kwargs))
         else:
 
-            def invoke(**kwargs):
-                return tool(**kwargs)
+            def invoke(*args, **kwargs):
+                return checked(tool(**signature.bind_partial(*args).arguments, **kwargs))
 
         functools.update_wrapper(invoke, tool.func)
-        invoke.__signature__ = inspect.signature(tool.func)
+        invoke.__signature__ = signature
         return invoke
 
-    def _prepare_execution_tools(self, budget: _LLMCallBudget | None = None) -> dict[str, Callable]:
+    def _prepare_execution_tools(self, budget: _LLMCallBudget | None = None, typed: bool = True) -> dict[str, Callable]:
         """Create the LLM tools on ``budget`` (fresh by default) and merge with user-provided tools."""
         budget = budget if budget is not None else _LLMCallBudget(self.max_llm_calls)
         execution_tools = self._make_llm_tools(budget)
-        execution_tools.update({name: self._make_interpreter_tool(tool) for name, tool in self._user_tools.items()})
+        execution_tools.update({name: self._make_interpreter_tool(tool, typed) for name, tool in self._user_tools.items()})
         return execution_tools
 
     def _inject_execution_context(self, interpreter: CodeInterpreter, execution_tools: dict[str, Callable]) -> None:
@@ -787,6 +896,9 @@ class RLM(Module):
     ) -> tuple[dict[str, Any] | None, str | None]:
         """Validate and parse FinalOutput. Returns (parsed_outputs, None) or (None, error)."""
         raw_output = result.output
+        session = _repl_session.get()
+        if session is not None and isinstance(raw_output, dict):  # see sandbox_guest.bind
+            raw_output = {name: read_wire(value, session.id, session) for name, value in raw_output.items()}
 
         # Validate raw_output is a dict
         if not isinstance(raw_output, dict):
@@ -888,10 +1000,10 @@ class RLM(Module):
         input_args: dict[str, Any],
     ) -> Any:
         """Execute code in the interpreter, returning the result or an error string."""
-        scope = _repl_scope.get()
+        session = _repl_session.get()
         try:
-            with scope() if scope is not None else contextlib.nullcontext():
-                return repl.execute(code, variables=dict(input_args))
+            with session.scope() if session is not None else contextlib.nullcontext():
+                return repl.execute(_with_prelude(_repl_prelude.get(), code), variables=dict(input_args))
         except (CodeExecutionError, SyntaxError) as e:
             return f"[Error] {format_error_for_lm(e)}"
 
@@ -971,17 +1083,17 @@ class RLM(Module):
 
         output_field_names = list(self.signature.output_fields.keys())
         budget = _LLMCallBudget(self.max_llm_calls)
-        execution_tools = self._prepare_execution_tools(budget)
-
         # The caller's history is input only; RLM appends iteration events to a private copy that is returned
         # as `result.history`.
         history = _coerce_history(input_args.pop("history", None)).model_copy(deep=True)
+        typed = self._crosses_wire_types(input_args)
+        execution_tools = self._prepare_execution_tools(budget, typed)
 
         variables = self._build_variables(**input_args)
 
         with (
             self._interpreter_context(execution_tools, interpreter_factory) as repl,
-            self._setup_facade(repl, budget, interpreter_factory) as sub_agent_rules,
+            self._setup_facade(repl, budget, interpreter_factory, typed) as sub_agent_rules,
         ):
             regular_args = self._prepare_serializable_vars(input_args, repl)
             turn_entries: list[REPLEntry] = []
@@ -1125,17 +1237,17 @@ class RLM(Module):
 
         output_field_names = list(self.signature.output_fields.keys())
         budget = _LLMCallBudget(self.max_llm_calls)
-        execution_tools = self._prepare_execution_tools(budget)
-
         # The caller's history is input only; RLM appends iteration events to a private copy that is returned
         # as `result.history`.
         history = _coerce_history(input_args.pop("history", None)).model_copy(deep=True)
+        typed = self._crosses_wire_types(input_args)
+        execution_tools = self._prepare_execution_tools(budget, typed)
 
         variables = self._build_variables(**input_args)
 
         with (
             self._interpreter_context(execution_tools, interpreter_factory) as repl,
-            self._setup_facade(repl, budget, interpreter_factory) as sub_agent_rules,
+            self._setup_facade(repl, budget, interpreter_factory, typed) as sub_agent_rules,
         ):
             regular_args = self._prepare_serializable_vars(input_args, repl)
             turn_entries: list[REPLEntry] = []
