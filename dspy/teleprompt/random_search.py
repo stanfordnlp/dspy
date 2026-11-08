@@ -45,8 +45,14 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         self.num_threads = num_threads
         self.stop_at_score = stop_at_score
         self.metric_threshold = metric_threshold
+        if max_bootstrapped_demos < 0:
+            raise ValueError(f"`max_bootstrapped_demos` must be non-negative, but received {max_bootstrapped_demos}.")
         self.min_num_samples = 1
         self.max_num_samples = max_bootstrapped_demos
+        # Allow `max_bootstrapped_demos=0`: candidates beyond the zero-shot and labels-only seeds then
+        # compile with zero bootstrapped demos (labeled demos on shuffled trainsets) instead of crashing
+        # on `randint(1, 0)`.
+        self.min_num_samples = min(self.min_num_samples, self.max_num_samples)
         self.max_errors = max_errors
         self.num_candidate_sets = num_candidate_programs
         self.max_labeled_demos = max_labeled_demos
