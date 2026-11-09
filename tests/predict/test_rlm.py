@@ -2782,6 +2782,46 @@ class _ShoutedNumbersBox(pydantic.BaseModel):
 _INTERPRETERS = [LocalInterpreter, pytest.param(PythonInterpreter, marks=pytest.mark.deno)]
 
 
+@pytest.mark.parametrize("factory", _INTERPRETERS)
+def test_a_session_keeps_its_interpreter_and_history_across_calls(factory):
+    closed = []
+
+    class Tracked(factory):
+        def shutdown(self):
+            closed.append(self)
+            super().shutdown()
+
+    rlm = RLM("question -> answer: int", max_iters=2, interpreter_factory=Tracked)
+    with dummy_lm_context([
+        {"plan": "load", "code": "rows = list(range(10))\nSUBMIT(len(rows))"},
+        {"plan": "reuse", "code": "SUBMIT(sum(rows))"},
+        {"plan": "fresh", "code": "SUBMIT(len(globals().get('rows', [])))"},
+    ]):
+        with rlm.session() as chat:
+            assert chat(question="load").answer == 10
+            assert chat(question="sum").answer == 45
+            assert closed == []
+        assert closed == [chat.interpreter]
+        assert [event["question"] for event in chat.history.messages] == ["load", "sum"]
+        assert rlm(question="again").answer == 0  # outside the session, a fresh interpreter
+
+
+@pytest.mark.deno
+def test_a_session_continues_in_another_interpreter_from_its_snapshot():
+    rlm = RLM("question -> answer", max_iters=2, sub_lm=DummyLM([{"a": "sub-agent"}]))
+    reuse = "import dspy\nreply = dspy.Predict('q -> a')(q='hi').a\nSUBMIT(f'{sum(rows)} {reply}')"
+    with dummy_lm_context([
+        {"plan": "load", "code": "rows = list(range(10))\nSUBMIT(str(len(rows)))"},
+        {"plan": "reuse", "code": reuse},
+    ]):
+        with rlm.session() as chat:
+            chat(question="load")
+            history, snapshot = chat.history, chat.snapshot()
+        with rlm.session(history=history, snapshot=snapshot) as chat:
+            assert chat(question="sum").answer == "45 sub-agent"  # its REPL state, and dspy wired to this host
+            assert len(chat.history.messages) == 2
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("factory", _INTERPRETERS)
 @pytest.mark.parametrize("async_tool", [False, True])

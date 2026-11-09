@@ -324,6 +324,29 @@ async def process():
 answer = asyncio.run(process())
 ```
 
+### Conversations
+
+Pass a call's `history` back as `history=` to continue the conversation: the next call sees the earlier REPL steps,
+but runs on a fresh interpreter, so the variables they made are gone. A session keeps one interpreter across its
+calls, so each call continues both the history and the REPL state the one before it left:
+
+```python
+rlm = dspy.RLM("question -> answer")
+
+with rlm.session() as chat:
+    chat(question="Compute the first 50 primes and keep them in a variable.")
+    result = chat(question="What is the sum of the ones above 100?")  # the primes are still in the REPL
+    history, state = chat.history, chat.snapshot()
+```
+
+`snapshot()` saves the interpreter's state (see [`PythonInterpreter`](../tools/PythonInterpreter.md#snapshots)).
+With the history, it continues the session later, in this process or another:
+
+```python
+with rlm.session(history=history, snapshot=state) as chat:
+    chat(question="And the sum of the ones below 50?")
+```
+
 ### Inspecting the Trajectory
 
 ```python
@@ -346,7 +369,7 @@ RLM returns a `Prediction` with:
 ## Notes
 
 !!! note "Thread Safety"
-    Constructor and call-time factories may be called concurrently and must return a fresh interpreter each time. RLM retains that interpreter throughout one invocation and shuts it down afterward. `PythonInterpreter` must stay on the thread where it was first used.
+    Constructor and call-time factories may be called concurrently and must return a fresh interpreter each time. RLM retains that interpreter throughout one invocation and shuts it down afterward; a session's interpreter lives until the session closes. `PythonInterpreter` must stay on the thread where it was first used.
 
 !!! note "Interpreter Requirements"
     RLM defaults to `PythonInterpreter`, which requires [Deno](https://deno.land/) to be installed for the Pyodide WASM sandbox.
@@ -365,6 +388,7 @@ RLM returns a `Prediction` with:
             - __call__
             - forward
             - aforward
+            - session
             - tools
             - batch
             - deepcopy

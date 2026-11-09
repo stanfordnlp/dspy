@@ -117,6 +117,10 @@ _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
 # (see ``RLM._setup_facade``).
 _repl_session: contextvars.ContextVar[SandboxSession | None] = contextvars.ContextVar("dspy_rlm_repl_session", default=None)
 _repl_prelude: contextvars.ContextVar[str] = contextvars.ContextVar("dspy_rlm_repl_prelude", default="")
+# The RLM whose session call runs in this context, with the session's interpreter, which that call uses (see RLMSession).
+_session_interpreter: contextvars.ContextVar[tuple[RLM, CodeInterpreter] | None] = contextvars.ContextVar(
+    "dspy_rlm_session_interpreter", default=None
+)
 # Once the REPL has imported dspy, binds the provided tools and SUBMIT to send and read dspy's objects in the session's
 # wire form (``sandbox_guest.bind``) before each execution, as the Flex driver does before it runs: some interpreters,
 # like LocalInterpreter, define them anew for each execution.
@@ -885,7 +889,16 @@ class RLM(Module):
         execution_tools: dict[str, Callable],
         factory: Callable[[], CodeInterpreter],
     ) -> Iterator[CodeInterpreter]:
-        """Create and close one interpreter for this invocation."""
+        """Create and close one interpreter for this invocation, or use the one of the session it runs in."""
+        held = _session_interpreter.get()
+        if held is not None and held[0] is self:
+            token = _session_interpreter.set(None)  # nothing else in this call, like a sub-agent, gets it
+            try:
+                self._inject_execution_context(held[1], execution_tools)
+                yield held[1]
+            finally:
+                _session_interpreter.reset(token)
+            return
         _validate_interpreter_factory(factory)
         interpreter = factory()
         _validate_interpreter(interpreter)
@@ -1084,6 +1097,17 @@ class RLM(Module):
     # Public Interface
     # =========================================================================
 
+    def session(self, history: dspy.History | None = None, snapshot: bytes | None = None) -> RLMSession:
+        """Start a session: calls that share one interpreter, so each continues the REPL state and the history the
+        one before it left. Close it, or use it as a context manager, to shut the interpreter down.
+
+        Args:
+            history: The conversation to continue, like an earlier session's ``history``.
+            snapshot: The interpreter state to continue from, like an earlier session's ``snapshot()``. The
+                interpreter factory must take it as ``snapshot=``, as ``dspy.PythonInterpreter`` does.
+        """
+        return RLMSession(self, history, snapshot)
+
     def forward(
         self,
         *,
@@ -1107,7 +1131,8 @@ class RLM(Module):
             Prediction with the signature's outputs, `history`, `final_reasoning`, and this call's `trajectory`.
             `history` is a new `dspy.History` containing the input history plus one event per REPL
             iteration; pass it back as `history=` to continue the conversation. History does not restore
-            interpreter variables or mutations; each invocation uses a fresh interpreter.
+            interpreter variables or mutations; each invocation uses a fresh interpreter, unless it runs in a
+            session (`RLM.session`).
 
         Raises:
             ValueError: If required input fields are missing
@@ -1261,7 +1286,8 @@ class RLM(Module):
             Prediction with the signature's outputs, `history`, `final_reasoning`, and this call's `trajectory`.
             `history` is a new `dspy.History` containing the input history plus one event per REPL
             iteration; pass it back as `history=` to continue the conversation. History does not restore
-            interpreter variables or mutations; each invocation uses a fresh interpreter.
+            interpreter variables or mutations; each invocation uses a fresh interpreter, unless it runs in a
+            session (`RLM.session`).
 
         Raises:
             ValueError: If required input fields are missing
@@ -1344,6 +1370,53 @@ class RLM(Module):
     def _append_history_with_event(self, history: dspy.History, event: dict[str, Any]):
         if event:
             history.messages.append(event)
+
+
+class RLMSession:
+    """Calls of one RLM on one interpreter, each continuing the conversation the one before it left (see
+    ``RLM.session``)."""
+
+    def __init__(self, rlm: RLM, history: dspy.History | None = None, snapshot: bytes | None = None) -> None:
+        self.rlm = rlm
+        self.history = _coerce_history(history)
+        factory = resolve_interpreter_factory(rlm._interpreter_factory)
+        _validate_interpreter_factory(factory)
+        self.interpreter = factory() if snapshot is None else factory(snapshot=snapshot)
+        _validate_interpreter(self.interpreter)
+
+    def __call__(self, **inputs: Any) -> Prediction:
+        with self._turn():
+            result = self.rlm(history=self.history, **inputs)
+        self.history = result.history
+        return result
+
+    async def acall(self, **inputs: Any) -> Prediction:
+        with self._turn():
+            result = await self.rlm.acall(history=self.history, **inputs)
+        self.history = result.history
+        return result
+
+    @contextmanager
+    def _turn(self) -> Iterator[None]:
+        token = _session_interpreter.set((self.rlm, self.interpreter))
+        try:
+            yield
+        finally:
+            _session_interpreter.reset(token)
+
+    def snapshot(self) -> bytes:
+        """The interpreter's state, for ``RLM.session(history=..., snapshot=...)`` to continue this session from
+        with its ``history``, in this process or another (see ``PythonInterpreter.snapshot``)."""
+        return self.interpreter.snapshot()
+
+    def close(self) -> None:
+        self.interpreter.shutdown()
+
+    def __enter__(self) -> RLMSession:
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        self.close()
 
 
 def _apply_history_processor(

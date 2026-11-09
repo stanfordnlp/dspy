@@ -669,7 +669,8 @@ class HostTrace(list):
 
 
 def install(namespace: dict[str, Any], spec: dict[str, Any]) -> None:
-    """Wire this sandbox's dspy to the host; called once, right after sandboxed code first imports dspy."""
+    """Wire this sandbox's dspy to the host: right after sandboxed code first imports dspy, and again for each later
+    session in the same sandbox, like the calls of an RLM session."""
     global _wire
     _wire = GuestValues(namespace)
     settings: dict[str, Any] = {}
@@ -683,6 +684,8 @@ def install(namespace: dict[str, Any], spec: dict[str, Any]) -> None:
         if spec.get("lm") is not None:
             settings["lm"] = HostLM(namespace[LM_TOOL], spec["lm"])
     settings["trace"] = HostTrace(namespace[TRACE_TOOL]) if spec.get("trace") and TRACE_TOOL in namespace else None
+    # Each install runs in an execution, so an async task, of its own: the latest one owns the sandbox's settings.
+    sys.modules["dspy.dsp.utils.settings"].config_owner_async_task = None
     dspy.configure(**settings)
     namespace["__dspy_values"] = _wire
     namespace["__dspy_types"] = {
