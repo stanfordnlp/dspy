@@ -48,10 +48,6 @@ A model can exhaust `max_iters` without ever submitting final outputs. Rather th
 
 The action and extract steps are ordinary `dspy.Predict` instances; `dspy.RLM` exposes them through `named_predictors` and compiles like any module. The task instructions, output-field descriptions, and tool docs are formatted into the action prompt when you construct the module, which is the surface an optimizer tunes. Running GEPA or MIPROv2 against a metric improves the loop’s behavior, not just the task instructions.
 
-### 11. RLM is marked experimental and the interface is in flux
-
-The class carries the `@experimental` decorator. The hard parts are still settling: call budgeting, sandbox lifetime, error recovery, and the action prompt itself. Treat the API as subject to change between releases and pin a version if you depend on it.
-
 ## API walkthrough
 
 ### Defining and running an RLM

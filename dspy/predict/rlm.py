@@ -64,7 +64,6 @@ from dspy.primitives.sandbox_bundle import SandboxBundleError
 from dspy.primitives.sandbox_guest import INTERPRETER_TOOL, LM_TOOL, read_wire
 from dspy.primitives.sandbox_serializable import SandboxSerializable, build_repl_variable
 from dspy.signatures.signature import ensure_signature
-from dspy.utils.annotation import experimental
 from dspy.utils.exceptions import format_error_for_lm
 
 if TYPE_CHECKING:
@@ -296,7 +295,6 @@ class _FinalExecutionWithError:
     repl_entry: REPLEntry
 
 
-@experimental
 class RLM(Module):
     """Recursive Language Model module.
 
