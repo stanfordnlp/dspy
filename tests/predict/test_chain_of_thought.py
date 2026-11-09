@@ -189,10 +189,11 @@ async def test_parse_failure_preserves_predictor_signature(adapter, collision, a
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("call_override", [False, True])
-@pytest.mark.parametrize("thinking", [
-    {"type": "disabled"}, {"type": "enabled", "budget_tokens": 2048}, {"type": "adaptive"},
+@pytest.mark.parametrize("thinking,reasoning", [
+    ({"type": "disabled"}, None), ({"type": "enabled", "budget_tokens": 2048}, None),
+    ({"type": "adaptive"}, None), ({"type": "disabled"}, {"effort": "off"}),
 ])
-async def test_chain_of_thought_respects_provider_thinking(thinking, call_override, asynchronous, monkeypatch):
+async def test_chain_of_thought_respects_provider_thinking(thinking, reasoning, call_override, asynchronous, monkeypatch):
     import json
 
     import dspy.clients.execution as execution
@@ -216,6 +217,8 @@ async def test_chain_of_thought_respects_provider_thinking(thinking, call_overri
                  max_tokens=4096, thinking=default if call_override else thinking)
     program = ChainOfThought("question -> answer")
     config = {"thinking": thinking} if call_override else {}
+    if reasoning is not None:
+        config["reasoning"] = reasoning
     try:
         with dspy.context(lm=lm):
             if asynchronous:
@@ -226,7 +229,10 @@ async def test_chain_of_thought_respects_provider_thinking(thinking, call_overri
         assert result.reasoning == "Recall the capital."
         body = json.loads(transport.requests[0].body)
         assert body["thinking"] == thinking
-        assert lm.history[-1]["request"].config.reasoning is None
+        if reasoning is None:
+            assert lm.history[-1]["request"].config.reasoning is None
+        else:
+            assert lm.history[-1]["request"].config.reasoning.is_off
     finally:
         await lm.aclose()
 
