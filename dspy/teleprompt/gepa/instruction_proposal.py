@@ -15,7 +15,6 @@ from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
 from dspy.adapters.types.tool import ToolCallResults, ToolCalls
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, restore_repl_events
-from dspy.utils.annotation import experimental
 
 ReflectiveExample = TypedDict(
     "ReflectiveExample",
@@ -269,7 +268,6 @@ def compact_repl_history(history: REPLHistory, max_chars: int = _COMPACTED_CHARS
 # --------------------------------------------------------------------------- #
 
 
-@experimental(version="3.4.1")
 class InstructionProposer(ProposalFn):
     """GEPA's default instruction proposer.
 
