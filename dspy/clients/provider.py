@@ -62,7 +62,7 @@ class TrainingJob(Future):
         Returns:
             True if the job was successfully cancelled, False otherwise.
         """
-        super().cancel()
+        return super().cancel()
 
     @abstractmethod
     def status(self) -> Any:
