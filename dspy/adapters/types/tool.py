@@ -462,12 +462,16 @@ class ToolCalls(Type):
         }
 
     @pydantic.model_serializer()
-    def serialize_model(self):
+    def serialize_model(self, info: pydantic.SerializationInfo):
         data = self.format()
+        if not (info.context or {}).get("dspy_prompt"):
+            for call, serialized in zip(self.tool_calls, data["tool_calls"], strict=True):
+                serialized["id"] = call.id
         if self.tool_call_results is not None:
             data["tool_call_results"] = TypeAdapter(type(self.tool_call_results)).dump_python(
                 self.tool_call_results,
                 mode="json",
+                context=info.context,
             )
         return data
 

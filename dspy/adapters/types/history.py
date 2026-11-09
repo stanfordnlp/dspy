@@ -84,7 +84,7 @@ class History(pydantic.BaseModel):
         try:
             return handler(messages)
         except PydanticSerializationError:
-            return handler(serialize_for_json(messages))
+            return handler(serialize_for_json(messages, for_prompt=False))
 
     def _remap_fields(self, names: dict[str, str]) -> History:
         """Copy recorded field names to match the adapter's adapted signature, without mutating the caller."""

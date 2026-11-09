@@ -647,7 +647,8 @@ def test_tool_calls_format_from_dict_list():
     assert result["tool_calls"][1]["name"] == "translate"
 
 
-def test_tool_calls_preserves_ids_from_dict_list_and_format_omits_ids():
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
+def test_tool_calls_preserves_ids_from_dict_list_and_format_omits_ids(adapter_type):
     tool_calls = ToolCalls.from_dict_list(
         [
             {"id": "call_1", "name": "search", "args": {"query": "hello"}},
@@ -661,6 +662,13 @@ def test_tool_calls_preserves_ids_from_dict_list_and_format_omits_ids():
     formatted = tool_calls.format()["tool_calls"]
     assert "id" not in formatted[0]
     assert "id" not in formatted[1]
+
+    restored = ToolCalls.model_validate_json(tool_calls.model_dump_json())
+    assert [call.id for call in restored.tool_calls] == ["call_1", None]
+    signature = dspy.Signature("question -> calls: dspy.ToolCalls")
+    content = adapter_type().format_assistant_message_content(signature, {"calls": tool_calls})
+    assert "call_1" not in content
+    assert "hello" in content
 
 
 def test_tool_calls_json_schema_omits_internal_id_field():
@@ -683,6 +691,21 @@ def test_tool_calls_can_carry_results_without_formatting_them_for_lm():
             {"call_id": "call_1", "name": "search", "value": {"answer": "world"}, "is_error": False}
         ]
     }
+
+
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
+def test_nested_tool_calls_keep_ids_in_storage_not_prompts(adapter_type):
+    inner = ToolCalls.from_dict_list([{"id": "inner-id", "name": "lookup", "args": {"query": "hello"}}])
+    outer = ToolCalls.from_dict_list([{"id": "outer-id", "name": "search", "args": {"nested": inner}}])
+    outer.tool_call_results = ToolCallResults.from_tool_calls_and_values(outer.tool_calls, [inner])
+
+    saved = outer.model_dump(mode="json")
+    assert saved["tool_calls"][0]["args"]["nested"]["tool_calls"][0]["id"] == "inner-id"
+    assert saved["tool_call_results"]["tool_call_results"][0]["value"]["tool_calls"][0]["id"] == "inner-id"
+    signature = dspy.Signature("question -> calls: dspy.ToolCalls")
+    content = adapter_type().format_assistant_message_content(signature, {"calls": outer})
+    assert "inner-id" not in content
+    assert "hello" in content
 
 
 def test_tool_call_results_from_tool_calls_and_values():
@@ -724,7 +747,7 @@ def test_tool_call_results_history_serialization_round_trip():
             {
                 "tool_calls": {
                     "tool_calls": [
-                        {"name": "search", "args": {"query": "hello"}}
+                        {"id": "call_1", "name": "search", "args": {"query": "hello"}}
                     ],
                     "tool_call_results": {
                         "tool_call_results": [

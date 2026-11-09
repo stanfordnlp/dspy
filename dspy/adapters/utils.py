@@ -71,12 +71,13 @@ def _annotation_is_subclass(annotation: Any, expected_base: type) -> bool:
         return False
 
 
-def serialize_for_json(value: Any) -> Any:
+def serialize_for_json(value: Any, *, for_prompt: bool = True) -> Any:
     """
     Formats the specified value so that it can be serialized as a JSON string.
 
     Args:
         value: The value to format as a JSON string.
+        for_prompt: Omit tool call IDs from prompt examples, but retain them for persistence.
     Returns:
         The formatted value, which is serializable as a JSON string.
     """
@@ -84,7 +85,7 @@ def serialize_for_json(value: Any) -> Any:
     # serialize (e.g. a numpy scalar) becomes its string form without affecting its siblings; the
     # whole value falls back to its string form only if pydantic can't handle it at all.
     try:
-        return TypeAdapter(type(value)).dump_python(value, mode="json", fallback=str)
+        return TypeAdapter(type(value)).dump_python(value, mode="json", fallback=str, context={"dspy_prompt": for_prompt})
     except Exception as exc:
         from dspy.adapters.types.base_type import TypeFormatError
 

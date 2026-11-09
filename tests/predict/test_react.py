@@ -91,6 +91,41 @@ def test_react_text_mock_lm_loop_records_inputs_once():
     assert pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results[0].call_id == "call_0_0"
 
 
+@pytest.mark.parametrize("storage", ["object", "dict", "json"])
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_react_continuation_preserves_tool_evidence(storage, native, asynchronous):
+    def lookup() -> str:
+        return "tool-evidence-73"
+
+    lm = recording_lm([
+        make_response(tool_calls=[("lookup-1", "lookup", {})]),
+        make_response(tool_calls=[("submit-1", "submit", {"answer": "ready"})]),
+        make_response(tool_calls=[("submit-2", "submit", {"answer": "continued"})]),
+    ])
+    agent = dspy.ReAct("question -> answer", tools=[lookup])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=True)):
+        first = asyncio.run(agent.acall(question="Look it up.")) if asynchronous else agent(question="Look it up.")
+        history = first.history
+        if storage == "dict":
+            history = history.model_dump(mode="json")
+        elif storage == "json":
+            history = dspy.History.model_validate_json(history.model_dump_json())
+        # Also replay native history as text for a model without native tools.
+        with dspy.context(adapter=dspy.ChatAdapter(use_native_function_calling=native)):
+            result = asyncio.run(agent.acall(history=history)) if asynchronous else agent(history=history)
+
+    assert result.answer == "continued"
+    messages = lm.engine.requests[-1].messages
+    if native:
+        results = [part for message in messages if message.role == "tool" for part in message.parts]
+        assert [(part.id, part.content[0].text) for part in results] == [
+            ("lookup-1", "tool-evidence-73"), ("submit-1", '{"answer": "ready"}'),
+        ]
+    else:
+        assert any("tool-evidence-73" in (message.text or "") for message in messages)
+
+
 def test_react_continuation_omits_missing_original_inputs():
     def lookup(query: str) -> str:
         return f"found {query}"
