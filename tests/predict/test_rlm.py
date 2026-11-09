@@ -6,14 +6,15 @@ Test organization:
 - Integration tests (@pytest.mark.deno): PythonInterpreter with Deno
 """
 
-import base64
 import io
+import json
 import logging
 import sys
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from typing import Any
 
+import pydantic
 import pytest
 
 import dspy
@@ -2685,28 +2686,6 @@ class TestBuildVariablesWithSerializable:
 class TestPrepareSerializableVars:
     """Tests for _prepare_serializable_vars with MockInterpreter."""
 
-    def test_separates_serializable_from_regular(self):
-        """Serializable values are injected; regular values are returned."""
-        mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
-        rlm = RLM("data, query -> answer", max_iters=3)
-
-        stub = _StubSerializable("payload")
-
-        # Manually call _prepare_serializable_vars
-        rlm._inject_execution_context(mock, rlm._prepare_execution_tools())
-        regular = rlm._prepare_serializable_vars({"data": stub, "query": "hello"}, mock)
-
-        # Regular args should only contain non-serializable values
-        assert "query" in regular
-        assert regular["query"] == "hello"
-        assert "data" not in regular
-
-        # MockInterpreter should have received an execute call for the setup
-        assert mock.call_count == 1
-        code, variables = mock.call_history[0]
-        assert "import json" in code
-        assert "_raw_data" in variables
-
     def test_no_serializable_returns_all(self):
         """When no SandboxSerializable values exist, all args are returned."""
         mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
@@ -2718,107 +2697,412 @@ class TestPrepareSerializableVars:
         assert regular == {"query": "hello"}
         assert mock.call_count == 0
 
-    def test_binary_payload_uses_base64_transport(self):
-        """Non-UTF8 bytes should be transported via base64 and decoded in sandbox code."""
-        mock = MockInterpreter(responses=[""])
-        rlm = RLM("data, query -> answer")
+class _Numbers(SandboxSerializable):
+    """Numbers sent as JSON text and rebuilt with the module its setup imports."""
 
-        payload = _BinarySerializable()
-        rlm._inject_execution_context(mock, rlm._prepare_execution_tools())
-        rlm._prepare_serializable_vars({"data": payload, "query": "hello"}, mock)
+    def __init__(self, items: list[int]):
+        self.items = items
 
-        assert mock.call_count == 1
-        code, variables = mock.call_history[0]
-        assert "_raw_data = base64.b64decode(_raw_data_base64)" in code
-        assert variables["_raw_data_base64"] == base64.b64encode(b"\xff\xfe\xfd").decode("ascii")
+    def sandbox_setup(self) -> str:
+        return "import json as numbers_json"
 
-    def test_large_payload_not_inlined_in_code(self):
-        """Large payloads should ride in the variables kwarg, not the code string.
+    def to_sandbox(self) -> bytes:
+        return json.dumps(self.items).encode()
 
-        Inlining a multi-MB payload into the code text would balloon every
-        subsequent prompt and could blow past sandbox limits. The transport
-        contract is: code stays small, payload travels as a named variable.
-        """
-        mock = MockInterpreter(responses=[""])
-        rlm = RLM("data, query -> answer")
+    def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
+        return f"{var_name} = numbers_json.loads({data_expr})"
 
-        large_text = "x" * (2 * 1024 * 1024)  # 2 MB UTF-8 payload
+    def rlm_preview(self, max_chars: int = 500) -> str:
+        return f"{len(self.items)} numbers"
 
-        class _LargeText(SandboxSerializable):
-            def sandbox_setup(self) -> str:
-                return ""
 
-            def to_sandbox(self) -> bytes:
-                return large_text.encode("utf-8")
+def _more_numbers() -> _Numbers:
+    """Return more numbers."""
+    return _Numbers([4, 5])
 
-            def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
-                return f"{var_name} = {data_expr}"
 
-            def rlm_preview(self, max_chars: int = 500) -> str:
-                return f"LargeText({len(large_text)} chars)"
+def _more_numbers_untyped():
+    """Return more numbers, without saying so."""
+    return _Numbers([4, 5])
 
-        rlm._inject_execution_context(mock, rlm._prepare_execution_tools())
-        rlm._prepare_serializable_vars({"data": _LargeText(), "query": "hi"}, mock)
 
-        assert mock.call_count == 1
-        code, variables = mock.call_history[0]
-        # Payload must be in variables, not the code string.
-        assert variables["_raw_data"] == large_text
-        assert large_text not in code
-        assert len(code) < 1000
+class _NumbersBox(pydantic.BaseModel):
+    """A user's model holding a sandbox value, with its own serialization."""
 
-    def test_forward_with_serializable(self):
-        """Full forward() pass with a SandboxSerializable input."""
-        mock = MockInterpreter(
-            responses=[
-                "",  # setup execution for _prepare_serializable_vars
-                FinalOutput({"answer": "done"}),
-            ]
-        )
-        rlm = RLM("data, query -> answer", max_iters=3)
+    nums: _Numbers
+    scale: int = pydantic.Field(serialization_alias="scaleAlias")
+    secret: str = pydantic.Field(default="hidden", exclude=True)
+
+    @pydantic.field_serializer("scale")
+    def _scale(self, value: int) -> int:
+        return value + 100
+
+
+def _pack() -> _NumbersBox:
+    """Pack some numbers."""
+    return _NumbersBox(nums=_Numbers([4, 5]), scale=2)
+
+
+class _Order(pydantic.BaseModel):
+    """A user's strict model, with a tuple JSON carries as a list, whose validator changes what it reads."""
+
+    model_config = pydantic.ConfigDict(strict=True)
+    qty: int
+    size: tuple[int, int]
+
+    @pydantic.model_validator(mode="after")
+    def _double(self) -> "_Order":
+        self.qty *= 2
+        return self
+
+
+def _place(order: _Order) -> str:
+    """Place an order."""
+    return f"{order.qty} {order.size}"
+
+
+class _ShoutedNumbersBox(pydantic.BaseModel):
+    """A user's model whose wrap serializer reads what one of its sandbox values writes."""
+
+    nums: _Numbers
+    loud: _Numbers
+
+    @pydantic.field_serializer("loud", mode="wrap")
+    def _shout(self, value: _Numbers, handler: Any) -> str:
+        return str(handler(value)).upper()
+
+
+_INTERPRETERS = [LocalInterpreter, pytest.param(PythonInterpreter, marks=pytest.mark.deno)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("factory", _INTERPRETERS)
+@pytest.mark.parametrize("async_tool", [False, True])
+@pytest.mark.parametrize("async_call", [False, True])
+@pytest.mark.parametrize("prefix", ["", "import dspy\n"], ids=["plain", "after-import-dspy"])
+async def test_user_tool_positional_arguments_preserve_validation(factory, async_tool, async_call, prefix):
+    from pydantic import BaseModel
+
+    class Payload(BaseModel):
+        quantity: int
+
+    received = []
+
+    def quote(payload: Payload, multiplier: int = 3) -> int:
+        received.append(payload)
+        return payload.quantity * multiplier + 1
+
+    async def async_quote(payload: Payload, multiplier: int = 3) -> int:
+        return quote(payload, multiplier)
+
+    tool = Tool(async_quote if async_tool else quote, name="quote")
+    program = RLM(
+        "query -> totals: list[int], rejected: list[str]", tools=[tool], max_iters=1, interpreter_factory=factory
+    )
+    code = """
+totals = [quote({'quantity': 7}), quote({'quantity': 7}, 4),
+          quote({'quantity': 7}, multiplier=5), quote(payload={'quantity': 7}, multiplier=6)]
+rejected = []
+for label, attempt in [
+    ('duplicate', lambda: quote({'quantity': 7}, 2, multiplier=3)),
+    ('surplus', lambda: quote({'quantity': 7}, 2, 3)),
+    ('schema', lambda: quote({'quantity': 'not-an-int'})),
+    ('unknown', lambda: quote({'quantity': 7}, unexpected=1)),
+    ('missing', lambda: quote()),
+]:
+    try:
+        attempt()
+    except Exception:
+        rejected.append(label)
+SUBMIT(totals, rejected)
+"""
+    with dummy_lm_context(
+        [{"plan": "Quote and reject invalid calls", "code": prefix + code}, {"totals": [], "rejected": []}]
+    ):
+        result = await program.acall(query="Quote seven items") if async_call else program(query="Quote seven items")
+
+    assert result.totals == [22, 29, 36, 43], result.trajectory
+    assert result.rejected == ["duplicate", "surplus", "schema", "unknown", "missing"]
+    assert len(received) == 4 and all(isinstance(payload, Payload) for payload in received)
+
+
+class TestSandboxValues:
+    """Values the interpreter's JSON can't carry cross on the sandbox session's wire: dspy types as themselves, and a
+    SandboxSerializable rebuilt in the REPL by its own hooks."""
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_inputs_are_rebuilt_once_and_keep_their_changes_across_executions(self, factory):
+        big = "abc123" * (200 * 1024)
+        rlm = RLM("nums, big, blob, query -> total: int", max_iters=2, interpreter_factory=factory)
         rlm.generate_action = make_mock_predictor(
             [
-                {"reasoning": "Done", "code": 'SUBMIT("done")'},
+                {"reasoning": "look", "code": "nums.append(10)\nprint(len(big), big[:6], blob)"},
+                {"reasoning": "sum", "code": "SUBMIT(total=sum(nums) + len(blob) + ('numbers_json' in globals()))"},
             ]
         )
 
-        stub = _StubSerializable("test_payload")
-        result = rlm.forward(data=stub, query="test", interpreter_factory=lambda: mock)
-        assert result.answer == "done"
+        result = rlm(nums=_Numbers([1, 2, 3]), big=_StubSerializable(big), blob=_BinarySerializable(), query="q")
 
-        # First call should be the serializable setup, second should be the iteration
-        assert mock.call_count == 2
+        # The setup ran, the binary payload arrived as bytes, and the change made in the first execution persisted.
+        assert result.trajectory[0]["output"].strip() == f"{len(big)} abc123 {bytes([0xFF, 0xFE, 0xFD])!r}"
+        assert result.total == 16 + 3 + 1
 
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_tool_results_are_rebuilt_when_the_tool_declares_them(self, factory):
+        rlm = RLM("query -> total: int", tools=[_more_numbers], max_iters=1, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "r", "code": "SUBMIT(total=sum(_more_numbers()))"}])
+        assert rlm(query="q").total == 9
 
-@pytest.mark.deno
-class TestLargeSerializableRoundTrip:
-    """End-to-end test that large SandboxSerializable payloads survive the sandbox."""
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_an_undeclared_tool_result_the_repl_cannot_read_raises(self, factory):
+        # Without a declared return type, the REPL has no wire to read the value: an error, not its string.
+        rlm = RLM("query -> answer", tools=[_more_numbers_untyped], max_iters=1, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "r", "code": "print(sum(_more_numbers_untyped()))"}])
+        with dummy_lm_context([{"answer": "fallback"}]):
+            result = rlm(query="q")
+        assert "returned _Numbers, which reaches RLM's REPL only when the tool's return annotation names it" in (
+            result.trajectory[0]["output"]
+        )
 
-    def test_large_payload_round_trips_through_real_sandbox(self, pooled_interpreter):
-        """A multi-MB payload should be reconstructable inside the real interpreter."""
-        large_text = "abc123" * (200 * 1024)  # ~1.2 MB UTF-8
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_dspy_types_cross_as_themselves(self, factory):
+        # Inputs, typed tool arguments and results, and SUBMIT carry dspy.Image, not its prompt string.
+        photo = dspy.Image("data:image/png;base64," + "iVBORw0KGgo" * 200)
+        seen = []
 
-        class _LargeText(SandboxSerializable):
-            def sandbox_setup(self) -> str:
+        def crop(image: dspy.Image) -> dspy.Image:
+            """Crop an image."""
+            seen.append(image)
+            return dspy.Image(image.url[:-4])
+
+        class Crop(dspy.Signature):
+            photo: dspy.Image = dspy.InputField()
+            cropped: dspy.Image = dspy.OutputField()
+
+        rlm = RLM(Crop, tools=[crop], max_iters=1, interpreter_factory=factory)
+        code = "assert type(photo).__name__ == 'Image'\nSUBMIT(cropped=crop(photo))"
+        rlm.generate_action = make_mock_predictor([{"reasoning": "r", "code": code}])
+
+        result = rlm(photo=photo)
+
+        assert result.final_reasoning == "r", result.trajectory
+        assert seen == [photo]
+        assert result.cropped == dspy.Image(photo.url[:-4])
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_tool_results_and_arguments_stay_images_across_executions(self, factory):
+        received = {}
+        shot = dspy.Image("https://example.com/shot.png")
+
+        def screenshot() -> dspy.Image:
+            """Take a screenshot."""
+            return shot
+
+        def inspect_images(image: dspy.Image, images: list[dspy.Image]) -> str:
+            """Inspect images."""
+            received.update(image=image, images=images)
+            return "ok"
+
+        photo = dspy.Image("https://example.com/photo.png")
+        rlm = RLM(
+            "photo: dspy.Image -> same: dspy.Image, shot: dspy.Image",
+            tools=[screenshot, inspect_images],
+            max_iters=2,
+            interpreter_factory=factory,
+        )
+        rlm.generate_action = make_mock_predictor(
+            [
+                {
+                    "reasoning": "Pass an input and a tool result to a tool",
+                    "code": "s = screenshot()\nprint(type(photo).__name__, type(s).__name__, inspect_images(image=s, images=[photo, s]))",
+                },
+                # A second execution: some interpreters define the tools and SUBMIT anew for each one.
+                {"reasoning": "Submit", "code": "SUBMIT(photo, screenshot())"},
+            ]
+        )
+
+        result = rlm(photo=photo)
+
+        assert result.trajectory[0]["output"].strip() == "Image Image ok"
+        assert received == {"image": shot, "images": [photo, shot]}
+        assert (result.same, result.shot) == (photo, shot)
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_repl_code_keeps_working_once_tools_are_rebound(self, factory):
+        """The tools and SUBMIT are rebound before each execution; code that shadows a tool with a value, starts with
+        a __future__ import, or reads a dict a tool returns behaves as before."""
+
+        def search(q: str) -> str:
+            """Search."""
+            return q.upper()
+
+        def row() -> dict:
+            """A row, as a dict."""
+            return {"name": "a"}
+
+        rlm = RLM("photo: dspy.Image -> answer", tools=[search, row], max_iters=4, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Shadow a tool", "code": "search = search('x')\nprint(search, row()['name'])"},
+                {"reasoning": "Run another cell", "code": "print('next')"},
+                {"reasoning": "Future import", "code": "from __future__ import annotations\nprint(type(photo).__name__)"},
+                {"reasoning": "Submit", "code": "SUBMIT('ok')"},
+            ]
+        )
+
+        result = rlm(photo=dspy.Image("https://example.com/x.png"))
+
+        outputs = [step["output"].strip() for step in result.trajectory]
+        assert outputs[:2] == ["X a", "next"] and result.answer == "ok"
+        if factory is LocalInterpreter:  # Pyodide rejects __future__ imports that don't open a file
+            assert outputs[2] == "Image"
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_tools_with_quoted_postponed_return_annotations_return_images(self, factory):
+        namespace = {"dspy": dspy, "shot": dspy.Image("https://example.com/x.png")}
+        exec(  # a module with postponed annotations whose tool also quotes its return type
+            "from __future__ import annotations\n"
+            "def snap() -> 'dspy.Image':\n"
+            '    """Take a snapshot."""\n'
+            "    return shot\n"
+            "class Camera:\n"  # a callable object, whose __call__ declares the return type
+            "    async def __call__(self) -> 'dspy.Image':\n"
+            "        return shot\n",
+            namespace,
+        )
+        for tool in (namespace["snap"], Tool(namespace["Camera"](), name="snap")):  # each the only tool
+            rlm = RLM("q -> answer", tools=[tool], max_iters=1, interpreter_factory=factory)
+            rlm.generate_action = make_mock_predictor([{"reasoning": "Use it", "code": "SUBMIT(type(snap()).__name__)"}])
+            assert rlm(q="x").answer == "Image"
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_a_users_model_crosses_as_its_own_dump_with_the_sandbox_values_it_holds(self, factory):
+        rlm = RLM("box -> answer", tools=[_pack], max_iters=1, interpreter_factory=factory)
+        code = "SUBMIT(repr([(sorted(b), sum(b['nums']), b['scale']) for b in (box, _pack())]))"
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Use them", "code": code}])
+        # The field serializer and exclude=True apply, by field name; the numbers are rebuilt, not their str.
+        expected = [(["nums", "scale"], 3, 107), (["nums", "scale"], 9, 102)]
+        assert rlm(box=_NumbersBox(nums=_Numbers([1, 2]), scale=7)).answer == repr(expected)
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_a_tool_validates_its_model_arguments_once(self, factory):
+        # The numbers input has the REPL call tools through dspy's sandbox bridge.
+        rlm = RLM("nums -> answer", tools=[_place], max_iters=1, interpreter_factory=factory)
+        code = "SUBMIT(_place(order={'qty': 3, 'size': [1, 2]}))"
+        rlm.generate_action = make_mock_predictor([{"reasoning": "r", "code": code}])
+        assert rlm(nums=_Numbers([1])).answer == "6 (1, 2)"
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_a_users_serializer_that_reads_a_sandbox_value_gets_its_str(self, factory):
+        rlm = RLM("box -> answer", max_iters=1, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "r", "code": "SUBMIT(repr((sum(box['nums']), box['loud'])))"}])
+        loud = _Numbers([3])
+        # The value the serializer reads is its str, as before; the other is still rebuilt.
+        assert rlm(box=_ShoutedNumbersBox(nums=_Numbers([1, 2]), loud=loud)).answer == repr((3, str(loud).upper()))
+
+    def test_an_interpreter_in_the_host_memory_gets_tool_results_as_themselves(self):
+        shot = dspy.Image("https://example.com/x.png")
+
+        def screenshot() -> dspy.Image:
+            """Take a screenshot."""
+            return shot
+
+        rlm = RLM("q -> answer", tools=[screenshot], max_iters=1, interpreter_factory=_InProcessInterpreter)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Use it", "code": "SUBMIT(type(screenshot()).__name__)"}])
+        assert rlm(q="x").answer == "Image"
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_an_explicit_sandbox_form_wins_over_the_dspy_type_default(self, factory):
+        class Label(dspy.Type, SandboxSerializable):
+            text: str
+
+            def format(self):
+                return self.text
+
+            def sandbox_setup(self):
                 return ""
 
-            def to_sandbox(self) -> bytes:
-                return large_text.encode("utf-8")
+            def to_sandbox(self):
+                return self.text.encode()
 
-            def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
-                return f"{var_name} = {data_expr}"
+            def sandbox_assignment(self, var_name, data_expr):
+                return f"{var_name} = 'own form: ' + {data_expr}"
 
-            def rlm_preview(self, max_chars: int = 500) -> str:
-                return f"LargeText({len(large_text)} chars)"
+            def rlm_preview(self, max_chars=500):
+                return "a label"
 
-        interp = pooled_interpreter
-        rlm = RLM("data -> answer")
-        rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
-        rlm._prepare_serializable_vars({"data": _LargeText()}, interp)
-        result = interp.execute("print(len(data)); print(data[:6])")
+        rlm = RLM("label -> answer", max_iters=1, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "r", "code": "SUBMIT(label)"}])
+        assert rlm(label=Label(text="hi")).answer == "own form: hi"
 
-        assert str(len(large_text)) in result
-        assert "abc123" in result
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_submitted_json_that_looks_like_a_wire_value_stays_json(self, factory):
+        # Plain JSON is read back only when the REPL sent it in the wire form: with or without dspy loaded there.
+        looks_tagged = {"__dspy__": "customer", "items": [1, 2]}
+        for signature, inputs in [
+            ("q -> answer: dict", {"q": "x"}),
+            ("photo: dspy.Image -> answer: dict", {"photo": dspy.Image("https://example.com/x.png")}),
+        ]:
+            rlm = RLM(signature, max_iters=1, interpreter_factory=factory)
+            code = f"SUBMIT(answer={looks_tagged!r})"
+            rlm.generate_action = make_mock_predictor([{"reasoning": "r", "code": code}])
+            assert rlm(**inputs).answer == looks_tagged
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_each_input_keeps_its_own_payload_for_code_that_reads_it_later(self, factory):
+        class Deferred(SandboxSerializable):
+            def __init__(self, text):
+                self.text = text
+
+            def sandbox_setup(self):
+                return ""
+
+            def to_sandbox(self):
+                return self.text.encode()
+
+            def sandbox_assignment(self, var_name, data_expr):
+                return f"{var_name} = lambda: {data_expr}"
+
+            def rlm_preview(self, max_chars=500):
+                return "deferred"
+
+        rlm = RLM("a, b -> answer", max_iters=2, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor(
+            [{"reasoning": "r", "code": "print(a())"}, {"reasoning": "r", "code": "SUBMIT(answer=a() + b())"}]
+        )
+        assert rlm(a=Deferred("first "), b=Deferred("second")).answer == "first second"
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_code_that_imports_dspy_itself_submits_its_objects_in_a_later_execution(self, factory):
+        # Nothing typed crosses this RLM; LocalInterpreter defines SUBMIT anew for the second execution.
+        rlm = RLM("q -> answer: Any", max_iters=2, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "r", "code": "import dspy\nphoto = dspy.Image('https://example.com/a.png')"},
+                {"reasoning": "r", "code": "SUBMIT(answer=photo)"},
+            ]
+        )
+        assert rlm(q="x").answer == dspy.Image("https://example.com/a.png")
+
+    def test_an_interpreter_in_the_host_memory_rebuilds_inputs_in_its_namespace(self):
+        rlm = RLM("nums, query -> answer", max_iters=1, interpreter_factory=_InProcessInterpreter)
+        rlm.generate_action = make_mock_predictor(
+            [{"reasoning": "r", "code": "SUBMIT(answer=f\"{type(nums).__name__} {sum(nums)} {'numbers_json' in globals()}\")"}]
+        )
+        assert rlm(query="q", nums=_Numbers([1, 2])).answer == "list 3 True"
+
+    def test_an_interpreter_without_the_bridge_rejects_values_that_need_it(self):
+        from dspy.primitives import facade
+
+        def execute(code, variables):
+            if code == facade.BOOTSTRAP:
+                raise SyntaxError('"__dspy_bootstrap" is an invalid variable name because it starts with "_"')
+            return FinalOutput({"answer": "42"})
+
+        rlm = RLM("nums, query -> answer", max_iters=1, interpreter_factory=MockInterpreterFactory(execute_fn=execute))
+        rlm.generate_action = make_mock_predictor([{"reasoning": "r", "code": 'SUBMIT("42")'}])
+        with pytest.raises(CodeInterpreterError, match="Input 'nums' \\(_Numbers\\) crosses into the REPL through dspy's sandbox bridge"):
+            rlm(query="q", nums=_Numbers([1]))
 
 
 class TestREPLEventContract:
@@ -3750,6 +4034,34 @@ async def test_empty_submission_finishes_without_repeating_tools(factory, async_
     assert received == ["once"]
     assert len(result.history.messages) == len(result.trajectory) == 1
     assert result.trajectory[0]["output"] == "FINAL: {}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("factory", _INTERPRETERS)
+@pytest.mark.parametrize("async_call", [False, True])
+async def test_custom_input_history_json_round_trip_continues(factory, async_call):
+    nums = _Numbers([2, 9])
+    nested = {"items": [nums], "keep": 7}
+    program = RLM("nums, nested -> total: int", max_iters=1, interpreter_factory=factory)
+    action = {"plan": "Sum both inputs", "code": "SUBMIT(sum(nums) + sum(nested['items'][0]) + nested['keep'])"}
+    with dummy_lm_context([action, action]):
+        first = await program.acall(nums=nums, nested=nested) if async_call else program(nums=nums, nested=nested)
+        saved = first.history.model_dump_json()
+        restored = dspy.History.model_validate_json(saved)
+        second = (
+            await program.acall(nums=nums, nested=nested, history=restored)
+            if async_call
+            else program(nums=nums, nested=nested, history=restored)
+        )
+
+    assert first.total == second.total == 29
+    assert first.history.messages[0]["nums"] is nums
+    assert first.history.messages[0]["nested"] is nested
+    assert restored.messages[0]["nums"] == str(nums)
+    assert restored.messages[0]["nested"] == {"items": [str(nums)], "keep": 7}
+    assert restored.model_dump_json() == saved
+    assert len(second.history.messages) == 2
+    assert second.history.model_dump_json()
 
 
 def test_history_json_preserves_live_custom_values():
