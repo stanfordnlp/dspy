@@ -121,6 +121,32 @@ def test_sandboxed_class_signature_requires_input_or_output_field(factory):
 
 
 @pytest.mark.parametrize("factory", INTERPRETERS)
+@pytest.mark.parametrize("note_fields", [{}, {"note": None}, {"note": "jsnull"}, {"note": ""}],
+                         ids=["omitted", "null", "literal-jsnull", "empty-string"])
+def test_sandbox_prediction_preserves_null_and_string_outputs(factory, note_fields):
+    source = """
+class Task(dspy.Signature):
+    question: str = dspy.InputField()
+    answer: str = dspy.OutputField()
+    note: str | None = dspy.OutputField(default=None)
+    nested: dict[str, list[str | None]] = dspy.OutputField()
+
+class Module(dspy.Module):
+    def forward(self, question):
+        result = dspy.Predict(Task)(question=question)
+        return dspy.Prediction(note=result.note, nested=result.nested)
+"""
+    nested = {"values": [None, "jsnull", "", "null", "None"]}
+    program = dspy.Flex("question -> note: str | None, nested: dict", interpreter_factory=factory)
+    program.load_state({"module_src": source})
+    with dspy.context(lm=DummyLM([{"answer": "ok", "nested": nested, **note_fields}]),
+                      adapter=dspy.JSONAdapter()):
+        result = program(question="preserve nulls and literal strings")
+    assert result.note == note_fields.get("note")
+    assert result.nested == nested
+
+
+@pytest.mark.parametrize("factory", INTERPRETERS)
 def test_flex_baseline_skips_constraints_that_are_not_plain_numbers(factory):
     class Pay(dspy.Signature):
         """Extract the amount."""
