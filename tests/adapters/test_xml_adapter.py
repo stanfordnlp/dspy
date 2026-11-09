@@ -37,6 +37,7 @@ def test_xml_adapter_format_and_parse_basic():
         (Literal[-1, 2], "2", 2),
         (Literal[True], "True", True),
         (Literal[False], "false", False),
+        (Literal[-1, 2] | None, "-1", -1),
         (Literal["2", 2], "2", "2"),
         (Literal["False"], "False", "False"),
     ],
@@ -57,6 +58,20 @@ def test_xml_adapter_nested_literals(annotation, text, expected):
     assert adapter.parse(signature, formatted)["answer"] == [Record(value=expected)]
     with pytest.raises(dspy.utils.exceptions.AdapterParseError):
         adapter.parse(signature, wire.replace(f">{text}<", ">not-allowed<"))
+
+
+@pytest.mark.parametrize("annotation, text, expected", [
+    (Literal[1] | str, "1", "1"),
+    (Literal[True] | str, "True", "True"),
+    (Literal[1] | float, "1", 1.0),
+])
+def test_xml_adapter_literal_unions_preserve_scalar_types(annotation, text, expected):
+    signature = dspy.Signature({"answer": (list[annotation], dspy.OutputField())})
+    adapter = XMLAdapter(use_json_adapter_fallback=False)
+    wire = adapter.format_assistant_message_content(signature, {"answer": [text]})
+    with dspy.context(lm=recording_lm([wire]), adapter=adapter):
+        value = dspy.Predict(signature)().answer[0]
+    assert value == expected and type(value) is type(expected)
 
 
 def test_xml_adapter_parse_multiple_fields():

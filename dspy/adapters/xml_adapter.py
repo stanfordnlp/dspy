@@ -269,6 +269,7 @@ class XMLAdapter(ChatAdapter):
     @classmethod
     def _elements_to_value(cls, elements: list[ET.Element], schema: dict, definitions: dict) -> Any:
         schema = definitions.get(schema.get("$ref", "").rsplit("/", 1)[-1], schema)
+        coerce_literal = True
         if (
             len(elements) == 1
             and (schema.get("type") == "null" or {"type": "null"} in schema.get("anyOf", []))
@@ -282,6 +283,7 @@ class XMLAdapter(ChatAdapter):
             if len(tags) == 1 and (ref := discriminator.get("mapping", {}).get((tags[0].text or "").strip())):
                 return cls._elements_to_value(elements, {"$ref": ref}, definitions)
             choices = [choice for choice in choices if choice.get("type") != "null"]
+            coerce_literal = len(choices) == 1  # Leave multi-branch scalar unions to annotation validation.
             schema = choices[0]
             if list(elements[0]):
                 schema = next((choice for choice in choices if choice.get("type") != "string"), schema)
@@ -303,7 +305,7 @@ class XMLAdapter(ChatAdapter):
             if schema.get("type") == "object" and not (element.text or "").strip():
                 return {}
             values = [element.text or "" for element in elements]
-            if "enum" in schema or "const" in schema:
+            if coerce_literal and ("enum" in schema or "const" in schema):
                 annotation = Literal[tuple(schema["enum"] if "enum" in schema else [schema["const"]])]
                 try:
                     values = [parse_value(value, annotation) for value in values]
