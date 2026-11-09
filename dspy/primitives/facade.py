@@ -572,6 +572,10 @@ class SandboxSession:
         trace.append((dspy.Predict(signature) if signature is not None else None, inputs, dspy.Prediction(**outputs)))
 
     def _signature(self, signature: dict[str, Any]) -> Any:
+        fields = {name: dict(kwargs) for name, kwargs in signature.get("fields", {}).items()}
+        for name, value in signature.get("defaults", {}).items():
+            fields.setdefault(name, {})["default"] = self._values.decode(value)
+        signature = {**signature, "fields": fields}
         try:
             names = {}
             for name, where in signature.get("types", {}).items():

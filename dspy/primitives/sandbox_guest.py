@@ -758,8 +758,10 @@ def signature_spec(signature: Any) -> dict[str, Any]:
             types[name] = {"import": f"{t.__module__}.{t.__qualname__}"}
     extra = {name: {key: value for key, value in (field.json_schema_extra or {}).items() if _is_json(value)}
              for name, field in signature.fields.items()}
+    defaults = {name: _wire.encode(field.default) for name, field in signature.output_fields.items()
+                if field.default is not pydantic_core.PydanticUndefined}
     return {"signature": ctx.render_signature_string(), "instructions": signature.instructions,
-            "fields": ctx.field_kwargs(), "extra": extra, "types": types,
+            "fields": ctx.field_kwargs(), "extra": extra, "types": types, "defaults": defaults,
             "inputs": list(signature.input_fields), "outputs": list(signature.output_fields)}
 
 
