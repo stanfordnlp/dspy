@@ -139,6 +139,44 @@ def test_xml_adapter_positional_tuple_preserves_literal_closing_tag():
     assert adapter.parse(signature, wire)["answer"] == expected
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("compact", [False, True])
+def test_xml_adapter_nested_scalar_container_unions(reverse, compact):
+    class Record(pydantic.BaseModel):
+        numbers: list[int]
+
+    for container, values in [(list[int], [1, [2, 3], [], 4]), (Record, [1, Record(numbers=[2, 3]), 4])]:
+        item = container | int if reverse else int | container
+        signature = dspy.Signature({"answer": (list[item], dspy.OutputField())})
+        adapter = XMLAdapter(use_json_adapter_fallback=False)
+        wire = adapter.format_assistant_message_content(signature, {"answer": values})
+        if compact:
+            wire = wire.replace("\n", "")
+        lm = recording_lm([wire])
+        with dspy.context(lm=lm, adapter=adapter):
+            assert dspy.Predict(signature)().answer == values
+        assert len(lm.engine.requests) == 1
+
+
+def test_xml_adapter_nested_union_independent_xml():
+    signature = dspy.Signature({"answer": (list[int | list[int] | None], dspy.OutputField())})
+    wire = "<answer><item>1</item><item><item>2</item><item>3</item></item><item/><item>4</item></answer>"
+    assert XMLAdapter().parse(signature, wire)["answer"] == [1, [2, 3], None, 4]
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+        XMLAdapter().parse(signature, wire.replace(">2<", ">not-an-int<"))
+
+
+@pytest.mark.parametrize("annotation", [list[int] | int, int | list[int]])
+def test_xml_adapter_nested_unions_accept_repeated_fields(annotation):
+    class Record(pydantic.BaseModel):
+        value: annotation
+
+    signature = dspy.Signature({"answer": (list[Record], dspy.OutputField())})
+    wire = "<answer><item><value>1</value><value>2</value></item></answer>"
+    with dspy.context(lm=recording_lm([wire]), adapter=XMLAdapter(use_json_adapter_fallback=False)):
+        assert dspy.Predict(signature)().answer == [Record(value=[1, 2])]
+
+
 def test_xml_adapter_parse_multiple_fields():
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()
