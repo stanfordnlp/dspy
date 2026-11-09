@@ -70,6 +70,11 @@ class BootstrapFinetune(FinetuneTeleprompter):
 
         teachers = teacher if isinstance(teacher, list) else [teacher]
         teachers = [prepare_teacher(student, t) for t in teachers]
+        predictor_map = {
+            teacher_pred: student_pred
+            for t in teachers
+            for teacher_pred, student_pred in zip(t.predictors(), student.predictors())
+        }
         num_threads = self.num_threads or dspy.settings.num_threads
         for t in teachers:
             trace_data += bootstrap_trace_data(program=t, dataset=trainset, metric=self.metric, num_threads=num_threads)
@@ -88,7 +93,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
 
             if training_key not in key_to_data:
                 train_data, data_format = self._prepare_finetune_data(
-                    trace_data=trace_data, lm=pred.lm, pred_ind=data_pred_ind
+                    trace_data=trace_data, lm=pred.lm, pred_ind=data_pred_ind, predictor_map=predictor_map
                 )
                 logger.info(f"Using {len(train_data)} data points for fine-tuning the model: {pred.lm.model}")
                 finetune_kwargs = {
@@ -164,7 +169,10 @@ class BootstrapFinetune(FinetuneTeleprompter):
 
         return key_to_lm
 
-    def _prepare_finetune_data(self, trace_data: list[dict[str, Any]], lm: LM, pred_ind: int | None = None):
+    def _prepare_finetune_data(
+        self, trace_data: list[dict[str, Any]], lm: LM, pred_ind: int | None = None,
+        predictor_map: dict[Predict, Predict] | None = None,
+    ):
         # TODO(nit) Log dataset details/size; make logs nicer
         if self.metric:
             logger.info(f"Collected data for {len(trace_data)} examples")
@@ -182,6 +190,8 @@ class BootstrapFinetune(FinetuneTeleprompter):
                         pred_ind=trace_pred_ind,
                         adapter=adapter,
                         exclude_demos=self.exclude_demos,
+                        lm=lm,
+                        target=(predictor_map or {}).get(item["trace"][trace_pred_ind][0]),
                     )
                     data.append(call_data)
 
@@ -200,13 +210,24 @@ def build_call_data_from_trace(
     pred_ind: int,
     adapter: Adapter,
     exclude_demos: bool = False,
+    lm: LM | None = None,
+    target: Predict | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     # Find data that's relevant to the predictor
     pred, inputs, outputs = trace[pred_ind]  # assuming that the order is kept
 
+    signature = pred.signature
+    if lm is not None:
+        target = target or pred
+        signature = adapter._prepare_reasoning(lm, target.config.copy(), signature)
+        outputs = {
+            name: outputs[field.json_schema_extra.get("__dspy_reasoning_field", name)]
+            for name, field in signature.output_fields.items()
+        }
+
     demos = [] if exclude_demos else pred.demos
     call_data = adapter.format_finetune_data(
-        signature=pred.signature,
+        signature=signature,
         demos=demos,
         inputs=inputs,
         outputs=outputs,

@@ -1,10 +1,111 @@
 from unittest.mock import patch
 
+import pytest
+
 import dspy
 from dspy import Example
+from dspy.clients import Provider
 from dspy.predict import Predict
 from dspy.teleprompt import BootstrapFinetune
 from dspy.utils.dummies import DummyLM
+
+
+class RecordingTrainingProvider(Provider):
+    """Capture training data locally without launching a remote job."""
+
+    def __init__(self):
+        super().__init__()
+        self.finetunable = True
+        self.data = []
+
+    def finetune(self, job, model, train_data, train_data_format, train_kwargs=None):
+        self.data = train_data
+        return "custom/fitted"
+
+
+class TrainingReplayEngine:
+    def __init__(self, provider, native=False):
+        self.provider = provider
+        self.supports_reasoning = native
+
+    def complete(self, request):
+        from tests.test_utils.engines import make_response
+
+        if request.model == "custom/fitted":
+            text = self.provider.data[0]["messages"][-1]["content"]
+        else:
+            xml = "<answer>" in request.system
+            fields = {"plan_2": "training-plan-73", "plan": "training-plan-73",
+                      "reasoning": "training-plan-73", "answer": "learned-91"}
+            if "<plan_2>" in request.system or "[[ ## plan_2 ## ]]" in request.system:
+                fields["plan"] = "task-plan-19"
+            text = "\n".join(
+                f"<{name}>{value}</{name}>" if xml else f"[[ ## {name} ## ]]\n{value}"
+                for name, value in fields.items()
+                if (f"<{name}>" if xml else f"[[ ## {name} ## ]]") in request.system
+            )
+        return make_response(text, thinking="training-plan-73" if self.supports_reasoning else None)
+
+
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.XMLAdapter])
+@pytest.mark.parametrize("mode", [
+    "default", "string", "collision", "native-teacher", "native-student", "disabled-student", "disabled-teacher",
+])
+def test_bootstrap_finetune_target_replays_at_inference(adapter_type, mode):
+    provider = RecordingTrainingProvider()
+    engine = TrainingReplayEngine(provider, native=mode in ("native-student", "disabled-student", "disabled-teacher"))
+    lm = dspy.LM("custom/student", engine=engine, provider=provider, cache=False)
+    signature = "question -> plan, answer" if mode == "collision" else "question -> answer"
+    student = dspy.ChainOfThought(signature, **({"rationale_field_type": str} if mode == "string" else {}))
+    student.set_lm(lm)
+    if mode == "disabled-student":
+        student.predict.update_config(reasoning_effort="none")
+    if mode == "collision":
+        student.predict.demos = [dspy.Example(question="demo", reasoning="demo-reasoning-23",
+                                            plan="demo-plan-47", answer="demo-answer-59")]
+    teacher = None
+    if mode in ("native-teacher", "disabled-student", "disabled-teacher"):
+        teacher = dspy.ChainOfThought(signature, reasoning_effort="none" if mode == "disabled-teacher" else "high")
+        teacher.set_lm(dspy.LM("custom/teacher", engine=TrainingReplayEngine(provider, native=True), cache=False))
+    with dspy.context(adapter=adapter_type(use_json_adapter_fallback=False)):
+        compiled = dspy.BootstrapFinetune(num_threads=1).compile(
+            student, teacher=teacher,
+            trainset=[dspy.Example(question="learn this", answer="learned-91").with_inputs("question")],
+        )
+        assert len(provider.data) == 1
+        result = compiled(question="learn this")
+    target = provider.data[0]["messages"][-1]["content"]
+    expected_fields = {"string": {"reasoning"}, "collision": {"plan", "plan_2"},
+                       "native-student": set(), "disabled-teacher": set()}.get(mode, {"plan"})
+    for field in ("reasoning", "plan", "plan_2"):
+        marker = f"<{field}>" if adapter_type is dspy.XMLAdapter else f"[[ ## {field} ## ]]"
+        assert (marker in target) == (field in expected_fields)
+    assert result.answer == "learned-91"
+    assert str(result.reasoning) == "training-plan-73"
+    if mode == "collision":
+        assert result.plan == "task-plan-19"
+        demo = provider.data[0]["messages"][2]["content"]
+        marker = "<plan_2>" if adapter_type is dspy.XMLAdapter else "[[ ## plan_2 ## ]]"
+        assert marker in demo and "demo-reasoning-23" in demo and "demo-plan-47" in demo
+        assert student.predict.demos[0].reasoning == "demo-reasoning-23"
+    assert list(student.predict.signature.output_fields) == ["reasoning", *signature.split(" -> ")[1].split(", ")]
+
+
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.XMLAdapter])
+def test_bootstrap_finetune_preserves_tool_supervision(adapter_type):
+    from tests.test_utils.engines import RecordingEngine, make_response
+
+    provider = RecordingTrainingProvider()
+    engine = RecordingEngine([make_response(tool_calls=[("call-73", "lookup", {"query": "tool-query-91"})])])
+    lm = dspy.LM("custom/student", engine=engine, provider=provider, cache=False)
+    student = dspy.Predict("question, tools: list[dspy.Tool] -> tool_calls: dspy.ToolCalls")
+    student.set_lm(lm)
+    tool = dspy.Tool(lambda query: query, name="lookup")
+    example = dspy.Example(question="find this", tools=[tool]).with_inputs("question", "tools")
+    with dspy.context(adapter=adapter_type(use_native_function_calling=True, use_json_adapter_fallback=False)):
+        dspy.BootstrapFinetune(num_threads=1).compile(student, trainset=[example])
+    target = provider.data[0]["messages"][-1]["content"]
+    assert "lookup" in target and "tool-query-91" in target
 
 
 # Define a simple metric function for testing
