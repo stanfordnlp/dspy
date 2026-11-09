@@ -113,6 +113,23 @@ class Image(Type):
             raise ValueError(f"File not found: {file_path}")
         return cls(_encode_image_from_file(file_path))
 
+    def to_pil(self) -> "PILImage.Image":
+        """Decode this image into a PIL image. Needs Pillow and an embedded data URI, not a remote URL.
+
+        ``dspy.Image(pil_image)`` goes the other way.
+        """
+        if not PIL_AVAILABLE:
+            raise ImportError(
+                "Pillow is required for Image.to_pil(): install it (`pip install pillow`). A PythonInterpreter "
+                "sandbox has it unless its sandbox_packages leave out 'pillow'."
+            )
+        data = split_data_uri(self.url)
+        if data is None:
+            raise ValueError(f"to_pil() needs an embedded base64 image, not a URL: {self.url[:100]}")
+        image = PILImage.open(io.BytesIO(base64.b64decode(data[1])))
+        image.load()
+        return image
+
     def __str__(self):
         return self.serialize_model()
 

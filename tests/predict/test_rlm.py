@@ -6,6 +6,7 @@ Test organization:
 - Integration tests (@pytest.mark.deno): PythonInterpreter with Deno
 """
 
+import functools
 import io
 import json
 import logging
@@ -3105,6 +3106,137 @@ class TestSandboxValues:
             rlm(query="q", nums=_Numbers([1]))
 
 
+def _png(width: int, height: int, noisy: bool = False) -> dspy.Image:
+    import random
+
+    from PIL import Image as PILImage
+
+    buffer = io.BytesIO()
+    if noisy:  # incompressible, so its base64 is long
+        PILImage.frombytes("RGB", (width, height), random.Random(0).randbytes(width * height * 3)).save(buffer, "PNG")
+    else:
+        PILImage.new("RGB", (width, height), (255, 0, 0)).save(buffer, format="PNG")
+    return dspy.Image(buffer.getvalue())
+
+
+class TestRLMImages:
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_repl_code_manipulates_image_inputs_with_pil(self, factory):
+        pytest.importorskip("PIL")
+        photo = _png(32, 32, noisy=True)
+        assert len(photo.url) > 1000  # longer than REPLVariable's preview, which used to cut its base64 in two
+
+        rlm = RLM("photo: dspy.Image -> rotated: dspy.Image", max_iters=1, interpreter_factory=factory)
+        code = "SUBMIT(dspy.Image(photo.to_pil().rotate(90, expand=True).crop((0, 0, 32, 8))))"
+        with dummy_lm_context([{"plan": "Crop it", "code": code}]) as lm:
+            assert rlm(photo=photo).rotated.to_pil().size == (32, 8)
+
+        # The root prompt previews the image as text; the image itself stays in the REPL.
+        assert not any(part.type == "image" for message in lm.history[0]["request"].messages for part in message.parts)
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_llm_query_shows_images_to_the_sub_lm(self, factory):
+        pytest.importorskip("PIL")
+        photo = _png(6, 4)
+
+        def rate() -> dict:
+            """Rate the photo."""
+            return {"value": 0.5, "confidence": 0.9}
+
+        rlm = RLM("photo: dspy.Image -> answer", tools=[rate], max_iters=1, interpreter_factory=factory)
+        code = (
+            "seen = llm_query(['What color?', photo, rate()])\n"
+            "batch = llm_query_batched([['Again?', photo], 'Plain text?'])\n"
+            "SUBMIT(seen + ' ' + ' '.join(batch))"
+        )
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Show it", "code": code}])
+        lm = DummyLM([{"answer": "red"}] * 3, adapter=dspy.ChatAdapter())
+        lm.kwargs.update(temperature=0.7, max_tokens=321)
+
+        with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+            result = rlm(photo=photo)
+        assert result.final_reasoning == "Show it", result.trajectory
+
+        image_part = {"type": "image", "media_type": "image/png", "data": photo.url.split(",", 1)[1]}
+        question, image, rating = lm.history[0]["messages"][-1]["content"]
+        assert (question, image) == ({"type": "text", "text": "What color?"}, image_part)
+        assert json.loads(rating["text"]) == {"value": 0.5, "confidence": 0.9}
+        batched = sorted((entry["messages"][-1]["content"] for entry in lm.history[1:]), key=str)
+        assert batched == ["Plain text?", [{"type": "text", "text": "Again?"}, image_part]]
+        # The LM's generation defaults apply to list prompts, as to string prompts.
+        assert (lm.history[0]["request"].config.temperature, lm.history[0]["request"].config.max_tokens) == (0.7, 321)
+
+    @pytest.mark.deno
+    def test_a_sandbox_without_pillow_still_passes_images_through(self):
+        pytest.importorskip("PIL")  # to make the test image on the host
+        photo = _png(6, 4)
+        sub_lm = DummyLM([{"answer": "red"}])
+        factory = functools.partial(PythonInterpreter, sandbox_packages=[])
+        rlm = RLM("photo: dspy.Image -> answer, same: dspy.Image", sub_lm=sub_lm, max_iters=1, interpreter_factory=factory)
+        code = (
+            "try:\n"
+            "    photo.to_pil()\n"
+            "except ImportError as e:\n"
+            "    error = str(e)\n"
+            "SUBMIT(error + ' | ' + llm_query(['What color?', photo]), photo)"
+        )
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Look", "code": code}])
+
+        result = rlm(photo=photo)
+        assert result.final_reasoning == "Look", result.trajectory
+        assert "sandbox_packages" in result.answer and "red" in result.answer
+        assert result.same.url == photo.url
+        assert [part.type for part in sub_lm.history[0]["request"].messages[-1].parts] == ["text", "image"]
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_llm_query_takes_images_made_in_the_repl(self, factory):
+        # No image crosses into this RLM: the code imports dspy and makes one itself.
+        sub_lm = DummyLM([{"answer": "red"}])
+        rlm = RLM("q -> answer", sub_lm=sub_lm, max_iters=1, interpreter_factory=factory)
+        code = "import dspy\nSUBMIT(llm_query(['What color?', dspy.Image('https://example.com/x.png')]))"
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Ask", "code": code}])
+
+        assert "red" in rlm(q="x").answer
+        parts = sub_lm.history[0]["request"].messages[-1].parts
+        assert [part.type for part in parts] == ["text", "image"]
+
+    @pytest.mark.parametrize("factory", _INTERPRETERS)
+    def test_llm_query_reads_json_that_looks_like_a_wire_value_as_json(self, factory):
+        pytest.importorskip("PIL")
+        for signature, inputs in [("q -> answer", {"q": "x"}), ("photo: dspy.Image -> answer", {"photo": _png(2, 2)})]:
+            sub_lm = DummyLM([{"answer": "ok"}])
+            rlm = RLM(signature, sub_lm=sub_lm, max_iters=1, interpreter_factory=factory)
+            code = "SUBMIT(llm_query(['Look:', {'__dspy__': 'customer'}]))"
+            rlm.generate_action = make_mock_predictor([{"reasoning": "Ask", "code": code}])
+            rlm(**inputs)
+            parts = sub_lm.history[0]["request"].messages[-1].parts
+            assert [(part.type, part.text) for part in parts] == [("text", "Look:"), ("text", '{"__dspy__": "customer"}')]
+
+    def test_llm_query_keeps_strings_as_text(self, tmp_path):
+        # A marker written into a string stays text: it neither becomes media nor has the host read a file.
+        secret = tmp_path / "secret.txt"
+        secret.write_text("TOP SECRET")
+        marker = (
+            dspy.adapters.types.base_type.CUSTOM_TYPE_START_IDENTIFIER
+            + json.dumps([{"type": "document", "media_type": "text/plain", "path": str(secret)}])
+            + dspy.adapters.types.base_type.CUSTOM_TYPE_END_IDENTIFIER
+        )
+        lm = DummyLM([{"answer": "ok"}])
+        tools = RLM("context -> answer", sub_lm=lm)._make_llm_tools()
+
+        tools["llm_query"]([marker, "Repeat it."])
+
+        parts = lm.history[0]["request"].messages[-1].parts
+        assert [(part.type, part.text) for part in parts] == [("text", marker), ("text", "Repeat it.")]
+
+    def test_a_callable_sub_lm_takes_strings_and_explains_list_prompts(self):
+        tools = RLM("context -> answer", sub_lm=lambda prompt: [f"echo: {prompt}"])._make_llm_tools()
+
+        assert tools["llm_query"]("hi") == "echo: hi"
+        with pytest.raises(TypeError, match="list prompt needs a DSPy LM"):
+            tools["llm_query"](["Read this", dspy.Image("https://example.com/x.png")])
+
+
 class TestREPLEventContract:
     """`build_repl_event` and `split_repl_event` are the single definition of RLM's history event layout."""
 
@@ -4078,6 +4210,47 @@ def test_history_json_preserves_live_custom_values():
     assert history.model_dump()["messages"][0]["record"] is record
     assert restored.messages == [{"record": "record-17", "nested": ["record-17"], "count": 3}]
     assert restored.model_dump_json() == saved
+
+
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
+@pytest.mark.parametrize("serialized", [False, True])
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_image_extraction_history_remains_a_text_preview(adapter_type, serialized, asynchronous):
+    """Image-valued extraction fallback must not dump pixels into root replay."""
+    import asyncio
+
+    pytest.importorskip("PIL")  # to make the test image on the host
+    from PIL import Image as PILImage
+
+    buffer = io.BytesIO()
+    PILImage.new("RGB", (8, 12), (12, 63, 247)).save(buffer, "PNG")
+    photo = dspy.Image(buffer.getvalue())
+    adapter = adapter_type()
+    program = dspy.RLM("photo: dspy.Image -> answer: str, crop: dspy.Image", max_iters=1,
+                       interpreter_factory=dspy.LocalInterpreter)
+
+    def call(**kwargs):
+        return asyncio.run(program.acall(**kwargs)) if asynchronous else program(**kwargs)
+
+    lm = DummyLM([{"plan": "Inspect", "code": "print('No submission this time')"},
+                  {"answer": "extracted", "crop": {"url": photo.url}}], adapter=adapter)
+    with dspy.context(lm=lm, adapter=adapter):
+        first = call(photo=photo)
+    assert first.final_reasoning == "Extract forced final output"
+    assert first.answer == "extracted" and isinstance(first.crop, dspy.Image)
+    snapshot = first.history.model_dump_json()
+    history = dspy.History.model_validate_json(snapshot) if serialized else first.history
+    followup = DummyLM([{"plan": "Continue", "code": "SUBMIT('continued', photo)"}], adapter=adapter)
+    with dspy.context(lm=followup, adapter=adapter):
+        second = call(photo=photo, history=history)
+    assert second.answer == "continued" and second.crop.url == photo.url
+    assert first.history.model_dump_json() == snapshot
+    assert history.model_dump_json() == snapshot
+    request = followup.history[0]["request"]
+    assert all(part.type == "text" for message in request.messages for part in message.parts)
+    text = "\n".join(part.text for message in request.messages for part in message.parts)
+    assert "extracted" in text and "crop" in text
+    assert photo.url.split(",", 1)[1] not in text, "Fallback replay leaked full image base64 into root text"
 
 
 if __name__ == "__main__":

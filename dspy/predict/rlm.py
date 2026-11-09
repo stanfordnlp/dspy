@@ -29,10 +29,14 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator
 import pydantic
 
 import dspy
+from dspy._vendor.lm15.types import Part, TextPart
+from dspy.adapters.base import Prompt, _tool_result_content
 from dspy.adapters.types.base_type import Type
 from dspy.adapters.types.decision import Choice, Noul, Score
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
+from dspy.clients.requests import build_request
+from dspy.lm15 import Message
 from dspy.primitives.code_interpreter import (
     SIMPLE_TYPES,
     CodeExecutionError,
@@ -43,7 +47,7 @@ from dspy.primitives.code_interpreter import (
     _validate_interpreter_factory,
     resolve_interpreter_factory,
 )
-from dspy.primitives.facade import SandboxLM, SandboxSession, is_reserved_sandbox_name
+from dspy.primitives.facade import SandboxLM, SandboxSession, _refuse_host_files, is_reserved_sandbox_name
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -77,7 +81,7 @@ You have access to a Python REPL environment. Write Python code and it will be e
 {interpreter_rules}
 Available:
 - Variables: {inputs} (your input data)
-- `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis
+- `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis. `prompt` is a string, or a list of strings and DSPy values such as images to show them to the sub-LLM
 - `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries)
 - `print()` - ALWAYS print to see results
 - `SUBMIT({final_output_names})` - submit final output when done
@@ -196,6 +200,32 @@ def _annotation_crosses_wire(annotation: Any, _seen: frozenset = frozenset()) ->
                 for field in annotation.model_fields.values()
             )
     return any(_annotation_crosses_wire(arg, _seen) for arg in typing.get_args(annotation))
+
+
+def _from_repl(value: Any) -> Any:
+    """A value the REPL passed to one of RLM's host functions, read back if it came in the session's wire form."""
+    session = _repl_session.get()
+    return read_wire(value, session.id, session) if session is not None else value
+
+
+def _llm_query_content(prompt: Any) -> str | list[Part]:
+    """An ``llm_query`` prompt: text, or a list of text and DSPy values as lm15 content parts."""
+    prompt = _from_repl(prompt)
+    if isinstance(prompt, str):
+        if not prompt:
+            raise ValueError("prompt cannot be empty")
+        return prompt
+    if not isinstance(prompt, list) or not prompt:
+        raise ValueError("prompt must be a non-empty string, or a non-empty list of strings and DSPy values")
+    parts: list[Part] = []
+    for item in prompt:
+        # Text stays text, so a marker in it never becomes media; a value renders as a tool result does, so a
+        # dspy.Image becomes an image part.
+        content = item if isinstance(item, str) else _tool_result_content(item)
+        parts += [TextPart(text=content)] if isinstance(content, str) else content
+    # Media that names a host path would have the host read that file into the request.
+    _refuse_host_files(Prompt(messages=(Message.user(tuple(parts)),)))
+    return parts
 
 
 class _LLMCallBudget:
@@ -464,14 +494,23 @@ class RLM(Module):
         budget = budget if budget is not None else _LLMCallBudget(self.max_llm_calls)
         lm = self.sub_lm
 
-        def _query_lm(prompt: str) -> str:
+        def _query_lm(prompt: str | list[Part]) -> str:
             target_lm = lm if lm is not None else dspy.settings.lm
             # In an in-process REPL that is the metered stand-in for sub-agents; llm_query already reserved this call.
             if isinstance(target_lm, SandboxLM) and target_lm._reserve == budget.reserve:
                 target_lm = target_lm._lm
             if target_lm is None:
                 raise dspy.LMNotConfiguredError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
-            response = target_lm(prompt)
+            if isinstance(prompt, list):
+                if getattr(target_lm, "model", None) is None:
+                    raise TypeError(
+                        "llm_query with a list prompt needs a DSPy LM (such as dspy.LM) as sub_lm; "
+                        "a plain callable sub_lm takes string prompts only."
+                    )
+                # build_request applies the LM's generation defaults, as a string prompt gets them.
+                response = target_lm(build_request(target_lm, Prompt(messages=(Message.user(tuple(prompt)),))))
+            else:
+                response = target_lm(prompt)
             if isinstance(response, dspy.lm15.Response):
                 text = response.text
             elif isinstance(response, list) and response:
@@ -487,17 +526,18 @@ class RLM(Module):
                 raise TypeError(f"Sub-LM response must contain text, got {type(text).__name__}.")
             return text
 
-        def llm_query(prompt: str) -> str:
-            """Query the LLM with a prompt string."""
-            if not prompt:
-                raise ValueError("prompt cannot be empty")
+        def llm_query(prompt: str | list) -> str:
+            """Query the LLM with a prompt string, or a list of strings and DSPy values such as images."""
+            content = _llm_query_content(prompt)
             budget.reserve(1)
-            return _query_lm(prompt)
+            return _query_lm(content)
 
-        def llm_query_batched(prompts: list[str]) -> list[str]:
+        def llm_query_batched(prompts: list[str | list]) -> list[str]:
             """Query prompts concurrently, isolating LM failures while propagating contract errors."""
+            prompts = _from_repl(prompts)
             if not prompts:
                 return []
+            prompts = [prompt if isinstance(prompt, str) else _llm_query_content(prompt) for prompt in prompts]
             budget.reserve(len(prompts))
 
             results: dict[int, str] = {}
@@ -898,7 +938,7 @@ class RLM(Module):
         raw_output = result.output
         session = _repl_session.get()
         if session is not None and isinstance(raw_output, dict):  # see sandbox_guest.bind
-            raw_output = {name: read_wire(value, session.id, session) for name, value in raw_output.items()}
+            raw_output = {name: _from_repl(value) for name, value in raw_output.items()}
 
         # Validate raw_output is a dict
         if not isinstance(raw_output, dict):

@@ -67,7 +67,7 @@ The public call validates the inputs against the signature, builds the variable 
 The model writes these into its code blocks. You don’t call them, but knowing them tells you what the model can do.
 
 **`llm_query(prompt)`**
-One sub-LLM call. It sends the prompt to `sub_lm` or the configured LM, increments the counter, and returns the response text. It raises if the prompt is empty or the budget is spent.
+One sub-LLM call. It sends the prompt to `sub_lm` or the configured LM, increments the counter, and returns the response text. The prompt may also be a list of strings and DSPy values such as images, sent as one multimodal message. It raises if the prompt is empty or the budget is spent.
 
 **`llm_query_batched(prompts)`**
 Concurrent sub-LLM calls over a list, run on an eight-worker thread pool and returned in input order. A failed call comes back as an `[ERROR] ...` string in its slot rather than aborting the batch. This beats a Python loop of `llm_query` when the model has many independent snippets to read.

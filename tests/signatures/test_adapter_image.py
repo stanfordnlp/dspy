@@ -559,3 +559,16 @@ def test_from_path_missing_file():
 def test_unidentifiable_bytes_raise_value_error():
     with pytest.raises(ValueError, match="could not be identified as an image"):
         dspy.Image(b"not an image")
+
+
+def test_image_to_pil_decodes_embedded_images_only(monkeypatch):
+    image = dspy.Image(PILImage.new("RGB", (6, 4), (255, 0, 0)))
+    pil = image.to_pil()
+    assert pil.size == (6, 4) and pil.getpixel((0, 0)) == (255, 0, 0)
+    assert dspy.Image(pil).url == image.url  # dspy.Image(pil_image) goes the other way
+
+    with pytest.raises(ValueError, match="needs an embedded base64 image"):
+        dspy.Image("https://example.com/x.png").to_pil()
+    monkeypatch.setattr(dspy.adapters.types.image, "PIL_AVAILABLE", False)
+    with pytest.raises(ImportError, match="Pillow is required"):
+        image.to_pil()
