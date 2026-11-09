@@ -338,9 +338,20 @@ second = rlm(question="What is the sum of the ones above 100?", history=first.hi
 ```
 
 Each call records the interpreter's state on its last history step, as the hash of a
-[snapshot](../tools/PythonInterpreter.md#snapshots) that this process keeps in memory (the most recently used ones).
-A call continuing from any earlier history, including one saved as JSON, starts from the state that step left. Where
-that state is gone, as in another process, the call starts a fresh REPL and logs a warning.
+[snapshot](../tools/PythonInterpreter.md#snapshots) kept in the RLM's `interpreter_state_store`. A call continuing from
+any earlier history, including one saved as JSON, starts from the state that step left. Where the store no longer
+holds it, the call starts a fresh REPL and logs a warning.
+
+By default the store is this process's memory, the most recently used states within 256 MB. To continue a
+conversation in another process, give the RLM a store they share: a `diskcache.Cache` serves the processes on one
+machine, and anything with `get(key)` and `store[key] = value` will do, such as a wrapper around Redis or object
+storage. Each call adds a state of about 15 MB, more when its variables are large, kept until the store evicts it:
+
+```python
+import diskcache
+
+rlm = dspy.RLM("question -> answer", interpreter_state_store=diskcache.Cache("rlm_states"))  # 1 GB by default
+```
 
 ### Inspecting the Trajectory
 

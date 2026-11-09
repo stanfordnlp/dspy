@@ -25,7 +25,7 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Iterator
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Protocol
 
 import pydantic
 
@@ -118,11 +118,50 @@ _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
 # (see ``RLM._setup_facade``).
 _repl_session: contextvars.ContextVar[SandboxSession | None] = contextvars.ContextVar("dspy_rlm_repl_session", default=None)
 _repl_prelude: contextvars.ContextVar[str] = contextvars.ContextVar("dspy_rlm_repl_prelude", default="")
-# The interpreter states histories refer to (REPLEntry.interpreter_state): snapshots by their SHA-256, the most recently
-# used ones within _STATE_BUDGET bytes.
-_states: dict[str, bytes] = {}
-_states_lock = threading.Lock()
-_STATE_BUDGET = 256 * 2**20
+
+
+class InterpreterStateStore(Protocol):
+    """Where RLM keeps the interpreter states histories refer to (``REPLEntry.interpreter_state``), snapshots by their
+    SHA-256: a dict, a ``diskcache.Cache``, or anything else with these two methods."""
+
+    def get(self, key: str, /) -> bytes | None: ...
+
+    def __setitem__(self, key: str, value: bytes, /) -> None: ...
+
+
+class _StatesInMemory:
+    """This process's interpreter states, the most recently used ones within ``budget`` bytes."""
+
+    def __init__(self, budget: int) -> None:
+        self.budget = budget
+        self._states: dict[str, bytes] = {}
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> bytes | None:
+        with self._lock:
+            value = self._states.pop(key, None)
+            if value is not None:
+                self._states[key] = value  # now the most recently used
+            return value
+
+    def __setitem__(self, key: str, value: bytes) -> None:
+        if len(value) > self.budget:
+            logger.warning(
+                "RLM keeps no interpreter state over %d bytes in memory, so a call continuing this history starts "
+                "afresh: this one has %d.",
+                self.budget,
+                len(value),
+            )
+            return
+        with self._lock:
+            self._states.pop(key, None)
+            self._states[key] = value
+            while sum(map(len, self._states.values())) > self.budget:
+                del self._states[next(iter(self._states))]
+
+
+# Where RLMs given no store of their own keep interpreter states.
+_states: InterpreterStateStore = _StatesInMemory(256 * 2**20)
 # Once the REPL has imported dspy, binds the provided tools and SUBMIT to send and read dspy's objects in the session's
 # wire form (``sandbox_guest.bind``) before each execution, as the Flex driver does before it runs: some interpreters,
 # like LocalInterpreter, define them anew for each execution.
@@ -337,6 +376,7 @@ class RLM(Module):
         interpreter_factory: Callable[[], CodeInterpreter] = PythonInterpreter,
         *,
         history_processor: Callable[[dspy.History], dspy.History | None] | None = None,
+        interpreter_state_store: InterpreterStateStore | None = None,
     ):
         """
         Args:
@@ -363,10 +403,15 @@ class RLM(Module):
                 active factory's instructions to each action call, so ``dspy.context`` can switch runtimes
                 without changing the shared predictor signature. Defaults to ``dspy.PythonInterpreter``;
                 ``dspy.configure(interpreter_factory=...)`` replaces the default.
+            interpreter_state_store: Where to keep the interpreter states that returned histories refer to, so that a
+                call continuing one starts its REPL where the history left it: a ``diskcache.Cache`` (shared by
+                processes on one machine), or anything with ``get(key)`` and ``store[key] = value``. Each call adds a
+                state of about 15 MB. Defaults to this process's memory, the most recently used states within 256 MB.
         """
         super().__init__()
         _validate_interpreter_factory(interpreter_factory)
         self.history_processor = history_processor
+        self.interpreter_state_store = interpreter_state_store
         self.signature = ensure_signature(signature)
         if any(
             kind.extract_custom_type_from_annotation(field.rebuild_annotation())
@@ -902,14 +947,15 @@ class RLM(Module):
         finally:
             interpreter.shutdown()
 
+    def _state_store(self) -> InterpreterStateStore:
+        # Not `or`: an empty store is falsy.
+        return _states if self.interpreter_state_store is None else self.interpreter_state_store
+
     def _restore_interpreter(self, factory: Callable[..., CodeInterpreter], state: str) -> CodeInterpreter | None:
         """An interpreter started from the snapshot ``state`` names, or ``None`` where there can be none."""
-        with _states_lock:
-            snapshot = _states.pop(state, None)
-            if snapshot is not None:
-                _states[state] = snapshot  # now the most recently used
+        snapshot = self._state_store().get(state)
         if snapshot is None:
-            logger.warning("RLM starts a fresh REPL: this process no longer holds the state the history's last step left.")
+            logger.warning("RLM starts a fresh REPL: its state store does not hold the state the history's last step left.")
             return None
         interpreter = None
         try:
@@ -935,15 +981,8 @@ class RLM(Module):
         except CodeInterpreterError as e:
             logger.warning("RLM could not record the REPL's state, so a call continuing this history starts afresh: %s", e)
             return
-        if len(data) > _STATE_BUDGET:
-            logger.warning("RLM did not record the REPL's state, so a call continuing this history starts afresh: "
-                           "its %d bytes exceed the %d it keeps.", len(data), _STATE_BUDGET)
-            return
         state = hashlib.sha256(data).hexdigest()
-        with _states_lock:
-            _states[state] = _states.pop(state, data)
-            while sum(map(len, _states.values())) > _STATE_BUDGET:
-                del _states[next(iter(_states))]
+        self._state_store()[state] = data
         for i in range(len(history.messages) - 1, -1, -1):
             entry = history.messages[i].get(REPL_ENTRY_KEY)
             if isinstance(entry, REPLEntry):

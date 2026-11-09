@@ -2067,6 +2067,24 @@ class TestRLMHistoryWithDummyLM:
                 assert rlm(question="check", history=first.history).answer == "False"
             assert "starts a fresh REPL" in caplog.text
 
+    def test_a_history_continues_from_the_state_store_it_was_given(self, monkeypatch, tmp_path):
+        import diskcache
+
+        import dspy.predict.rlm as rlm_module
+
+        monkeypatch.setattr(rlm_module, "_states", {})
+        store = diskcache.Cache(str(tmp_path))
+        with dummy_lm_context([
+            {"plan": "load", "code": "rows = list(range(10))\nSUBMIT(str(len(rows)))"},
+            {"plan": "count", "code": "SUBMIT(str(len(rows)))"},
+        ]):
+            first = RLM("question -> answer", interpreter_state_store=store)(question="load")
+            assert len(store) == 1 and not rlm_module._states
+            # As another process would, with a history saved as JSON and an RLM of its own.
+            history = dspy.History.model_validate_json(first.history.model_dump_json())
+            second = RLM("question -> answer", interpreter_state_store=store)(question="count", history=history)
+            assert second.answer == "10"
+
     def test_repl_trajectory_resets_but_not_history(self):
 
         rlm = RLM("query -> answer: int", max_iters=5)
