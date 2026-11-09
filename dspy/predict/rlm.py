@@ -911,6 +911,7 @@ class RLM(Module):
         if snapshot is None:
             logger.warning("RLM starts a fresh REPL: this process no longer holds the state the history's last step left.")
             return None
+        interpreter = None
         try:
             interpreter = factory(snapshot=snapshot)
             provide = getattr(interpreter, "provide_dspy", None)  # as the one that made it had (SandboxSession.install)
@@ -918,6 +919,8 @@ class RLM(Module):
                 provide()
             interpreter.start()
         except (TypeError, CodeInterpreterError, SandboxBundleError) as e:
+            if interpreter is not None:
+                interpreter.shutdown()
             logger.warning("RLM starts a fresh REPL: the state the history's last step left could not be restored: %s", e)
             return None
         return interpreter
@@ -932,10 +935,14 @@ class RLM(Module):
         except CodeInterpreterError as e:
             logger.warning("RLM could not record the REPL's state, so a call continuing this history starts afresh: %s", e)
             return
+        if len(data) > _STATE_BUDGET:
+            logger.warning("RLM did not record the REPL's state, so a call continuing this history starts afresh: "
+                           "its %d bytes exceed the %d it keeps.", len(data), _STATE_BUDGET)
+            return
         state = hashlib.sha256(data).hexdigest()
         with _states_lock:
             _states[state] = _states.pop(state, data)
-            while len(_states) > 1 and sum(map(len, _states.values())) > _STATE_BUDGET:
+            while sum(map(len, _states.values())) > _STATE_BUDGET:
                 del _states[next(iter(_states))]
         for i in range(len(history.messages) - 1, -1, -1):
             entry = history.messages[i].get(REPL_ENTRY_KEY)
