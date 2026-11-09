@@ -4,12 +4,20 @@
 
 ## Stability and supported usage
 
-DSPy's GEPA integration remains experimental pending its graduation review. In particular,
-[predictor trace attribution](https://github.com/stanfordnlp/dspy/pull/9974) must distinguish
-predictors that share the same signature: currently their reflective examples can be mixed up.
-Do not rely on predictor-specific feedback being correctly attributed in that case.
-Removing the experimental notices requires resolving this correctness gate, reviewing the
-public compatibility contract, and passing release validation with maintainer sign-off.
+DSPy's GEPA integration is non-experimental as of DSPy 3.5, including its feedback metric,
+result type, default `InstructionProposer`, and Flex proposer hooks. Graduation preserves the
+existing behavior; it does not imply that optimization will improve every program.
+
+**Known limitation:** [predictor trace attribution](https://github.com/stanfordnlp/dspy/pull/9974)
+matches by signature, so predictors sharing the same signature can receive each other's reflective
+examples. Do not rely on predictor-specific feedback being correctly attributed in that case.
+This limitation remains unresolved and is accepted for graduation, not fixed by it.
+
+DSPy requires `gepa>=0.1.4,<0.2.0` on Python 3.10–3.14. The lower bound retains the tested engine
+and its batch-evaluation API; the upper bound excludes the next minor series of this pre-1.0
+dependency. At graduation review, 0.1.4 is both the oldest supported and latest published stable
+release. Future 0.1.x patches are permitted, not pre-validated; DSPy's dependency-range CI resolves
+the minimum and latest available dependencies. Python 3.15 support awaits upstream GEPA support.
 
 The integration's public usage contract is:
 

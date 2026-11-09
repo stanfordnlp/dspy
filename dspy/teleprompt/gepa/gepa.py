@@ -19,7 +19,6 @@ from dspy.teleprompt.gepa.gepa_utils import (
     ScoreWithFeedback,
 )
 from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.utils.annotation import experimental
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +29,6 @@ AUTO_RUN_SETTINGS = {
 }
 
 
-@experimental(version="3.0.0")
 class GEPAFeedbackMetric(Protocol):
     def __call__(
         self,
@@ -67,7 +65,6 @@ class GEPAFeedbackMetric(Protocol):
         ...
 
 
-@experimental(version="3.0.0")
 @dataclass(frozen=True)
 class DspyGEPAResult:
     """
@@ -189,7 +186,6 @@ class DspyGEPAResult:
         )
 
 
-@experimental(version="3.0.0")
 class GEPA(Teleprompter):
     """
     GEPA is an evolutionary optimizer, which uses reflection to evolve text components
