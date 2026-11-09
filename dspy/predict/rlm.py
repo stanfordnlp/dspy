@@ -14,6 +14,7 @@ import ast
 import contextlib
 import contextvars
 import functools
+import hashlib
 import inspect
 import json
 import keyword
@@ -117,10 +118,11 @@ _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
 # (see ``RLM._setup_facade``).
 _repl_session: contextvars.ContextVar[SandboxSession | None] = contextvars.ContextVar("dspy_rlm_repl_session", default=None)
 _repl_prelude: contextvars.ContextVar[str] = contextvars.ContextVar("dspy_rlm_repl_prelude", default="")
-# The RLM whose session call runs in this context, with the session's interpreter, which that call uses (see RLMSession).
-_session_interpreter: contextvars.ContextVar[tuple[RLM, CodeInterpreter] | None] = contextvars.ContextVar(
-    "dspy_rlm_session_interpreter", default=None
-)
+# The interpreter states histories refer to (REPLEntry.interpreter_state): snapshots by their SHA-256, the most recently
+# used ones within _STATE_BUDGET bytes.
+_states: dict[str, bytes] = {}
+_states_lock = threading.Lock()
+_STATE_BUDGET = 256 * 2**20
 # Once the REPL has imported dspy, binds the provided tools and SUBMIT to send and read dspy's objects in the session's
 # wire form (``sandbox_guest.bind``) before each execution, as the Flex driver does before it runs: some interpreters,
 # like LocalInterpreter, define them anew for each execution.
@@ -888,25 +890,59 @@ class RLM(Module):
         self,
         execution_tools: dict[str, Callable],
         factory: Callable[[], CodeInterpreter],
+        state: str | None = None,
     ) -> Iterator[CodeInterpreter]:
-        """Create and close one interpreter for this invocation, or use the one of the session it runs in."""
-        held = _session_interpreter.get()
-        if held is not None and held[0] is self:
-            token = _session_interpreter.set(None)  # nothing else in this call, like a sub-agent, gets it
-            try:
-                self._inject_execution_context(held[1], execution_tools)
-                yield held[1]
-            finally:
-                _session_interpreter.reset(token)
-            return
+        """Create and close one interpreter for this invocation, started from ``state`` where it can be."""
         _validate_interpreter_factory(factory)
-        interpreter = factory()
+        interpreter = (self._restore_interpreter(factory, state) if state else None) or factory()
         _validate_interpreter(interpreter)
         try:
             self._inject_execution_context(interpreter, execution_tools)
             yield interpreter
         finally:
             interpreter.shutdown()
+
+    def _restore_interpreter(self, factory: Callable[..., CodeInterpreter], state: str) -> CodeInterpreter | None:
+        """An interpreter started from the snapshot ``state`` names, or ``None`` where there can be none."""
+        with _states_lock:
+            snapshot = _states.pop(state, None)
+            if snapshot is not None:
+                _states[state] = snapshot  # now the most recently used
+        if snapshot is None:
+            logger.warning("RLM starts a fresh REPL: this process no longer holds the state the history's last step left.")
+            return None
+        try:
+            interpreter = factory(snapshot=snapshot)
+            provide = getattr(interpreter, "provide_dspy", None)  # as the one that made it had (SandboxSession.install)
+            if callable(provide):
+                provide()
+            interpreter.start()
+        except (TypeError, CodeInterpreterError, SandboxBundleError) as e:
+            logger.warning("RLM starts a fresh REPL: the state the history's last step left could not be restored: %s", e)
+            return None
+        return interpreter
+
+    def _record_interpreter_state(self, repl: CodeInterpreter, history: dspy.History) -> None:
+        """Record the interpreter's state on the history's last REPL step, for a call continuing the history."""
+        snapshot = getattr(repl, "snapshot", None)
+        if not callable(snapshot):
+            return
+        try:
+            data = snapshot()
+        except CodeInterpreterError as e:
+            logger.warning("RLM could not record the REPL's state, so a call continuing this history starts afresh: %s", e)
+            return
+        state = hashlib.sha256(data).hexdigest()
+        with _states_lock:
+            _states[state] = _states.pop(state, data)
+            while len(_states) > 1 and sum(map(len, _states.values())) > _STATE_BUDGET:
+                del _states[next(iter(_states))]
+        for i in range(len(history.messages) - 1, -1, -1):
+            entry = history.messages[i].get(REPL_ENTRY_KEY)
+            if isinstance(entry, REPLEntry):
+                entry = entry.model_copy(update={"interpreter_state": state})
+                history.messages[i] = {**history.messages[i], REPL_ENTRY_KEY: entry}
+                return
 
     # =========================================================================
     # Execution Core
@@ -1097,17 +1133,6 @@ class RLM(Module):
     # Public Interface
     # =========================================================================
 
-    def session(self, history: dspy.History | None = None, snapshot: bytes | None = None) -> RLMSession:
-        """Start a session: calls that share one interpreter, so each continues the REPL state and the history the
-        one before it left. Close it, or use it as a context manager, to shut the interpreter down.
-
-        Args:
-            history: The conversation to continue, like an earlier session's ``history``.
-            snapshot: The interpreter state to continue from, like an earlier session's ``snapshot()``. The
-                interpreter factory must take it as ``snapshot=``, as ``dspy.PythonInterpreter`` does.
-        """
-        return RLMSession(self, history, snapshot)
-
     def forward(
         self,
         *,
@@ -1130,9 +1155,10 @@ class RLM(Module):
         Returns:
             Prediction with the signature's outputs, `history`, `final_reasoning`, and this call's `trajectory`.
             `history` is a new `dspy.History` containing the input history plus one event per REPL
-            iteration; pass it back as `history=` to continue the conversation. History does not restore
-            interpreter variables or mutations; each invocation uses a fresh interpreter, unless it runs in a
-            session (`RLM.session`).
+            iteration; pass it back as `history=` to continue the conversation. An interpreter that can snapshot
+            (`PythonInterpreter`) records its state on the history's last step, and a call given that history starts
+            from it, with the variables earlier calls made. This process keeps those states in memory, the most
+            recently used; where one is gone, the call starts a fresh interpreter.
 
         Raises:
             ValueError: If required input fields are missing
@@ -1155,7 +1181,7 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with (
-            self._interpreter_context(execution_tools, interpreter_factory) as repl,
+            self._interpreter_context(execution_tools, interpreter_factory, _interpreter_state(history)) as repl,
             self._setup_facade(repl, budget, interpreter_factory, typed) as sub_agent_rules,
         ):
             regular_args = self._prepare_serializable_vars(input_args, repl)
@@ -1187,6 +1213,7 @@ class RLM(Module):
 
                 if final_outputs is not None:
                     history.messages[-1].update(final_outputs)  # Add output fields to last history event
+                    self._record_interpreter_state(repl, history)
                     return Prediction(
                         **final_outputs,
                         history=history,
@@ -1195,6 +1222,7 @@ class RLM(Module):
                     )
 
             # Max iterations reached - use extract fallback
+            self._record_interpreter_state(repl, history)
             return self._extract_fallback(
                 variables,
                 history,
@@ -1285,9 +1313,10 @@ class RLM(Module):
         Returns:
             Prediction with the signature's outputs, `history`, `final_reasoning`, and this call's `trajectory`.
             `history` is a new `dspy.History` containing the input history plus one event per REPL
-            iteration; pass it back as `history=` to continue the conversation. History does not restore
-            interpreter variables or mutations; each invocation uses a fresh interpreter, unless it runs in a
-            session (`RLM.session`).
+            iteration; pass it back as `history=` to continue the conversation. An interpreter that can snapshot
+            (`PythonInterpreter`) records its state on the history's last step, and a call given that history starts
+            from it, with the variables earlier calls made. This process keeps those states in memory, the most
+            recently used; where one is gone, the call starts a fresh interpreter.
 
         Raises:
             ValueError: If required input fields are missing
@@ -1310,7 +1339,7 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with (
-            self._interpreter_context(execution_tools, interpreter_factory) as repl,
+            self._interpreter_context(execution_tools, interpreter_factory, _interpreter_state(history)) as repl,
             self._setup_facade(repl, budget, interpreter_factory, typed) as sub_agent_rules,
         ):
             regular_args = self._prepare_serializable_vars(input_args, repl)
@@ -1341,6 +1370,7 @@ class RLM(Module):
 
                 if final_outputs is not None:
                     history.messages[-1].update(final_outputs)  # Add output fields to last history event
+                    self._record_interpreter_state(repl, history)
                     return Prediction(
                         **final_outputs,
                         history=history,
@@ -1349,6 +1379,7 @@ class RLM(Module):
                     )
 
             # Max iterations reached - use extract fallback
+            self._record_interpreter_state(repl, history)
             return await self._aextract_fallback(variables, history, turn_entries, output_field_names)
 
     def _repl_entry_event(
@@ -1370,58 +1401,6 @@ class RLM(Module):
     def _append_history_with_event(self, history: dspy.History, event: dict[str, Any]):
         if event:
             history.messages.append(event)
-
-
-class RLMSession:
-    """Calls of one RLM on one interpreter, each continuing the conversation the one before it left (see
-    ``RLM.session``)."""
-
-    def __init__(self, rlm: RLM, history: dspy.History | None = None, snapshot: bytes | None = None) -> None:
-        self.rlm = rlm
-        self.history = _coerce_history(history)
-        factory = resolve_interpreter_factory(rlm._interpreter_factory)
-        _validate_interpreter_factory(factory)
-        self.interpreter = factory() if snapshot is None else factory(snapshot=snapshot)
-        _validate_interpreter(self.interpreter)
-        self._busy = False
-
-    def __call__(self, **inputs: Any) -> Prediction:
-        with self._turn():
-            result = self.rlm(history=self.history, **inputs)
-            self.history = result.history
-        return result
-
-    async def acall(self, **inputs: Any) -> Prediction:
-        with self._turn():
-            result = await self.rlm.acall(history=self.history, **inputs)
-            self.history = result.history
-        return result
-
-    @contextmanager
-    def _turn(self) -> Iterator[None]:
-        if self._busy:  # each call continues the history and the REPL state the one before it left
-            raise RuntimeError("An RLM session runs one call at a time: finish each call before the next.")
-        self._busy = True
-        token = _session_interpreter.set((self.rlm, self.interpreter))
-        try:
-            yield
-        finally:
-            _session_interpreter.reset(token)
-            self._busy = False
-
-    def snapshot(self) -> bytes:
-        """The interpreter's state, for ``RLM.session(history=..., snapshot=...)`` to continue this session from
-        with its ``history``, in this process or another (see ``PythonInterpreter.snapshot``)."""
-        return self.interpreter.snapshot()
-
-    def close(self) -> None:
-        self.interpreter.shutdown()
-
-    def __enter__(self) -> RLMSession:
-        return self
-
-    def __exit__(self, *_: Any) -> None:
-        self.close()
 
 
 def _apply_history_processor(
@@ -1451,6 +1430,15 @@ def _apply_history_processor(
     if processed is None or processed is candidate:
         return candidate
     return _coerce_history(processed).model_copy(deep=True)
+
+
+def _interpreter_state(history: dspy.History) -> str | None:
+    """The interpreter state recorded on the history's last REPL step, if it has one."""
+    for message in reversed(history.messages):
+        entry = message.get(REPL_ENTRY_KEY)
+        if isinstance(entry, REPLEntry):
+            return entry.interpreter_state
+    return None
 
 
 def _coerce_history(history: Any) -> dspy.History:

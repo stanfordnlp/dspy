@@ -125,12 +125,18 @@ class REPLEntry(pydantic.BaseModel):
     output: str
 
     max_output_chars: int = 10_000
+    # The SHA-256 of the interpreter's snapshot right after this step, on the last step of an RLM call: a call given
+    # a history that ends with it starts its REPL from that state.
+    interpreter_state: str | None = None
 
     model_config = pydantic.ConfigDict(frozen=True)
 
     @pydantic.model_serializer(mode="wrap")
     def _serialize_with_type_tag(self, handler: pydantic.SerializerFunctionWrapHandler) -> dict[str, Any]:
-        return {REPL_TYPE_KEY: "entry", **handler(self)}
+        data = handler(self)
+        if data.get("interpreter_state") is None:
+            data.pop("interpreter_state", None)
+        return {REPL_TYPE_KEY: "entry", **data}
 
     @pydantic.model_validator(mode="before")
     @classmethod

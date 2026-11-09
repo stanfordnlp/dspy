@@ -2042,6 +2042,31 @@ class TestRLMHistoryWithDummyLM:
         assert result.history.messages[1]["query"] == "now"
         assert result.history.messages[1]["answer"] == 2
 
+    def test_a_history_continues_from_the_interpreter_state_its_last_step_left(self, monkeypatch, caplog):
+        import dspy.predict.rlm as rlm_module
+
+        rlm = RLM("question -> answer", max_iters=2, sub_lm=DummyLM([{"a": "sub-agent"}, {"a": "query"}]))
+        extend = "import dspy\nrows.append(dspy.Predict('q -> a')(q='hi').a)\nSUBMIT(f'{len(rows)} {rows[-1]} {ask(\"hi\")}')"
+        with dummy_lm_context([
+            {"plan": "load", "code": "rows = list(range(10))\nask = llm_query\nSUBMIT(str(len(rows)))"},
+            {"plan": "extend", "code": extend},
+            {"plan": "count", "code": "SUBMIT(str(len(rows)))"},
+            {"plan": "check", "code": "SUBMIT(str('rows' in globals()))"},
+        ]):
+            first = rlm(question="load")
+            assert first.history.messages[-1]["repl_entry"].interpreter_state
+            # Its variables, a helper it kept, and dspy wired to this call's host.
+            answer = rlm(question="extend", history=first.history).answer
+            assert answer.startswith("11 sub-agent") and "query" in answer
+            # The state that step left, after a JSON round trip, not where the call above took it.
+            restored = dspy.History.model_validate_json(first.history.model_dump_json())
+            assert rlm(question="count", history=restored).answer == "10"
+
+            monkeypatch.setattr(rlm_module, "_states", {})
+            with caplog.at_level("WARNING", logger="dspy.predict.rlm"):
+                assert rlm(question="check", history=first.history).answer == "False"
+            assert "starts a fresh REPL" in caplog.text
+
     def test_repl_trajectory_resets_but_not_history(self):
 
         rlm = RLM("query -> answer: int", max_iters=5)
@@ -2780,50 +2805,6 @@ class _ShoutedNumbersBox(pydantic.BaseModel):
 
 
 _INTERPRETERS = [LocalInterpreter, pytest.param(PythonInterpreter, marks=pytest.mark.deno)]
-
-
-@pytest.mark.parametrize("factory", _INTERPRETERS)
-def test_a_session_keeps_its_interpreter_and_history_across_calls(factory):
-    closed = []
-
-    class Tracked(factory):
-        def shutdown(self):
-            closed.append(self)
-            super().shutdown()
-
-    rlm = RLM("question -> answer: int", max_iters=2, interpreter_factory=Tracked)
-    with dummy_lm_context([
-        {"plan": "load", "code": "rows = list(range(10))\nSUBMIT(len(rows))"},
-        {"plan": "reuse", "code": "SUBMIT(sum(rows))"},
-        {"plan": "fresh", "code": "SUBMIT(len(globals().get('rows', [])))"},
-    ]):
-        with rlm.session() as chat:
-            assert chat(question="load").answer == 10
-            assert chat(question="sum").answer == 45
-            with chat._turn(), pytest.raises(RuntimeError, match="one call at a time"):
-                chat(question="overlapping")
-            assert closed == []
-        assert closed == [chat.interpreter]
-        assert [event["question"] for event in chat.history.messages] == ["load", "sum"]
-        assert rlm(question="again").answer == 0  # outside the session, a fresh interpreter
-
-
-@pytest.mark.deno
-def test_a_session_continues_in_another_interpreter_from_its_snapshot():
-    rlm = RLM("question -> answer", max_iters=2, sub_lm=DummyLM([{"a": "sub-agent"}, {"a": "query"}]))
-    reuse = "import dspy\nreply = dspy.Predict('q -> a')(q='hi').a\nSUBMIT(f'{sum(rows)} {reply} {ask(\"hi\")}')"
-    with dummy_lm_context([
-        {"plan": "load", "code": "rows = list(range(10))\nask = llm_query\nSUBMIT(str(len(rows)))"},
-        {"plan": "reuse", "code": reuse},
-    ]):
-        with rlm.session() as chat:
-            chat(question="load")
-            history, snapshot = chat.history, chat.snapshot()
-        with rlm.session(history=history, snapshot=snapshot) as chat:
-            # Its REPL state, a helper it kept, and dspy wired to this host.
-            answer = chat(question="sum").answer
-            assert answer.startswith("45 sub-agent") and "query" in answer
-            assert len(chat.history.messages) == 2
 
 
 @pytest.mark.asyncio
