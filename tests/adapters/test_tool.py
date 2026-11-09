@@ -1,6 +1,8 @@
 import asyncio
 from collections import defaultdict
-from typing import Any
+from decimal import Decimal
+from fractions import Fraction
+from typing import Annotated, Any
 
 import pytest
 from pydantic import (
@@ -12,6 +14,7 @@ from pydantic import (
     RootModel,
     TypeAdapter,
     field_serializer,
+    model_serializer,
     model_validator,
 )
 
@@ -363,6 +366,67 @@ def test_tool_checks_plain_model_args_as_the_json_their_schema_describes():
     args = {"counts": {"type": "array"}, "tagged": {"type": "object", "required": ["source"]}}
     tool = Tool(total, args=args, arg_types={"counts": Counts, "tagged": Tagged})
     assert tool(counts=Counts([1, 2]), tagged=Tagged(source="web")) == "3 web"
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("as_json", [False, True])
+def test_tool_root_model_date_argument(asynchronous, as_json):
+    from datetime import date
+
+    class Day(RootModel[date]):
+        @model_serializer
+        def serialize(self):
+            return self.root.isoformat()
+
+    def read_day(value: Day) -> str:
+        return value.root.isoformat()
+
+    tool = dspy.Tool(read_day)
+    value = "2026-11-09" if as_json else Day(date(2026, 11, 9))
+    result = asyncio.run(tool.acall(value=value)) if asynchronous else tool(value=value)
+    assert result == "2026-11-09"
+
+
+def test_tool_root_model_validates_root_not_custom_serializer():
+    class Count(RootModel[int]):
+        @model_serializer
+        def serialize(self):
+            return 0
+
+    def read_count(value: Count) -> int:
+        return value.root
+
+    tool = dspy.Tool(read_count, args={"value": {"type": "integer", "maximum": 3}})
+    assert tool(value=Count(2)) == 2
+    with pytest.raises(ValueError, match="greater than the maximum"):
+        tool(value=Count(4))
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("number", [Decimal("2.75"), Fraction(1, 2)])
+def test_tool_root_model_preserves_numeric_constraints(asynchronous, number):
+    class Amount(RootModel[type(number)]):
+        pass
+
+    def read_amount(value: Amount):
+        return value.root
+
+    tool = dspy.Tool(read_amount, args={"value": {"type": "number", "maximum": 3}})
+    value = Amount(number)
+    result = asyncio.run(tool.acall(value=value)) if asynchronous else tool(value=value)
+    assert result == number
+
+    class Amounts(RootModel[list[Annotated[Decimal, Field(le=3)]]]):
+        pass
+
+    def read_amounts(value: Amounts):
+        return value.root
+
+    tool = dspy.Tool(read_amounts)
+    value = Amounts([Decimal(2)])
+    value.root.append(Decimal(4))
+    with pytest.raises(ValueError, match="Arg value is invalid"):
+        asyncio.run(tool.acall(value=value)) if asynchronous else tool(value=value)
 
 
 def test_invalid_function_call():
