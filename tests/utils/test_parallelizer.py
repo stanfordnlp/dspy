@@ -228,9 +228,14 @@ def test_straggler_resubmission_happens_at_most_once_per_item(monkeypatch):
         return item
 
     executor = ParallelExecutor(num_threads=4, timeout=0.05, straggler_limit=3, disable_progress_bar=True)
+    # Release the straggler mid-run instead of after execute() returns, so the
+    # test does not always sit out the full 5 s wait timeout (review nit).
+    release_timer = threading.Timer(0.5, release.set)
+    release_timer.start()
     try:
         results = executor.execute(task, [1, 2])
     finally:
+        release_timer.cancel()
         release.set()
 
     assert results == [1, 2]
