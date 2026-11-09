@@ -989,7 +989,6 @@ class RLM(Module):
             pred: The prediction containing reasoning and code attributes
             code: Code to record in history (already stripped when possible)
             result: Result from interpreter.execute() - FinalOutput, list, str, or error string
-            history: Current REPL history
             output_field_names: List of expected output field names
 
         Returns:
