@@ -1267,6 +1267,16 @@ def test_tool_returning_dict(configure_pooled_interpreter):
     assert "5" in result
 
 
+def test_tool_json_null_is_python_none(configure_pooled_interpreter):
+    def get_values():
+        return {"values": [None, "jsnull", {"null": None}]}
+
+    sandbox = configure_pooled_interpreter(tools={"get_values": get_values})
+    # Inspect inside Python: converting JsNull back to host JSON can otherwise hide the wrong guest type.
+    result = sandbox.execute("v = get_values()['values']; [v[0] is None, v[1], v[2]['null'] is None]")
+    assert result == [True, "jsnull", True]
+
+
 def test_tool_returning_non_json_serializable(configure_pooled_interpreter):
     """Test that tools returning non-JSON-serializable objects fall back to string."""
 
