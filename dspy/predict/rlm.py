@@ -1383,26 +1383,31 @@ class RLMSession:
         _validate_interpreter_factory(factory)
         self.interpreter = factory() if snapshot is None else factory(snapshot=snapshot)
         _validate_interpreter(self.interpreter)
+        self._busy = False
 
     def __call__(self, **inputs: Any) -> Prediction:
         with self._turn():
             result = self.rlm(history=self.history, **inputs)
-        self.history = result.history
+            self.history = result.history
         return result
 
     async def acall(self, **inputs: Any) -> Prediction:
         with self._turn():
             result = await self.rlm.acall(history=self.history, **inputs)
-        self.history = result.history
+            self.history = result.history
         return result
 
     @contextmanager
     def _turn(self) -> Iterator[None]:
+        if self._busy:  # each call continues the history and the REPL state the one before it left
+            raise RuntimeError("An RLM session runs one call at a time: finish each call before the next.")
+        self._busy = True
         token = _session_interpreter.set((self.rlm, self.interpreter))
         try:
             yield
         finally:
             _session_interpreter.reset(token)
+            self._busy = False
 
     def snapshot(self) -> bytes:
         """The interpreter's state, for ``RLM.session(history=..., snapshot=...)`` to continue this session from

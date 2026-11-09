@@ -2800,6 +2800,8 @@ def test_a_session_keeps_its_interpreter_and_history_across_calls(factory):
         with rlm.session() as chat:
             assert chat(question="load").answer == 10
             assert chat(question="sum").answer == 45
+            with chat._turn(), pytest.raises(RuntimeError, match="one call at a time"):
+                chat(question="overlapping")
             assert closed == []
         assert closed == [chat.interpreter]
         assert [event["question"] for event in chat.history.messages] == ["load", "sum"]
@@ -2808,17 +2810,19 @@ def test_a_session_keeps_its_interpreter_and_history_across_calls(factory):
 
 @pytest.mark.deno
 def test_a_session_continues_in_another_interpreter_from_its_snapshot():
-    rlm = RLM("question -> answer", max_iters=2, sub_lm=DummyLM([{"a": "sub-agent"}]))
-    reuse = "import dspy\nreply = dspy.Predict('q -> a')(q='hi').a\nSUBMIT(f'{sum(rows)} {reply}')"
+    rlm = RLM("question -> answer", max_iters=2, sub_lm=DummyLM([{"a": "sub-agent"}, {"a": "query"}]))
+    reuse = "import dspy\nreply = dspy.Predict('q -> a')(q='hi').a\nSUBMIT(f'{sum(rows)} {reply} {ask(\"hi\")}')"
     with dummy_lm_context([
-        {"plan": "load", "code": "rows = list(range(10))\nSUBMIT(str(len(rows)))"},
+        {"plan": "load", "code": "rows = list(range(10))\nask = llm_query\nSUBMIT(str(len(rows)))"},
         {"plan": "reuse", "code": reuse},
     ]):
         with rlm.session() as chat:
             chat(question="load")
             history, snapshot = chat.history, chat.snapshot()
         with rlm.session(history=history, snapshot=snapshot) as chat:
-            assert chat(question="sum").answer == "45 sub-agent"  # its REPL state, and dspy wired to this host
+            # Its REPL state, a helper it kept, and dspy wired to this host.
+            answer = chat(question="sum").answer
+            assert answer.startswith("45 sub-agent") and "query" in answer
             assert len(chat.history.messages) == 2
 
 
