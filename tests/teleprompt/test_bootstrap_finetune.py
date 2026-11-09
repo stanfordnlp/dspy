@@ -108,6 +108,102 @@ def test_bootstrap_finetune_preserves_tool_supervision(adapter_type):
     assert "lookup" in target and "tool-query-91" in target
 
 
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.XMLAdapter])
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("teacher_source", ["student", "separate", "student-list"])
+def test_bootstrap_finetune_call_reasoning_config(adapter_type, asynchronous, teacher_source):
+    import asyncio
+
+    from tests.test_utils.engines import AsyncRecordingEngine
+
+    class Program(dspy.Module):
+        def __init__(self, call_config):
+            super().__init__()
+            self.cot = dspy.ChainOfThought("question -> answer")
+            self.call_config = call_config
+
+        def forward(self, question):
+            kwargs = {"question": question, "config": self.call_config}
+            return asyncio.run(self.cot.acall(**kwargs)) if asynchronous else self.cot(**kwargs)
+
+    provider = RecordingTrainingProvider()
+    engine = TrainingReplayEngine(provider, native=True)
+    lm = dspy.LM("custom/student", engine=engine, async_engine=AsyncRecordingEngine(engine),
+                 provider=provider, cache=False)
+    student = Program({} if teacher_source == "separate" else {"reasoning_effort": "none"})
+    student.set_lm(lm)
+    teacher = Program({"reasoning_effort": "none"}) if teacher_source == "separate" else None
+    if teacher is not None:
+        teacher.set_lm(lm)
+    if teacher_source == "student-list":
+        teacher = [None]
+    with dspy.context(adapter=adapter_type(use_json_adapter_fallback=False)):
+        compiled = dspy.BootstrapFinetune(num_threads=1).compile(
+            student, teacher=teacher, trainset=[dspy.Example(question="learn this").with_inputs("question")],
+        )
+        result = compiled(question="learn this")
+    target = provider.data[0]["messages"][-1]["content"]
+    marker = "<plan>" if adapter_type is dspy.XMLAdapter else "[[ ## plan ## ]]"
+    assert (marker in target) == (teacher_source != "separate")
+    assert result.answer == "learned-91" and result.reasoning == "training-plan-73"
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("copied_predictor", [False, True])
+def test_bootstrap_finetune_concurrent_call_configs(asynchronous, copied_predictor):
+    import asyncio
+    import threading
+
+    from tests.test_utils.engines import AsyncRecordingEngine, make_response
+
+    questions = ["explicit-73", "native-91", "explicit-19", "native-47"]
+    barrier = threading.Barrier(len(questions))
+    provider = RecordingTrainingProvider()
+
+    class Engine(TrainingReplayEngine):
+        def complete(self, request):
+            if request.model == "custom/fitted":
+                question = next(q for q in questions if q in request.messages[-1].text)
+                row = next(row for row in provider.data if question in row["messages"][-2]["content"])
+                return make_response(row["messages"][-1]["content"], thinking="training-plan-73")
+            barrier.wait(timeout=10)
+            return super().complete(request)
+
+    class Program(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.cot = dspy.ChainOfThought("question -> answer")
+
+        def forward(self, question):
+            cot = self.cot.deepcopy() if copied_predictor else self.cot
+            config = {"reasoning_effort": "none"} if question.startswith("explicit") else {"reasoning": {"effort": "high"}}
+            kwargs = {"question": question, "config": config}
+            result = asyncio.run(cot.acall(**kwargs)) if asynchronous else cot(**kwargs)
+            if "reasoning" in config:
+                config["reasoning"]["effort"] = "none"  # A trace must keep the completed call's snapshot.
+            return result
+
+    engine = Engine(provider, native=True)
+    lm = dspy.LM("custom/student", engine=engine, async_engine=AsyncRecordingEngine(engine),
+                 provider=provider, cache=False)
+    student = Program()
+    student.set_lm(lm)
+    with dspy.context(adapter=dspy.XMLAdapter(use_json_adapter_fallback=False)):
+        compiled = dspy.BootstrapFinetune(num_threads=4).compile(
+            student, trainset=[dspy.Example(question=q).with_inputs("question") for q in questions],
+        )
+        for question in questions:
+            with dspy.context(trace=[]):
+                result = compiled(question=question)
+                trace = dspy.settings.trace
+                assert len(trace[0]) == 3 and trace[0][1] == {"question": question}
+                assert set(result.keys()) == {"reasoning", "answer"}
+                assert result.reasoning == "training-plan-73" and result.answer == "learned-91"
+    for row in provider.data:
+        assert ("<plan>" in row["messages"][-1]["content"]) == ("explicit-" in row["messages"][-2]["content"])
+    assert student.cot.predict.config == {}
+
+
 # Define a simple metric function for testing
 def simple_metric(example, prediction, trace=None):
     return example.output == prediction.output
