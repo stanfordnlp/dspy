@@ -188,6 +188,12 @@ async def test_default_reasoning_trajectory(mode, async_mode):
 class TestRLMInitialization:
     """Tests for RLM module initialization."""
 
+    def test_rlm_is_a_stable_public_module(self):
+        """RLM is exported at its public paths without the experimental notice."""
+        assert dspy.RLM is dspy.predict.RLM is RLM
+        assert "Experimental:" not in RLM.__doc__
+        assert RLM.__doc__.startswith("Recursive Language Model module.")
+
     def test_basic_initialization(self):
         """Test RLM module initializes correctly with signature."""
         rlm = RLM("context, query -> answer", max_iters=5)
