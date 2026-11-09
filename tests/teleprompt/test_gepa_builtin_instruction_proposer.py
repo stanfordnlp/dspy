@@ -11,7 +11,8 @@ from pydantic import ValidationError
 
 import dspy
 from dspy.adapters.types.tool import ToolCallResults, ToolCalls
-from dspy.primitives.repl_types import REPLHistory
+from dspy.lm15 import ImagePart, TextPart
+from dspy.primitives.repl_types import REPLEntry, REPLHistory, build_repl_event
 from dspy.teleprompt.gepa import InstructionProposer
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.teleprompt.gepa.instruction_proposal import (
@@ -22,6 +23,7 @@ from dspy.teleprompt.gepa.instruction_proposal import (
     compact_repl_history,
 )
 from dspy.utils.dummies import DummyLM
+from tests.test_utils.engines import spy_lm
 
 GEPA_PARAGRAPH_1 = (
     "Read the inputs carefully and identify the input format and infer detailed task description about the "
@@ -392,7 +394,7 @@ def test_compact_history_cuts_long_tool_results_and_leaves_the_input_alone():
     assert result.name == "search"
     assert result.is_error is False
 
-    # The input is untouched: ReActV2 appends to its History in place and the trace shares that object.
+    # The input is untouched: ReAct appends to its History in place and the trace shares that object.
     assert history.messages[0]["tool_calls"].tool_call_results.tool_call_results[0].value == long_result
     assert compacted is not history
     assert compacted.messages is not history.messages
@@ -445,6 +447,36 @@ def test_history_and_repl_history_use_adapter_serialization():
     assert "r" * 500 + " [700 of 1,200 characters cut]" in user
     assert "r" * 501 not in user
     assert "(2,500 characters omitted)" in user
+
+
+@pytest.mark.parametrize("serialized", [False, True])
+def test_proposer_truncates_rlm_history_observations_without_mutating_history(serialized):
+    history = dspy.History(messages=[
+        build_repl_event({"question": "Inspect"}, REPLEntry(
+            reasoning="Keep my plan", code="print(data)", output="a" * 1_000 + "b" * 2_000, max_output_chars=700,
+        )),
+        build_repl_event(None, REPLEntry(code="print(other)", output="c" * 400, max_output_chars=100)),
+    ])
+    if serialized:
+        history = dspy.History.model_validate_json(history.model_dump_json())
+    original = history.model_dump_json()
+    examples = [{"Inputs": {"history": history}, "Generated Outputs": {"answer": "ok"}, "Feedback": "ok"}]
+
+    full = json_lm("Keep going.")
+    propose(InstructionProposer(), full, examples=examples)
+    assert "b" * 2_000 in last_messages(full)[1]
+
+    truncated = json_lm("Keep going.")
+    propose(InstructionProposer(truncate_history_outputs=True), truncated, examples=examples)
+    user = last_messages(truncated)[1]
+    assert "a" * 250 in user and "a" * 251 not in user
+    assert "b" * 250 in user and "b" * 251 not in user
+    assert "c" * 50 in user and "c" * 51 not in user
+    assert "2,500 characters omitted" in user
+    assert "300 characters omitted" in user
+    assert "36 characters omitted" not in user
+    assert "Keep my plan" in user and "print(data)" in user
+    assert history.model_dump_json() == original
 
 
 # --- GEPA end to end -------------------------------------------------------------
@@ -502,7 +534,7 @@ def react_program_and_lm():
         ]
         * 20
     )
-    return dspy.ReActV2("question -> answer", tools=[lookup]), task_lm
+    return dspy.ReAct("question -> answer", tools=[lookup]), task_lm
 
 
 def react_metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
@@ -512,6 +544,7 @@ def react_metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
 def test_gepa_truncate_history_outputs_on_a_react_program_and_custom_proposers_see_the_context_string(caplog):
     trainset = [dspy.Example(question="cats?", answer="cats purr loudly").with_inputs("question")]
 
+    # Each evaluation must consume a full lookup/submit pair from the shared DummyLM script.
     # The built-in proposer with truncate_history_outputs: the reflection prompt omits the long tool output.
     program, task_lm = react_program_and_lm()
     reflection_lm = DummyLM([{"new_instruction": "Search, then answer in detail."}] * 5, adapter=dspy.JSONAdapter())
@@ -521,6 +554,7 @@ def test_gepa_truncate_history_outputs_on_a_react_program_and_custom_proposers_s
             reflection_lm=reflection_lm,
             instruction_proposer=InstructionProposer(truncate_history_outputs=True),
             max_metric_calls=4,
+            num_threads=1,
         ).compile(program, trainset=trainset, valset=trainset)
 
     assert no_reflection_errors(caplog)
@@ -539,7 +573,8 @@ def test_gepa_truncate_history_outputs_on_a_react_program_and_custom_proposers_s
 
     program, task_lm = react_program_and_lm()
     with dspy.context(lm=task_lm, adapter=dspy.ChatAdapter()):
-        dspy.GEPA(metric=react_metric, instruction_proposer=custom_proposer, max_metric_calls=4).compile(
+        # The shared scripted LM requires consecutive lookup/submit calls for each example.
+        dspy.GEPA(metric=react_metric, instruction_proposer=custom_proposer, max_metric_calls=4, num_threads=1).compile(
             program, trainset=trainset, valset=trainset
         )
 
@@ -550,8 +585,9 @@ def test_gepa_truncate_history_outputs_on_a_react_program_and_custom_proposers_s
     assert context.endswith("```")
     assert LONG_TOOL_OUTPUT in context
     assert "characters cut" not in context
-    assert list(example["Inputs"]) == ["Context", "tools"]
+    assert list(example["Inputs"]) == ["Context", "tools", "turn_budget"]
     assert isinstance(example["Inputs"]["tools"], str)
+    assert example["Inputs"]["turn_budget"].startswith("Turn ")
 
 
 def test_explicit_builtin_proposer_with_a_flex_submodule_logs_no_custom_proposer_warning(caplog):
@@ -665,14 +701,14 @@ def test_examples_reach_adapter_as_structured_values():
             "Feedback": "ok",
         }
     ]
-    lm = json_lm("New instruction.")
+    lm = spy_lm(replies=[json.dumps({"new_instruction": "New instruction."})])
     propose(InstructionProposer(adapter=InspectAdapter()), lm, examples=examples)
     assert seen == [examples]
     assert seen[0][0]["Inputs"]["Context"] is history
     assert seen[0][0]["Inputs"]["repl"] is repl
-    content = lm.history[-1]["messages"][-1]["content"]
-    assert any(part.get("type") == "image_url" for part in content)
-    text = "".join(part.get("text", "") for part in content)
+    content = lm.engine.requests[-1].messages[-1].parts
+    assert any(isinstance(part, ImagePart) for part in content)
+    text = "".join(part.text for part in content if isinstance(part, TextPart))
     assert '"amount": "1200", "claim": "claim #7"' in text
     assert '"Feedback": "ok"' in text
 

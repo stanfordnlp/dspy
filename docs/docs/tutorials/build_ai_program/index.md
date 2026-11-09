@@ -37,7 +37,7 @@ Explore advanced techniques for building AI systems that respect privacy constra
 
 ## Advanced Reasoning
 
-### [Program Of Thought](../program_of_thought/index.ipynb)
+### [Code execution with RLM](../../api/modules/RLM.md)
 Learn to build systems that can generate and execute code to solve complex problems, combining the power of language models with programmatic reasoning.
 
 ## Multimodal Applications

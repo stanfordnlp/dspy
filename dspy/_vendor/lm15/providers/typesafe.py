@@ -9,8 +9,11 @@ request without judgments or with tools is refused before the wire (D8).
 Images reach Jev as top-level ``assets`` named by a reference string
 written where the image belongs in the state
 (changes/2026-10-14-jev-images.md); audio, video and documents are
-refused (MAP-10).  Wire facts: receipts/2026-09-17-judgments/,
-receipts/2026-10-14-typesafe/.
+refused (MAP-10).  A bounding-box judgment is Jev's Box question; its
+answer is the box verbatim, with no distribution
+(changes/2026-10-15-bounding-box.md).  Wire facts:
+receipts/2026-09-17-judgments/, receipts/2026-10-14-typesafe/,
+receipts/2026-10-15-typesafe/.
 """
 from __future__ import annotations
 
@@ -34,7 +37,7 @@ from ..errors import (
     map_http_error,
 )
 from ..features import ProviderManifest
-from ..judgments import MAX_CHOICE_KEYS, MAX_ORDERED_LEVELS, Judgment, non_judgment_properties, request_judgments
+from ..judgments import BOX_EDGES, MAX_CHOICE_KEYS, MAX_ORDERED_LEVELS, Judgment, non_judgment_properties, request_judgments
 from ..transports import TransportRequest
 from ..types import DataPart, ImagePart, Message, Part, Request, Response, StreamEvent, TextPart, Usage
 from .base import BaseProviderLM, Credential, HttpResponse, SyncTransport, default_transport, _attach_error_metadata
@@ -52,9 +55,10 @@ _DROPPED_KNOBS: tuple[str, ...] = (
 # changes/2026-10-14-jev-images.md.  The asset formats systemone reads
 # (docs.typesafe.ai/images "Asset fields"): PNG and JPEG, nothing else.
 _IMAGE_FORMATS: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg"}
-# Images are off unless each request that carries one sends this header
-# (live 400 without it, 2026-10-14: "Images are experimental. Send the header
-# TypeSafe-Danger-Zone-Images: true to use them.").
+# Images and Box questions are off unless each request that carries one
+# sends this header (live 400 without it, 2026-10-14 for an image,
+# 2026-10-15 for a Box question with no image: "Images are experimental.
+# Send the header TypeSafe-Danger-Zone-Images: true to use them.").
 _IMAGES_HEADER = "TypeSafe-Danger-Zone-Images"
 
 
@@ -202,6 +206,9 @@ class TypeSafeLM(BaseProviderLM):
                 instruction = name
             if j.kind == "boolean":
                 questions[name] = {"type": "noul", "instructions": instruction}
+            elif j.kind == "box":
+                # Jev's Box takes no criteria (docs.typesafe.ai/primitives/box).
+                questions[name] = {"type": "box", "instructions": instruction}
             elif j.kind == "choice":
                 if len(j.keys) > MAX_CHOICE_KEYS:
                     raise self._refuse(f"config.response_format.schema.properties.{name}",
@@ -247,9 +254,10 @@ class TypeSafeLM(BaseProviderLM):
             raise self._refuse("stream", "systemone answers in one piece; there is no stream to wrap")
         payload = self._payload(request)
         headers = {"Content-Type": "application/json"}
-        if "assets" in payload:
-            # The caller put an image in the request: that is the opt-in the
-            # header exists for (changes/2026-10-14-jev-images.md D3).
+        if "assets" in payload or any(q["type"] == "box" for q in payload["questions"].values()):
+            # The caller put an image or a box in the request: that is the
+            # opt-in the header exists for (changes/2026-10-14-jev-images.md
+            # D3; changes/2026-10-15-bounding-box.md D2).
             headers[_IMAGES_HEADER] = "true"
         return self._emit(
             method="POST",
@@ -298,9 +306,20 @@ class TypeSafeLM(BaseProviderLM):
             path = f"answers.{name}"
             if not isinstance(answer, dict):
                 raise invalid(path, "expected an answer object")
-            expected = {"boolean": "noul", "choice": "choice", "ordered": "score"}[j.kind]
+            expected = {"boolean": "noul", "choice": "choice", "ordered": "score", "box": "box"}[j.kind]
             if answer.get("type") != expected:
                 raise invalid(f"{path}.type", f"expected {expected!r}")
+            if j.kind == "box":
+                # The four edges verbatim, in Jev's order; a box has no
+                # distribution, and its `confidence` stays in provider_data.
+                edges = answer.get("box")
+                if not isinstance(edges, dict) or set(edges) != set(BOX_EDGES):
+                    raise invalid(f"{path}.box", "expected exactly top, bottom, left and right")
+                for edge in BOX_EDGES:
+                    probability(edges[edge], f"{path}.box.{edge}")  # a fraction: finite, in [0, 1]
+                # Numbers as written (an opaque value, serde number rule 4).
+                value[name] = {edge: edges[edge] for edge in BOX_EDGES}
+                continue
             if j.kind == "boolean":
                 p = probability(answer.get("noul"), f"{path}.noul")
                 value[name] = p >= 0.5

@@ -288,6 +288,13 @@ def _step(auth: Auth, step: JsonObject, clock: _Clock, ui: _UI, env: dict[str, s
         report = explain_auth(step["provider"], env=env, api_keys=api_keys or None,
                               config=RouterConfig(auth=auth, env=env, api_keys=api_keys or None))
         return {"configured": report.configured, "steps": [{"kind": s.kind, "state": s.state} for s in report.steps]}
+    if do == "route":
+        from .router import LMRouter, RouterConfig
+
+        api_keys = {p: f"{sentinel}-explicit" for p in step.get("api_keys", [])}
+        router = LMRouter(RouterConfig(auth=auth, env=env, api_keys=api_keys or None, settings=step.get("settings")))
+        lm = router.lm(step["model"])
+        return {"settings": dict(getattr(lm, "settings", None) or {})}
     raise ValueError(f"unknown managed step {do!r}")
 
 

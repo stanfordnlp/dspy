@@ -5,12 +5,12 @@ import threading
 from unittest.mock import patch
 
 import pytest
-from litellm import Choices, Message, ModelResponse
-from litellm.types.utils import Usage
 
 import dspy
+from dspy.lm15 import Usage
 from dspy.primitives.prediction import Prediction
 from dspy.utils.dummies import DummyLM
+from tests.test_utils.engines import make_response
 
 
 def test_deepcopy_basic():
@@ -330,23 +330,10 @@ def test_usage_tracker_in_parallel():
 async def test_usage_tracker_async_parallel():
     program = dspy.Predict("question -> answer")
 
-    with patch("litellm.acompletion") as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content="{'answer': 'Paris'}"))],
-            usage=Usage(
-                **{
-                    "prompt_tokens": 1117,
-                    "completion_tokens": 46,
-                    "total_tokens": 1163,
-                    "prompt_tokens_details": {"cached_tokens": 0, "audio_tokens": 0},
-                    "completion_tokens_details": {
-                        "reasoning_tokens": 0,
-                        "audio_tokens": 0,
-                        "accepted_prediction_tokens": 0,
-                        "rejected_prediction_tokens": 0,
-                    },
-                },
-            ),
+    with patch("dspy.clients.engines.AsyncLM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            "{'answer': 'Paris'}",
+            usage=Usage(input_tokens=1117, output_tokens=46, total_tokens=1163),
             model="openai/gpt-4o-mini",
         )
 
@@ -357,7 +344,7 @@ async def test_usage_tracker_async_parallel():
             program.acall(question="What is the capital of France?"),
         ]
         with dspy.context(
-            lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), track_usage=True, adapter=dspy.JSONAdapter()
+            lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True, adapter=dspy.JSONAdapter()
         ):
             results = await asyncio.gather(*coroutines)
 
@@ -397,14 +384,12 @@ def test_module_history():
         def forward(self, question: str, **kwargs) -> Prediction:
             return self.cot(question=question)
 
-    with patch("litellm.completion") as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[
-                Choices(message=Message(content="{'plan': 'Paris is the capital of France', 'answer': 'Paris'}"))
-            ],
+    with patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            "{'plan': 'Paris is the capital of France', 'answer': 'Paris'}",
             model="openai/gpt-4o-mini",
         )
-        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter())
+        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
         program = MyProgram()
         program(question="What is the capital of France?")
 
@@ -447,12 +432,12 @@ def test_module_history_with_concurrency():
         def forward(self, question: str, **kwargs) -> Prediction:
             return self.cot(question=question)
 
-    with patch("litellm.completion") as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content="{'plan': 'N/A', 'answer': 'Holy crab!'}"))],
+    with patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            "{'plan': 'N/A', 'answer': 'Holy crab!'}",
             model="openai/gpt-4o-mini",
         )
-        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter())
+        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
         program = MyProgram()
 
         parallelizer = dspy.Parallel()
@@ -478,15 +463,13 @@ async def test_module_history_async():
         async def aforward(self, question: str, **kwargs) -> Prediction:
             return await self.cot.acall(question=question)
 
-    with patch("litellm.acompletion") as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[
-                Choices(message=Message(content="{'plan': 'Paris is the capital of France', 'answer': 'Paris'}"))
-            ],
+    with patch("dspy.clients.engines.AsyncLM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            "{'plan': 'Paris is the capital of France', 'answer': 'Paris'}",
             model="openai/gpt-4o-mini",
         )
         program = MyProgram()
-        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
             await program.acall(question="What is the capital of France?")
 
             # Second call only call the submodule.
@@ -503,7 +486,7 @@ async def test_module_history_async():
         assert program.history[0]["outputs"] == ["{'plan': 'Paris is the capital of France', 'answer': 'Paris'}"]
 
         with dspy.context(
-            disable_history=True, lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()
+            disable_history=True, lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()
         ):
             await program.acall(question="What is the capital of France?")
 
@@ -513,7 +496,7 @@ async def test_module_history_async():
         assert len(program.cot.predict.history) == 2
 
         with dspy.context(
-            disable_history=False, lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()
+            disable_history=False, lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()
         ):
             await program.acall(question="What is the capital of France?")
         # History is recorded again when history is enabled.

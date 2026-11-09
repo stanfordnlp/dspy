@@ -10,8 +10,8 @@ from dspy.utils.dummies import DummyLM
 
 
 def count_messages_with_image_url_pattern(messages):
-    """Helper to count image URLs in messages - borrowed from image adapter tests"""
-    pattern = {"type": "image_url", "image_url": {"url": lambda x: isinstance(x, str)}}
+    """Count lm15 image parts as recorded in LM history - borrowed from image adapter tests"""
+    pattern = {"type": "image", "media_type": lambda x: isinstance(x, str)}
 
     try:
 
@@ -149,7 +149,7 @@ def test_custom_proposer_without_reflection_lm():
             # This proposer manages its own external reflection LM
             with dspy.context(lm=external_reflection_lm):
                 # Use external LM for reflection (optional - could be any custom logic)
-                external_reflection_lm([{"role": "user", "content": "Improve this instruction"}])
+                external_reflection_lm("Improve this instruction")
                 return {name: f"Externally-improved: {candidate[name]}" for name in components_to_update}
 
     student = dspy.Predict("text -> label")
@@ -228,17 +228,19 @@ def test_image_serialization_into_strings():
                     feedback_analysis += f"  Outputs: {outputs}\n"
                     feedback_analysis += f"  Feedback: {feedback}\n\n"
 
-                context_lm = dspy.settings.lm
-                messages = [
-                    {"role": "system", "content": "You are an instruction improvement assistant."},
-                    {
-                        "role": "user",
-                        "content": f"Current instruction: {current_instruction}\n\nFeedback: {feedback_analysis}\n\nProvide an improved instruction:",
-                    },
-                ]
+                from dspy.lm15 import Message, Request
 
-                result = context_lm(messages=messages)
-                updated_components[component_name] = result[0]
+                context_lm = dspy.settings.lm
+                request = Request(
+                    model=context_lm.model,
+                    system="You are an instruction improvement assistant.",
+                    messages=(Message.user(
+                        f"Current instruction: {current_instruction}\n\nFeedback: {feedback_analysis}\n\nProvide an improved instruction:"
+                    ),),
+                )
+
+                result = context_lm(request)
+                updated_components[component_name] = result.text
 
             return updated_components
 

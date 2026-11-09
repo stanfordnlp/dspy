@@ -1,4 +1,5 @@
 beautifulsoup4==4.15.0
+certifi>=2026.10.19
 markdownify==1.2.3
 mdformat==0.7.22
 mdformat-tables==1.0.0

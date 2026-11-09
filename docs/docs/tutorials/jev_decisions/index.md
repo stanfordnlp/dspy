@@ -1,7 +1,7 @@
 # Decision-Making with Jev Types
 
 !!! warning "Experimental API"
-    `Noul`, `Score`, `Choice`, `TypeSafe`, and `ReAnchor` are experimental and may change
+    `Noul`, `Score`, `Choice`, and `ReAnchor` are experimental and may change
     without warning. See the [API reference](../../api/experimental/DecisionTypes.md) for details.
 
 In this tutorial, we will walk you through building **structured decision-making programs** in DSPy
@@ -19,11 +19,8 @@ you can adjust. This is the core idea behind DSPy's Jev integration.
 pip install dspy
 ```
 
-If you want to use the TypeSafe System One backend (optional):
-
-```shell
-pip install "dspy[typesafe]"
-```
+For the optional Jev System One backend, set `TYPESAFE_API_KEY`. No
+`dspy[typesafe]` extra is needed; Jev uses ordinary `dspy.LM`.
 
 ## Define Decision Types
 
@@ -198,18 +195,16 @@ loaded_triage.load("triage_calibrated.json")
 print(loaded_triage.fields)  # Fitted parameters restored
 ```
 
-## Use the TypeSafe Backend (Optional)
+## Use Jev (Optional)
 
 If you have a TypeSafe API key, you can switch the same predictor to the System One backend for
 probability-native inference:
 
 ```python
-from dspy.experimental import TypeSafe
-
 os.environ["TYPESAFE_API_KEY"] = "your-api-key"
 
-jev_client = TypeSafe("jev-latest")
-triage.set_lm(jev_client)
+jev_lm = dspy.LM("typesafe:jev-latest")
+triage.set_lm(jev_lm)
 
 result = triage(ticket="My dashboard is blank after the update")
 ```
@@ -218,7 +213,15 @@ The same signature, demos, and field parameters work with both backends. The dif
 probabilities are produced:
 
 - **Generative LMs**: DSPy asks the LM to generate probability evidence as structured JSON, then decodes it locally.
-- **TypeSafe System One**: The API returns calibrated probabilities directly. No generation settings (temperature, etc.) are supported.
+- **Jev System One**: `DecisionAdapter` builds a typed lm15 `Request` and decodes
+  `response.provider_data['typesafe']['answers']`. Thresholds, cuts, and weights
+  still apply locally, and ReAnchor calibration is unchanged.
+
+**API break:** `dspy.experimental.TypeSafe` has been removed without a compatibility
+shim or legacy saved-state migration. Replace it with the `dspy.LM` above. Model
+and `api_base` are ordinary LM settings, with no Jev-specific LM defaults. Normal
+LM caching, history, usage tracking, persistence, retry, and lifecycle semantics
+apply; synchronous and asynchronous response caches are separate.
 
 You can even mix backends within a single program — use Jev for critical decisions and a generative
 LM for free-text outputs.
@@ -327,7 +330,7 @@ optional, probability-native alternative.
 
 **Q: Can I mix decision outputs with regular string outputs?**
 Yes. You can have `summary: str` alongside `urgent: Noul[...]` in the same signature. The generative
-LM handles both; TypeSafe requires all outputs to be decision types.
+LM handles both; Jev requires all outputs to be supported decision types.
 
 **Q: What's the difference between `Noul` and just returning a `bool`?**
 A bare `bool` output uses direct generation — the LM picks True or False. A `Noul` output asks
@@ -341,5 +344,5 @@ smaller sets). More data gives more reliable calibration. Since it reuses cached
 adding more examples is cheap after the first pass.
 
 **Q: Can I use this with async?**
-Yes. `TypeSafe` supports `acall()` for async inference. Decision types work with DSPy's async
-support.
+Yes. Jev uses ordinary `dspy.LM` async inference, and decision types work with
+DSPy's async support. Synchronous and asynchronous response caches are separate.

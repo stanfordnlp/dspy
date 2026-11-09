@@ -3,6 +3,56 @@ import pytest
 import dspy
 
 
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("location", ["lm", "predictor", "call"])
+@pytest.mark.parametrize("reasoning,effort", [
+    ({"enabled": False}, "off"), ({"effort": "none"}, "off"),
+    ({"effort": "off"}, "off"),
+    ({"effort": "high", "summary": "detailed"}, "high"), ({}, "medium"),
+])
+def test_cot_reasoning_dictionary(native, location, reasoning, effort):
+    from tests.test_utils.engines import make_response
+
+    requests = []
+
+    class Engine:
+        supports_reasoning = native
+
+        def complete(self, request):
+            requests.append(request)
+            plan = "<plan>explicit plan</plan>" if "<plan>" in request.system else ""
+            return make_response(plan + "<answer>42</answer>", thinking="native summary")
+
+    options = {"reasoning": reasoning}
+    lm = dspy.LM("custom/reasoning", engine=Engine(), cache=False, **(options if location == "lm" else {}))
+    cot = dspy.ChainOfThought("question -> answer", **(options if location == "predictor" else {}))
+    with dspy.context(lm=lm, adapter=dspy.XMLAdapter(use_json_adapter_fallback=False)):
+        result = cot(question="19 + 23", config=options if location == "call" else {})
+    assert result.answer == "42"
+    assert result.reasoning == ("native summary" if native and effort != "off" else "explicit plan")
+    assert len(requests) == 1
+    assert requests[0].config.reasoning.effort == effort
+    if "summary" in reasoning:
+        assert requests[0].config.reasoning.summary == "detailed"
+
+
+@pytest.mark.parametrize("defaults,override,effort", [
+    ({"reasoning": {"effort": "high"}}, {"reasoning_effort": "none"}, "off"),
+    ({"reasoning_effort": "high"}, {"reasoning": {"enabled": False}}, "off"),
+    ({"reasoning": {"enabled": False}}, {"reasoning_effort": "high"}, "high"),
+    ({"reasoning_effort": "none"}, {"reasoning": {"effort": "high"}}, "high"),
+])
+def test_cot_reasoning_alias_override(defaults, override, effort):
+    from tests.test_utils.engines import make_response, recording_lm
+
+    text = "<plan>explicit plan</plan><answer>42</answer>" if effort == "off" else "<answer>42</answer>"
+    lm = recording_lm([make_response(text, thinking="native summary")], **defaults)
+    with dspy.context(lm=lm, adapter=dspy.XMLAdapter(use_json_adapter_fallback=False)):
+        result = dspy.ChainOfThought("question -> answer")(question="19 + 23", config=override)
+    assert result.reasoning == ("explicit plan" if effort == "off" else "native summary")
+    assert lm.engine.requests[0].config.reasoning.effort == effort
+
+
 def test_reasoning_basic_operations():
     reasoning = dspy.Reasoning(content="Hello World")
 
@@ -121,9 +171,11 @@ def test_native_reasoning_default_survives_provider_omission():
     # Native reasoning strips the field from the signature the LM formats against; the provider
     # then omits native reasoning entirely.
     processed = Sig.delete("reasoning")
-    outputs = [{"text": "[[ ## answer ## ]]\n42\n\n[[ ## completed ## ]]"}]
+    from tests.test_utils.engines import make_response
 
-    value = adapter._call_postprocess(processed, Sig, outputs, None, {})[0]
+    responses = [make_response("[[ ## answer ## ]]\n42\n\n[[ ## completed ## ]]")]
+
+    value = adapter._call_postprocess(processed, Sig, responses)[0]
 
     assert value["answer"] == "42"
     assert value["reasoning"] == dspy.Reasoning(content="(omitted)")

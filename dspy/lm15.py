@@ -27,15 +27,18 @@ from typing import Mapping as _Mapping
 from dspy._vendor.lm15 import *
 from dspy._vendor.lm15 import __all__ as _vendored_all
 from dspy._vendor.lm15.compat import AnthropicCompat, OpenAIChatCompat, OpenAIResponsesCompat
+from dspy._vendor.lm15.models import InferencePricing, PricingTier
 from dspy._vendor.lm15.registry import ProviderDefinition
 from dspy._vendor.lm15.router import RouterConfig
 
 __all__ = [
     *_vendored_all,
     "AnthropicCompat",
+    "InferencePricing",
     "ModelSupport",
     "OpenAIChatCompat",
     "OpenAIResponsesCompat",
+    "PricingTier",
     "ProviderDefinition",
     "RegisteredProvider",
     "register_provider",
@@ -119,9 +122,8 @@ def register_provider(
     compat=...)`` for an OpenAI-compatible server). Afterwards
     ``dspy.LM("<id>/<model>")`` — and every alias — routes natively with the
     LM's ``api_key``, ``api_base`` and ``timeout`` honored, and the provider's
-    own key variable read when none is given. A call the native route cannot
-    carry falls back to LiteLLM at the declared address with the same
-    credential, never at an address LiteLLM knows by a similar name.
+    own key variable read when none is given. Unsupported settings raise
+    before inference; there is no fallback backend.
 
     ``metadata_namespaces`` names the snapshot namespaces (LiteLLM's
     spellings, e.g. ``("fireworks_ai",)``) whose entries may describe and
@@ -133,8 +135,8 @@ def register_provider(
     Registering the same definition again with the same statements is a
     no-op. A different registration under the same id is refused unless
     ``replace=True``, and even then only LMs constructed afterwards bind it.
-    A spelling another registered provider, lm15's registry or LiteLLM
-    already uses is always refused.
+    A spelling another registered provider, lm15's registry or a legacy
+    provider routing alias already uses is always refused.
 
     Returns:
         The registration as DSPy holds it.
@@ -177,7 +179,7 @@ def register_provider(
                 )
         kept = {pid: b for pid, b in _registered.items() if pid != definition.id}
         # lm15 validates the set: type, hyphenation, and no spelling a
-        # receipted entry or LiteLLM prefix already uses.
+        # receipted entry or legacy routing alias already uses.
         RouterConfig(providers=(*(b.definition for b in kept.values()), definition))
         _registered.clear()
         _registered.update(kept)

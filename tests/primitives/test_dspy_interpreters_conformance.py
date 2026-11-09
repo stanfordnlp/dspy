@@ -83,10 +83,10 @@ def test_isolated_backend_runs_bridged_sub_agents_with_host_tools():
     rlm = RLM("query -> answer", max_iters=2, tools=[echo], interpreter_factory=SubprocessInterpreter)
     rlm.generate_action = make_scripted_predictor([
         {
-            "reasoning": "Bridged ReActV2 with a host tool",
+            "reasoning": "Bridged ReAct with a host tool",
             "code": (
                 "import dspy\n"
-                "agent = dspy.ReActV2('question -> answer', tools=[echo])\n"
+                "agent = dspy.ReAct('question -> answer', tools=[echo])\n"
                 "res = agent(question='hi')\n"
                 "print(res.answer)"
             ),

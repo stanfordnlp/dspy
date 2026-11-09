@@ -8,32 +8,74 @@ accepted as terminal failures by DSPy's shared stream guard, never as Responses.
 SDK-specific errors are translated by the owning engine; engines do not import
 DSPy's public error hierarchy or implement a second retry loop.
 
-DSPy 3.5 uses this contract throughout adapters and engines. Legacy forward()
-plugins, LegacyEngine/AsyncLegacyEngine, and complete_legacy() shortcuts are
-3.4 transition interfaces, deprecated for removal in 3.5.
+This is the only integration contract: DSPy's adapters build Requests and
+read Responses, and every engine, built-in or custom, speaks the same objects.
 """
 
+import inspect
 from collections.abc import AsyncIterator, Iterator
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from dspy._vendor.lm15.types import StreamEvent
 from dspy.lm15 import Request, Response
 
 
 class Engine(Protocol):
+    """Required sync interface; streaming and cleanup are optional extensions."""
+
     def complete(self, request: Request) -> Response: ...
-
-    def stream(self, request: Request) -> Iterator[StreamEvent]: ...
-
-    def close(self) -> None: ...
 
 
 class AsyncEngine(Protocol):
+    """Required async interface; streaming and cleanup are optional extensions."""
+
     async def complete(self, request: Request) -> Response: ...
+
+
+@runtime_checkable
+class StreamingEngine(Engine, Protocol):
+    """Sync streaming capability; runtime checks do not validate method signatures."""
+
+    def stream(self, request: Request) -> Iterator[StreamEvent]: ...
+
+
+@runtime_checkable
+class AsyncStreamingEngine(AsyncEngine, Protocol):
+    """Async streaming capability, returning an async iterator without awaiting it."""
 
     def stream(self, request: Request) -> AsyncIterator[StreamEvent]: ...
 
-    async def aclose(self) -> None: ...
+
+def _is_coroutine_function(fn) -> bool:
+    if inspect.iscoroutinefunction(fn):
+        return True
+    # A callable object whose __call__ (own or inherited) is async: resolve
+    # it through the MRO as Python does. A plain function's type resolves
+    # __call__ to a slot wrapper, which is not a coroutine function.
+    call = next((vars(cls)["__call__"] for cls in type(fn).__mro__ if "__call__" in vars(cls)), None)
+    return inspect.iscoroutinefunction(call)
+
+
+def validate_engines(engine: Engine | None, async_engine: AsyncEngine | None) -> None:
+    """Validate supplied engines without requiring inheritance or optional methods."""
+    if engine is not None:
+        complete = getattr(engine, "complete", None)
+        if not callable(complete):
+            raise TypeError("A custom engine must implement complete(Request) -> Response")
+        if _is_coroutine_function(complete):
+            raise TypeError(
+                "engine.complete is a coroutine function; the sync engine returns a Response directly. "
+                "Pass an async engine as async_engine="
+            )
+    if async_engine is not None:
+        acomplete = getattr(async_engine, "complete", None)
+        if not callable(acomplete):
+            raise TypeError("A custom async engine must implement async complete(Request) -> Response")
+        if not _is_coroutine_function(acomplete):
+            raise TypeError(
+                "async_engine.complete is not a coroutine function; the async engine is awaited "
+                "(async def complete). Pass a sync engine as engine="
+            )
 
 
 def validate_request(request: Request) -> None:

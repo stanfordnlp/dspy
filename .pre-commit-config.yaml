@@ -12,6 +12,15 @@ repos:
         exclude: ^(dspy/__metadata__\.py|dspy/_vendor/.*|tests/reliability/.*\.py)$
         args: [--fix-only]
 
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty (internal types)
+        entry: uv run --locked --extra dev ty check
+        language: system
+        pass_filenames: false
+        always_run: true
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:

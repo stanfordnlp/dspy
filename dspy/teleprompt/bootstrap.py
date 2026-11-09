@@ -55,7 +55,10 @@ class BootstrapFewShot(Teleprompter):
                 outputting the result of that comparison.
             metric_threshold (float, optional): If the metric yields a numerical value, then check it
                 against this threshold when deciding whether or not to accept a bootstrap example.
-                Defaults to None.
+                An example is accepted when ``metric_value >= metric_threshold``. Any value other
+                than None is applied, including ``0``; note that a boolean metric returning False
+                passes a threshold of ``0`` because ``False >= 0``. When None, the metric's own
+                truthiness decides. Defaults to None.
             teacher_settings (dict, optional): Settings for the `teacher` model.
                 Defaults to None.
             max_bootstrapped_demos (int): Maximum number of bootstrapped demonstrations to include.
@@ -204,7 +207,7 @@ class BootstrapFewShot(Teleprompter):
 
                 if self.metric:
                     metric_val = self.metric(example, prediction, trace)
-                    if self.metric_threshold:
+                    if self.metric_threshold is not None:
                         success = metric_val >= self.metric_threshold
                     else:
                         success = metric_val
@@ -248,9 +251,8 @@ class BootstrapFewShot(Teleprompter):
                 # If there are multiple traces for the same predictor in the sample example,
                 # sample 50/50 from the first N-1 traces or the last trace.
                 if len(demos) > 1:
-                    from dspy.utils.hasher import Hasher
-
-                    rng = random.Random(Hasher.hash(tuple(demos)))
+                    # Seed by position, not demo contents: inputs may contain unpicklable tools.
+                    rng = random.Random(f"{name}:{len(self.name2traces[name])}")
                     demos = [rng.choice(demos[:-1]) if rng.random() < 0.5 else demos[-1]]
                 self.name2traces[name].extend(demos)
 

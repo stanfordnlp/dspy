@@ -35,7 +35,7 @@ This list is regularly updated with new research publications using DSPy.
 | **Indic cross-lingual Natural Language Inference** |  [Github](https://github.com/saifulhaq95/DSPy-Indic/blob/main/indicxlni.ipynb) |
 | **Optimizing LM for Text2SQL using DSPy** | [Github](https://github.com/jjovalle99/DSPy-Text2SQL) |
 | **DSPy PII Masking Demo by Eric Ness** | [Colab](https://colab.research.google.com/drive/1KZR1sGTp_RLWUJPAiK1FKPKI-Qn9neUm?usp=sharing) |
-| **DSPy on BIG-Bench Hard Example** |  [Github](https://drchrislevy.github.io/posts/dspy/dspy.html) |
+| **DSPy on BIG-Bench Hard Example** |  [Blog](https://drchrislevy.com/blog/dspy) |
 | **Building a chess playing agent using DSPy** |  [Github](https://medium.com/thoughts-on-machine-learning/building-a-chess-playing-agent-using-dspy-9b87c868f71e) |
 | **Ittia Research Fact Checking** | [Github](https://github.com/ittia-research/check) |
 | **Strategic Debate via Tree-of-Thought** | [Github](https://github.com/zbambergerNLP/strategic-debate-tot) |
@@ -78,7 +78,6 @@ These are community-maintained projects and are not officially supported by the 
 | **Zenbase** | [Link](https://zenbase.ai/) |
 | **IBM** | [Link](https://www.ibm.com/think/topics/dspy) |
 | **LangWatch** | [Link](https://langwatch.ai/blog/introducing-dspy-visualizer) |
-| **Gradient** | [Link](https://gradient.ai/blog/achieving-gpt-4-level-performance-at-lower-cost-using-dspy) |
 | **Portkey** | [Link](https://portkey.ai/docs/integrations/libraries/dspy) |
 | **Snowflake** | [Link](https://medium.com/snowflake/dspy-snowflake-140d6d947d73) |
 | **Langchain** | [Link](https://python.langchain.com/v0.2/docs/integrations/providers/dspy/) |
@@ -87,7 +86,6 @@ These are community-maintained projects and are not officially supported by the 
 | **Weights & Biases Weave** | [Link](https://weave-docs.wandb.ai/guides/integrations/dspy/) |
 | **Milvus** | [Link](https://milvus.io/docs/integrate_with_dspy.md) |
 | **Neo4j** | [Link](https://neo4j.com/labs/genai-ecosystem/dspy/) |
-| **Lightning AI** | [Link](https://lightning.ai/lightning-ai/studios/dspy-programming-with-foundation-models) |
 | **Haystack** | [Link](https://towardsdatascience.com/automating-prompt-engineering-with-dspy-and-haystack-926a637a3f43) |
 | **Arize** | [Link](https://docs.arize.com/phoenix/tracing/integrations-tracing/dspy) |
 | **Langtrace** | [Link](https://docs.langtrace.ai/supported-integrations/llm-frameworks/dspy) |

@@ -1,6 +1,6 @@
 {
   "framework": null,
-  "installCommand": "uv venv && uv pip install -r requirements.txt",
+  "installCommand": "bash ../scripts/bootstrap_python.sh && python -m pip install --upgrade 'uv>=0.13.4' && python -m uv venv && python -m uv pip install --python .venv/bin/python -r requirements.txt",
   "buildCommand": ".venv/bin/mkdocs build",
   "outputDirectory": "site",
   "trailingSlash": true,

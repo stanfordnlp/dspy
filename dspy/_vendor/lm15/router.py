@@ -988,7 +988,7 @@ def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[st
         from .cloud.chains import profile_settings
 
         env = config.env if config.env is not None else os.environ
-        given = (config.settings or {}).get(resolution.provider)
+        given = _settings_entry(config, resolution.provider)
         ctx = ChainContext.online(env)
         settings = resolve_settings(definition.access.host, given, env, provider=resolution.provider,
                                     profile=profile_settings(definition.access, ctx), endpoint=base_url)
@@ -1090,16 +1090,17 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
     a keyless local server's placeholder.  Never an environment key, a
     foreign CLI file or the machine's cloud chain."""
     from .login.manager import Auth, _RequestSnapshot
+    from .login.types import Connection
 
     auth: Auth = config.auth  # type: ignore[assignment]
     provider = resolution.provider
     original_definition, original_extra, original_url = definition, dict(extra), base_url
     saved = None
-    connection = None
     api_key, explicit = _api_keys_entry(config, provider, adapters)
     named = _credentials_entry(config, provider)
     origin: str | None = None
     account_id: str | None = None
+    connection: Connection | None = None
     if not explicit and named is None:
         try:
             saved = snapshot if snapshot is not None else auth.request_auth(provider)
@@ -1224,7 +1225,7 @@ def _build_planning_lm(resolution: Resolution, config: RouterConfig, adapters: M
         from .cloud.hosts import resolve_settings
 
         env = config.env if config.env is not None else os.environ
-        given = dict((config.settings or {}).get(resolution.provider) or {})
+        given = dict(_settings_entry(config, resolution.provider) or {})
         try:
             settings = resolve_settings(definition.access.host, given, env, provider=resolution.provider, endpoint=base_url)
         except NotConfiguredError:

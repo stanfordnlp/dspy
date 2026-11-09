@@ -54,9 +54,7 @@ def test_ordinary_annotated_fields_keep_existing_parsing_and_schema(adapter):
 
 
 def test_decision_apis_are_experimental_only():
-    from dspy.experimental import TypeSafe
-
-    for api in (Choice, Noul, Score, TypeSafe):
+    for api in (Choice, Noul, Score):
         assert getattr(dspy.experimental, api.__name__) is api
         assert not hasattr(dspy, api.__name__)
         assert "Experimental:" in api.__doc__
@@ -123,10 +121,10 @@ def test_predict_outputs_and_generated_schema(adapter, rich):
         else:
             assert result[name] == value
             assert type(result[name]) is type(value)
-    prepared = resolve_adapter(None, adapter, signature, {})._prepare(signature, [], {"ticket": "Payment failed."}, {})
+    prepared = resolve_adapter(None, adapter, signature, {})._prepare(None, signature, [], {"ticket": "Payment failed."}, {})
     rendered = prepared["signature"]
     messages = adapter.format(rendered, [], prepared["inputs"])
-    assert "Minor" in messages[0]["content"]
+    assert "Minor" in messages.system
     schema = _get_structured_outputs_response_format(rendered).model_json_schema()
     if rich:
         assert "noul" in json.dumps(schema)
@@ -147,9 +145,9 @@ def test_inputs_to_both_backends_preserve_values_and_context(rich, evidence):
         with dspy.context(lm=lm, adapter=adapter):
             assert dspy.Predict(signature)(**values).accept is True
         messages = adapter.format(signature, [], values)
-        assert "Minor" in messages[0]["content"]
-        assert ("Product malfunction" in messages[0]["content"]) is rich
-        prompt = messages[-1]["content"]
+        assert "Minor" in messages.system
+        assert ("Product malfunction" in messages.system) is rich
+        prompt = messages.messages[-1].text
         assert '"confidence"' in prompt
         assert ('"probabilities"' in prompt) is evidence
         assert "1.5" in prompt
@@ -306,7 +304,7 @@ def test_structured_criteria_reach_both_backends_and_survive_save_load(adapter, 
     assert (chat.urgent.value if rich else chat.urgent) is True
     assert (chat.category.value if rich else chat.category) == "technical"
     assert chat.severity.value == pytest.approx(1.6)
-    translated = resolve_adapter(lm, adapter, sig, module.fields)._prepare(sig, [], {"ticket": "Login fails"}, {})
+    translated = resolve_adapter(lm, adapter, sig, module.fields)._prepare(lm, sig, [], {"ticket": "Login fails"}, {})
     for name, criteria in expected.items():
         assert json.loads(translated["signature"].output_fields[name].json_schema_extra["desc"])["criteria"] == criteria
     module.save(tmp_path / "defaults.json")
@@ -357,7 +355,7 @@ def test_noul_criteria_in_both_backends_inputs_and_outputs(rich, adapter):
     with dspy.context(lm=DummyLM([{"accept": True}], adapter=adapter), adapter=adapter):
         assert dspy.Predict(input_sig)(unavailable=value).accept is True
     for sig, inputs in ((output_sig, {"ticket": "Use the workaround."}), (input_sig, {"unavailable": value})):
-        prompt = adapter.format(sig, [], inputs)[0]["content"]
+        prompt = adapter.format(sig, [], inputs).system
         assert "Service unavailable" in prompt
         assert "Workaround available" in prompt
     dspy.Predict(input_sig)(unavailable=value, lm=client)
@@ -475,7 +473,7 @@ async def test_annotated_literal_evidence_criteria_and_native_types(adapter, sel
     dspy.Predict(input_sig)(label=selected, lm=inputs)
     assert type(inputs.calls[0][0]["inputs"]["label"]) is type(selected)
     assert "snow" in inputs.calls[0][0]["input_fields"]
-    assert "snow" in adapter.format(input_sig, [], {"label": selected})[0]["content"]
+    assert "snow" in adapter.format(input_sig, [], {"label": selected}).system
 
 
 @pytest.mark.parametrize("literal", [Literal[1], Literal[True, "extra"], Literal["True"]])

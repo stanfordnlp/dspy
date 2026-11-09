@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable, ClassVar, Mapping, Protocol, TypeVar
 
 from ..adaptation import AdaptationPolicy, adapt, check_policy, collecting
-from ..judgments import request_judgments
+from ..judgments import request_measurable_judgments
 from ..errors import (
     ProviderError,
     TransportError as LM15TransportError,
@@ -214,8 +214,9 @@ class AsyncBaseProviderLM:
                     _attach_error_metadata(error, resp.headers)
                     raise error
                 try:
+                    reader = self._inner.stream_reader(request)
                     async for raw in aparse_sse(_aiter_lines(resp)):
-                        for event in self._inner.parse_stream_events(request, raw):
+                        for event in reader.feed(raw):
                             if event is not None:
                                 yield _stream_error_metadata(event, resp.headers)
                 except ProviderError as error:
@@ -777,7 +778,7 @@ class AsyncOpenAIChatLM(AsyncBaseProviderLM):
         if not inner._judgments_via_token_scoring(wire_request):
             return await AsyncBaseProviderLM.complete(self, request)
         adaptations = inner._judgment_adaptations(wire_request, policy=self.adaptations)
-        found = request_judgments(request)
+        found = request_measurable_judgments(request)
         plan = await self._build(inner._judgment_plan, wire_request)
 
         async def tokens(req):
