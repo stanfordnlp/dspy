@@ -1,8 +1,19 @@
 import asyncio
+from collections import defaultdict
 from typing import Any
 
 import pytest
-from pydantic import BaseModel, TypeAdapter
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    Json,
+    RootModel,
+    TypeAdapter,
+    field_serializer,
+    model_validator,
+)
 
 import dspy
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls, convert_input_schema_to_tool_args
@@ -146,6 +157,47 @@ def test_tool_from_function():
     assert tool.args["y"]["default"] == "hello"
 
 
+def test_tool_accepts_custom_type_instances_for_custom_type_args():
+    def caption(image: dspy.Image, prefix: str) -> str:
+        return f"{prefix}: {image.url}"
+
+    image = dspy.Image("https://example.com/cat.png")
+
+    assert Tool(caption)(image=image, prefix="cat") == "cat: https://example.com/cat.png"
+
+    def count(images: list[dspy.Image]) -> int:
+        return len(images)
+
+    assert Tool(count)(images=[image, image]) == 2
+    with pytest.raises(ValueError):
+        Tool(count)(images=[image, 3])
+
+    from dspy.adapters.types.decision import Noul
+
+    def judge(verdict: Noul) -> bool:
+        return verdict.value
+
+    assert Tool(judge)(verdict=Noul(value=True, confidence=0.7)) is True  # its hidden probability field is not checked
+
+    class Labeled(dspy.Type):
+        label: str = Field(validation_alias="wire_label")
+        tag: str = Field(validation_alias=AliasChoices("wire_tag", "tag_name"))
+
+        def format(self):
+            return self.label
+
+    def read(item: Labeled) -> str:
+        return f"{item.label}/{item.tag}"
+
+    # The schema requires the validation aliases, so the fields are checked under those names.
+    assert Tool(read)(item=Labeled(wire_label="a", wire_tag="b")) == "a/b"
+
+    https_only = {"type": "object", "properties": {"url": {"type": "string", "pattern": "^https://"}}}
+    restricted = Tool(caption, args={"image": https_only, "prefix": {"type": "string"}})
+    with pytest.raises(ValueError, match="does not match"):
+        restricted(image=dspy.Image("http://example.com/cat.png"), prefix="cat")
+
+
 def test_tool_defaults_are_json_serializable():
     import datetime
     import enum
@@ -180,6 +232,24 @@ def test_tool_defaults_without_json_form_are_kept():
 
     tool = Tool(scale)
     assert tool.args["data"]["default"] == b"\xff"
+
+
+def test_tool_checks_custom_type_fields_as_json_and_leaves_other_values_alone():
+    import datetime
+    from decimal import Decimal
+
+    class Visit(dspy.Type):
+        day: datetime.date
+        tags: set[str]
+
+    def describe(visit: Visit, amount: float, note) -> str:
+        return f"{visit.day.isoformat()} {sorted(visit.tags)} {amount} {type(note).__name__}"
+
+    class Note:
+        pass
+
+    visit = Visit(day=datetime.date(2026, 11, 4), tags={"x"})
+    assert Tool(describe)(visit=visit, amount=Decimal("1.5"), note=Note()) == "2026-11-04 ['x'] 1.5 Note"
 
 
 def test_as_function_tool_excludes_defaulted_args_from_required():
@@ -258,6 +328,43 @@ def test_tool_with_pydantic_callable():
     assert result == "test 123"
 
 
+def test_tool_checks_plain_model_args_as_the_json_their_schema_describes():
+    import datetime
+
+    class Row(BaseModel):
+        model_config = ConfigDict(ser_json_bytes="hex")
+        label: str = Field(alias="wire_label")
+        note: str = Field(serialization_alias="wire_note")
+        box: tuple[int, int]
+        day: datetime.date
+        meta: Json[dict[str, int]]
+        qty: int
+        raw: bytes
+
+        @field_serializer("qty", when_used="json")
+        def _qty_label(self, qty: int) -> str:
+            return f"{qty} units"
+
+    def describe(row: Row, tags: set[str]) -> str:
+        return f"{row.label} {row.note} {row.box} {row.day.isoformat()} {sorted(tags)} {row.meta} {row.qty}"
+
+    row = Row(wire_label="a", note="n", box=(1, 2), day=datetime.date(2026, 11, 4), meta='{"k": 1}', qty=3, raw=b"\xff")
+    assert Tool(describe)(row=row, tags={"x"}) == "a n (1, 2) 2026-11-04 ['x'] {'k': 1} 3"
+
+    class Counts(RootModel[list[int]]):
+        pass
+
+    class Tagged(BaseModel):
+        model_config = ConfigDict(extra="allow")
+
+    def total(counts: Counts, tagged: Tagged) -> str:
+        return f"{sum(counts.root)} {tagged.source}"
+
+    args = {"counts": {"type": "array"}, "tagged": {"type": "object", "required": ["source"]}}
+    tool = Tool(total, args=args, arg_types={"counts": Counts, "tagged": Tagged})
+    assert tool(counts=Counts([1, 2]), tagged=Tagged(source="web")) == "3 web"
+
+
 def test_invalid_function_call():
     tool = Tool(dummy_function)
     with pytest.raises(ValueError):
@@ -310,6 +417,38 @@ def test_tool_call_parses_nested_list_of_pydantic_model():
 
     result = tool(**args)
     assert result == [[DummyModel(field1="hello", field2=123)]]
+
+
+def test_tool_call_reads_json_arguments_as_json_and_validates_instances():
+    class Window(BaseModel):
+        model_config = ConfigDict(strict=True)
+        span: tuple[int, int]
+        runs: int = 0
+
+        @model_validator(mode="after")
+        def _ordered(self):
+            if self.span[0] > self.span[1]:
+                raise ValueError("start after end")
+            self.runs += 1
+            return self
+
+    def widths(windows: list[Window], spare: Window | None = None) -> list[tuple[int, int]]:
+        return [(w.span[1] - w.span[0], w.runs) for w in windows + ([spare] if spare else [])]
+
+    tool = Tool(widths)
+    # JSON data, as an LM or a sandbox sends: a strict tuple comes as a list, and each model is validated once.
+    assert tool(windows=[{"span": [2, 9]}], spare={"span": [1, 4]}) == [(7, 1), (3, 1)]
+    # A model instance is validated as given, so a change that breaks its validator is still caught.
+    window = Window(span=(2, 9))
+    window.span = (9, 1)
+    with pytest.raises(ValueError, match="start after end"):
+        tool(windows=[window])
+
+    # A Python container that only looks like JSON, such as a defaultdict, keeps its own behavior.
+    def missing(counts: defaultdict[str, int]) -> int:
+        return counts["present"] + counts["absent"]
+
+    assert Tool(missing)(counts=defaultdict(lambda: 7, present=3)) == 10
 
 
 def test_tool_call_kwarg():
@@ -826,13 +965,13 @@ def test_tool_calls_none_and_empty_dict_mean_no_calls():
 
 
 def test_tool_calls_none_reaches_empty_tool_calls_semantics():
-    """End-to-end: ReActV2 with a JSON-mode model writing `"tool_calls": null`
+    """End-to-end: ReAct with a JSON-mode model writing `"tool_calls": null`
     must take the usual empty_tool_calls path (like `[]`), not a parse error."""
     adapter = dspy.JSONAdapter()
     lm = dspy.utils.DummyLM([{"next_thought": "Nothing to call.", "tool_calls": None}] * 2, adapter=adapter)
     with dspy.context(lm=lm, adapter=adapter):
         try:
-            dspy.ReActV2("question -> answer", tools=[])(question="hi")
+            dspy.ReAct("question -> answer", tools=[])(question="hi")
             raised = None
         except Exception as e:
             raised = e

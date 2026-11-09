@@ -68,8 +68,8 @@ def ${toolName}(${signature}):
 // Generate SUBMIT function with output field signature.
 // Outputs is an array of {name, type?} objects.
 const makeSubmitWrapper = (outputs) => {
-  if (!outputs || outputs.length === 0) {
-    // Fallback to single-arg SUBMIT if no outputs defined
+  if (!outputs) {
+    // Omitted output fields use single-arg SUBMIT; an explicit [] defines SUBMIT().
     return `
 def SUBMIT(output):
     raise _DSPyFinalOutput({"output": output})
@@ -141,9 +141,165 @@ globalThis.addEventListener("unhandledrejection", (event) => {
   }));
 });
 
-const pyodide = await pyodideModule.loadPyodide();
-const denoDir = Deno.args.find((arg) => arg.startsWith("--dspy-deno-dir="))?.slice(16);
+// Archives built by dspy/primitives/sandbox_bundle.py: Pyodide's standard library with its bytecode, which Pyodide
+// starts from instead of compiling the library on every start, the dspy bundle, installed before any code runs, and a
+// memory snapshot of a sandbox that has imported dspy, which a sandbox restores instead of importing dspy itself.
+const argValue = (name) => Deno.args.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1);
+const stdlib = argValue("--dspy-stdlib");
+const bundle = argValue("--dspy-bundle");
+const snapshot = argValue("--dspy-snapshot");
+const buildTarget = argValue("--dspy-build");
+const buildSource = argValue("--dspy-build-from");
+const snapshotTarget = argValue("--dspy-build-snapshot");
+// The host starts the sandbox again without its snapshot when it exits with this.
+const SNAPSHOT_REFUSED = 70;
+
+// The bundle's files are written into Pyodide's file system before Python starts. A snapshot holds the memory of the
+// bundle's compiled extension modules but not their code: they are loaded right after the C runtime starts and before
+// Python does, in the snapshot build and in every restore alike, so they land where that memory expects them. `layout`
+// records where they landed, and a restore that differs is refused.
+let layout = null;
+if (bundle) {
+  // Defines the module factory loadPyodide uses, from the release imported above: the version is pinned only there.
+  await import(`npm:pyodide@${pyodideModule.version}/pyodide.asm.js`);
+  const create = globalThis._createPyodideModule;
+  globalThis._createPyodideModule = (settings) => {
+    let extensions = [];
+    settings.preRun.push((Module) => {
+      const files = writeArchive(Module.FS, Module.API.sitePackages, Deno.readFileSync(bundle));
+      // Python's extension modules, not the libraries they link, like libssl.so, which they load by name from here.
+      extensions = files.filter((path) => path.endsWith(".so") && !/\.libs\/|\/lib[^/]*$/.test(path)).sort();
+      Module.ENV.LD_LIBRARY_PATH = Module.API.sitePackages;
+      Module.ENV.LANG = "C.UTF-8"; // not the host's locale, which would change what the runtime allocates
+    });
+    if (snapshot || snapshotTarget) {
+      settings.onRuntimeInitialized = () => {
+        for (const path of extensions) {
+          settings.loadDynamicLibrary(path, { global: true, nodelete: true, allowUndefined: true });
+        }
+        const zip = settings.FS.readdir("/lib").find((name) => name.endsWith(".zip")); // the standard library
+        layout = JSON.stringify([
+          settings.FS.stat(`/lib/${zip}`).size,
+          settings.wasmTable.length,
+          ...extensions.map((path) =>
+            Object.values(settings.LDSO.loadedLibsByName[path].exports).find((value) => typeof value === "number")
+          ),
+        ]);
+      };
+    }
+    return create(settings);
+  };
+}
+
+// Writes the files of a stored (uncompressed) zip under `root`, much faster than unpacking it in Python.
+function writeArchive(FS, root, data) {
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  let end = data.length - 22;
+  while (view.getUint32(end, true) !== 0x06054b50) end--;
+  const decoder = new TextDecoder(), files = [];
+  for (let i = 0, at = view.getUint32(end + 16, true); i < view.getUint16(end + 10, true); i++) {
+    const nameLength = view.getUint16(at + 28, true);
+    const name = decoder.decode(data.subarray(at + 46, at + 46 + nameLength));
+    const size = view.getUint32(at + 24, true), local = view.getUint32(at + 42, true);
+    const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
+    if (!name.endsWith("/")) {
+      const path = `${root}/${name}`;
+      FS.mkdirTree(path.slice(0, path.lastIndexOf("/")));
+      FS.writeFile(path, data.subarray(start, start + size), { canOwn: true });
+      files.push(path);
+    }
+    at += 46 + nameLength + view.getUint16(at + 30, true) + view.getUint16(at + 32, true);
+  }
+  return files;
+}
+
+let pyodide;
+try {
+  pyodide = await pyodideModule.loadPyodide({
+    ...(stdlib ? { stdLibURL: stdlib } : {}),
+    ...(snapshot ? { _loadSnapshot: Deno.readFileSync(snapshot) } : {}),
+    ...(snapshotTarget ? { _makeSnapshot: true } : {}),
+  });
+} catch (e) {
+  if (!snapshot) throw e;
+  console.error(`The dspy snapshot could not be restored: ${e?.message ?? e}`);
+  Deno.exit(SNAPSHOT_REFUSED);
+}
+const denoDir = argValue("--dspy-deno-dir");
 if (denoDir) await Deno.permissions.revoke({ name: "read", path: denoDir });
+if (stdlib) await Deno.permissions.revoke({ name: "read", path: stdlib });
+
+// Build mode runs no sandboxed code: it byte-compiles an archive (by default the standard library), writes it, and
+// exits.
+if (buildTarget) {
+  if (buildSource) pyodide.FS.writeFile("/tmp/source.zip", Deno.readFileSync(buildSource));
+  pyodide.runPython(`
+import compileall, os, py_compile, site, sys, zipfile
+
+stdlib = next(path for path in sys.path if path.endswith(".zip"))
+legacy = ${buildSource ? "False" : "True"}
+zipfile.ZipFile(stdlib if legacy else "/tmp/source.zip").extractall("/tmp/build")
+# The standard library's bytecode goes beside each module, where zipimport looks for it; a bundle's goes in
+# __pycache__ of the site-packages it is unpacked into.
+compileall.compile_dir("/tmp/build", quiet=2, legacy=legacy, ddir=stdlib if legacy else site.getsitepackages()[0],
+                       invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH)
+with zipfile.ZipFile("/tmp/build.zip", "w") as archive:
+    for folder, _, files in os.walk("/tmp/build"):
+        for name in files:
+            archive.write(os.path.join(folder, name), os.path.relpath(os.path.join(folder, name), "/tmp/build"))
+`);
+  Deno.writeFileSync(buildTarget, pyodide.FS.readFile("/tmp/build.zip"));
+  Deno.exit(0);
+}
+
+if (bundle) {
+  await Deno.permissions.revoke({ name: "read", path: bundle });
+  if (snapshot) {
+    await Deno.permissions.revoke({ name: "read", path: snapshot });
+    // Reading a str runs no extension code, so this is safe even when they landed elsewhere.
+    if (pyodide.runPython("import sys; getattr(sys, '__dspy_layout', None)") !== layout) {
+      console.error("The dspy snapshot does not match where this sandbox loaded its extension modules.");
+      Deno.exit(SNAPSHOT_REFUSED);
+    }
+    // Sandboxes restored from one snapshot would otherwise all draw the same random numbers.
+    pyodide.runPython("import random; random.seed()");
+  } else {
+    // A snapshot has this already.
+    pyodide.runPython(`
+import concurrent.futures
+
+class InlineExecutor(concurrent.futures.Executor):
+    # Pyodide cannot start threads: run each submitted call before returning its future.
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def submit(self, fn, /, *args, **kwargs):
+        future = concurrent.futures.Future()
+        try:
+            future.set_result(fn(*args, **kwargs))
+        except BaseException as e:
+            future.set_exception(e)
+        return future
+
+concurrent.futures.ThreadPoolExecutor = InlineExecutor
+del InlineExecutor
+`);
+  }
+  // Snapshot build mode runs no sandboxed code either: it imports dspy, writes the sandbox's memory, and exits.
+  if (snapshotTarget) {
+    pyodide.pyimport("dspy");
+    pyodide.runPython(`import sys; sys.__dspy_layout = ${JSON.stringify(layout)}`);
+    for (const key of Object.keys(pyodide.loadedPackages)) delete pyodide.loadedPackages[key]; // must be empty in it
+    Deno.writeFileSync(snapshotTarget, pyodide.makeMemorySnapshot());
+    Deno.exit(0);
+  }
+  // Installed now, so loadPackagesFromImports must not fetch them.
+  const sitePackages = pyodide.runPython("import site; site.getsitepackages()[0]");
+  for (const entry of pyodide.FS.readdir(sitePackages)) {
+    const name = entry.endsWith(".dist-info") ? entry.split("-")[0].toLowerCase() : null;
+    if (name) for (const key of [name.replaceAll("_", "-"), name.replaceAll("-", "_")]) pyodide.loadedPackages[key] = "dspy";
+  }
+}
 
 // Tool call support: allows Python code to call host-side functions
 // The stdin reader is shared so tool_call can read responses during execution

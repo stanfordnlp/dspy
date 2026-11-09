@@ -1,5 +1,9 @@
 # dspy.TwoStepAdapter
 
+!!! warning "Deprecated in DSPy 3.5"
+
+    `dspy.TwoStepAdapter` will be removed in DSPy 3.6. Use [`dspy.JSONAdapter()`](JSONAdapter.md) for models supporting structured outputs, or [`dspy.XMLAdapter()`](XMLAdapter.md) otherwise. `JSONAdapter` automatically requests native structured outputs when the LM and output schema support them. Neither replacement uses a separate extraction LM; migration changes the prompting and extraction strategy.
+
 <!-- START_API_REF -->
 ::: dspy.TwoStepAdapter
     handler: python

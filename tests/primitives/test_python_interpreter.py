@@ -2,12 +2,15 @@ import asyncio
 import dataclasses
 import io
 import json
+import logging
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
 import threading
+import time
 import types
 from collections import namedtuple
 from datetime import datetime
@@ -20,10 +23,10 @@ from pydantic import BaseModel, ConfigDict
 
 import dspy.primitives.python_interpreter as python_interpreter
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.primitives.deno_utils import deno_subprocess_env
 from dspy.primitives.python_interpreter import (
     LARGE_VAR_THRESHOLD,
     PythonInterpreter,
-    _deno_subprocess_env,
     _find_deno_executable,
     _make_jsonable,
     _validate_deno_version,
@@ -318,7 +321,7 @@ result"""
 def test_default_runner_starts_offline_from_warm_shared_cache(monkeypatch, tmp_path):
     shared_cache = tmp_path / "deno"
     runner = str(Path(python_interpreter.__file__).with_name("runner.js"))
-    env = {**_deno_subprocess_env(), "DENO_DIR": str(shared_cache)}
+    env = {**deno_subprocess_env(), "DENO_DIR": str(shared_cache)}
     subprocess.run([_find_deno_executable(), "cache", "--no-config", "--no-lock", runner], env=env, check=True)
     monkeypatch.setenv("DENO_DIR", str(shared_cache))
 
@@ -525,7 +528,7 @@ def test_deno_subprocess_env_disables_package_json(monkeypatch):
     monkeypatch.setenv("DENO_NO_PACKAGE_JSON", "0")
     monkeypatch.setenv("DSPY_DENO_TEST_VALUE", "preserved")
 
-    env = _deno_subprocess_env()
+    env = deno_subprocess_env()
 
     assert env["DENO_NO_PACKAGE_JSON"] == "1"
     assert env["DSPY_DENO_TEST_VALUE"] == "preserved"
@@ -600,6 +603,178 @@ def test_rejects_write_paths_overlapping_runtime_files(monkeypatch, tmp_path):
 
     with pytest.raises(CodeInterpreterError, match="runtime files"):
         PythonInterpreter(enable_write_paths=[cache])
+
+
+def test_rejects_write_paths_overlapping_the_compiled_sandbox_archives():
+    from dspy.primitives.sandbox_bundle import bundle_root
+
+    with pytest.raises(CodeInterpreterError, match="runtime files"):
+        PythonInterpreter(enable_write_paths=[bundle_root() / "stdlib.zip"])
+
+
+def test_starts_from_the_compiled_standard_library():
+    with PythonInterpreter() as interpreter:
+        # Modules come from the bytecode beside each source in the standard library archive.
+        assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".pyc")
+        stdlib = next(arg.split("=", 1)[1] for arg in interpreter.deno_command if arg.startswith("--dspy-stdlib="))
+        assert stdlib in next(arg for arg in interpreter.deno_command if arg.startswith("--allow-read="))
+        # Sandboxed code cannot read the archive once Pyodide has started from it.
+        read = interpreter.execute(
+            "from js import Deno\n"
+            f"try:\n    Deno.readFileSync({stdlib!r})\n    result = 'read'\n"
+            "except Exception as e:\n    result = str(e)\n"
+            "result"
+        )
+        assert "Requires read access" in read
+
+
+def test_rebuilds_the_compiled_standard_library_after_the_cache_is_cleared(monkeypatch, tmp_path):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path / "sandbox")
+    for _ in range(2):
+        with PythonInterpreter() as interpreter:
+            assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".pyc")
+        shutil.rmtree(tmp_path / "sandbox")
+
+
+def test_a_failed_build_is_retried_only_after_a_while(monkeypatch, tmp_path):
+    from dspy.primitives import sandbox_bundle
+
+    builds = []
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path / "sandbox")
+    monkeypatch.setattr(sandbox_bundle, "_build", lambda *args: builds.append(args) or 1 / 0)
+    monkeypatch.setattr(sandbox_bundle, "_failed", {})
+    for _ in range(2):
+        with PythonInterpreter() as interpreter:
+            assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".py")
+    assert len(builds) == 1  # the second start fell back right away
+
+    monkeypatch.setattr(sandbox_bundle, "_RETRY_AFTER", 0.0)  # once the wait is over, the build is tried again
+    with PythonInterpreter() as interpreter:
+        interpreter.execute("1")
+    assert len(builds) == 2
+
+
+@pytest.mark.parametrize(
+    "failure,failures,status,expected_error",
+    [
+        ("tls", 2, 200, None),
+        ("timeout", 2, 200, None),
+        ("tls", 3, 200, "unexpected TLS EOF"),
+        ("tls", 0, 404, "404 Client Error"),
+    ],
+)
+def test_sandbox_wheel_download_retry_policy(monkeypatch, tmp_path, failure, failures, status, expected_error):
+    import hashlib
+    import ssl
+    import zipfile
+
+    import requests
+
+    from dspy.primitives import sandbox_bundle
+
+    wheel = io.BytesIO()
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("download_probe.py", "answer = 42\n")
+    payload = wheel.getvalue()
+    name = "download_probe-1.0-py3-none-any.whl"
+    info = {"file_name": name, "sha256": hashlib.sha256(payload).hexdigest()}
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path)
+    monkeypatch.setattr(sandbox_bundle, "_plan", lambda deno_dir, packages: ({"download-probe": info}, ["download-probe"], []))
+    monkeypatch.setattr(sandbox_bundle, "_planned_at", {})
+    monkeypatch.setattr(sandbox_bundle, "_failed", {})
+
+    response = requests.Response()
+    response.status_code = status
+    response._content = payload
+    response._content_consumed = True
+    error = (
+        requests.exceptions.SSLError(ssl.SSLEOFError(8, "unexpected TLS EOF"))
+        if failure == "tls" else requests.ReadTimeout("read timed out")
+    )
+    replies = iter([
+        *[error for _ in range(failures)],
+        response,
+    ])
+
+    def get(*args, **kwargs):
+        reply = next(replies)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    monkeypatch.setattr(requests, "get", get)
+    with PythonInterpreter() as interpreter:
+        if expected_error:
+            with pytest.raises(sandbox_bundle.SandboxBundleError, match=expected_error):
+                interpreter.provide_dspy()
+            assert not (tmp_path / name).exists()
+        else:
+            interpreter.provide_dspy()
+            assert interpreter.execute("import download_probe\ndownload_probe.answer") == 42
+            assert (tmp_path / name).read_bytes() == payload
+
+
+@pytest.mark.parametrize("opt_out", ["argument", "environment"])
+def test_the_sandbox_cache_can_be_turned_off(monkeypatch, tmp_path, opt_out):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path / "sandbox")
+    if opt_out == "environment":
+        monkeypatch.setenv("DSPY_SANDBOX_CACHE", "0")
+    with PythonInterpreter(**({"sandbox_cache": False} if opt_out == "argument" else {})) as interpreter:
+        assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".py")
+        assert not any(arg.startswith("--dspy-stdlib=") for arg in interpreter.deno_command)
+    assert not (tmp_path / "sandbox").exists()  # nothing written, not even the directory
+
+
+def test_without_the_cache_a_dspy_sandbox_gets_a_bundle_of_its_own(monkeypatch, tmp_path):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path / "sandbox")
+    interpreter = PythonInterpreter(sandbox_cache=False)
+    interpreter.provide_dspy()
+    bundle = next(arg.split("=", 1)[1] for arg in interpreter.deno_command if arg.startswith("--dspy-bundle="))
+    assert Path(bundle).is_relative_to(os.path.realpath(sandbox_bundle.scratch_root()))  # removed when the process exits
+    with interpreter:
+        assert interpreter.execute("import dspy\ndspy.Predict.__name__") == "Predict"
+    assert not (tmp_path / "sandbox").exists()
+
+
+def test_the_package_data_bundled_outside_git_is_the_one_dspy_declares():
+    tomllib = pytest.importorskip("tomllib")
+    from dspy.primitives import sandbox_bundle
+
+    pyproject = tomllib.loads((Path(sandbox_bundle.__file__).parents[2] / "pyproject.toml").read_text())
+    declared = {
+        f"{package.removeprefix('dspy').lstrip('.').replace('.', '/')}/{pattern}".lstrip("/")
+        for package, patterns in pyproject["tool"]["setuptools"]["package-data"].items()
+        for pattern in patterns
+    }
+    assert declared == set(sandbox_bundle._DSPY_PACKAGE_DATA)
+
+
+def test_the_cache_follows_the_pyodide_release_runner_js_pins():
+    from dspy.primitives import sandbox_bundle
+
+    runner = (Path(sandbox_bundle.__file__).parent / "runner.js").read_text()
+    assert f'"npm:pyodide@{sandbox_bundle.PYODIDE_VERSION}/pyodide.js"' in runner
+    assert re.findall(r"npm:pyodide@[\d.]+", runner) == [f"npm:pyodide@{sandbox_bundle.PYODIDE_VERSION}"]  # pinned once
+    assert sandbox_bundle.bundle_root().name == f"pyodide-{sandbox_bundle.PYODIDE_VERSION}"
+    assert sandbox_bundle._pinned_pyodide(Path(sandbox_bundle.__file__).parent / "missing.js") is None  # no crash
+
+
+def test_starts_from_the_source_standard_library_when_the_compiled_one_cannot_be_built(monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    def unavailable(*args):
+        raise sandbox_bundle.SandboxBundleError("read-only cache")
+
+    monkeypatch.setattr(sandbox_bundle, "prepare_stdlib", unavailable)
+    with PythonInterpreter() as interpreter:
+        assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".py")
+        assert not any(arg.startswith("--dspy-stdlib=") for arg in interpreter.deno_command)
 
 
 @pytest.mark.parametrize("version", [(2, 0, 0), (2, 4, 5), (2, 9, 5)])
@@ -1658,3 +1833,256 @@ def test_execution_instructions_are_class_metadata():
     assert interpreter.execution_instructions == PythonInterpreter.execution_instructions
     assert "Pyodide" in interpreter.execution_instructions
     assert "standard libraries" in interpreter.execution_instructions
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_a_package_on_disk_is_bundled_without_its_local_files(tmp_path, monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    class Editable:  # an editable install, whose metadata lists no files
+        files = None
+
+        def __init__(self):
+            self.metadata = {"Name": "flexpkg"}
+
+        def read_text(self, name):
+            return None
+
+    package = tmp_path / "flexpkg"
+    names = ["__init__.py", "data.json", "sub/__init__.py", "new.py", "secrets.yaml", ".env", "ignored.py",
+             "local.key", "sub/.cache/token"]
+    for name in names:
+        (package / name).parent.mkdir(parents=True, exist_ok=True)
+        (package / name).write_text("x = 1\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    def bundled():
+        return sorted(arcname.removeprefix("flexpkg/") for _, arcname in sandbox_bundle._files(Editable()))
+
+    # Outside a git work tree, only its Python source: the other files may be local ones, like credentials.
+    assert bundled() == ["__init__.py", "ignored.py", "new.py", "sub/__init__.py"]
+    # And the package data it declares, like dspy's own.
+    shipped = sandbox_bundle._shipped(package, ("data.json", "sub/*.json"))
+    assert sorted(path.relative_to(package).as_posix() for path in shipped) == [
+        "__init__.py", "data.json", "ignored.py", "new.py", "sub/__init__.py"
+    ]
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / ".gitignore").write_text("*.key\nignored.py\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "flexpkg/__init__.py", "flexpkg/data.json"], check=True)
+    # In one, the files git tracks and the Python source it doesn't ignore. Hidden files, like a .env, stay out.
+    assert bundled() == ["__init__.py", "data.json", "new.py", "sub/__init__.py"]
+
+
+def test_pruning_leaves_builds_in_progress_and_files_other_processes_replace(tmp_path, monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    old = time.time() - 7200
+    for name in ["dspy-a.zip", "dspy-b.zip", "dspy-c.zip", "dspy-d.zip.123.456.tmp"]:
+        (tmp_path / name).write_text("x")
+        os.utime(tmp_path / name, (old, old))
+    gone = tmp_path / "dspy-e.zip"  # listed, then replaced by another process before it is looked at
+    listed = list(tmp_path.glob("dspy-*")) + [gone]
+    monkeypatch.setattr(Path, "glob", lambda self, pattern: iter(listed))
+
+    sandbox_bundle._prune(tmp_path, keep=tmp_path / "dspy-a.zip", count=2)
+
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["dspy-a.zip", "dspy-c.zip", "dspy-d.zip.123.456.tmp"]
+
+    # One another process takes into use after it was listed is kept.
+    (tmp_path / "dspy-b.zip").write_text("x")
+    os.utime(tmp_path / "dspy-b.zip", (old, old))
+    listed = list(tmp_path.glob("dspy-*"))
+    looked = []
+    real = sandbox_bundle._last_used
+
+    def last_used(path):
+        if path.name == "dspy-b.zip" and path in looked:
+            os.utime(path)  # just now, by another process
+        looked.append(path)
+        return real(path)
+
+    monkeypatch.setattr(sandbox_bundle, "_last_used", last_used)
+    sandbox_bundle._prune(tmp_path, keep=tmp_path / "dspy-a.zip", count=2)
+    assert (tmp_path / "dspy-b.zip").exists()
+
+
+def test_a_module_added_or_removed_after_the_first_bundle_makes_a_new_plan(tmp_path, monkeypatch):
+    import functools
+
+    from dspy.primitives import sandbox_bundle
+
+    package = tmp_path / "pkg"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "old.py").write_text("")
+    listed = []
+
+    @functools.cache
+    def plan(deno_dir, packages):  # lists the package's modules once, until its cache is cleared, as _plan does
+        listed.append(deno_dir)
+        return {}, [], [(path, f"pkg/{path.name}") for path in sorted(package.glob("*.py"))]
+
+    def changed(step):  # the folder gets a new modification time, however coarse the file system's clock
+        os.utime(package, ns=(step, step))
+
+    def names():
+        return [name for _, name in sandbox_bundle._contents(tmp_path, None, True)[1]]
+
+    monkeypatch.setattr(sandbox_bundle, "_plan", plan)
+    monkeypatch.setattr(sandbox_bundle, "_planned_at", {})
+    changed(1)
+    assert names() == names() == ["pkg/__init__.py", "pkg/old.py"]
+    assert len(listed) == 1  # an unchanged folder keeps the plan
+    (package / "new.py").write_text("")
+    changed(2)
+    assert names() == ["pkg/__init__.py", "pkg/new.py", "pkg/old.py"]
+    (package / "old.py").unlink()
+    changed(3)
+    assert names() == ["pkg/__init__.py", "pkg/new.py"]
+
+
+def test_an_edited_source_file_makes_a_new_dspy_bundle(tmp_path, monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    source = tmp_path / "module.py"
+    source.write_text("value = 1\n")
+    root = tmp_path / "cache"
+    monkeypatch.setattr(sandbox_bundle, "_plan", lambda deno_dir, packages: ({}, [], [(source, "module.py")]))
+    monkeypatch.setattr(sandbox_bundle, "_build", lambda *args, **kwargs: args[3].write_text("built"))
+
+    first = sandbox_bundle._prepare_bundle((), None, "", root)
+    assert sandbox_bundle._prepare_bundle((), None, "", root) == first  # unchanged sources reuse it
+    source.write_text("value = 22\n")  # patched in place, as an installed file may be
+    assert sandbox_bundle._prepare_bundle((), None, "", root) != first
+
+
+def _with_dspy() -> PythonInterpreter:
+    interpreter = PythonInterpreter()
+    interpreter.provide_dspy()
+    return interpreter
+
+
+def _flag(interpreter: PythonInterpreter, name: str) -> str | None:
+    return next((arg.split("=", 1)[1] for arg in interpreter.deno_command if arg.startswith(f"{name}=")), None)
+
+
+def test_a_sandbox_with_dspy_restores_a_snapshot_that_has_imported_it():
+    with _with_dspy() as interpreter:
+        snapshot = _flag(interpreter, "--dspy-snapshot")
+        assert snapshot is not None
+        assert interpreter.execute(
+            "import sys\n"
+            "imported = 'dspy' in sys.modules\n"
+            "import pydantic, regex, sqlite3, ssl\n"  # compiled extension modules, loaded again for the restore
+            "class Model(pydantic.BaseModel):\n"
+            "    x: int\n"
+            "[imported, Model(x='3').x, regex.match('[a-z]+', 'abc')[0],\n"
+            " sqlite3.connect(':memory:').execute('select 2').fetchone()[0]]"
+        ) == [True, 3, "abc", 2]
+        read = interpreter.execute(
+            "from js import Deno\n"
+            f"try:\n    Deno.readFileSync({snapshot!r})\n    result = 'read'\n"
+            "except Exception as e:\n    result = str(e)\n"
+            "result"
+        )
+        assert "Requires read access" in read
+
+
+def test_sandboxes_restored_from_one_snapshot_draw_different_random_numbers():
+    draws = []
+    for _ in range(2):
+        with _with_dspy() as interpreter:
+            draws.append(interpreter.execute("import random\nrandom.random()"))
+    assert draws[0] != draws[1]
+
+
+def test_a_sandbox_that_cannot_restore_its_snapshot_starts_without_it(tmp_path, monkeypatch, caplog):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "_refused", set())
+    interpreter = _with_dspy()
+    original = _flag(interpreter, "--dspy-snapshot")
+    # A copy whose recorded layout of the extension modules is off by one, as if they had landed elsewhere.
+    size = (sandbox_bundle.bundle_root() / "stdlib.zip").stat().st_size
+    data = Path(original).read_bytes()
+    assert f"[{size},".encode() in data
+    tampered = tmp_path / "tampered.snap"
+    tampered.write_bytes(data.replace(f"[{size},".encode(), f"[{size + 1},".encode()))
+    interpreter.deno_command = [arg.replace(original, str(tampered)) for arg in interpreter.deno_command]
+
+    monkeypatch.setattr(logging.getLogger("dspy"), "propagate", True)  # so that caplog sees its warnings
+    with interpreter, caplog.at_level("WARNING"):
+        assert interpreter.execute("import dspy\ndspy.Predict.__name__") == "Predict"
+    assert "without its dspy snapshot" in caplog.text
+    assert _flag(interpreter, "--dspy-snapshot") is None
+    assert not tampered.exists()  # discarded, so that the next process builds a new one
+    assert tampered.name in sandbox_bundle._refused
+
+
+def test_a_new_standard_library_archive_makes_a_new_snapshot(tmp_path, monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "_build", lambda *args, **kwargs: args[3].write_text("built"))
+    monkeypatch.setattr(sandbox_bundle, "_refused", set())
+    bundle, stdlib = tmp_path / "dspy-0123.zip", tmp_path / "stdlib.zip"
+    bundle.write_text("bundle")
+    stdlib.write_text("stdlib")
+
+    first = sandbox_bundle._prepare_snapshot((), None, "", bundle, stdlib)
+    assert sandbox_bundle._prepare_snapshot((), None, "", bundle, stdlib) == first
+    stdlib.write_text("rebuilt")
+    second = sandbox_bundle._prepare_snapshot((), None, "", bundle, stdlib)
+    assert second != first
+
+    sandbox_bundle.discard_snapshot(second)  # one a sandbox could not restore
+    assert not second.exists()
+    with pytest.raises(sandbox_bundle.SandboxBundleError):  # this process builds none in its place
+        sandbox_bundle._prepare_snapshot((), None, "", bundle, stdlib)
+
+def test_sandbox_packages_choose_the_pyodide_packages_in_the_dspy_bundle(monkeypatch):
+    # Pyodide's own builds, by name, whatever this environment has installed: by default Pillow, for Image.to_pil.
+    import importlib.util
+    import zipfile
+
+    from dspy.primitives import sandbox_bundle
+
+    lock = {name: {"depends": [], "file_name": f"{name}.whl"} for name in ("pillow", "libwebp", "numpy")}
+    lock["pillow"]["depends"] = ["libwebp"]
+    fetched = set()
+
+    def fetch_wheel(root, info, deno_dir):  # an empty wheel, without the network
+        fetched.add(info["file_name"].removesuffix(".whl"))
+        zipfile.ZipFile(root / info["file_name"], "w").close()
+        return info["file_name"]
+
+    monkeypatch.setattr(sandbox_bundle, "_pyodide_lock", lambda deno_dir: lock)
+    monkeypatch.setattr(sandbox_bundle, "_distributions", lambda: [])
+    monkeypatch.setattr(sandbox_bundle, "_fetch_wheel", fetch_wheel)
+    monkeypatch.setattr(sandbox_bundle, "_build", lambda *args, **kwargs: args[3].write_text("built"))
+    find_spec = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name, *args: None if name == "PIL" else find_spec(name, *args))
+
+    def bundle(**kwargs):
+        fetched.clear()
+        interpreter = PythonInterpreter(sandbox_cache=False, **kwargs)
+        interpreter.provide_dspy()
+        return sorted(fetched), next(arg for arg in interpreter.deno_command if arg.startswith("--dspy-bundle="))
+
+    sandbox_bundle._plan.cache_clear()
+    try:
+        default = bundle()
+        assert default[0] == ["libwebp", "pillow"]  # though this environment has no Pillow
+        none = bundle(sandbox_packages=[])
+        assert none[0] == [] and none[1] != default[1]
+        more = bundle(sandbox_packages=["NumPy", "pillow"])
+        assert more[0] == ["libwebp", "numpy", "pillow"] and more[1] not in (default[1], none[1])
+        assert bundle(sandbox_packages=("pillow", "numpy")) == more  # one bundle, whatever the order or spelling
+        assert bundle() == default  # reused
+
+        with pytest.raises(ValueError, match="no package named 'nump'"):  # not a bundle RLM can do without
+            bundle(sandbox_packages=["nump"])
+        with pytest.raises(TypeError, match=r"like \['numpy'\]"):
+            PythonInterpreter(sandbox_packages="numpy")
+    finally:
+        sandbox_bundle._plan.cache_clear()

@@ -63,7 +63,7 @@ def test_flex_baseline_is_predict_and_lm_free() -> None:
     program = dspy.Flex(Echo)
     assert "dspy.Predict(" in program.module_src
     assert "q: str -> a: str" in program.module_src  # typed signature string
-    assert "result.a" in program.module_src  # unwraps the declared output
+    assert "result['a']" in program.module_src  # unwraps the declared output by key, not a Prediction method
     assert "class EchoModule(dspy.Module)" in program.module_src
 
 

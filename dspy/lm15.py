@@ -27,15 +27,18 @@ from typing import Mapping as _Mapping
 from dspy._vendor.lm15 import *
 from dspy._vendor.lm15 import __all__ as _vendored_all
 from dspy._vendor.lm15.compat import AnthropicCompat, OpenAIChatCompat, OpenAIResponsesCompat
+from dspy._vendor.lm15.models import InferencePricing, PricingTier
 from dspy._vendor.lm15.registry import ProviderDefinition
 from dspy._vendor.lm15.router import RouterConfig
 
 __all__ = [
     *_vendored_all,
     "AnthropicCompat",
+    "InferencePricing",
     "ModelSupport",
     "OpenAIChatCompat",
     "OpenAIResponsesCompat",
+    "PricingTier",
     "ProviderDefinition",
     "RegisteredProvider",
     "register_provider",

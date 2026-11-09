@@ -102,14 +102,9 @@ def test_explicit_local_resource_factories(tmp_path):
     assert base64.b64decode(dspy.File.from_path(str(file_path)).file_data.split(",", 1)[1]) == b"file bytes"
 
 
-def test_audio_from_file_is_deprecated_alias(tmp_path):
-    audio_path = tmp_path / "audio.wav"
-    audio_path.write_bytes(b"audio bytes")
-
-    with pytest.warns(DeprecationWarning, match="Audio.from_file is deprecated"):
-        aliased = dspy.Audio.from_file(str(audio_path))
-
-    assert base64.b64decode(aliased.data) == b"audio bytes"
+def test_removed_audio_factory_alias():
+    with pytest.raises(AttributeError, match="from_file"):
+        dspy.Audio.from_file("unused.wav")
 
 
 @pytest.mark.parametrize(

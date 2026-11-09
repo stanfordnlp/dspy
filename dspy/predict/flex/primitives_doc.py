@@ -5,7 +5,7 @@ implements the user's signature. It has exactly two methods:
 1) `def __init__(self):` — calls `super().__init__()` and assigns each predictor it
    needs to an attribute, e.g. `self.classify = dspy.Predict("text -> label")`.
    Each predictor is a constructed `dspy.Predict` / `dspy.ChainOfThought` /
-   `dspy.ReActV2` / `dspy.RLM` over a sub-signature string. Define a predictor ONLY
+   `dspy.ReAct` / `dspy.RLM` over a sub-signature string. Define a predictor ONLY
    for a step that genuinely needs a language model. If the task needs no LM at
    all, define no predictors (an `__init__` with just `super().__init__()`).
 
@@ -55,7 +55,7 @@ Available DSPy primitives:
 - `dspy.ChainOfThought("a -> b")`, like Predict but adds an implicit `reasoning`
    output field; useful when the answer benefits from explicit step-by-step thought.
 
-- `dspy.ReActV2(signature_str, tools=[tool1, tool2])`, multi-step reasoning + tool
+- `dspy.ReAct(signature_str, tools=[tool1, tool2])`, multi-step reasoning + tool
    use. `tools` is a list of plain Python callables or `dspy.Tool` instances.
 
 - `dspy.RLM("context, query -> output")`, Recursive Language Model: the LLM writes
@@ -67,16 +67,15 @@ Available DSPy primitives:
    calls, default 50), `sub_lm` (cheaper LM for sub-queries), `tools` (extra callables
    for the REPL).
 
-- Tools for `dspy.ReActV2` / `dspy.RLM` come from two places:
-  (1) any tools listed in the available context, in scope by name — ONLY these provided tools may
-  be handed to a sub-predictor via `dspy.ReActV2(..., tools=[...])` / `dspy.RLM(..., tools=[...])`;
-  and (2) helpers you AUTHOR yourself — when a sub-step needs a capability the provided tools don't
-  cover (deterministic lookups, parsing/formatting, calculators, validators, retrieval helpers,
-  etc.), define a plain function (with a docstring and type hints) nested inside `forward` and CALL
-  IT DIRECTLY. This code runs in a sandbox, so an authored helper cannot be handed to a bridged
-  sub-predictor — keep authored helpers to direct calls in `forward`.
+- Tools for `dspy.ReAct` / `dspy.RLM` come from two places:
+  (1) any tools listed in the available context, in scope by name; and (2) helpers you AUTHOR
+  yourself — when a sub-step needs a capability the provided tools don't cover (deterministic
+  lookups, parsing/formatting, calculators, validators, retrieval helpers, etc.), define a plain
+  function (with a docstring and type hints) nested inside `forward`. Either kind can be called
+  directly or handed to a sub-predictor via `dspy.ReAct(..., tools=[...])` /
+  `dspy.RLM(..., tools=[...])`.
 
-- `dspy.Tool(func)`, wraps a callable as a tool (for `ReActV2`/`RLM`); usually you can pass the
+- `dspy.Tool(func)`, wraps a callable as a tool (for `ReAct`/`RLM`); usually you can pass the
    bare function and it is wrapped for you.
 
 - `dspy.Prediction(field_a=value_a, field_b=value_b)`, construct the final return
@@ -84,17 +83,13 @@ Available DSPy primitives:
    exactly, and each `value_*` must be a plain value of the declared output
    type — never a `dspy.Prediction` you got back from a predictor call.
 
-The list above is the WHOLE of `dspy` available here. These do NOT exist in this
-module, and referencing one makes the code fail to bind: adapters
-(`dspy.ChatAdapter`, `dspy.JSONAdapter`), `dspy.settings`, `dspy.context`,
-`dspy.configure`, `dspy.LM`, `dspy.Example`, `dspy.Evaluate`, the optimizers,
-retrievers, and `dspy.Flex` itself. A class-based signature (subclassing
-`dspy.Signature`, with `dspy.InputField` / `dspy.OutputField`) works too; quote
-annotations that name custom types, e.g. `verdict: "Verdict" = dspy.OutputField()`.
-The host owns prompting, parsing,
-and the LM; this source only declares predictors and the Python wiring them
-together. The code also runs sandboxed, with no host filesystem or network, unless otherwise
-provided via a host tool.
+Build the module from the primitives above. The host owns the LM: do not construct LMs
+(`dspy.LM`) or change settings (`dspy.configure`, `dspy.context`), and keep `dspy.Evaluate`,
+the optimizers, and `dspy.Flex` itself out of the module. A class-based signature (subclassing
+`dspy.Signature`, with `dspy.InputField` / `dspy.OutputField`) works too, and its annotations
+may name the signature's custom types, e.g. `verdict: Verdict = dspy.OutputField()`.
+This source only declares predictors and the Python wiring them together. The code runs
+sandboxed, with no host filesystem or network, unless otherwise provided via a host tool.
 
 Rules you MUST follow:
 
@@ -137,7 +132,7 @@ Rules you MUST follow:
     * `dspy.Predict` for direct, single-call transformations.
     * `dspy.ChainOfThought` when the answer benefits from explicit step-by-step
       reasoning.
-    * `dspy.ReActV2` when external tools must be called during reasoning.
+    * `dspy.ReAct` when external tools must be called during reasoning.
     * `dspy.RLM` when an input field is a large blob (long document, big JSON,
       multi-table data) that doesn't fit naturally in a single prompt — RLM
       lets the LLM explore it iteratively via a sandboxed REPL.

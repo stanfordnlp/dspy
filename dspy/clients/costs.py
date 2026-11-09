@@ -63,17 +63,16 @@ def _estimate_cost(response, *, provider, requested_model, request=None, namespa
         return unknown("input or output usage was not reported")
     anthropic = provider in {"anthropic", "aws-anthropic", "bedrock-anthropic", "azure-anthropic",
                              "vertex-anthropic", "deepseek-anthropic", "meta-anthropic", "moonshotai-anthropic"}
-    separate_reasoning = provider in {"gemini", "vertex", "vertex-express", "xai"}
     cached, written = u.cache_read_tokens or 0, u.cache_write_tokens or 0
-    inputs = u.input_tokens if anthropic else u.input_tokens - cached - written
+    inputs = u.input_tokens - cached - written
     reasoning = u.reasoning_tokens or 0
-    outputs = u.output_tokens if separate_reasoning else u.output_tokens - reasoning
+    outputs = u.output_tokens - reasoning
     input_audio, output_audio = u.input_audio_tokens or 0, u.output_audio_tokens or 0
     inputs -= input_audio
     outputs -= output_audio
     if min(inputs, outputs) < 0:
         return unknown("usage dimensions cannot be separated safely")
-    total_input = u.input_tokens + cached + written if anthropic else u.input_tokens
+    total_input = u.input_tokens
     tier = request.config.service_tier if request is not None else None
     # Prefer the provider's actual served tier when it reports one.
     raw = response.provider_data or {}
@@ -82,21 +81,17 @@ def _estimate_cost(response, *, provider, requested_model, request=None, namespa
     if tier not in (None, "priority", "flex"):
         return unknown("unrecognised service-tier pricing")
     suffix = f"_{tier}" if tier else ""
-    thresholds = sorted({int(m.group(1)) * 1000 for key in info
-                         if (m := re.search(r"_above_(\d+)k_tokens", key))})
-    threshold = max((n for n in thresholds if total_input > n), default=None)
-    long_context = f"_above_{threshold // 1000}k_tokens" if threshold else ""
 
     def price(key, *, fallback=None, long_write=False):
         duration = "_above_1hr" if long_write else ""
-        candidate = key + duration + long_context + suffix
-        found = rate(info, candidate)
-        if found is not None:
-            return found
-        # Reasoning/audio/cache use their own rate where supplied; otherwise
-        # use the matching tier's ordinary token rate, never a cheaper tier.
-        if fallback and not duration:
-            found = rate(info, fallback + long_context + suffix)
+        # Each billed dimension and service tier owns its thresholds. An audio
+        # threshold must not make an otherwise flat text rate disappear.
+        for name in (key, fallback) if fallback and not duration else (key,):
+            pattern = re.escape(name + duration) + r"_above_(\d+)k_tokens" + re.escape(suffix)
+            thresholds = {int(m.group(1)) * 1000 for field in info if (m := re.fullmatch(pattern, field))}
+            threshold = max((n for n in thresholds if total_input > n), default=None)
+            long_context = f"_above_{threshold // 1000}k_tokens" if threshold else ""
+            found = rate(info, name + duration + long_context + suffix)
             if found is not None:
                 return found
         return None

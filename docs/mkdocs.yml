@@ -31,7 +31,7 @@ nav:
         - "RLM: exploring large contexts with code": diving-deeper/rlm.md
         - "Flex: optimizable module code": diving-deeper/flex.md
         - Tools and MCP: diving-deeper/tools.md
-        - ReAct and ReActV2: diving-deeper/react.md
+        - ReAct: diving-deeper/react.md
         - Metrics and evaluation: diving-deeper/metrics-and-evaluation.md
         - "Optimizers: choosing one": diving-deeper/choosing-an-optimizer.md
         - GEPA in depth: diving-deeper/gepa-in-depth.md
@@ -129,7 +129,7 @@ nav:
             - Parallel: api/modules/Parallel.md
             - Predict: api/modules/Predict.md
             - ReAct: api/modules/ReAct.md
-            - ReActV2: api/modules/ReActV2.md
+            - ReActV2 (deprecated): api/modules/ReActV2.md
             - Refine: api/modules/Refine.md
             - RLM: api/modules/RLM.md
         - Optimizers:
@@ -170,6 +170,7 @@ nav:
             - api/tools/index.md
             - ColBERTv2: api/tools/ColBERTv2.md
             - Embeddings: api/tools/Embeddings.md
+            - InterpreterPool: api/tools/InterpreterPool.md
             - LocalInterpreter: api/tools/LocalInterpreter.md
             - PythonInterpreter: api/tools/PythonInterpreter.md
         - Utils:

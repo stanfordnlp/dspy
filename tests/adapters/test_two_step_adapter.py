@@ -6,6 +6,20 @@ from tests.adapters.conftest import format_messages_and_lm_kwargs
 from tests.test_utils.engines import recording_lm
 
 
+def test_two_step_adapter_deprecation_warning():
+    extraction_lm = dspy.utils.DummyLM([{"answer": "x"}])
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"dspy\.TwoStepAdapter is deprecated in DSPy 3\.5 and will be removed in DSPy 3\.6\. "
+        r"Use dspy\.JSONAdapter\(\) for models supporting structured outputs, or dspy\.XMLAdapter\(\) otherwise\.",
+    ) as warnings:
+        adapter = dspy.TwoStepAdapter(extraction_lm)
+
+    assert len(warnings) == 1
+    assert warnings[0].filename == __file__
+    assert adapter.extraction_model is extraction_lm
+
+
 def test_two_step_adapter_format_exact_messages_for_simple_signature_with_demo():
     class QA(dspy.Signature):
         question: str = dspy.InputField()

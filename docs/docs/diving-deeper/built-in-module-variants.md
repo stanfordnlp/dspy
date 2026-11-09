@@ -40,13 +40,13 @@ Both run modules in parallel using the same `ParallelExecutor` underneath. The d
 
 A plain function — no LM call, no signature, no `dspy.Module`. It tallies completions and returns the most-common normalized value (with `default_normalize` folding case and whitespace). Aggregation should not look like a step that calls a model, so the API is a function call, not a module constructor. Pair it with a multi-sample `Predict` or with `BestOfN`‘s `pred.completions` when the task has a discrete answer.
 
-### 9. `RLM` is marked experimental for a reason
+### 9. `RLM` gives generated code a sub-LM to call
 
-The class is decorated with `@experimental` and the interface is still in flux. It composes a code sandbox with built-in `llm_query` / `llm_query_batched` tools that let generated code call a separate sub-LM mid-execution. The mental model is a Python REPL the LM drives, with another LM available as a callable inside. Useful, but the boundary conditions — max call counts, sandbox lifetime, error recovery — are still being worked out.
+`RLM` composes a code sandbox with built-in `llm_query` / `llm_query_batched` tools that let generated code call a separate sub-LM mid-execution. The mental model is a Python REPL the LM drives, with another LM available as a callable inside. `max_llm_calls` caps those sub-LM calls across the whole run.
 
 ### 10. `Flex` puts the module's code into the optimization search space
 
-Every other DSPy module fixes its structure at construction time; `Flex` doesn't. It holds its implementation as source code (`module_src`) and marks that code as the optimizable parameter, so `dspy.GEPA` rewrites its *entire implementation* — how many predictors, which primitives, what runs in Python instead of an LM — against your metric, rather than only tuning instructions. Construct it from a signature like any module (it begins as a one-call `Predict` baseline, or `RLM` when given tools), then let optimization discover the decomposition. Also experimental. It has its own deep dive: [Flex: Optimizable module code](flex.md).
+Every other DSPy module fixes its structure at construction time; `Flex` doesn't. It holds its implementation as source code (`module_src`) and marks that code as the optimizable parameter, so `dspy.GEPA` rewrites its *entire implementation* — how many predictors, which primitives, what runs in Python instead of an LM — against your metric, rather than only tuning instructions. Construct it from a signature like any module (it begins as a one-call `Predict` baseline, or `RLM` when given tools), then let optimization discover the decomposition. It has its own deep dive: [Flex: Optimizable module code](flex.md).
 
 ## API walkthrough
 
@@ -77,7 +77,7 @@ For tasks where the answer is best computed, not narrated.
 `RLM` accepts an `interpreter_factory` that is called once per invocation; DSPy shuts down the returned interpreter even when the invocation raises. `PythonInterpreter` is the public default, and `dspy.configure(interpreter_factory=...)` replaces it at each invocation. A module's own factory wins, unless it is `PythonInterpreter`.
 
 **`dspy.RLM(signature, max_iters=20, max_llm_calls=50, max_output_chars=10_000, verbose=False, tools=None, sub_lm=None, interpreter_factory=PythonInterpreter)`**
-Experimental. A REPL-style code agent that exposes two built-in tools — `llm_query` and `llm_query_batched` — so generated code can call a separate `sub_lm` mid-execution. A shared counter across iterations enforces `max_llm_calls`; tool names are validated as Python identifiers; `SandboxSerializable` inputs encode into the sandbox so large contexts don’t have to be re-marshalled each turn. If the loop ends without an explicit submission, the extractor pass produces the final outputs from the trajectory.
+A REPL-style code agent that exposes two built-in tools — `llm_query` and `llm_query_batched` — so generated code can call a separate `sub_lm` mid-execution. A shared counter across iterations enforces `max_llm_calls`; tool names are validated as Python identifiers; `SandboxSerializable` inputs encode into the sandbox so large contexts don’t have to be re-marshalled each turn. If the loop ends without an explicit submission, the extractor pass produces the final outputs from the trajectory.
 
 ### Running modules in parallel
 
@@ -88,13 +88,13 @@ Wraps `ParallelExecutor` and submits each `(module, example)` pair to a thread p
 
 **`dspy.KNN`** is a retrieval helper, not a generation module — see the Retrievers reference page.
 
-**`dspy.ReAct`** is the canonical tool-using loop and has its own page: [ReAct and ReActV2](react.md). The shared [tool-wrapping machinery](tools.md) is also used by `RLM`.
+**`dspy.ReAct`** is the canonical structured-history tool-using loop and has its own page: [ReAct](react.md). The shared [tool-wrapping machinery](tools.md) is also used by `RLM`.
 
 ## Cross-links
 
 - [Modules: composing your own](modules.md) — every variant here is a `dspy.Module` (except `Parallel` and `majority`), so the composition rules apply.
 - [Tools and MCP](tools.md) — `RLM` and ReAct use the same tool-wrapping machinery.
-- [ReAct and ReActV2](react.md) — the dedicated agent-loop comparison and migration plan.
-- [RLM: exploring large contexts with code](rlm.md) — the deep dive on the experimental REPL-driven module summarized above.
+- [ReAct](react.md) — the dedicated agent-loop guide and migration from trajectory-based execution.
+- [RLM: exploring large contexts with code](rlm.md) — the deep dive on the REPL-driven module summarized above.
 - [Flex: Optimizable module code](flex.md) — the deep dive on the code-optimizable Flex module summarized above.
 - [Settings and `context()`](settings-and-context.md) — how `Parallel` and `Module.batch` snapshot the active overrides into each worker.
