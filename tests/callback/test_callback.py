@@ -388,6 +388,47 @@ def test_tool_calls():
     ]
 
 
+@pytest.mark.parametrize("use_callback", [False, True])
+def test_module_input_field_named_instance(use_callback):
+    callback = MyCallback()
+    dspy.configure(lm=DummyLM([{"label": "positive"}]), callbacks=[callback] if use_callback else [])
+
+    result = dspy.Predict("instance -> label")(instance="I love it")
+
+    assert result.label == "positive"
+    if use_callback:
+        assert callback.calls[0]["handler"] == "on_module_start"
+        assert callback.calls[0]["inputs"] == {"args": (), "kwargs": {"instance": "I love it"}}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_callback", [False, True])
+async def test_async_module_input_field_named_instance(use_callback):
+    callback = MyCallback()
+    with dspy.context(lm=DummyLM([{"label": "positive"}]), callbacks=[callback] if use_callback else []):
+        result = await dspy.Predict("instance -> label").acall(instance="I love it")
+
+    assert result.label == "positive"
+    if use_callback:
+        assert callback.calls[0]["handler"] == "on_module_start"
+        assert callback.calls[0]["inputs"] == {"args": (), "kwargs": {"instance": "I love it"}}
+
+
+@pytest.mark.parametrize("use_callback", [False, True])
+def test_tool_argument_named_instance(use_callback):
+    callback = MyCallback()
+    dspy.configure(callbacks=[callback] if use_callback else [])
+
+    def stop_vm(instance: str) -> str:
+        """Stop a virtual machine."""
+        return f"stopped {instance}"
+
+    assert dspy.Tool(stop_vm)(instance="vm-1") == "stopped vm-1"
+    if use_callback:
+        assert [call["handler"] for call in callback.calls] == ["on_tool_start", "on_tool_end"]
+        assert callback.calls[0]["inputs"] == {"kwargs": {"instance": "vm-1"}}
+
+
 def test_active_id():
     # Test the call ID is generated and handled properly
     class CustomCallback(BaseCallback):
