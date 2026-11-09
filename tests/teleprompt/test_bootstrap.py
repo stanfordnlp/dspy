@@ -72,6 +72,16 @@ def test_bootstrap_labeled_demos_sampled_independently_per_predictor():
     assert len(p2.demos) == 8
 
 
+class RepeatedCallModule(dspy.Module):
+    def __init__(self, signature):
+        super().__init__()
+        self.predictor = Predict(signature)
+
+    def forward(self, **kwargs):
+        self.predictor(**kwargs)
+        return self.predictor(**kwargs)
+
+
 def test_compile_with_predict_instances():
     # Create Predict instances for student and teacher
     # Note that dspy.Predict is not itself a module, so we can't use it directly here
@@ -227,3 +237,51 @@ def test_metric_threshold_none_uses_metric_value_as_success(metric_value, expect
     )
 
     assert len(compiled_student.predictor.demos) == expected_demos
+
+
+def test_compile_multiple_traces_with_unpicklable_tool():
+    class Client:
+        def lookup(self, city):
+            return {"paris": "France"}[city.lower()]
+
+    def make_tool(client):
+        def country_of(city: str) -> str:
+            """Return the country a city is in."""
+            return client.lookup(city)
+
+        return country_of
+
+    class ToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    tool = dspy.Tool(make_tool(Client()))
+    example = Example(question="Where is Paris?", tools=[tool], answer="France").with_inputs("question", "tools")
+    dspy.configure(lm=DummyLM([{"answer": "France"}, {"answer": "France"}]))
+
+    compiled = BootstrapFewShot(
+        metric=lambda example, prediction, trace=None: prediction.answer == example.answer,
+        max_bootstrapped_demos=1,
+        max_labeled_demos=0,
+    ).compile(RepeatedCallModule(ToolSignature), trainset=[example])
+
+    assert len(compiled.predictor.demos) == 1
+    assert compiled.predictor.demos[0].tools[0](city="Paris") == "France"
+
+
+def test_unexpected_demo_hash_error_propagates(monkeypatch):
+    dspy.configure(lm=DummyLM([{"output": "blue"}, {"output": "blue"}]))
+    bootstrap = BootstrapFewShot(
+        metric=simple_metric,
+        max_bootstrapped_demos=1,
+        max_labeled_demos=0,
+    )
+
+    def raise_unexpected_error(value):
+        raise RuntimeError("Unexpected hashing failure")
+
+    monkeypatch.setattr("dspy.utils.hasher.Hasher.hash", raise_unexpected_error)
+
+    with pytest.raises(RuntimeError, match="Unexpected hashing failure"):
+        bootstrap.compile(RepeatedCallModule("input -> output"), trainset=trainset)
