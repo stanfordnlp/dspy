@@ -3,7 +3,7 @@ import types
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from functools import lru_cache
-from typing import Any, Union, get_args, get_origin
+from typing import Any, Literal, Union, get_args, get_origin
 from xml.sax.saxutils import quoteattr
 
 import pydantic
@@ -303,6 +303,12 @@ class XMLAdapter(ChatAdapter):
             if schema.get("type") == "object" and not (element.text or "").strip():
                 return {}
             values = [element.text or "" for element in elements]
+            if "enum" in schema or "const" in schema:
+                annotation = Literal[tuple(schema["enum"] if "enum" in schema else [schema["const"]])]
+                try:
+                    values = [parse_value(value, annotation) for value in values]
+                except ValueError:
+                    pass  # Enum member names need the original annotation during field validation.
             return values[0] if len(values) == 1 else values
         properties = schema.get("properties", {})
         child_schema = schema.get("additionalProperties", {})

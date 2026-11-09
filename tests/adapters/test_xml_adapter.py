@@ -10,7 +10,7 @@ from dspy.adapters.chat_adapter import FieldInfoWithName
 from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.primitives.repl_types import REPLEntry
 from tests.adapters.conftest import format_messages_and_lm_kwargs
-from tests.test_utils.engines import make_response
+from tests.test_utils.engines import make_response, recording_lm
 
 
 def test_xml_adapter_format_and_parse_basic():
@@ -28,6 +28,35 @@ def test_xml_adapter_format_and_parse_basic():
     completion = "<answer>Paris</answer>"
     parsed = adapter.parse(TestSignature, completion)
     assert parsed == {"answer": "Paris"}
+
+
+@pytest.mark.parametrize(
+    "annotation, text, expected",
+    [
+        (Literal[-1, 2], "-1", -1),
+        (Literal[-1, 2], "2", 2),
+        (Literal[True], "True", True),
+        (Literal[False], "false", False),
+        (Literal["2", 2], "2", "2"),
+        (Literal["False"], "False", "False"),
+    ],
+)
+def test_xml_adapter_nested_literals(annotation, text, expected):
+    class Record(pydantic.BaseModel):
+        value: annotation
+
+    signature = dspy.Signature({"answer": (list[Record], dspy.OutputField())})
+    wire = f"<answer><item><value>{text}</value></item></answer>"
+    lm = recording_lm([wire])
+    adapter = XMLAdapter(use_json_adapter_fallback=False)
+    with dspy.context(lm=lm, adapter=adapter):
+        value = dspy.Predict(signature)().answer[0].value
+    assert value == expected and type(value) is type(expected)
+    assert len(lm.engine.requests) == 1
+    formatted = adapter.format_assistant_message_content(signature, {"answer": [Record(value=expected)]})
+    assert adapter.parse(signature, formatted)["answer"] == [Record(value=expected)]
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+        adapter.parse(signature, wire.replace(f">{text}<", ">not-allowed<"))
 
 
 def test_xml_adapter_parse_multiple_fields():
