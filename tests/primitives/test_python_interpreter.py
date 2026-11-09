@@ -2027,7 +2027,8 @@ def test_a_snapshot_restores_the_session_in_a_new_sandbox():
     with PythonInterpreter(tools={"double": double}) as interpreter:
         interpreter.execute(
             "class Counter:\n    n = 0\n    def bump(self):\n        self.n += 1\n        return self.n\n"
-            "counter = Counter()\ncounter.bump()\nsquares = (i * i for i in range(9))\nnext(squares)\nhalf = double(x=21)"
+            "counter = Counter()\ncounter.bump()\nsquares = (i * i for i in range(9))\nnext(squares)\nhalf = double(x=21)\n"
+            "print = lambda *args: None"  # nothing a restore runs may depend on it
         )
         snapshot = interpreter.snapshot()
         assert interpreter.execute("counter.bump()") == 2  # the original goes on

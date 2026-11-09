@@ -770,9 +770,10 @@ class PythonInterpreter:
 
     def _health_check(self) -> None:
         """Verify the subprocess is alive by executing a simple expression."""
-        response = self._send_request("execute", {"code": "print(1+1)"}, "during health check")
+        # It calls nothing, which a restored session may have redefined, like print.
+        response = self._send_request("execute", {"code": "1 + 1"}, "during health check")
         result = response["result"]
-        if not isinstance(result, dict) or result.get("output", "").strip() != "2":
+        if not isinstance(result, dict) or result.get("output") != 2:
             self._raise_terminal_error(f"Unexpected ping response: {response}")
 
     def _to_json_compatible(self, value: Any) -> Any:

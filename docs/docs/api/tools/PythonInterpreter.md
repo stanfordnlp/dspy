@@ -57,8 +57,10 @@ with dspy.PythonInterpreter(snapshot=state) as interpreter:
 
 It is a Pyodide memory snapshot, so it holds everything in the sandbox's memory, environment variables passed in
 included: store it as you would a secret. Files the code wrote are not in it. It restores only in an interpreter that
-starts as the one that made it did (the same dspy and Pyodide, `sandbox_cache`, and `provide_dspy()`), and a sandbox
-whose Python holds JavaScript objects (from `js`) cannot be snapshotted; both raise `CodeInterpreterError`.
+starts as the one that made it did (the same dspy and Pyodide, `sandbox_cache`, and `provide_dspy()`). A sandbox cannot
+be snapshotted once its Python holds JavaScript objects (from `js`), or once its code has loaded a package or an
+extension module after the sandbox started, whose files and code the snapshot would not hold. Both raise
+`CodeInterpreterError`.
 
 ## Execution Instructions
 
