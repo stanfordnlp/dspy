@@ -1,6 +1,7 @@
 import asyncio
 
 import pytest
+from jsonschema import ValidationError, validate
 from pydantic import BaseModel
 
 import dspy
@@ -19,6 +20,41 @@ def test_react_submit_tool_returns_original_output_fields():
 
     assert react.tools["submit"](answer="Paris") == {"answer": "Paris"}
     assert "tool_call_results" not in react.react.signature.input_fields
+
+
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("container", [False, True])
+def test_react_nested_submit_schema(native, container):
+    class Address(BaseModel):
+        city: str
+
+    class Person(BaseModel):
+        address: Address
+        age: int
+
+    annotation = list[Person] if container else Person
+    person = {"address": {"city": "Oslo"}, "age": 37}
+    value = [person] if container else person
+    outputs = {"answer": value}
+    signature = dspy.Signature({"answer": (annotation, dspy.OutputField())})
+    if native:
+        lm = recording_lm([make_response(tool_calls=[("s", "submit", outputs)])])
+    else:
+        lm = dspy.utils.DummyLM([{
+            "next_thought": "Done.",
+            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": outputs}]),
+        }])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=native)):
+        result = dspy.ReAct(signature, tools=[])()
+
+    expected = Person(address=Address(city="Oslo"), age=37)
+    assert result.answer == ([expected] if container else expected)
+    if native:
+        schema = next(tool.parameters for tool in lm.engine.requests[0].tools if tool.name == "submit")
+        validate(outputs, schema)
+        invalid = {"address": {"city": 42}, "age": 37}
+        with pytest.raises(ValidationError):
+            validate({"answer": [invalid] if container else invalid}, schema)
 
 
 @pytest.mark.parametrize("native", [False, True])
