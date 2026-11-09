@@ -142,9 +142,12 @@ def _save_state(data: bytes, cache: bool) -> str:
     root = _states_dir(cache)
     root.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=root, suffix=".tmp")  # readable by this user only
-    with os.fdopen(fd, "wb") as file:
-        file.write(data)
-    os.replace(temporary, root / f"{state}.snap")
+    try:
+        with os.fdopen(fd, "wb") as file:
+            file.write(data)
+        os.replace(temporary, root / f"{state}.snap")
+    finally:
+        Path(temporary).unlink(missing_ok=True)  # left only where saving failed
     _prune_states(root)
     return state
 
