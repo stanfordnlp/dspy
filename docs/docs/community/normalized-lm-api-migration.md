@@ -124,6 +124,21 @@ Those options are read with lm15's own Chat Completions reader into
 
 Engine selection:
 
+- `model_type="auto"` (default) selects the **API family** using lm15's native
+  provider routing, before capability checks and request construction. OpenAI
+  (`openai/...` and bare GPT/o-series IDs) and Azure (`azure/...`) use Responses.
+  Anthropic, Gemini, OpenRouter and registered providers keep their declared
+  native dialects; an OpenRouter model named `openai/...` is still OpenRouter.
+  Azure deployment names are opaque: DSPy does not guess which model they host.
+  Unresolved routes retain Chat Completions through optional LiteLLM. Custom
+  engines own their protocol and are not rerouted.
+- Set `model_type="chat"` to retain Chat Completions, `"responses"` to require
+  Responses, or `"text"` for text completions. Explicit native provider doors
+  such as `openai-chat:gpt-6-luna` also retain their meaning. A configured
+  `api_base` changes the destination, not the declared provider's family:
+  **Chat-only OpenAI-compatible proxies and Azure deployments must opt into
+  `model_type="chat"`**, or register their actual dialect. This is not endpoint
+  capability discovery.
 - `engine="auto"` (default): prefer native lm15 for supported routes and
   representable inputs. Unsupported routes and ordinary provider-specific inputs
   that cannot be represented faithfully may select optional LiteLLM **before
@@ -134,6 +149,42 @@ Engine selection:
 Authentication failures, timeouts and provider errors never cause a switch to
 another backend. Compatibility use requires `pip install "dspy[litellm]"`;
 native use does not.
+
+API-family selection is independent of engine selection: a Responses route
+still uses Responses if client settings or request representation select
+LiteLLM. Other bundled native Responses doors without a compatibility mapping
+refuse fallback locally; register an endpoint with its dialect and credentials
+instead of treating a native provider ID as a LiteLLM prefix.
+Neither a provider rejection nor reasoning-token exhaustion causes a
+retry on another API or a reasoning-effort downgrade. API-specific adaptations
+(for example Responses stop handling and unsupported seed/penalties) still
+apply, as described below.
+
+Ordinary default `lm("Hello")` calls keep their list-of-strings return shape;
+explicit `model_type="responses"` retains its dictionary output shape. Typed
+`lm(Request(...))` calls always return a `Response`. Saved `model_type="chat"`
+states keep Chat Completions when loaded; new auto states preserve `"auto"`.
+Copying an auto LM re-resolves the copied model's native route. Auto and explicit
+Chat/Responses calls have separate DSPy response-cache keys.
+
+For example, this public ReAct program uses OpenAI Responses by default:
+
+```python
+import dspy
+
+lm = dspy.LM("openai/gpt-6-luna", max_tokens=2000)
+with dspy.context(lm=lm):
+    result = dspy.ReAct("question -> answer", tools=[], max_iters=1)(
+        question="What is 17 plus 6?"
+    )
+print(result.answer)
+```
+
+Native tool calling and reasoning remain enabled; changing the API family does
+not remove either feature. Use `model_type="responses"` explicitly for the same
+workaround on DSPy versions that still default to Chat Completions. Provider
+acceptance depends on the actual deployment; offline request tests do not prove
+that a live model returns an answer within a given token budget.
 
 The `timeout` setting, a number of seconds or an `httpx.Timeout`, bounds the wait
 for the next byte of the reply (headers first, then each streamed chunk), the

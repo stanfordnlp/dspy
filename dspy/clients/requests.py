@@ -128,8 +128,6 @@ def build_request(lm, prompt, options: dict | None = None) -> Request:
         system, messages = None, (Message.user(prompt),)
     else:
         system, messages = prompt.system, tuple(prompt.messages)
-    if getattr(lm, "use_developer_role", False) and lm.model_type == "responses" and isinstance(system, str):
-        system, messages = None, (Message.developer(system), *messages)
     body = {"model": lm.model, "messages": _STUB_MESSAGES, **generation_options(lm, options)}
     if getattr(lm, "model_type", None) == "text" and type(body.get("logprobs")) is int:
         # Text endpoints encode the alternative count in logprobs itself.
@@ -159,6 +157,9 @@ def build_request(lm, prompt, options: dict | None = None) -> Request:
             # route, unless provider-shaped controls require its verdict.
             if provider_controls:
                 raise
+    model_type = selection.model_type if selection is not None else getattr(lm, "model_type", "chat")
+    if getattr(lm, "use_developer_role", False) and model_type == "responses" and isinstance(system, str):
+        system, messages = None, (Message.developer(system), *messages)
     compat = None
     if selection is not None and selection.native and selection.resolution.adapter == "OpenAIChatLM":
         compat = selection.resolution.compat

@@ -57,7 +57,7 @@ def test_completed_response_stop_preserves_billed_usage_and_logprobs(stop):
 @pytest.mark.parametrize("asynchronous", [False, True])
 async def test_native_chat_still_sends_stop_to_provider(asynchronous, monkeypatch):
     transport = native_transport(monkeypatch, [wire("stopped upstream")])
-    lm = dspy.LM("openai/gpt-4o", cache=False, num_retries=0)
+    lm = dspy.LM("openai/gpt-4o", model_type="chat", cache=False, num_retries=0)
     request = lm15.Request(model=lm.model, messages=(lm15.Message.user("hi"),), config=lm15.Config(stop=("STOP",)))
     response = await invoke(lm, asynchronous, request)
     assert json.loads(transport.requests[0].body)["stop"] == ["STOP"]
@@ -160,7 +160,7 @@ async def test_judgment_response_preserves_json_prediction_and_typed_value(async
     transport = native_transport(monkeypatch, [
         DualResponse(status=200, body=json.dumps(body).encode()) for _ in range(2)
     ])
-    lm = dspy.LM("openai/gpt-4o", api_key="test", cache=False, num_retries=0)
+    lm = dspy.LM("openai/gpt-4o", model_type="chat", api_key="test", cache=False, num_retries=0)
     request = prepare(lm, "test", {"response_format": {
         "type": "json_schema", "json_schema": {"name": "Answer", "schema": {
             "type": "object", "properties": {"accepted": {"type": "boolean"}},

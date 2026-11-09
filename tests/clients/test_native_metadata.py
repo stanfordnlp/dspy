@@ -32,7 +32,7 @@ def token_rates(monkeypatch):
 
 
 def test_tool_result_media_follows_route_policy():
-    lm = dspy.LM("openai/gpt-4o", engine="lm15")
+    lm = dspy.LM("openai/gpt-4o", engine="lm15", model_type="chat")
     claude = dspy.LM("anthropic/claude-sonnet-4-5", engine="lm15")
     # Media inside tool results follows each route's lm15 policy, not the Chat/Responses split.
     assert lm.supported_tool_result_media == set()
@@ -354,7 +354,7 @@ async def test_canonical_usage_and_cost_through_provider_wire(monkeypatch, provi
                 "completion_tokens_details": {"reasoning_tokens": 10}}}
         inputs, outputs, cost = 100, 40 if provider == "xai" else 30, 520e-6 if provider == "xai" else 450e-6
     transport = native_transport(monkeypatch, [DualResponse(status=200, body=json.dumps(body).encode())])
-    lm = dspy.LM(f"{provider}/test", engine="lm15", api_key="fake", cache=True)
+    lm = dspy.LM(f"{provider}/test", engine="lm15", model_type="chat", api_key="fake", cache=True)
     with track_usage() as tracker:
         assert (await lm.acall("canonical usage") if asynchronous else lm("canonical usage")) == ["ok"]
         cold = lm.history[-1]
@@ -373,7 +373,7 @@ def test_pre_canonical_usage_cache_record_is_a_miss(monkeypatch):
     from tests.clients.test_lm_engine_execution import native_transport, wire
 
     transport = native_transport(monkeypatch, [wire("fresh")])
-    lm = dspy.LM("openai/gpt-4o-mini", engine="lm15", api_key="fake", cache=True)
+    lm = dspy.LM("openai/gpt-4o-mini", engine="lm15", model_type="chat", api_key="fake", cache=True)
     old = {"_dspy_format": "dspy-lm15-result-v1", "outputs": ["stale"], "usage": {}, "cost": 123,
            "response_model": "test", "responses": [{"model": "test", "message": {"role": "assistant", "parts": []},
            "usage": {"input_tokens": 10, "cache_read_tokens": 40, "output_tokens": 2}}]}
