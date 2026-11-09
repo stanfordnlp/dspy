@@ -1060,8 +1060,9 @@ class RLM(Module):
         variables_info = [variable.format() for variable in variables]
         # A per-call signature, not a mutation of generate_action.signature, keeps a
         # dspy.context override local to this invocation.
+        # Freeze event membership/fields for traces without copying arbitrary input metadata.
         action = self.generate_action(
-            history=history,
+            history=history.model_copy(update={"messages": [dict(event) for event in history.messages]}),
             signature=self._action_signature_for_current_factory(interpreter_factory, sub_agent_rules),
             variables_info=variables_info,
             iteration=self._iteration_label(iteration),
@@ -1219,7 +1220,7 @@ class RLM(Module):
         """Async version: Execute one iteration."""
         variables_info = [variable.format() for variable in variables]
         pred = await self.generate_action.acall(
-            history=history,
+            history=history.model_copy(update={"messages": [dict(event) for event in history.messages]}),
             signature=self._action_signature_for_current_factory(interpreter_factory, sub_agent_rules),
             variables_info=variables_info,
             iteration=self._iteration_label(iteration),
