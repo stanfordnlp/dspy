@@ -126,8 +126,8 @@ class REPLEntry(pydantic.BaseModel):
 
     max_output_chars: int = 10_000
     # The SHA-256 of the interpreter's snapshot right after this step, on the last step of an RLM call: a call given
-    # a history that ends with it starts its REPL from that state.
-    interpreter_state: str | None = None
+    # a history that ends with it starts its REPL from that state. It names a file, so it is a hash and nothing else.
+    interpreter_state: str | None = pydantic.Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
     model_config = pydantic.ConfigDict(frozen=True)
 
