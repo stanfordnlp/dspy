@@ -192,7 +192,8 @@ class XMLAdapter(ChatAdapter):
         for choice in choices:
             if choice.get("type") == "array":
                 names.add("item")
-                siblings.extend(cls._schemas(choice.get("items", {}), definitions))
+                for item in choice.get("prefixItems", [choice.get("items", {})]):
+                    siblings.extend(cls._schemas(item, definitions))
             else:
                 siblings.append(choice)
         for sibling in siblings:
@@ -210,14 +211,15 @@ class XMLAdapter(ChatAdapter):
         return rf"(?:{opening}|{enclosing})"
 
     @classmethod
-    def _schemas(cls, schema: dict, definitions: dict, child: str | None = None) -> list[dict]:
+    def _schemas(cls, schema: dict, definitions: dict, child: str | None = None, index: int = 0) -> list[dict]:
         schema = definitions.get(schema.get("$ref", "").rsplit("/", 1)[-1], schema)
         if choices := schema.get("anyOf", schema.get("oneOf")):
-            return [s for branch in choices for s in cls._schemas(branch, definitions, child)]
+            return [s for branch in choices for s in cls._schemas(branch, definitions, child, index)]
         if child is None:
             return [schema]
         if schema.get("type") == "array":
-            item = schema.get("items", {})
+            prefix = schema.get("prefixItems", [])
+            item = prefix[index] if child == "item" and index < len(prefix) else schema.get("items", {})
             return [item] if child == "item" else cls._schemas(item, definitions, child)
         if schema.get("type") not in ("object", None):
             return []
@@ -259,7 +261,7 @@ class XMLAdapter(ChatAdapter):
             if choices := node.get("anyOf", node.get("oneOf")):
                 return example(next(s for s in choices if s.get("type") != "null"), seen)
             if node.get("type") == "array":
-                return [example(node.get("items", {}), seen)]
+                return [example(item, seen) for item in node.get("prefixItems", [node.get("items", {})])]
             if not node.get("properties") and isinstance(node.get("additionalProperties"), dict):
                 return {"example key": example(node["additionalProperties"], seen)}
             return {name: example(child, seen) for name, child in node.get("properties", {}).items()} or "..."
@@ -296,7 +298,11 @@ class XMLAdapter(ChatAdapter):
                     return [] if not text else text
             if len(elements) == 1 and (items := cls._group_children(elements[0]).get("item")):
                 elements = items
-            return [cls._elements_to_value([element], schema.get("items", {}), definitions) for element in elements]
+            prefix = schema.get("prefixItems", [])
+            return [
+                cls._elements_to_value([element], prefix[i] if i < len(prefix) else schema.get("items", {}), definitions)
+                for i, element in enumerate(elements)
+            ]
         element = elements[0]
         if schema.get("type") not in ("object", None) and list(element):
             raise ValueError("Scalar values cannot contain child fields")
@@ -412,7 +418,7 @@ class _XMLParser:
             name = opening[1]
             element = ET.fromstring(opening[0] if opening[2] else opening[0] + f"</{name}>")
             key = element.get("key", name) if name == "entry" else name
-            children = XMLAdapter._schemas(schema, definitions, key)
+            children = XMLAdapter._schemas(schema, definitions, key, len(parent))
             if not children:
                 raise ET.ParseError(f"Unexpected field {key}")
             parent.append(element)

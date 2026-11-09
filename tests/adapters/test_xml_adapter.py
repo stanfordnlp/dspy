@@ -74,6 +74,71 @@ def test_xml_adapter_literal_unions_preserve_scalar_types(annotation, text, expe
     assert value == expected and type(value) is type(expected)
 
 
+@pytest.mark.parametrize("compact", [False, True])
+@pytest.mark.parametrize("pair_type, pair", [
+    (tuple[str, list[int]], ("<b>tag</b>", [2, 3])),
+    (tuple[list[int], str], ([2, 3], "<b>tag</b>")),
+    (tuple[list[int], str], ([], "tag")),
+    (tuple[int, ...], (2, -3, 7)),
+    (tuple[()], ()),
+])
+def test_xml_adapter_nested_positional_tuples(compact, pair_type, pair):
+    class Record(pydantic.BaseModel):
+        pair: pair_type
+
+    signature = dspy.Signature({"answer": (Record, dspy.OutputField())})
+    expected = Record(pair=pair)
+    adapter = XMLAdapter(use_json_adapter_fallback=False)
+    wire = adapter.format_assistant_message_content(signature, {"answer": expected})
+    if compact:
+        wire = wire.replace("\n", "")
+    lm = recording_lm([wire])
+    with dspy.context(lm=lm, adapter=adapter):
+        assert dspy.Predict(signature)().answer == expected
+    assert len(lm.engine.requests) == 1
+
+
+def test_xml_adapter_positional_tuple_schema_and_validation():
+    class Record(pydantic.BaseModel):
+        pair: tuple[str, list[int]]
+
+    signature = dspy.Signature({"answer": (Record, dspy.OutputField())})
+    adapter = XMLAdapter()
+    wire = "<answer><pair><item>tag</item><item><item>2</item><item>3</item></item></pair></answer>"
+    assert adapter.parse(signature, wire)["answer"] == Record(pair=("tag", [2, 3]))
+    assert "<pair>\n<item>\n...\n</item>\n<item>\n<item>\n...\n</item>\n</item>\n</pair>" in adapter.format_field_structure(signature)
+    for invalid in [wire.replace("<item>tag</item>", ""), wire.replace("</pair>", "<item>extra</item></pair>")]:
+        with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+            adapter.parse(signature, invalid)
+
+
+@pytest.mark.anyio
+async def test_xml_adapter_repeated_tuple_fields_preserve_following_stream():
+    class Left(pydantic.BaseModel):
+        name: str
+        count: int
+
+    class Record(pydantic.BaseModel):
+        pair: tuple[Left, str]
+
+    signature = dspy.Signature({"record": (Record, dspy.OutputField()), "answer": (str, dspy.OutputField())})
+    wire = "<record><pair><name>a</name><count>1</count></pair><pair>tail</pair></record><answer>right</answer>"
+    program = dspy.streamify(dspy.Predict(signature), stream_listeners=[dspy.streaming.StreamListener("answer")])
+    with dspy.context(lm=recording_lm([wire]), adapter=XMLAdapter(use_json_adapter_fallback=False)):
+        chunks = [chunk async for chunk in program()]
+    assert chunks[-1].record == Record(pair=(Left(name="a", count=1), "tail"))
+    assert chunks[-1].answer == "right"
+    assert "".join(chunk.chunk for chunk in chunks if isinstance(chunk, dspy.streaming.StreamResponse)) == "right"
+
+
+def test_xml_adapter_positional_tuple_preserves_literal_closing_tag():
+    signature = dspy.Signature({"answer": (list[tuple[str, str]], dspy.OutputField())})
+    expected = [("before\n</item>\n<b>\nafter\n</b>", "tail")]
+    adapter = XMLAdapter()
+    wire = adapter.format_assistant_message_content(signature, {"answer": expected})
+    assert adapter.parse(signature, wire)["answer"] == expected
+
+
 def test_xml_adapter_parse_multiple_fields():
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()
