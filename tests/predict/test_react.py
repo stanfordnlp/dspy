@@ -195,6 +195,36 @@ def test_react_unknown_tool_observation_can_continue():
     assert pred.answer == "done"
 
 
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
+def test_react_native_replay_preserves_tool_error_status(asynchronous, adapter_type):
+    def lookup(number: int) -> int:
+        if number < 0:
+            raise ValueError("negative-input-73")
+        return number * 3 + 1
+
+    lm = recording_lm([
+        make_response(tool_calls=[
+            ("missing-73", "missing_lookup", {}),
+            ("success-29", "lookup", {"number": 7}),
+            ("failure-91", "lookup", {"number": -1}),
+        ]),
+        make_response(tool_calls=[("submit-37", "submit", {"answer": "done"})]),
+    ])
+    agent = dspy.ReAct("question -> answer", tools=[lookup])
+    with dspy.context(lm=lm, adapter=adapter_type(use_native_function_calling=True)):
+        result = asyncio.run(agent.acall(question="look up values")) if asynchronous else agent(question="look up values")
+
+    assert result.answer == "done"
+    replayed = [part for message in lm.engine.requests[1].messages if message.role == "tool" for part in message.parts]
+    assert [(part.id, part.is_error) for part in replayed] == [
+        ("missing-73", True), ("success-29", False), ("failure-91", True),
+    ]
+    assert "Unknown tool: missing_lookup" in replayed[0].content[0].text
+    assert replayed[1].content[0].text == "22"
+    assert "negative-input-73" in replayed[2].content[0].text
+
+
 def test_react_accepts_serialized_history_input():
     lm = dspy.utils.DummyLM(
         [
