@@ -45,6 +45,15 @@ class Echo(dspy.Signature):
     a: str = dspy.OutputField()
 
 
+def test_flex_is_a_stable_public_module() -> None:
+    """Flex keeps its public imports without the experimental notice."""
+    from dspy.predict.flex import Flex as PublicFlex
+
+    assert dspy.Flex is PublicFlex is Flex
+    assert "Experimental:" not in Flex.__doc__
+    assert Flex.__doc__.startswith("A module whose implementation is optimizable code")
+
+
 @deno_required
 def test_forward_attaches_nothing_to_the_module() -> None:
     # A forward's predictors live in that forward's bridge invocation, never on the shared Flex:

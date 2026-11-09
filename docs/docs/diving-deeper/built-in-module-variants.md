@@ -46,7 +46,7 @@ A plain function — no LM call, no signature, no `dspy.Module`. It tallies comp
 
 ### 10. `Flex` puts the module's code into the optimization search space
 
-Every other DSPy module fixes its structure at construction time; `Flex` doesn't. It holds its implementation as source code (`module_src`) and marks that code as the optimizable parameter, so `dspy.GEPA` rewrites its *entire implementation* — how many predictors, which primitives, what runs in Python instead of an LM — against your metric, rather than only tuning instructions. Construct it from a signature like any module (it begins as a one-call `Predict` baseline, or `RLM` when given tools), then let optimization discover the decomposition. `Flex` is experimental. It has its own deep dive: [Flex: Optimizable module code](flex.md).
+Every other DSPy module fixes its structure at construction time; `Flex` doesn't. It holds its implementation as source code (`module_src`) and marks that code as the optimizable parameter, so `dspy.GEPA` rewrites its *entire implementation* — how many predictors, which primitives, what runs in Python instead of an LM — against your metric, rather than only tuning instructions. Construct it from a signature like any module (it begins as a one-call `Predict` baseline, or `RLM` when given tools), then let optimization discover the decomposition. It has its own deep dive: [Flex: Optimizable module code](flex.md).
 
 ## API walkthrough
 
