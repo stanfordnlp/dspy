@@ -145,7 +145,7 @@ def test_xml_adapter_nested_scalar_container_unions(reverse, compact):
     class Record(pydantic.BaseModel):
         numbers: list[int]
 
-    for container, values in [(list[int], [1, [2, 3], [], 4]), (Record, [1, Record(numbers=[2, 3]), 4])]:
+    for container, values in [(list[int], [[2, 3], [], [-4]]), (Record, [Record(numbers=[2, 3]), Record(numbers=[])])]:
         item = container | int if reverse else int | container
         signature = dspy.Signature({"answer": (list[item], dspy.OutputField())})
         adapter = XMLAdapter(use_json_adapter_fallback=False)
@@ -175,6 +175,18 @@ def test_xml_adapter_nested_unions_accept_repeated_fields(annotation):
     wire = "<answer><item><value>1</value><value>2</value></item></answer>"
     with dspy.context(lm=recording_lm([wire]), adapter=XMLAdapter(use_json_adapter_fallback=False)):
         assert dspy.Predict(signature)().answer == [Record(value=[1, 2])]
+
+
+@pytest.mark.parametrize("annotation, text, expected", [
+    (list[str] | int, "hello", ["hello"]),
+    (list[int] | int, "1", [1]),
+    (int | list[int], "1", 1),
+])
+def test_xml_adapter_union_bare_leaves_keep_branch_order(annotation, text, expected):
+    signature = dspy.Signature({"answer": (list[annotation], dspy.OutputField())})
+    wire = f"<answer><item>{text}</item></answer>"
+    with dspy.context(lm=recording_lm([wire]), adapter=XMLAdapter(use_json_adapter_fallback=False)):
+        assert dspy.Predict(signature)().answer == [expected]
 
 
 def test_xml_adapter_parse_multiple_fields():

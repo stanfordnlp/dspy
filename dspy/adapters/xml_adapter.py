@@ -299,10 +299,10 @@ class XMLAdapter(ChatAdapter):
             resolved = [s for choice in choices for s in cls._schemas(choice, definitions)]
             containers = [s for s in resolved if s.get("type") in ("array", "object")]
             scalars = [s for s in resolved if s.get("type") in ("integer", "number", "boolean")]
-            if len(containers) == 1 and scalars and len(containers) + len(scalars) == len(resolved):
-                # These shapes are disjoint; string and multi-container unions retain their existing policy.
-                nested = len(elements) > 1 or list(elements[0]) or not (elements[0].text or "").strip()
-                schema = containers[0] if nested else scalars[0]
+            nested = len(elements) > 1 or list(elements[0]) or not (elements[0].text or "").strip()
+            if nested and len(containers) == 1 and scalars and len(containers) + len(scalars) == len(resolved):
+                # Bare leaves retain branch order: a scalar can also be single-item list shorthand.
+                schema = containers[0]
         if len(elements) > 1 and schema.get("type") not in ("array", None):
             raise ValueError("Repeated elements require a list field")
         if schema.get("type") == "array":
