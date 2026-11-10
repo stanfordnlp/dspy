@@ -8,9 +8,11 @@ on:
       - 'dspy/__init__.py'
       - 'dspy/clients/**'
       - 'pyproject.toml'
+      - 'uv.lock'
       - 'scripts/update_vendored_lm15.py'
       - 'tests/test_vendored_lm15.py'
       - 'tests/clients/**'
+      - 'tests/test_utils/server/**'
       - '.github/workflows/vendored_lm15.yml'
   workflow_dispatch:
 
@@ -40,3 +42,37 @@ jobs:
           cp tests/test_vendored_lm15.py "$RUNNER_TEMP/lm15-wheel-tests/"
           cd "$RUNNER_TEMP/lm15-wheel-tests"
           "$RUNNER_TEMP/lm15-wheel-venv/bin/python" -I -m pytest -q test_vendored_lm15.py
+
+  optional-litellm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        mcp: [absent, '1.29.0']
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: '3.12'
+      - name: Install optional inference without MCP gateway dependencies
+        run: uv sync --locked --no-dev --extra dev --extra litellm
+      - name: Add independently installed MCP 1
+        if: matrix.mcp != 'absent'
+        run: uv pip install 'mcp==1.29.0'
+      - name: Verify MCP profile and public compatibility calls
+        env:
+          MCP_PROFILE: ${{ matrix.mcp }}
+          LITELLM_LOCAL_MODEL_COST_MAP: 'True'
+        run: |
+          uv run --no-sync python - <<'PY'
+          import importlib.metadata
+          import importlib.util
+          import os
+          if os.environ["MCP_PROFILE"] == "absent":
+              assert importlib.util.find_spec("mcp") is None
+          else:
+              assert importlib.metadata.version("mcp") == os.environ["MCP_PROFILE"]
+          PY
+          uv run --no-sync python -m pytest tests/clients/test_optional_litellm.py -q
