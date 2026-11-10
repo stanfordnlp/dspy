@@ -1,10 +1,12 @@
 import asyncio
 from collections import defaultdict
+from copy import deepcopy
 from decimal import Decimal
 from fractions import Fraction
 from typing import Annotated, Any
 
 import pytest
+from jsonschema import ValidationError, validate
 from pydantic import (
     AliasChoices,
     BaseModel,
@@ -267,6 +269,48 @@ def test_as_function_tool_excludes_defaulted_args_from_required():
     assert "y" not in parameters["required"]
     # The default is still advertised on the property itself.
     assert parameters["properties"]["y"]["default"] == "hello"
+
+
+@pytest.mark.parametrize("resource_id", [None, "https://example.invalid/argument"])
+def test_as_function_tool_preserves_schema_scopes_and_literals(resource_id):
+    literal = {"$ref": "#/literal"}
+    schema = {
+        "type": "object",
+        "$defs": {"Value": {"type": "integer"}},
+        "properties": {
+            "number": {"$ref": "#/$defs/Value"},
+            "literal": {"const": literal, "default": literal, "examples": [literal]},
+        },
+    }
+    if resource_id:
+        schema["$id"] = resource_id
+    args = {"a~/b%": schema}
+    original = deepcopy(args)
+    tool = Tool(lambda **kwargs: kwargs, args=args)
+    value = {"a~/b%": {"number": 7, "literal": literal}}
+    for _ in range(2):
+        parameters = tool.as_function_tool().parameters
+        validate(value, parameters)
+        with pytest.raises(ValidationError):
+            validate({"a~/b%": {"number": "wrong", "literal": literal}}, parameters)
+        assert parameters["properties"]["a~/b%"]["properties"]["literal"] == schema["properties"]["literal"]
+        assert tool(**value) == value
+        assert tool.args == original
+
+
+def test_as_function_tool_preserves_recursive_argument_scopes():
+    class Node(BaseModel):
+        value: int
+        children: list["Node"] = []
+
+    schema = Node.model_json_schema()
+    root_schema = {"type": "object", "properties": {"child": {"$ref": "#"}}}
+    tool = Tool(lambda **kwargs: kwargs, args={"tree": schema, "other": root_schema})
+    parameters = tool.as_function_tool().parameters
+    validate({"tree": {"value": 7, "children": [{"value": 2}]}, "other": {"child": {"child": {}}}}, parameters)
+    with pytest.raises(ValidationError):
+        validate({"tree": {"value": 7, "children": [{"value": "wrong"}]}, "other": {}}, parameters)
+    assert tool.args == {"tree": schema, "other": root_schema}
 
 
 def test_tool_from_class():

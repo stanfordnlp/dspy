@@ -4,6 +4,7 @@ import json
 from decimal import Decimal
 from numbers import Number
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
+from urllib.parse import quote
 
 import json_repair
 import pydantic
@@ -226,12 +227,38 @@ class Tool(Type):
 
     def as_function_tool(self) -> FunctionTool:
         """The lm15 tool declaration sent to models that call tools natively."""
+        def rebase_refs(schema: Any, prefix: str) -> Any:
+            if not isinstance(schema, dict) or "$id" in schema:
+                return schema
+            result = dict(schema)
+            ref = result.get("$ref", "")
+            if ref == "#" or ref.startswith("#/"):
+                result["$ref"] = prefix + ref[1:]
+            # Visit schemas, not literal data in defaults, const, enum, examples, or extensions.
+            for key in ("$defs", "definitions", "properties", "patternProperties", "dependentSchemas", "dependencies"):
+                if key in result:
+                    result[key] = {name: rebase_refs(item, prefix) for name, item in result[key].items()}
+            for key in (
+                "items", "additionalItems", "additionalProperties", "contains", "propertyNames",
+                "unevaluatedItems", "unevaluatedProperties", "not", "if", "then", "else",
+                "allOf", "anyOf", "oneOf", "prefixItems",
+            ):
+                if key in result:
+                    item = result[key]
+                    result[key] = [rebase_refs(v, prefix) for v in item] if isinstance(item, list) else rebase_refs(item, prefix)
+            return result
+
+        # Each argument is a standalone schema. Its local references must follow it under properties.
+        properties = {
+            name: rebase_refs(schema, "#/properties/" + quote(name.replace("~", "~0").replace("/", "~1"), safe=""))
+            for name, schema in self.args.items()
+        }
         return FunctionTool(
             name=self.name,
             description=self.desc,
             parameters={
                 "type": "object",
-                "properties": self.args,
+                "properties": properties,
                 "required": [k for k in self.args if "default" not in self.args[k]],
             },
         )
