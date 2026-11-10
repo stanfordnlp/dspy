@@ -2,7 +2,9 @@ import asyncio
 import inspect
 import json
 from decimal import Decimal
+from numbers import Number
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
+from urllib.parse import quote
 
 import json_repair
 import pydantic
@@ -26,12 +28,12 @@ class _MCPToolClient(Protocol):
     async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any: ...
 
 
-def _json_schema_instance(value: Any) -> Any:
+def _json_schema_instance(value: Any, bytes_mode: Literal["utf8", "base64", "hex"] | None = None) -> Any:
     """``value`` as the JSON its schema describes, for JSON-schema validation. A model is checked as its fields, keyed
     by the names its validation schema uses (its dump would key them by serialization alias, and a custom type's dump
     is a prompt)."""
     if isinstance(value, pydantic.RootModel):
-        return _json_schema_instance(value.root)
+        return _json_schema_instance(value.root, type(value).model_config.get("ser_json_bytes", "utf8"))
     if isinstance(value, BaseModel):
         # Only the fields its JSON schema shows; e.g. Score's provider-evidence fields are hidden from it.
         shown = type(value).model_json_schema().get("properties")
@@ -54,9 +56,12 @@ def _json_schema_instance(value: Any) -> Any:
         extra = {key: _json_field_value(_json_schema_instance(item), bytes_mode) for key, item in (value.model_extra or {}).items()}
         return fields | extra
     if isinstance(value, dict):
-        return {k: _json_schema_instance(v) for k, v in value.items()}
+        return {k: _json_schema_instance(v, bytes_mode) for k, v in value.items()}
     if isinstance(value, (list, tuple, set, frozenset)):
-        return [_json_schema_instance(v) for v in value]
+        return [_json_schema_instance(v, bytes_mode) for v in value]
+    # Root values need JSON conversion too, but numbers already support numeric schema constraints.
+    if bytes_mode is not None and not isinstance(value, Number):
+        return _json_field_value(value, bytes_mode)
     return value
 
 
@@ -222,12 +227,38 @@ class Tool(Type):
 
     def as_function_tool(self) -> FunctionTool:
         """The lm15 tool declaration sent to models that call tools natively."""
+        def rebase_refs(schema: Any, prefix: str) -> Any:
+            if not isinstance(schema, dict) or "$id" in schema:
+                return schema
+            result = dict(schema)
+            ref = result.get("$ref", "")
+            if ref == "#" or ref.startswith("#/"):
+                result["$ref"] = prefix + ref[1:]
+            # Visit schemas, not literal data in defaults, const, enum, examples, or extensions.
+            for key in ("$defs", "definitions", "properties", "patternProperties", "dependentSchemas", "dependencies"):
+                if key in result:
+                    result[key] = {name: rebase_refs(item, prefix) for name, item in result[key].items()}
+            for key in (
+                "items", "additionalItems", "additionalProperties", "contains", "propertyNames",
+                "unevaluatedItems", "unevaluatedProperties", "not", "if", "then", "else",
+                "allOf", "anyOf", "oneOf", "prefixItems",
+            ):
+                if key in result:
+                    item = result[key]
+                    result[key] = [rebase_refs(v, prefix) for v in item] if isinstance(item, list) else rebase_refs(item, prefix)
+            return result
+
+        # Each argument is a standalone schema. Its local references must follow it under properties.
+        properties = {
+            name: rebase_refs(schema, "#/properties/" + quote(name.replace("~", "~0").replace("/", "~1"), safe=""))
+            for name, schema in self.args.items()
+        }
         return FunctionTool(
             name=self.name,
             description=self.desc,
             parameters={
                 "type": "object",
-                "properties": self.args,
+                "properties": properties,
                 "required": [k for k in self.args if "default" not in self.args[k]],
             },
         )
@@ -349,6 +380,7 @@ class ToolCalls(Type):
         id: str | None = None
         name: str
         args: dict[str, Any] = pydantic.Field(json_schema_extra={"additionalProperties": True})
+        continuation: list[dict[str, Any]] = pydantic.Field(default_factory=list)
 
         @classmethod
         def __get_pydantic_json_schema__(cls, core_schema: Any, handler: Any) -> dict[str, Any]:
@@ -357,6 +389,7 @@ class ToolCalls(Type):
             properties = schema.get("properties")
             if isinstance(properties, dict):
                 properties.pop("id", None)
+                properties.pop("continuation", None)
             required = schema.get("required")
             if isinstance(required, list):
                 schema["required"] = [field for field in required if field != "id"]
@@ -462,16 +495,18 @@ class ToolCalls(Type):
         }
 
     @pydantic.model_serializer()
-    def serialize_model(self, info: pydantic.SerializationInfo):
-        data = self.format()
-        if not (info.context or {}).get("dspy_prompt"):
-            for call, serialized in zip(self.tool_calls, data["tool_calls"], strict=True):
-                serialized["id"] = call.id
+    def serialize_model(self):
+        calls = []
+        for call in self.tool_calls:
+            saved = {"id": call.id, "name": call.name, "args": call.args}
+            if call.continuation:
+                saved["continuation"] = call.continuation
+            calls.append(saved)
+        data = {"tool_calls": calls}
         if self.tool_call_results is not None:
             data["tool_call_results"] = TypeAdapter(type(self.tool_call_results)).dump_python(
                 self.tool_call_results,
                 mode="json",
-                context=info.context,
             )
         return data
 
@@ -599,6 +634,7 @@ def _normalize_tool_call_dict(data: dict[str, Any]) -> dict[str, Any]:
         "id": data.get("id") or data.get("call_id"),
         "name": name,
         "args": arguments,
+        "continuation": data.get("continuation", []),
     }
 
 

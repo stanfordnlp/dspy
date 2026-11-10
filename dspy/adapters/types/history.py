@@ -84,7 +84,7 @@ class History(pydantic.BaseModel):
         try:
             return handler(messages)
         except PydanticSerializationError:
-            return handler(serialize_for_json(messages, for_prompt=False))
+            return handler(serialize_for_json(messages))
 
     def _remap_fields(self, names: dict[str, str]) -> History:
         """Copy recorded field names to match the adapter's adapted signature, without mutating the caller."""
@@ -98,6 +98,7 @@ class History(pydantic.BaseModel):
         History owns event dispatch and conversation ordering. REPL events own their action/observation
         representation; the adapter only renders fields and does not inspect their serialized layout.
         """
+        from dspy._vendor.lm15.serde import continuation_from_dict
         from dspy._vendor.lm15.types import tool_result
         from dspy.adapters.base import _tool_result_content, user_message
         from dspy.adapters.types.tool import ToolCallResults, ToolCalls
@@ -151,14 +152,19 @@ class History(pydantic.BaseModel):
                     parts = [TextPart(content)] if content else []
                     if tool_call_results is not None:
                         parts.extend(
-                            ToolCallPart(id=tool_call.id, name=tool_call.name, input=serialize_for_json(tool_call.args))
+                            ToolCallPart(
+                                id=tool_call.id, name=tool_call.name, input=serialize_for_json(tool_call.args),
+                                continuation=tuple(continuation_from_dict(state) for state in tool_call.continuation),
+                            )
                             for tool_call in tool_calls.tool_calls
                         )
                     messages.append(Message.assistant(parts))
 
                 if tool_call_results is not None:
                     messages.append(Message.tool([
-                        tool_result(result.call_id, _tool_result_content(result.value), name=result.name)
+                        tool_result(
+                            result.call_id, _tool_result_content(result.value), name=result.name, is_error=result.is_error
+                        )
                         for result in tool_call_results.tool_call_results
                     ]))
                 continue

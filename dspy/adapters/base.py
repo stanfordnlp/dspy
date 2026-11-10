@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from typing import Any, get_origin
 
 from dspy._vendor.lm15.providers.common import MEDIA_KINDS
+from dspy._vendor.lm15.serde import continuation_to_dict
 from dspy._vendor.lm15.types import Part, ToolResultPart
 from dspy.adapters.types import History, Type
 from dspy.adapters.types.base_type import CUSTOM_TYPE_START_IDENTIFIER, parts_from_text
@@ -228,7 +229,13 @@ class Adapter:
 
             if tool_calls:
                 value[tool_call_output_field_name] = ToolCalls.from_dict_list(
-                    [{"id": call.id, "name": call.name, "args": call.input} for call in tool_calls]
+                    [
+                        {
+                            "id": call.id, "name": call.name, "args": call.input,
+                            "continuation": [continuation_to_dict(state) for state in call.continuation],
+                        }
+                        for call in tool_calls
+                    ]
                 )
 
             # Custom types that read their value from the response itself.

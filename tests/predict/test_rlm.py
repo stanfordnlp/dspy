@@ -4259,5 +4259,21 @@ def test_image_extraction_history_remains_a_text_preview(adapter_type, serialize
     assert photo.url.split(",", 1)[1] not in text, "Fallback replay leaked full image base64 into root text"
 
 
+@pytest.mark.parametrize("factory", _INTERPRETERS)
+def test_sub_agent_preserves_explicit_output_default(factory):
+    code = """
+import dspy
+class Answer(dspy.Signature):
+    question: str = dspy.InputField()
+    answer: str = dspy.OutputField()
+    note: str | None = dspy.OutputField(default="not provided")
+SUBMIT(dspy.Predict(Answer)(question=question).note)
+"""
+    lm = DummyLM([{"plan": "Read the note", "code": code}, {"answer": "ok"}])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False)):
+        result = dspy.RLM("question -> answer", interpreter_factory=factory, max_iters=1)(question="hi")
+    assert result.answer == "not provided"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

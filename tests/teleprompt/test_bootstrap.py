@@ -27,6 +27,69 @@ def test_bootstrap_initialization():
     assert bootstrap.metric == simple_metric, "Metric not correctly initialized"
 
 
+def lookup():
+    return "ready"
+
+
+def test_bootstrap_multiturn_react():
+    replies = [
+        {
+            "next_thought": "Look it up.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [
+                    {"name": "lookup", "args": {}},
+                ]
+            ),
+        },
+        {
+            "next_thought": "Done.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [
+                    {"name": "submit", "args": {"answer": "ready"}},
+                ]
+            ),
+        },
+    ]
+    selected = []
+    for _ in range(2):
+        agent = dspy.ReAct("question -> answer", tools=[lookup], max_iters=2)
+        with dspy.context(lm=DummyLM(replies), adapter=dspy.ChatAdapter(use_native_function_calling=False)):
+            compiled = BootstrapFewShot(
+                metric=lambda example, prediction, trace: prediction.answer == example.answer,
+                max_bootstrapped_demos=1,
+                max_labeled_demos=0,
+            ).compile(agent, trainset=[Example(question="Look it up.", answer="ready").with_inputs("question")])
+        demos = compiled.predictors()[0].demos
+        assert len(demos) == 1
+        selected.append(demos[0].tool_calls.model_dump())
+        assert str(demos[0].next_thought) in {"Look it up.", "Done."}
+    assert selected[0] == selected[1]
+
+
+def test_bootstrap_repeated_predictor_selection_is_reproducible():
+    class RepeatedPredictor(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = Predict("question -> answer")
+
+        def forward(self, question):
+            for _ in range(3):
+                result = self.predict(question=question)
+            return result
+
+    selected = []
+    for _ in range(2):
+        with dspy.context(lm=DummyLM([{"answer": value} for value in ["first", "middle", "last"]] * 12)):
+            compiled = BootstrapFewShot(max_bootstrapped_demos=12, max_labeled_demos=0).compile(
+                RepeatedPredictor(), trainset=[Example(question=f"q{i}").with_inputs("question") for i in range(12)]
+            )
+        demos = compiled.predict.demos
+        assert [demo.question for demo in demos] == [f"q{i}" for i in range(12)]
+        selected.append([demo.answer for demo in demos])
+    assert selected[0] == selected[1]
+    assert set(selected[0]) == {"first", "middle", "last"}
+
+
 class SimpleModule(dspy.Module):
     def __init__(self, signature):
         super().__init__()

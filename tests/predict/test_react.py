@@ -1,9 +1,12 @@
 import asyncio
+from dataclasses import replace
 
 import pytest
+from jsonschema import ValidationError, validate
 from pydantic import BaseModel
 
 import dspy
+from dspy.lm15 import ContinuationState, ToolCallPart
 from dspy.utils.exceptions import ContextWindowExceededError
 from tests.test_utils.engines import make_response, recording_lm
 
@@ -19,6 +22,41 @@ def test_react_submit_tool_returns_original_output_fields():
 
     assert react.tools["submit"](answer="Paris") == {"answer": "Paris"}
     assert "tool_call_results" not in react.react.signature.input_fields
+
+
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("container", [False, True])
+def test_react_nested_submit_schema(native, container):
+    class Address(BaseModel):
+        city: str
+
+    class Person(BaseModel):
+        address: Address
+        age: int
+
+    annotation = list[Person] if container else Person
+    person = {"address": {"city": "Oslo"}, "age": 37}
+    value = [person] if container else person
+    outputs = {"answer": value}
+    signature = dspy.Signature({"answer": (annotation, dspy.OutputField())})
+    if native:
+        lm = recording_lm([make_response(tool_calls=[("s", "submit", outputs)])])
+    else:
+        lm = dspy.utils.DummyLM([{
+            "next_thought": "Done.",
+            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": outputs}]),
+        }])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=native)):
+        result = dspy.ReAct(signature, tools=[])()
+
+    expected = Person(address=Address(city="Oslo"), age=37)
+    assert result.answer == ([expected] if container else expected)
+    if native:
+        schema = next(tool.parameters for tool in lm.engine.requests[0].tools if tool.name == "submit")
+        validate(outputs, schema)
+        invalid = {"address": {"city": 42}, "age": 37}
+        with pytest.raises(ValidationError):
+            validate({"answer": [invalid] if container else invalid}, schema)
 
 
 @pytest.mark.parametrize("native", [False, True])
@@ -98,8 +136,13 @@ def test_react_continuation_preserves_tool_evidence(storage, native, asynchronou
     def lookup() -> str:
         return "tool-evidence-73"
 
+    continuation = (ContinuationState(provider="gemini", kind="thought_signature", data={"value": "opaque-state"}),)
+    response = make_response(tool_calls=[("lookup-1", "lookup", {})])
+    response = replace(response, message=replace(response.message, parts=(
+        replace(response.tool_calls[0], continuation=continuation),
+    )))
     lm = recording_lm([
-        make_response(tool_calls=[("lookup-1", "lookup", {})]),
+        response,
         make_response(tool_calls=[("submit-1", "submit", {"answer": "ready"})]),
         make_response(tool_calls=[("submit-2", "submit", {"answer": "continued"})]),
     ])
@@ -122,8 +165,11 @@ def test_react_continuation_preserves_tool_evidence(storage, native, asynchronou
         assert [(part.id, part.content[0].text) for part in results] == [
             ("lookup-1", "tool-evidence-73"), ("submit-1", '{"answer": "ready"}'),
         ]
+        calls = [part for message in messages for part in message.parts if isinstance(part, ToolCallPart)]
+        assert [(part.id, part.continuation) for part in calls] == [("lookup-1", continuation), ("submit-1", ())]
     else:
         assert any("tool-evidence-73" in (message.text or "") for message in messages)
+        assert "opaque-state" not in str(messages)
 
 
 def test_react_continuation_omits_missing_original_inputs():
@@ -228,6 +274,36 @@ def test_react_unknown_tool_observation_can_continue():
     assert first_result.call_id == "call_0_0"
     assert "Unknown tool" in first_result.value
     assert pred.answer == "done"
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
+def test_react_native_replay_preserves_tool_error_status(asynchronous, adapter_type):
+    def lookup(number: int) -> int:
+        if number < 0:
+            raise ValueError("negative-input-73")
+        return number * 3 + 1
+
+    lm = recording_lm([
+        make_response(tool_calls=[
+            ("missing-73", "missing_lookup", {}),
+            ("success-29", "lookup", {"number": 7}),
+            ("failure-91", "lookup", {"number": -1}),
+        ]),
+        make_response(tool_calls=[("submit-37", "submit", {"answer": "done"})]),
+    ])
+    agent = dspy.ReAct("question -> answer", tools=[lookup])
+    with dspy.context(lm=lm, adapter=adapter_type(use_native_function_calling=True)):
+        result = asyncio.run(agent.acall(question="look up values")) if asynchronous else agent(question="look up values")
+
+    assert result.answer == "done"
+    replayed = [part for message in lm.engine.requests[1].messages if message.role == "tool" for part in message.parts]
+    assert [(part.id, part.is_error) for part in replayed] == [
+        ("missing-73", True), ("success-29", False), ("failure-91", True),
+    ]
+    assert "Unknown tool: missing_lookup" in replayed[0].content[0].text
+    assert replayed[1].content[0].text == "22"
+    assert "negative-input-73" in replayed[2].content[0].text
 
 
 def test_react_accepts_serialized_history_input():

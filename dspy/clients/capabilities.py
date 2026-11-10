@@ -12,7 +12,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from functools import wraps
 
-from dspy.clients.backend_selection import select_backend
+from dspy.clients.backend_selection import compatibility_model, select_backend
 from dspy.clients.engines.litellm_errors import litellm_errors
 from dspy.clients.errors import error_boundary
 from dspy.clients.model_metadata import model_info
@@ -136,14 +136,16 @@ def _litellm_capabilities(lm, selection):
     from dspy.clients._litellm import get_litellm
 
     litellm = get_litellm(feature="dspy.LM")
+    model = compatibility_model(lm, selection)
     provider = selection.clients.get("custom_llm_provider")
     kwargs = {"custom_llm_provider": provider} if provider is not None else {}
-    with litellm_errors(model=lm.model, provider=provider or lm._provider_name):
-        params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider or lm._provider_name)
+    provider = provider or (model.split("/", 1)[0] if model != lm.model else lm._provider_name)
+    with litellm_errors(model=lm.model, provider=provider):
+        params = litellm.get_supported_openai_params(model=model, custom_llm_provider=provider)
         return Capabilities(
-            bool(litellm.supports_function_calling(model=lm.model, **kwargs)),
-            bool(litellm.supports_reasoning(lm.model, **kwargs)),
-            bool(litellm.supports_response_schema(model=lm.model, custom_llm_provider=provider or lm._provider_name)),
+            bool(litellm.supports_function_calling(model=model, **kwargs)),
+            bool(litellm.supports_reasoning(model, **kwargs)),
+            bool(litellm.supports_response_schema(model=model, custom_llm_provider=provider)),
             frozenset(params or ()),
         )
 

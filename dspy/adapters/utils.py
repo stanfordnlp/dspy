@@ -71,13 +71,12 @@ def _annotation_is_subclass(annotation: Any, expected_base: type) -> bool:
         return False
 
 
-def serialize_for_json(value: Any, *, for_prompt: bool = True) -> Any:
+def serialize_for_json(value: Any) -> Any:
     """
     Formats the specified value so that it can be serialized as a JSON string.
 
     Args:
         value: The value to format as a JSON string.
-        for_prompt: Omit tool call IDs from prompt examples, but retain them for persistence.
     Returns:
         The formatted value, which is serializable as a JSON string.
     """
@@ -85,7 +84,7 @@ def serialize_for_json(value: Any, *, for_prompt: bool = True) -> Any:
     # serialize (e.g. a numpy scalar) becomes its string form without affecting its siblings; the
     # whole value falls back to its string form only if pydantic can't handle it at all.
     try:
-        return TypeAdapter(type(value)).dump_python(value, mode="json", fallback=str, context={"dspy_prompt": for_prompt})
+        return TypeAdapter(type(value)).dump_python(value, mode="json", fallback=str)
     except Exception as exc:
         from dspy.adapters.types.base_type import TypeFormatError
 
@@ -94,6 +93,20 @@ def serialize_for_json(value: Any, *, for_prompt: bool = True) -> Any:
         if isinstance(exc.__cause__, TypeFormatError):
             raise exc.__cause__ from None
         return str(value)
+
+
+def format_tool_calls(field_info: FieldInfo, value: Any) -> Any:
+    """Render a tool-call field without protocol metadata; nested application data stays intact."""
+    from dspy.adapters.types.tool import ToolCalls
+
+    if field_info.annotation in (ToolCalls, ToolCalls | None) and isinstance(value, dict):
+        value = ToolCalls.model_validate(value)
+    if not isinstance(value, ToolCalls):
+        return value
+    formatted = value.format()
+    if value.tool_call_results is not None:
+        formatted["tool_call_results"] = value.tool_call_results
+    return formatted
 
 
 def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> str | dict:
@@ -112,7 +125,7 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> s
         # If the field has no special type requirements, format it as a nice numbered list for the LM.
         string_value = _format_input_list_field_value(value)
     else:
-        jsonable_value = serialize_for_json(value)
+        jsonable_value = serialize_for_json(format_tool_calls(field_info, value))
         if isinstance(jsonable_value, dict) or isinstance(jsonable_value, list):
             string_value = json.dumps(jsonable_value, ensure_ascii=False)
         else:
