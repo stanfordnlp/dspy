@@ -122,7 +122,10 @@ class XMLAdapter(ChatAdapter):
             elif isinstance(node, list):
                 nodes.extend(node)
         if nullable:
-            text += " Use <field/> for null and <field></field> for an empty string."
+            text += (
+                " For null, self-close the field's own tag."
+                " For an empty string, use an opening and closing tag with no content."
+            )
         if mapping:
             text += ' Dictionary keys: <entry key="...">; escape key attributes only.'
         return self.format_field_structure(signature) + "\n\n" + text
@@ -258,6 +261,10 @@ class XMLAdapter(ChatAdapter):
                 return "..." if name in seen else example(schema["$defs"][name], seen | {name})
             if choices := node.get("anyOf", node.get("oneOf")):
                 return example(next(s for s in choices if s.get("type") != "null"), seen)
+            if "const" in node:
+                return node["const"]
+            if "enum" in node:
+                return "one of: " + "; ".join(str(value) for value in node["enum"])
             if node.get("type") == "array":
                 return [example(node.get("items", {}), seen)]
             if not node.get("properties") and isinstance(node.get("additionalProperties"), dict):
