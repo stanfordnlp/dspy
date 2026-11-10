@@ -302,7 +302,8 @@ def _distributions() -> list[metadata.Distribution]:
     from dspy.utils.lazy_import import _detect_dspy_dist
 
     found: dict[str, metadata.Distribution] = {}
-    todo = [_detect_dspy_dist()]
+    # The distribution that installed the dspy package, whatever its name (a fork, or a renamed release build).
+    todo = list(metadata.packages_distributions().get("dspy") or [_detect_dspy_dist()])
     while todo:
         name = _normalize(todo.pop())
         if name in found:

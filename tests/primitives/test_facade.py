@@ -440,6 +440,33 @@ def test_types_the_sandbox_names_are_read_without_running_a_module_getattr(monke
     assert facade._loaded_class("dspy.adapters.types.tool.ToolCalls.ToolCall") is dspy.ToolCalls.ToolCall
 
 
+def test_dspy_types_cross_as_themselves_when_dspy_is_installed_under_another_name(monkeypatch, tmp_path):
+    # A fork, or a renamed build like the release workflow's TestPyPI package, still installs the dspy package.
+    import importlib.metadata
+
+    from dspy.primitives import sandbox_bundle
+
+    info = tmp_path / "dspy_fork-1.0.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text("Metadata-Version: 2.1\nName: dspy-fork\nVersion: 1.0\nRequires-Dist: pydantic\n")
+    (info / "top_level.txt").write_text("dspy\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    distribution = importlib.metadata.distribution
+
+    def without_dspy(name):
+        if name in ("dspy", "dspy-ai"):
+            raise importlib.metadata.PackageNotFoundError(name)
+        return distribution(name)
+
+    monkeypatch.setattr(importlib.metadata, "distribution", without_dspy)
+    sandbox_bundle.sandbox_modules.cache_clear()
+    try:
+        encoded = HostValues().encode(dspy.Image("https://example.com/a.png"))
+    finally:
+        sandbox_bundle.sandbox_modules.cache_clear()
+    assert encoded.get("import") == "dspy.adapters.types.image.Image"
+
+
 def test_a_nested_interpreter_refuses_a_resume_with_no_call_waiting():
     # Sandboxed code drives the nested interpreter's operations, so one out of order must fail, not hang the host.
     from dspy.primitives.facade import _NestedInterpreter
