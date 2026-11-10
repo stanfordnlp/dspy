@@ -292,6 +292,7 @@ def test_multi_module_call_with_usage_tracker(lm_for_test):
 
 
 # TODO: prepare second model for testing this unit test in ci
+@pytest.mark.llm_call
 @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="Skip the test if OPENAI_API_KEY is not set.")
 def test_usage_tracker_in_parallel():
     class MyProgram(dspy.Module):
