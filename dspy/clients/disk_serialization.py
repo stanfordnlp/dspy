@@ -33,8 +33,41 @@ class DeserializationError(Exception):
     """Raised when a cached value cannot be deserialized."""
 
 
+def _array_bytes(value):
+    numpy = sys.modules["numpy"]
+    if type(value) is not numpy.ndarray:
+        raise TypeError("NumPy array subclasses cannot be safely serialized in the disk cache")
+    buffer = io.BytesIO()
+    numpy.save(buffer, value, allow_pickle=False)
+    return buffer.getvalue()
+
+
+class _ArrayPickler(pickle.Pickler):
+    def persistent_id(self, obj):
+        numpy = sys.modules.get("numpy")
+        if numpy is not None and isinstance(obj, numpy.ndarray):
+            return _NPY_MAGIC, _array_bytes(obj)
+        return None
+
+
 class _RestrictedUnpickler(pickle.Unpickler):
     _allowed: frozenset[tuple[str, str]] = frozenset()
+
+    def persistent_load(self, pid):
+        if (
+            type(pid) is tuple
+            and len(pid) == 2
+            and type(pid[0]) is bytes
+            and pid[0] == _NPY_MAGIC
+            and type(pid[1]) is bytes
+            and pid[1].startswith(_NPY_MAGIC)
+        ):
+            import numpy as np
+
+            result = np.load(io.BytesIO(pid[1]), allow_pickle=False)
+            if type(result) is np.ndarray:
+                return result
+        raise DeserializationError("Invalid cache array reference")
 
     def find_class(self, module: str, name: str) -> type:
         if any(module.startswith(p) for p in _TRUSTED_MODULE_PREFIXES) or (module, name) in self._allowed:
@@ -71,10 +104,11 @@ class _RestrictedDisk(Disk):
     def store(self, value, read, key=UNKNOWN):
         numpy = sys.modules.get("numpy")
         if not read and numpy is not None and isinstance(value, numpy.ndarray):
-            if type(value) is not numpy.ndarray:
-                raise TypeError("NumPy array subclasses cannot be safely serialized in the disk cache")
+            size, _, filename, data = super().store(_array_bytes(value), False, key=key)
+            return size, MODE_PICKLE, filename, data
+        if not read and type(value) not in (bytes, str, int, float):
             buffer = io.BytesIO()
-            numpy.save(buffer, value, allow_pickle=False)
+            _ArrayPickler(buffer, protocol=self.pickle_protocol).dump(value)
             size, _, filename, data = super().store(buffer.getvalue(), False, key=key)
             return size, MODE_PICKLE, filename, data
         return super().store(value, read, key=key)

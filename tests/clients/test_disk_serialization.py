@@ -233,12 +233,28 @@ def test_dspy_cache_array_roundtrip_after_reopen(tmp_path):
     np.testing.assert_array_equal(reopened.get(request), value)
 
 
+def test_dspy_cache_nested_arrays_roundtrip_after_reopen(tmp_path):
+    options = {"enable_disk_cache": True, "enable_memory_cache": False, "disk_cache_dir": str(tmp_path)}
+    request = {"model": "test", "prompt": "nested embedding"}
+    cache = Cache(**options)
+    cache.put(request, {"embeddings": [np.array([1, 2], dtype=np.int32), {"second": np.array([3.5])}]})
+    cache.disk_cache.close()
+
+    reopened = Cache(**options)
+    result = reopened.get(request)
+    np.testing.assert_array_equal(result["embeddings"][0], np.array([1, 2], dtype=np.int32))
+    np.testing.assert_array_equal(result["embeddings"][1]["second"], np.array([3.5]))
+
+
 def test_numpy_subclass_is_not_silently_flattened(tmp_path):
     cache = diskcache.Cache(tmp_path / "cache", disk=restricted_disk(set()))
     value = np.ma.array([1, 2], mask=[True, False])
     with pytest.raises(TypeError, match="subclasses cannot be safely serialized"):
         cache["masked"] = value
+    with pytest.raises(TypeError, match="subclasses cannot be safely serialized"):
+        cache["nested"] = {"masked": value}
     assert "masked" not in cache
+    assert "nested" not in cache
 
 
 def test_file_backed_value_with_symlinked_cache_root(tmp_path):
@@ -438,6 +454,31 @@ def test_legacy_pickled_numpy_array_is_a_miss():
     # Array BUILD state is not validated by pickle's find_class hook.
     with pytest.raises(DeserializationError):
         _restricted_load(io.BytesIO(pickle.dumps(np.arange(3))), set())
+
+
+def test_unknown_persistent_id_is_rejected():
+    class UnknownIdPickler(pickle.Pickler):
+        def persistent_id(self, value):
+            return "unknown" if value == "placeholder" else None
+
+    buffer = io.BytesIO()
+    UnknownIdPickler(buffer).dump(["placeholder"])
+    with pytest.raises(DeserializationError, match="Invalid cache array reference"):
+        _restricted_load(io.BytesIO(buffer.getvalue()), set())
+
+
+def test_array_reference_rejects_non_array_data():
+    archive = io.BytesIO()
+    np.savez(archive, values=np.arange(3))
+
+    class ArchivePickler(pickle.Pickler):
+        def persistent_id(self, value):
+            return (b"\x93NUMPY", archive.getvalue()) if value == "placeholder" else None
+
+    buffer = io.BytesIO()
+    ArchivePickler(buffer).dump(["placeholder"])
+    with pytest.raises(DeserializationError, match="Invalid cache array reference"):
+        _restricted_load(io.BytesIO(buffer.getvalue()), set())
 
 
 @pytest.mark.parametrize("cleanup", ["delete", "cull"])
