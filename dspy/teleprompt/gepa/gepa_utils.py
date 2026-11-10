@@ -2,6 +2,7 @@ import logging
 import random
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
+from copy import deepcopy
 from typing import Any, Callable, Protocol
 
 from gepa import EvaluationBatch, GEPAAdapter
@@ -24,6 +25,13 @@ from dspy.teleprompt.gepa.gepa_flex_utils import (
     rebind_flex_code,
 )
 from dspy.teleprompt.gepa.instruction_proposal import InstructionProposer, ReflectiveExample
+from dspy.teleprompt.gepa.signature_components import (
+    annotation_contract,
+    field_components,
+    field_values,
+    metadata_contract,
+    update_signature,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +128,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         custom_code_proposer: "CodeProposalFn | None" = None,
         warn_on_score_mismatch: bool = True,
         reflection_minibatch_size: int | None = None,
+        optimize_field_descriptions: bool = False,
     ):
         self.student = student_module
         self.metric_fn = metric_fn
@@ -141,6 +150,33 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         # dspy.Flex code components are keyed by the submodule's parameter path.
         self._flex_paths = set(enumerate_flex_submodules(student_module))
+        self.optimize_field_descriptions = optimize_field_descriptions
+        self._field_components = (
+            field_components(student_module, self._flex_paths) if optimize_field_descriptions else {}
+        )
+        self._field_contract = (
+            {
+                "descriptions": field_values(student_module, self._field_components),
+                "signatures": {
+                    name: {
+                        "instructions": pred.signature.instructions,
+                        "fields": [
+                            (
+                                field_name,
+                                annotation_contract(field.annotation),
+                                field.json_schema_extra["__dspy_field_type"],
+                                field.json_schema_extra["prefix"],
+                                metadata_contract(field.metadata),
+                            )
+                            for field_name, field in pred.signature.fields.items()
+                        ],
+                    }
+                    for name, pred in student_module.named_predictors()
+                },
+            }
+            if optimize_field_descriptions
+            else None
+        )
         # Task description + available context shown to the dspy.Flex code proposer, per submodule.
         self._flex_task_descriptions, self._flex_context_blurbs = flex_task_context(student_module)
 
@@ -206,6 +242,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         return results
 
     def build_program(self, candidate: dict[str, str]):
+        if self.optimize_field_descriptions:
+            expected = self._flex_paths | set(dict(self.student.named_predictors())) | set(self._field_components)
+            if set(candidate) != expected:
+                raise ValueError("Candidate component keys do not match this field-optimization configuration")
+            if any(not isinstance(value, str) for value in candidate.values()):
+                raise TypeError("Candidate components must be strings")
         new_prog = self.student.deepcopy()
 
         # Rebind code for any dspy.Flex submodules in the candidate (see gepa_flex_utils). A
@@ -217,7 +259,16 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         # never names a predictor, and predictors inside a Flex were excluded from the candidate,
         # so both are left untouched.
         for name, pred in new_prog.named_predictors():
-            if name in candidate:
+            if self.optimize_field_descriptions:
+                # Only the candidate copy is tagged; names survive repeated builds.
+                pred._gepa_field_component_owner = name
+                descriptions = {
+                    component.field: candidate[key]
+                    for key, component in self._field_components.items()
+                    if component.predictor == name
+                }
+                pred.signature = update_signature(pred.signature, candidate[name], descriptions)
+            elif name in candidate:
                 pred.signature = pred.signature.with_instructions(candidate[name])
 
         return new_prog
@@ -332,9 +383,18 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             return list(executor.map(evaluate, work))
 
     def get_adapter_state(self) -> dict[str, Any]:
-        return {"rng_state": self.rng.getstate()}
+        state = {"rng_state": self.rng.getstate()}
+        if self.optimize_field_descriptions:
+            state["field_components_v1"] = deepcopy(self._field_contract)
+        return state
 
     def set_adapter_state(self, state: dict[str, Any]) -> None:
+        if state and state.get("field_components_v1") != (
+            self._field_contract if self.optimize_field_descriptions else None
+        ):
+            raise ValueError(
+                "Cannot resume GEPA with a different field-optimization configuration or seed descriptions"
+            )
         if "rng_state" in state:
             self.rng.setstate(state["rng_state"])
 
@@ -345,7 +405,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         ret_d: dict[str, list[ReflectiveExample]] = {}
 
-        for pred_name in components_to_update:
+        for component_key in components_to_update:
+            field_component = self._field_components.get(component_key)
+            pred_name = field_component.predictor if field_component else component_key
             # Code components (dspy.Flex submodules) reflect on whole-program I/O, not per-predictor
             # traces.
             if pred_name in self._flex_paths:
@@ -372,7 +434,13 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 if hasattr(module_score, "score"):
                     module_score = module_score["score"]
 
-                trace_instances = [t for t in trace if t[0].signature.equals(module.signature)]
+                if field_component:
+                    # Names also distinguish predictors made by deepcopy (shared stage IDs).
+                    trace_instances = [
+                        t for t in trace if getattr(t[0], "_gepa_field_component_owner", None) == pred_name
+                    ]
+                else:
+                    trace_instances = [t for t in trace if t[0].signature.equals(module.signature)]
                 if not self.add_format_failure_as_feedback:
                     trace_instances = [t for t in trace_instances if not isinstance(t[2], FailedPrediction)]
                 if len(trace_instances) == 0:
@@ -459,13 +527,21 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                             self.warn_on_score_mismatch = False
                         fb["score"] = module_score
 
+                if field_component:
+                    field = module.signature.fields[field_component.field]
+                    d["Feedback"] = (
+                        f"Optimize only the description of {field.json_schema_extra['__dspy_field_type']} "
+                        f"field {field_component.field!r} (type {field.annotation!r}) of predictor {pred_name!r}. "
+                        "Return a field description, not whole-program instructions. "
+                        f"Keep its name, type, and output contract unchanged.\n{d['Feedback']}"
+                    )
                 items.append(d)
 
             if len(items) == 0:
                 logger.warning(f"  No valid reflective examples found for {pred_name}")
                 continue
 
-            ret_d[pred_name] = items
+            ret_d[component_key] = items
 
         if len(ret_d) == 0:
             raise Exception("No valid predictions found for any module.")
