@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Callable, get_args
 
@@ -47,12 +48,28 @@ class ReAct(Module):
         tools: Functions, callable objects, or ``dspy.Tool`` instances available to the agent.
         max_iters: Maximum number of tool-calling turns before a final submit attempt. Every call
             shows the model its current turn and how many remain.
+        max_tool_concurrency: Maximum concurrent tool calls in the async loop. Defaults to sequential
+            execution. Only increase this for independent tools. Batches containing submit stay sequential.
     """
 
-    def __init__(self, signature: type[Signature], tools: list[Callable | Tool], max_iters: int = 20):
+    def __init__(
+        self,
+        signature: type[Signature],
+        tools: list[Callable | Tool],
+        max_iters: int = 20,
+        *,
+        max_tool_concurrency: int = 1,
+    ):
         super().__init__()
+        if (
+            isinstance(max_tool_concurrency, bool)
+            or not isinstance(max_tool_concurrency, int)
+            or max_tool_concurrency < 1
+        ):
+            raise ValueError("max_tool_concurrency must be a positive integer")
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
+        self.max_tool_concurrency = max_tool_concurrency
 
         reserved_outputs = _RESERVED_PREDICTION_KEYS.intersection(self.signature.output_fields)
         if reserved_outputs:
@@ -254,25 +271,38 @@ class ReAct(Module):
         return ToolCallResults.from_tool_calls_and_values(tool_calls, values, is_errors), final_outputs
 
     async def _aexecute_tool_calls(self, tool_calls: ToolCalls) -> tuple[ToolCallResults, dict[str, Any] | None]:
-        values = []
-        is_errors = []
-        final_outputs = None
+        concurrency = getattr(self, "max_tool_concurrency", 1)
+        semaphore = asyncio.Semaphore(concurrency)
 
-        for tool_call in tool_calls.tool_calls:
+        async def execute(tool_call):
             if tool_call.name not in self.tools:
-                values.append(f"Unknown tool: {tool_call.name}")
-                is_errors.append(True)
-                continue
+                return f"Unknown tool: {tool_call.name}", True
 
             try:
-                value = await self.tools[tool_call.name].acall(**(tool_call.args or {}))
-                values.append(value)
-                is_errors.append(False)
-                if tool_call.name == "submit" and isinstance(value, dict):
-                    final_outputs = value
+                async with semaphore:
+                    value = await self.tools[tool_call.name].acall(**(tool_call.args or {}))
+                return value, False
             except Exception as err:
-                values.append(f"Execution error in {tool_call.name}: {format_error_for_lm(err, traceback_frames=5)}")
-                is_errors.append(True)
+                return f"Execution error in {tool_call.name}: {format_error_for_lm(err, traceback_frames=5)}", True
+
+        if concurrency == 1 or any(call.name == "submit" for call in tool_calls.tool_calls):
+            results = [await execute(call) for call in tool_calls.tool_calls]
+        else:
+            tasks = [asyncio.create_task(execute(call)) for call in tool_calls.tool_calls]
+            try:
+                results = await asyncio.gather(*tasks)
+            except BaseException:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                raise
+
+        values = [value for value, _ in results]
+        is_errors = [is_error for _, is_error in results]
+        final_outputs = None
+        for call, (value, is_error) in zip(tool_calls.tool_calls, results, strict=True):
+            if call.name == "submit" and not is_error and isinstance(value, dict):
+                final_outputs = value
 
         return ToolCallResults.from_tool_calls_and_values(tool_calls, values, is_errors), final_outputs
 
