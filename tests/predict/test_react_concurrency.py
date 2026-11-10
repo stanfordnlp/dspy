@@ -3,6 +3,7 @@ import asyncio
 import pytest
 
 import dspy
+from tests.test_utils.engines import make_response, recording_lm
 
 
 def _lm(calls):
@@ -257,3 +258,33 @@ async def test_react_fatal_batch_error_awaits_sibling_cleanup():
                 timeout=1,
             )
     assert cleaned.is_set()
+
+
+@pytest.mark.asyncio
+async def test_react_concurrent_tools_preserve_native_streaming_results():
+    started = set()
+    both_started = asyncio.Event()
+
+    async def lookup(query: str) -> str:
+        started.add(query)
+        if len(started) == 2:
+            both_started.set()
+        await asyncio.wait_for(both_started.wait(), timeout=1)
+        return query
+
+    lm = recording_lm(
+        [
+            make_response(
+                tool_calls=[("first-id", "lookup", {"query": "first"}), ("second-id", "lookup", {"query": "second"})]
+            ),
+            make_response(tool_calls=[("submit-id", "submit", {"answer": "done"})]),
+        ]
+    )
+    agent = dspy.ReAct("question -> answer", tools=[lookup], max_tool_concurrency=2)
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=True)):
+        chunks = [chunk async for chunk in dspy.streamify(agent, is_async_program=True)(question="test")]
+    result = next(chunk for chunk in chunks if isinstance(chunk, dspy.Prediction))
+    assert result.answer == "done"
+    assert lm.engine.streams == 2
+    results = result.history.messages[0]["tool_calls"].tool_call_results.tool_call_results
+    assert [(item.call_id, item.value) for item in results] == [("first-id", "first"), ("second-id", "second")]
