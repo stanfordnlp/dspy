@@ -393,7 +393,7 @@ def test_xml_adapter_nullable_text_round_trip_distinguishes_empty_from_null(valu
         "Output format (replace placeholders):\n<text>\n{text}\n</text>\n\n"
         "Use this format for text outputs. Put field tags on separate lines. "
         "Write string values literally, without XML or JSON escaping."
-        " Use <field/> for null and <field></field> for an empty string."
+        " For null, self-close the field's own tag. For an empty string, use an opening and closing tag with no content."
     )
     assert "JSON" not in prompt.system
 
@@ -444,6 +444,30 @@ def test_xml_adapter_concise_prompt_preserves_type_guidance_and_dictionary_keys(
         "Write string values literally, without XML or JSON escaping."
         ' Dictionary keys: <entry key="...">; escape key attributes only.'
     )
+
+
+def test_xml_adapter_nested_enum_and_literal_constraints_in_prompt():
+    from enum import Enum
+
+    class Priority(Enum):
+        LOW = "low"
+        HIGH = "high"
+
+    class Item(pydantic.BaseModel):
+        kind: Literal["ticket"]
+        label: Literal["question", "complaint", "praise"]
+        priority: Priority | None
+        urgent: Literal[False]
+
+    class Result(dspy.Signature):
+        items: list[Item] = dspy.OutputField()
+
+    prompt = XMLAdapter().format(Result, [], {})
+    for text in (prompt.system, prompt.messages[-1].text):
+        assert "<kind>\nticket\n</kind>" in text
+        assert "<label>\none of: question; complaint; praise\n</label>" in text
+        assert "<priority>\none of: low; high\n</priority>" in text
+        assert "<urgent>\nFalse\n</urgent>" in text
 
 
 def test_xml_adapter_structured_union_uses_structural_tag_lines():
@@ -563,7 +587,7 @@ def test_xml_adapter_typed_dict_schema_and_parsing():
         f"Output format (replace placeholders):\n{order_schema}\n\n{orders_schema}\n\n"
         "Use this format for text outputs. Put field tags on separate lines. "
         "Write string values literally, without XML or JSON escaping."
-        " Use <field/> for null and <field></field> for an empty string."
+        " For null, self-close the field's own tag. For an empty string, use an opening and closing tag with no content."
     )
 
     completion = (
