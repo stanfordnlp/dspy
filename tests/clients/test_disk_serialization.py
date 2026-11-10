@@ -1,7 +1,9 @@
 """Tests for restricted pickle deserialization."""
 
+import importlib
 import io
 import pickle
+import sqlite3
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -17,6 +19,7 @@ from openai.types.responses import Response as ResponsesAPIResponse
 from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
 from openai.types.responses import ResponseUsage as ResponseAPIUsage
 
+from dspy.clients.cache import Cache
 from dspy.clients.disk_serialization import (
     DeserializationError,
     _restricted_load,
@@ -208,6 +211,51 @@ def test_ndarray_roundtrip(tmp_path):
     np.testing.assert_array_equal(result, value)
 
 
+def test_file_backed_ndarray_roundtrip(tmp_path):
+    cache = diskcache.Cache(tmp_path / "cache", disk=restricted_disk(set()), disk_min_file_size=1)
+    value = np.arange(1200, dtype=np.float64).reshape(30, 40)
+    cache["array"] = value
+    cache.close()
+
+    reopened = diskcache.Cache(tmp_path / "cache", disk=restricted_disk(set()))
+    np.testing.assert_array_equal(reopened["array"], value)
+
+
+def test_dspy_cache_array_roundtrip_after_reopen(tmp_path):
+    options = {"enable_disk_cache": True, "enable_memory_cache": False, "disk_cache_dir": str(tmp_path)}
+    request = {"model": "test", "prompt": "embedding"}
+    value = np.arange(1200, dtype=np.float32).reshape(30, 40)
+    cache = Cache(**options)
+    cache.put(request, value)
+    cache.disk_cache.close()
+
+    reopened = Cache(**options)
+    np.testing.assert_array_equal(reopened.get(request), value)
+
+
+def test_numpy_subclass_is_not_silently_flattened(tmp_path):
+    cache = diskcache.Cache(tmp_path / "cache", disk=restricted_disk(set()))
+    value = np.ma.array([1, 2], mask=[True, False])
+    with pytest.raises(TypeError, match="subclasses cannot be safely serialized"):
+        cache["masked"] = value
+    assert "masked" not in cache
+
+
+def test_file_backed_value_with_symlinked_cache_root(tmp_path):
+    root = tmp_path / "real"
+    root.mkdir()
+    (tmp_path / "alias").symlink_to(root, target_is_directory=True)
+    cache = diskcache.Cache(tmp_path / "alias", disk=restricted_disk(_allowed_for(AllowedDataclass)), disk_min_file_size=1)
+    cache["key"] = b"data"
+    cache["text"] = "hello\rworld"
+    cache["model"] = AllowedDataclass(name="hello", value=7)
+    assert cache["key"] == b"data"
+    assert cache["text"] == "hello\nworld"
+    assert cache["model"] == AllowedDataclass(name="hello", value=7)
+    cache.delete("key")
+    assert "key" not in cache
+
+
 def test_openai_chat_response_roundtrip(tmp_path):
     cache = _make_cache(str(tmp_path), set())
     response = ModelResponse(
@@ -324,6 +372,12 @@ def test_cached_responses_function_call_normalizes_after_fresh_process_roundtrip
 
 # -- allowlist enforcement --
 
+def test_direct_callable_value_remains_blocked():
+    payload = b"cbuiltins\neval\n(S'2 + 3'\ntR."
+    with pytest.raises(DeserializationError):
+        _restricted_load(io.BytesIO(payload), set())
+
+
 def test_unlisted_type_blocked_on_read(tmp_path):
     cache = _make_cache(str(tmp_path), set())
     cache["k"] = _UnlistedModel(value=1)
@@ -358,6 +412,104 @@ def test_numpy_ctypeslib_blocked():
     )
     with pytest.raises(DeserializationError):
         _restricted_load(io.BytesIO(payload), set())
+
+
+def test_trusted_module_alias_cannot_resolve_an_untrusted_callable(monkeypatch):
+    module = importlib.import_module("openai.types.chat.chat_completion")
+    monkeypatch.setattr(module, "injected_alias", eval, raising=False)
+    payload = b"copenai.types.chat.chat_completion\ninjected_alias\n."
+
+    with pytest.raises(DeserializationError):
+        _restricted_load(io.BytesIO(payload), set())
+
+
+def test_pickled_keys_use_the_same_allowlist(tmp_path):
+    cache = _make_cache(str(tmp_path), set())
+    cache[_Outer.Inner(value=7)] = "stored"
+
+    with pytest.raises(DeserializationError):
+        list(cache)
+
+    allowed_cache = _make_cache(str(tmp_path), _allowed_for(_Outer.Inner))
+    assert list(allowed_cache) == [_Outer.Inner(value=7)]
+
+
+def test_legacy_pickled_numpy_array_is_a_miss():
+    # Array BUILD state is not validated by pickle's find_class hook.
+    with pytest.raises(DeserializationError):
+        _restricted_load(io.BytesIO(pickle.dumps(np.arange(3))), set())
+
+
+@pytest.mark.parametrize("cleanup", ["delete", "cull"])
+def test_tampered_filename_cannot_delete_outside_cache(tmp_path, cleanup):
+    cache = diskcache.Cache(tmp_path / "cache", disk=restricted_disk(set()), disk_min_file_size=1)
+    cache.set("old", b"data")
+    outside = tmp_path / "outside"
+    outside.write_bytes(b"keep")
+    with sqlite3.connect(tmp_path / "cache" / "cache.db") as db:
+        db.execute(
+            "UPDATE Cache SET filename = ?, expire_time = ? WHERE key = 'old'",
+            ("../outside", 0 if cleanup == "cull" else None),
+        )
+
+    if cleanup == "delete":
+        with pytest.raises(DeserializationError):
+            cache["old"]
+        cache.delete("old")
+        assert "old" not in cache
+    else:
+        cache.set("new", b"data")
+        assert cache["new"] == b"data"
+
+    assert outside.read_bytes() == b"keep"
+
+
+def test_file_backed_cache_reads_do_not_follow_symlinks(tmp_path):
+    cache = diskcache.Cache(tmp_path / "cache", disk=restricted_disk(set()), disk_min_file_size=1)
+    cache.set("key", b"data")
+    with sqlite3.connect(tmp_path / "cache" / "cache.db") as db:
+        filename = db.execute("SELECT filename FROM Cache WHERE key = 'key'").fetchone()[0]
+    outside = tmp_path / "outside"
+    outside.write_bytes(b"secret")
+    path = tmp_path / "cache" / filename
+    path.unlink()
+    path.symlink_to(outside)
+
+    with pytest.raises(DeserializationError):
+        cache["key"]
+    cache.delete("key")
+    assert outside.read_bytes() == b"secret"
+
+
+def test_file_backed_cache_cleanup_does_not_follow_directory_symlinks(tmp_path):
+    cache = diskcache.Cache(tmp_path / "cache", disk=restricted_disk(set()), disk_min_file_size=1)
+    cache.set("key", b"data")
+    with sqlite3.connect(tmp_path / "cache" / "cache.db") as db:
+        filename = db.execute("SELECT filename FROM Cache WHERE key = 'key'").fetchone()[0]
+    path = tmp_path / "cache" / filename
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / path.name).write_bytes(b"secret")
+    path.unlink()
+    path.parent.rmdir()
+    path.parent.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(DeserializationError):
+        cache["key"]
+    cache.delete("key")
+    assert (outside / path.name).read_bytes() == b"secret"
+
+
+def test_file_backed_cache_writes_do_not_follow_directory_symlinks(tmp_path, monkeypatch):
+    cache = diskcache.Cache(tmp_path / "cache", disk=restricted_disk(set()), disk_min_file_size=1)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (tmp_path / "cache" / "ab").symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr("diskcache.core.os.urandom", lambda size: b"\xab" * size)
+
+    with pytest.raises(OSError):
+        cache["key"] = b"data"
+    assert list(outside.iterdir()) == []
 
 
 # -- _restricted_load unit tests --
