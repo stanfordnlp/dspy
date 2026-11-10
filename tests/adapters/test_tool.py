@@ -1,9 +1,10 @@
 import asyncio
+import json
 from collections import defaultdict
 from copy import deepcopy
 from decimal import Decimal
 from fractions import Fraction
-from typing import Annotated, Any
+from typing import Annotated, Any, Optional
 
 import pytest
 from jsonschema import ValidationError, validate
@@ -755,7 +756,8 @@ def test_tool_calls_format_from_dict_list():
     assert result["tool_calls"][1]["name"] == "translate"
 
 
-def test_tool_calls_preserves_ids_from_dict_list_and_format_omits_ids():
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
+def test_tool_calls_preserves_ids_from_dict_list_and_format_omits_ids(adapter_type):
     tool_calls = ToolCalls.from_dict_list(
         [
             {"id": "call_1", "name": "search", "args": {"query": "hello"}},
@@ -770,12 +772,20 @@ def test_tool_calls_preserves_ids_from_dict_list_and_format_omits_ids():
     assert "id" not in formatted[0]
     assert "id" not in formatted[1]
 
+    restored = ToolCalls.model_validate_json(tool_calls.model_dump_json())
+    assert [call.id for call in restored.tool_calls] == ["call_1", None]
+    signature = dspy.Signature("question -> calls: dspy.ToolCalls")
+    content = adapter_type().format_assistant_message_content(signature, {"calls": tool_calls})
+    assert "call_1" not in content
+    assert "hello" in content
+
 
 def test_tool_calls_json_schema_omits_internal_id_field():
     schema = TypeAdapter(ToolCalls).json_schema()
 
     assert "tool_call_results" not in schema["properties"]
     assert "id" not in schema["$defs"]["ToolCall"]["properties"]
+    assert "continuation" not in schema["$defs"]["ToolCall"]["properties"]
     assert schema["$defs"]["ToolCall"]["properties"]["args"]["additionalProperties"] is True
     assert schema["$defs"]["ToolCall"]["required"] == ["name", "args"]
 
@@ -791,6 +801,40 @@ def test_tool_calls_can_carry_results_without_formatting_them_for_lm():
             {"call_id": "call_1", "name": "search", "value": {"answer": "world"}, "is_error": False}
         ]
     }
+
+
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
+@pytest.mark.parametrize("saved_demo", [False, True])
+@pytest.mark.parametrize("annotation", [ToolCalls, ToolCalls | None, Optional[ToolCalls]])  # noqa: UP045 -- both union spellings
+def test_tool_call_examples_preserve_attached_results_and_nested_application_data(adapter_type, saved_demo, annotation):
+    inner = ToolCalls.from_dict_list([{"id": "inner-id", "name": "lookup", "args": {"query": "hello"}}])
+    outer = ToolCalls.from_dict_list([{"id": "outer-id", "name": "search", "args": {
+        "nested": inner, "tool_calls": [{"id": "business-id"}],
+    }}])
+    outer.tool_call_results = ToolCallResults.from_tool_calls_and_values(outer.tool_calls, [inner])
+    outer.tool_calls[0].continuation = [{"provider": "gemini", "kind": "thought_signature", "data": {"value": "opaque-root"}}]
+
+    saved = outer.model_dump(mode="json")
+    assert saved["tool_calls"][0]["args"]["nested"]["tool_calls"][0]["id"] == "inner-id"
+    assert saved["tool_call_results"]["tool_call_results"][0]["value"]["tool_calls"][0]["id"] == "inner-id"
+    signature = dspy.Signature({"question": (str, dspy.InputField()), "calls": (annotation, dspy.OutputField())})
+    predictor = dspy.Predict(signature)
+    predictor.demos = [dspy.Example(question="Look up the order.", calls=outer)]
+    if saved_demo:
+        state = json.loads(json.dumps(predictor.dump_state()))
+        predictor = dspy.Predict(signature).load_state(state)
+    content = adapter_type().format_demos(predictor.signature, predictor.demos)[-1].text
+    rendered = adapter_type().parse(signature, content)["calls"]
+    assert rendered.tool_calls[0].id is None
+    assert rendered.tool_calls[0].continuation == []
+    assert "opaque-root" not in content
+    assert rendered.tool_calls[0].args == saved["tool_calls"][0]["args"]
+    assert rendered.tool_call_results == saved["tool_call_results"]
+    assert outer.model_dump(mode="json") == saved
+    # An application dictionary with identical keys is data, not a typed tool-call example.
+    data_signature = dspy.Signature("question -> record: dict")
+    content = adapter_type().format_assistant_message_content(data_signature, {"record": saved})
+    assert adapter_type().parse(data_signature, content)["record"] == saved
 
 
 def test_tool_call_results_from_tool_calls_and_values():
@@ -832,7 +876,7 @@ def test_tool_call_results_history_serialization_round_trip():
             {
                 "tool_calls": {
                     "tool_calls": [
-                        {"name": "search", "args": {"query": "hello"}}
+                        {"id": "call_1", "name": "search", "args": {"query": "hello"}}
                     ],
                     "tool_call_results": {
                         "tool_call_results": [

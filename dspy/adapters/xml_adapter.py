@@ -15,6 +15,7 @@ from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import (
     apply_output_field_defaults,
     format_field_value,
+    format_tool_calls,
     parse_value,
     serialize_for_json,
     translate_field_type,
@@ -38,6 +39,7 @@ class XMLAdapter(ChatAdapter):
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         output = []
         for field, value in fields_with_values.items():
+            value = format_tool_calls(field.info, value)
             serialized = serialize_for_json(value)
             is_output = (field.info.json_schema_extra or {}).get("__dspy_field_type") == "output"
             nested = isinstance(serialized, (dict, list)) and self._uses_nested_xml(field.info.annotation)

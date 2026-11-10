@@ -380,6 +380,7 @@ class ToolCalls(Type):
         id: str | None = None
         name: str
         args: dict[str, Any] = pydantic.Field(json_schema_extra={"additionalProperties": True})
+        continuation: list[dict[str, Any]] = pydantic.Field(default_factory=list)
 
         @classmethod
         def __get_pydantic_json_schema__(cls, core_schema: Any, handler: Any) -> dict[str, Any]:
@@ -388,6 +389,7 @@ class ToolCalls(Type):
             properties = schema.get("properties")
             if isinstance(properties, dict):
                 properties.pop("id", None)
+                properties.pop("continuation", None)
             required = schema.get("required")
             if isinstance(required, list):
                 schema["required"] = [field for field in required if field != "id"]
@@ -494,7 +496,13 @@ class ToolCalls(Type):
 
     @pydantic.model_serializer()
     def serialize_model(self):
-        data = self.format()
+        calls = []
+        for call in self.tool_calls:
+            saved = {"id": call.id, "name": call.name, "args": call.args}
+            if call.continuation:
+                saved["continuation"] = call.continuation
+            calls.append(saved)
+        data = {"tool_calls": calls}
         if self.tool_call_results is not None:
             data["tool_call_results"] = TypeAdapter(type(self.tool_call_results)).dump_python(
                 self.tool_call_results,
@@ -626,6 +634,7 @@ def _normalize_tool_call_dict(data: dict[str, Any]) -> dict[str, Any]:
         "id": data.get("id") or data.get("call_id"),
         "name": name,
         "args": arguments,
+        "continuation": data.get("continuation", []),
     }
 
 

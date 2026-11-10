@@ -98,6 +98,7 @@ class History(pydantic.BaseModel):
         History owns event dispatch and conversation ordering. REPL events own their action/observation
         representation; the adapter only renders fields and does not inspect their serialized layout.
         """
+        from dspy._vendor.lm15.serde import continuation_from_dict
         from dspy._vendor.lm15.types import tool_result
         from dspy.adapters.base import _tool_result_content, user_message
         from dspy.adapters.types.tool import ToolCallResults, ToolCalls
@@ -151,7 +152,10 @@ class History(pydantic.BaseModel):
                     parts = [TextPart(content)] if content else []
                     if tool_call_results is not None:
                         parts.extend(
-                            ToolCallPart(id=tool_call.id, name=tool_call.name, input=serialize_for_json(tool_call.args))
+                            ToolCallPart(
+                                id=tool_call.id, name=tool_call.name, input=serialize_for_json(tool_call.args),
+                                continuation=tuple(continuation_from_dict(state) for state in tool_call.continuation),
+                            )
                             for tool_call in tool_calls.tool_calls
                         )
                     messages.append(Message.assistant(parts))

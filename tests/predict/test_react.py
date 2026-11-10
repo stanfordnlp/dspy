@@ -1,10 +1,12 @@
 import asyncio
+from dataclasses import replace
 
 import pytest
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel
 
 import dspy
+from dspy.lm15 import ContinuationState, ToolCallPart
 from dspy.utils.exceptions import ContextWindowExceededError
 from tests.test_utils.engines import make_response, recording_lm
 
@@ -125,6 +127,49 @@ def test_react_text_mock_lm_loop_records_inputs_once():
     assert pred.history.messages[0]["tool_calls"].tool_calls[0].id == "call_0_0"
     assert "tool_call_results" not in pred.history.messages[0]
     assert pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results[0].call_id == "call_0_0"
+
+
+@pytest.mark.parametrize("storage", ["object", "dict", "json"])
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_react_continuation_preserves_tool_evidence(storage, native, asynchronous):
+    def lookup() -> str:
+        return "tool-evidence-73"
+
+    continuation = (ContinuationState(provider="gemini", kind="thought_signature", data={"value": "opaque-state"}),)
+    response = make_response(tool_calls=[("lookup-1", "lookup", {})])
+    response = replace(response, message=replace(response.message, parts=(
+        replace(response.tool_calls[0], continuation=continuation),
+    )))
+    lm = recording_lm([
+        response,
+        make_response(tool_calls=[("submit-1", "submit", {"answer": "ready"})]),
+        make_response(tool_calls=[("submit-2", "submit", {"answer": "continued"})]),
+    ])
+    agent = dspy.ReAct("question -> answer", tools=[lookup])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=True)):
+        first = asyncio.run(agent.acall(question="Look it up.")) if asynchronous else agent(question="Look it up.")
+        history = first.history
+        if storage == "dict":
+            history = history.model_dump(mode="json")
+        elif storage == "json":
+            history = dspy.History.model_validate_json(history.model_dump_json())
+        # Also replay native history as text for a model without native tools.
+        with dspy.context(adapter=dspy.ChatAdapter(use_native_function_calling=native)):
+            result = asyncio.run(agent.acall(history=history)) if asynchronous else agent(history=history)
+
+    assert result.answer == "continued"
+    messages = lm.engine.requests[-1].messages
+    if native:
+        results = [part for message in messages if message.role == "tool" for part in message.parts]
+        assert [(part.id, part.content[0].text) for part in results] == [
+            ("lookup-1", "tool-evidence-73"), ("submit-1", '{"answer": "ready"}'),
+        ]
+        calls = [part for message in messages for part in message.parts if isinstance(part, ToolCallPart)]
+        assert [(part.id, part.continuation) for part in calls] == [("lookup-1", continuation), ("submit-1", ())]
+    else:
+        assert any("tool-evidence-73" in (message.text or "") for message in messages)
+        assert "opaque-state" not in str(messages)
 
 
 def test_react_continuation_omits_missing_original_inputs():
