@@ -290,10 +290,10 @@ class ReAct(Module):
         else:
             tasks = [asyncio.create_task(execute(call)) for call in tool_calls.tool_calls]
             try:
-                results = await asyncio.gather(*tasks)
+                results = await asyncio.shield(asyncio.gather(*tasks))
             except BaseException:
                 for task in tasks:
-                    if not task.done() and not task.cancelling():
+                    if not task.done():
                         task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
                 raise
