@@ -1,5 +1,7 @@
 # DSPy 3.5 LM migration
 
+For prompts, agents, dependencies and other upgrade changes, start with [Upgrading from 3.4.1 to 3.5](upgrading-to-3-5.md).
+
 DSPy's LM layer now uses the lm15 objects bundled inside DSPy. Import them from
 `dspy.lm15`; no separate installation is needed. They are the original lm15
 classes, not DSPy wrappers or subclasses.
