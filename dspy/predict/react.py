@@ -412,7 +412,14 @@ def _coerce_tool_calls(tool_calls: Any) -> ToolCalls:
 def _ensure_tool_call_ids(tool_calls: ToolCalls, turn_index: int, history: dspy.History) -> ToolCalls:
     used_ids = {call.id for call in tool_calls.tool_calls if call.id is not None}
     for event in history.messages:
-        for call in _coerce_tool_calls(event.get("tool_calls")).tool_calls:
+        historical_calls = event.get("tool_calls")
+        if not isinstance(historical_calls, (ToolCalls, dict, list)):
+            continue
+        try:
+            recorded_calls = _coerce_tool_calls(historical_calls)
+        except pydantic.ValidationError:
+            continue
+        for call in recorded_calls.tool_calls:
             if call.id is not None:
                 used_ids.add(call.id)
     ensured = []

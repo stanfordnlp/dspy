@@ -84,3 +84,22 @@ def test_generated_ids_do_not_shadow_ids_supplied_later_in_the_batch(asynchronou
     assert [call.id for call in calls] == ["call_0_0_2", "call_0_0", "call_0_0_1"]
     assert calls[1].continuation == continuation
     assert result.history.messages[-1]["tool_calls"].tool_calls[0].id == "provided-submit"
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_continuation_accepts_ordinary_output_named_tool_calls(asynchronous):
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "Done.",
+                "tool_calls": {"tool_calls": [{"name": "submit", "args": {"tool_calls": answer}}]},
+            }
+            for answer in ("first answer", "second answer")
+        ]
+    )
+    agent = dspy.ReAct("question -> tool_calls: str", tools=[])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        first = asyncio.run(agent.acall(question="first")) if asynchronous else agent(question="first")
+        kwargs = {"question": "second", "history": first.history}
+        second = asyncio.run(agent.acall(**kwargs)) if asynchronous else agent(**kwargs)
+    assert second.tool_calls == "second answer"
