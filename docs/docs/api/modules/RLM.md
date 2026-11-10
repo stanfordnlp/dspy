@@ -287,10 +287,26 @@ Values of DSPy types such as `dspy.Image` keep their type across the REPL bounda
 `dspy.Image.to_pil()` needs Pillow in the interpreter. `dspy.LocalInterpreter` uses your environment's. `PythonInterpreter`'s sandbox includes Pyodide's build of Pillow, whether or not your environment has Pillow. Its `sandbox_packages` choose the packages Pyodide ships that the REPL can import, by default `("pillow",)`:
 
 ```python
+from functools import partial
+
+import dspy
+
 # numpy as well as Pillow
-rlm = dspy.RLM(sig, interpreter_factory=functools.partial(dspy.PythonInterpreter, sandbox_packages=["pillow", "numpy"]))
-# no packages, for a sandbox that starts slightly faster; images still pass through, but to_pil() raises ImportError
-dspy.configure(interpreter_factory=functools.partial(dspy.PythonInterpreter, sandbox_packages=[]))
+rlm = dspy.RLM(
+    "photo: dspy.Image, question -> answer",
+    interpreter_factory=partial(
+        dspy.PythonInterpreter,
+        sandbox_packages=["pillow", "numpy"],
+    ),
+)
+# no packages, for a sandbox that starts slightly faster;
+# images still pass through, but to_pil() raises ImportError
+dspy.configure(
+    interpreter_factory=partial(
+        dspy.PythonInterpreter,
+        sandbox_packages=[],
+    ),
+)
 ```
 
 ```python
