@@ -87,7 +87,7 @@ class BaseLM:
     def __init__(
         self,
         model: str,
-        model_type: Literal["chat", "text", "responses"] = "chat",
+        model_type: Literal["auto", "chat", "text", "responses"] = "chat",
         temperature: float | None = None,
         max_tokens: int | None = None,
         cache: bool = True,

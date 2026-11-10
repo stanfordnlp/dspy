@@ -92,7 +92,7 @@ def test_predict_boxes_from_literal_nested_xml(left, monkeypatch):
         "<right>0.64</right></item></boxes><label>0.27</label></region>"
     )
     native_transport(monkeypatch, [wire(completion), wire(completion)])
-    lm = dspy.LM("openai/gpt-4o-mini", engine="lm15", cache=False)
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat", engine="lm15", cache=False)
     try:
         with dspy.context(adapter=dspy.XMLAdapter()):
             if left == "true":

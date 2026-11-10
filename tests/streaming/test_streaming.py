@@ -23,6 +23,7 @@ async def test_streamify_yields_expected_response_chunks(openai_test_server):
     api_base, _ = openai_test_server
     lm = dspy.LM(
         model="openai/dspy-test-model",
+        model_type="chat",
         api_base=api_base,
         api_key="fakekey",
         cache=True,
@@ -55,6 +56,7 @@ async def test_streaming_response_yields_expected_response_chunks(openai_test_se
     api_base, _ = openai_test_server
     lm = dspy.LM(
         model="openai/dspy-test-model",
+        model_type="chat",
         api_base=api_base,
         api_key="fakekey",
         cache=False,

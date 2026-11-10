@@ -86,7 +86,7 @@ def endpoint(monkeypatch):
 
 
 def native_lm(endpoint, **kwargs):
-    return dspy.LM("openai/fake", engine="lm15", api_base=endpoint[0], api_key="fake",
+    return dspy.LM("openai/fake", model_type="chat", engine="lm15", api_base=endpoint[0], api_key="fake",
                    cache=False, num_retries=0, **kwargs)
 
 

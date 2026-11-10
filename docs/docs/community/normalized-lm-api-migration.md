@@ -124,6 +124,8 @@ Those options are read with lm15's own Chat Completions reader into
 
 Engine selection:
 
+- `model_type="auto"` (default) follows lm15's native API family: OpenAI/Azure use Responses; other providers keep their native dialects.
+- API-family selection is independent of `engine`; use `model_type="chat"` for Chat-only models/proxies/deployments, or explicitly select `"responses"` or `"text"`.
 - `engine="auto"` (default): prefer native lm15 for supported routes and
   representable inputs. Unsupported routes and ordinary provider-specific inputs
   that cannot be represented faithfully may select optional LiteLLM **before

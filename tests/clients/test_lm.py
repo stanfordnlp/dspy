@@ -28,7 +28,7 @@ def responses_wire(output=None, usage=True):
 @pytest.mark.parametrize("model", ["openai/gpt-4o-mini", "azure/deployment"])
 def test_chat_lms_can_be_queried(engine, model, monkeypatch):
     transport = native_transport(monkeypatch, [wire("Hi!")])
-    lm = dspy.LM(model, engine=engine, api_base="https://endpoint.test", api_key="fake", cache=False)
+    lm = dspy.LM(model, model_type="chat", engine=engine, api_base="https://endpoint.test", api_key="fake", cache=False)
     assert lm("query") == ["Hi!"]
     assert len(transport.requests) == 1
     assert transport.requests[0].url.startswith("https://endpoint.test/")
@@ -41,7 +41,7 @@ async def test_dspy_cache(asynchronous, monkeypatch, tmp_path):
     transport = native_transport(monkeypatch, [wire("answer"), wire("new answer")])
     original = dspy.cache
     dspy.configure_cache(enable_disk_cache=True, enable_memory_cache=True, disk_cache_dir=tmp_path)
-    lm = dspy.LM("openai/gpt-4o-mini")
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat")
     try:
         with track_usage() as usage:
             assert (await lm.acall("query") if asynchronous else lm("query")) == ["answer"]
@@ -66,7 +66,7 @@ def test_disabled_cache_skips_cache_key(monkeypatch):
     dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=False)
     try:
         with mock.patch.object(dspy.cache, "cache_key", wraps=dspy.cache.cache_key) as key:
-            assert dspy.LM("openai/gpt-4o-mini")("hello") == ["hello"]
+            assert dspy.LM("openai/gpt-4o-mini", model_type="chat")("hello") == ["hello"]
         key.assert_not_called()
     finally:
         dspy.cache = original
@@ -74,7 +74,7 @@ def test_disabled_cache_skips_cache_key(monkeypatch):
 
 def test_rollout_id_bypasses_cache(monkeypatch):
     transport = native_transport(monkeypatch, [wire(), wire(), wire()])
-    lm = dspy.LM("openai/gpt-4o-mini")
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat")
     for prompt, options, fresh in [
         ("query", {"rollout_id": 1}, True), ("query", {"rollout_id": 1}, False),
         ("query", {"rollout_id": 2}, True), ("no rid", {}, True), ("no rid", {"rollout_id": None}, False),
@@ -251,7 +251,7 @@ def test_logprobs_included_when_requested(monkeypatch):
     body = {"model": "gpt-4o-mini", "choices": [{"index": 0, "finish_reason": "stop",
             "message": {"role": "assistant", "content": "answer"}, "logprobs": scores}]}
     transport = native_transport(monkeypatch, [DualResponse(status=200, body=json.dumps(body).encode())])
-    lm = dspy.LM("openai/gpt-4o-mini", logprobs=True, cache=False)
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat", logprobs=True, cache=False)
     output = lm("question")
     assert output[0]["text"] == "answer"
     assert output[0]["logprobs"]["content"][0]["logprob"] == -0.2
@@ -290,12 +290,13 @@ async def test_responses_api_reasoning_cache_and_usage(asynchronous, usage, monk
         await lm.aclose()
 
 
-def test_lm_replaces_system_with_developer_role(monkeypatch):
+@pytest.mark.parametrize("model_type", ["auto", "responses"])
+def test_lm_replaces_system_with_developer_role(model_type, monkeypatch):
     from dspy.adapters import Prompt
     from dspy.clients.requests import build_request
 
     transport = native_transport(monkeypatch, [responses_wire()])
-    lm = dspy.LM("openai/gpt-4o-mini", model_type="responses", api_key="fake", use_developer_role=True)
+    lm = dspy.LM("openai/gpt-4o-mini", model_type=model_type, api_key="fake", use_developer_role=True)
     request = build_request(lm, Prompt(system="hi", messages=(Message.user("q"),)), {})
     assert request.system is None and request.messages[0].role == "developer"
     assert request.messages[0].text == "hi"
@@ -452,8 +453,178 @@ def test_responses_only_refusal_names_model_type():
     lm = dspy.LM("openai/gpt-5.6-luna", model_type="responses")
     _hint_responses_api(lm, exc)
     assert "DSPy:" not in str(exc)
-    lm = dspy.LM("openai/gpt-5.6-luna")
+    lm = dspy.LM("openai/gpt-5.6-luna", model_type="chat")
     _hint_responses_api(lm, exc)
     _hint_responses_api(lm, exc)
     assert str(exc).count("DSPy:") == 1
     assert "model_type='responses'" in str(exc) and "/v1/responses" in str(exc)
+
+
+@pytest.mark.parametrize("model,provider,family", [
+    ("gpt-6-luna", "openai", "responses"),
+    ("openai/gpt-6.1-sol", "openai", "responses"),
+    ("azure/opaque-deployment", "azure", "responses"),
+    ("anthropic/claude-sonnet-5", "anthropic", "chat"),
+    ("gemini/gemini-3-flash-preview", "gemini", "chat"),
+    ("openrouter/openai/gpt-6-luna", "openrouter", "chat"),
+    ("openai-chat:gpt-6-luna", "openai-chat", "chat"),
+    ("unlisted-proxy/model", None, "chat"),
+])
+def test_auto_api_family_uses_native_provider_route(model, provider, family):
+    from dspy.clients.backend_selection import select_backend
+
+    lm = dspy.LM(model)
+    assert lm.model_type == "auto"
+    selection = select_backend(lm)
+    assert selection.model_type == family
+    assert (selection.resolution.provider if selection.resolution else None) == provider
+    assert selection.native == (provider is not None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_auto_family_preserves_direct_outputs_cache_copy_and_state(asynchronous, monkeypatch):
+    transport = native_transport(monkeypatch, [responses_wire(), responses_wire(), wire("chat"), wire("loaded"),
+                                             responses_wire(), wire("copied")])
+    lm = dspy.LM("openai/gpt-6-luna", api_key="fake")
+
+    async def call(target, prompt):
+        return await target.acall(prompt) if asynchronous else target(prompt)
+
+    try:
+        assert await call(lm, "auto family cache contract") == ["OK"]
+        assert await call(lm, "auto family cache contract") == ["OK"]
+        assert len(transport.requests) == 1
+        state = lm.dump_state()
+        assert state["model_type"] == "auto"
+        restored = dspy.BaseLM.load_state(state).copy(api_key="fake")
+        assert restored.model_type == "auto"
+        assert await call(restored, "restored auto") == ["OK"]
+        chat = lm.copy(model_type="chat")
+        assert await call(chat, "auto family cache contract") == ["chat"]
+        legacy = dspy.BaseLM.load_state({**state, "model_type": "chat"}).copy(api_key="fake")
+        assert await call(legacy, "loaded explicit chat") == ["loaded"]
+        response = await call(lm, Request(model=lm.model, messages=(Message.user("typed auto"),)))
+        assert isinstance(response, dspy.lm15.Response) and response.text == "OK"
+        copied = lm.copy(model="openai-chat:gpt-6-luna")
+        assert copied.model_type == "auto"
+        assert await call(copied, "copied model") == ["copied"]
+        assert [request.url.rsplit("/", 1)[-1] for request in transport.requests] == [
+            "responses", "responses", "completions", "completions", "responses", "completions",
+        ]
+    finally:
+        await lm.aclose()
+
+
+@pytest.mark.parametrize("model_type,path", [(None, "/responses"), ("chat", "/chat/completions")])
+def test_react_luna_keeps_tools_and_reasoning_on_selected_family(model_type, path, monkeypatch):
+    # Synthetic provider replies: prove DSPy's public program/wire mapping,
+    # not that a live deployment accepts this combination.
+    if model_type == "chat":
+        reply = DualResponse(status=400, body=json.dumps({"error": {"message":
+            "Function tools with reasoning_effort are not supported for gpt-6-luna in /v1/chat/completions",
+            "type": "invalid_request_error"}}).encode())
+    else:
+        reply = responses_wire([{"type": "function_call", "call_id": "submit_1", "name": "submit",
+                                 "arguments": '{"answer":"23"}'}])
+    transport = native_transport(monkeypatch, [reply])
+    options = {} if model_type is None else {"model_type": model_type}
+    lm = dspy.LM("openai/gpt-6-luna", api_key="fake", cache=False, num_retries=0, **options)
+    with dspy.context(lm=lm):
+        program = dspy.ReAct("question -> answer", tools=[], max_iters=1)
+        if model_type == "chat":
+            with pytest.raises(dspy.LMInvalidRequestError, match="Function tools with reasoning_effort"):
+                program(question="What is 17 plus 6?")
+        else:
+            assert program(question="What is 17 plus 6?").answer == "23"
+    assert len(transport.requests) == 1  # Never retry on another API or lower effort.
+    request = transport.requests[0]
+    body = json.loads(request.body)
+    assert request.url.endswith(path)
+    if model_type == "chat":
+        assert body["tools"][0]["function"]["name"] == "submit"
+        assert body["reasoning_effort"] == "low"
+    else:
+        assert body["tools"][0]["name"] == "submit"
+        assert body["reasoning"]["effort"] == "low"
+    lm.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("engine,extra", [("auto", {"extra_headers": {"x-test": "compat"}}),
+                                          ("litellm", {}), ("auto", {"api_version": "2025-01-01-preview"})])
+@pytest.mark.parametrize("model,wire_model,family", [
+    ("gpt-6-luna", "openai/gpt-6-luna", "responses"),
+    ("openai:gpt-6-luna", "openai/gpt-6-luna", "responses"),
+    ("azure/opaque-deployment", "azure/opaque-deployment", "responses"),
+    ("openrouter/openai/gpt-6-luna", "openrouter/openai/gpt-6-luna", "chat"),
+    ("ollama_chat/llama3.1", "ollama_chat/llama3.1", "chat"),
+    ("unlisted-proxy/model", "unlisted-proxy/model", "chat"),
+])
+async def test_auto_family_survives_compatibility(engine, extra, model, wire_model, family, asynchronous, monkeypatch):
+    from types import SimpleNamespace
+
+    import dspy.clients.engines.litellm_engine as compatibility
+
+    calls = []
+
+    def complete(api, **kwargs):
+        calls.append((api, kwargs))
+        return json.loads((responses_wire() if api == "responses" else wire()).read())
+
+    async def aresponses(**kwargs):
+        return complete("responses", **kwargs)
+
+    async def acompletion(**kwargs):
+        return complete("chat", **kwargs)
+
+    monkeypatch.setattr(compatibility, "get_litellm", lambda **kw: SimpleNamespace(
+        responses=lambda **kw: complete("responses", **kw), completion=lambda **kw: complete("chat", **kw),
+        aresponses=aresponses, acompletion=acompletion, text_completion=None, atext_completion=None,
+    ))
+    lm = dspy.LM(model, engine=engine, api_key="fake", api_base="https://private-proxy.invalid/v1",
+                 reasoning_effort="high", cache=False, **extra)
+    try:
+        result = await lm.acall("hello") if asynchronous else lm("hello")
+        assert result == (["OK"] if family == "responses" else ["hello"])
+        assert len(calls) == 1
+        api, sent = calls[0]
+        assert api == family
+        assert sent["model"] == wire_model
+        assert sent["api_base"] == "https://private-proxy.invalid/v1"
+        assert sent["reasoning"]["effort"] == "high" if family == "responses" else sent["reasoning_effort"] == "high"
+        assert lm.history[-1]["model"] == model
+    finally:
+        await lm.aclose()
+
+
+def test_auto_native_only_responses_route_does_not_invent_compatibility_destination(monkeypatch):
+    transport = native_transport(monkeypatch, [])
+    lm = dspy.LM("moonshotai-responses:kimi-k3", api_key="fake", extra_headers={"x-test": "compat"})
+    with pytest.raises(dspy.LMUnsupportedFeatureError, match="no LiteLLM mapping"):
+        lm("hi")
+    assert not transport.requests
+
+
+@pytest.mark.parametrize("engine", ["auto", "litellm"])
+def test_auto_native_spelling_keeps_react_capabilities_on_compatibility(engine, monkeypatch):
+    litellm = pytest.importorskip("litellm")
+    calls = []
+
+    def responses(**kwargs):
+        calls.append(kwargs)
+        return json.loads(responses_wire([{"type": "function_call", "call_id": "s", "name": "submit",
+                                          "arguments": '{"answer":"23"}'}]).read())
+
+    monkeypatch.setattr(litellm, "responses", responses)
+    lm = dspy.LM("openai:o3-mini", engine=engine, api_key="fake", extra_headers={"x-test": "compat"},
+                 cache=False, num_retries=0)
+    with dspy.context(lm=lm):
+        result = dspy.ReAct("question -> answer", tools=[], max_iters=1)(question="What is 17 plus 6?")
+    assert result.answer == "23"
+    assert len(calls) == 1
+    assert calls[0]["model"] == "openai/o3-mini"
+    assert calls[0]["tools"][0]["name"] == "submit"
+    assert calls[0]["reasoning"]["effort"] == "low"
+    lm.close()
