@@ -2,6 +2,7 @@ import asyncio
 import inspect
 import json
 from decimal import Decimal
+from numbers import Number
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
 
 import json_repair
@@ -26,12 +27,12 @@ class _MCPToolClient(Protocol):
     async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any: ...
 
 
-def _json_schema_instance(value: Any) -> Any:
+def _json_schema_instance(value: Any, bytes_mode: Literal["utf8", "base64", "hex"] | None = None) -> Any:
     """``value`` as the JSON its schema describes, for JSON-schema validation. A model is checked as its fields, keyed
     by the names its validation schema uses (its dump would key them by serialization alias, and a custom type's dump
     is a prompt)."""
     if isinstance(value, pydantic.RootModel):
-        return _json_schema_instance(value.root)
+        return _json_schema_instance(value.root, type(value).model_config.get("ser_json_bytes", "utf8"))
     if isinstance(value, BaseModel):
         # Only the fields its JSON schema shows; e.g. Score's provider-evidence fields are hidden from it.
         shown = type(value).model_json_schema().get("properties")
@@ -54,9 +55,12 @@ def _json_schema_instance(value: Any) -> Any:
         extra = {key: _json_field_value(_json_schema_instance(item), bytes_mode) for key, item in (value.model_extra or {}).items()}
         return fields | extra
     if isinstance(value, dict):
-        return {k: _json_schema_instance(v) for k, v in value.items()}
+        return {k: _json_schema_instance(v, bytes_mode) for k, v in value.items()}
     if isinstance(value, (list, tuple, set, frozenset)):
-        return [_json_schema_instance(v) for v in value]
+        return [_json_schema_instance(v, bytes_mode) for v in value]
+    # Root values need JSON conversion too, but numbers already support numeric schema constraints.
+    if bytes_mode is not None and not isinstance(value, Number):
+        return _json_field_value(value, bytes_mode)
     return value
 
 
