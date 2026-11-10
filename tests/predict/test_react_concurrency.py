@@ -288,3 +288,35 @@ async def test_react_concurrent_tools_preserve_native_streaming_results():
     assert lm.engine.streams == 2
     results = result.history.messages[0]["tool_calls"].tool_call_results.tool_call_results
     assert [(item.call_id, item.value) for item in results] == [("first-id", "first"), ("second-id", "second")]
+
+
+@pytest.mark.asyncio
+async def test_cancellation_allows_slow_cleanup_with_a_queued_call():
+    entered = asyncio.Event()
+    cleaning = asyncio.Event()
+    release = asyncio.Event()
+    cleaned = asyncio.Event()
+
+    async def lookup(query: str) -> str:
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cleaning.set()
+            await release.wait()
+            cleaned.set()
+        return query
+
+    calls = [{"name": "lookup", "args": {"query": str(i)}} for i in range(3)]
+    with dspy.context(lm=_lm(calls), adapter=dspy.ChatAdapter()):
+        agent = dspy.ReAct("question -> answer", tools=[lookup], max_tool_concurrency=2)
+        task = asyncio.create_task(agent.acall(question="test"))
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        task.cancel()
+        await asyncio.wait_for(cleaning.wait(), timeout=1)
+        for _ in range(10):
+            await asyncio.sleep(0)
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert cleaned.is_set()
