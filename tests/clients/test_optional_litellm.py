@@ -3,9 +3,33 @@
 import pytest
 
 import dspy
-from dspy.lm15 import Message, Request, request_from_openai_chat
+from dspy.lm15 import FunctionTool, Message, Request, request_from_openai_chat
 from tests.clients.test_lm_engine_execution import native_transport, wire
 from tests.test_utils.server import read_test_server_request_logs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("model_type", [None, "chat", "responses"])
+@pytest.mark.parametrize("with_tools", [False, True])
+async def test_optional_inference_without_mcp_gateway(model_type, with_tools, asynchronous, openai_test_server):
+    pytest.importorskip("litellm")
+    url, log_path = openai_test_server
+    # Omission exercises the public default, which selects Responses for OpenAI.
+    options = {} if model_type is None else {"model_type": model_type}
+    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", api_base=url, api_key="fake",
+                 cache=False, num_retries=0, **options)
+    request = Request(model=lm.model, messages=(Message.user("hello"),),
+                      tools=(FunctionTool(name="lookup_invoice"),) if with_tools else ())
+    try:
+        response = await lm.acall(request) if asynchronous else lm(request)
+        assert response.text == "Hi!"
+        assert response.usage.total_tokens == 20
+        requests = read_test_server_request_logs(log_path)
+        assert len(requests) == 1
+        assert bool(requests[0].get("tools")) == with_tools
+    finally:
+        await lm.aclose()
 
 
 @pytest.mark.asyncio
