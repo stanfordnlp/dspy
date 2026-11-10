@@ -164,7 +164,7 @@ class ReAct(Module):
                 break_reason = "empty_tool_calls"
                 break
 
-            tool_calls = _ensure_tool_call_ids(tool_calls, turn_index)
+            tool_calls = _ensure_tool_call_ids(tool_calls, turn_index, history)
             tool_call_results, final_outputs = self._execute_tool_calls(tool_calls)
             event = self._history_event(turn_inputs, pred, tool_calls, tool_call_results)
             if final_outputs is not None:
@@ -205,7 +205,7 @@ class ReAct(Module):
                 break_reason = "empty_tool_calls"
                 break
 
-            tool_calls = _ensure_tool_call_ids(tool_calls, turn_index)
+            tool_calls = _ensure_tool_call_ids(tool_calls, turn_index, history)
             tool_call_results, final_outputs = await self._aexecute_tool_calls(tool_calls)
             event = self._history_event(turn_inputs, pred, tool_calls, tool_call_results)
             if final_outputs is not None:
@@ -310,7 +310,9 @@ class ReAct(Module):
                 },
                 **turn_inputs,
             )
-            tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
+            tool_calls = _ensure_tool_call_ids(
+                _coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index, history
+            )
         except (AdapterParseError, ValueError, ContextWindowExceededError) as err:
             logger.warning("Forced submit failed: %s", format_error_for_lm(err, traceback_frames=5))
             raise
@@ -351,7 +353,9 @@ class ReAct(Module):
                 },
                 **turn_inputs,
             )
-            tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
+            tool_calls = _ensure_tool_call_ids(
+                _coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index, history
+            )
         except (AdapterParseError, ValueError, ContextWindowExceededError) as err:
             logger.warning("Forced submit failed: %s", format_error_for_lm(err, traceback_frames=5))
             raise
@@ -405,11 +409,23 @@ def _coerce_tool_calls(tool_calls: Any) -> ToolCalls:
     return ToolCalls.model_validate(tool_calls)
 
 
-def _ensure_tool_call_ids(tool_calls: ToolCalls, turn_index: int) -> ToolCalls:
+def _ensure_tool_call_ids(tool_calls: ToolCalls, turn_index: int, history: dspy.History) -> ToolCalls:
+    used_ids = {call.id for call in tool_calls.tool_calls if call.id is not None}
+    for event in history.messages:
+        for call in _coerce_tool_calls(event.get("tool_calls")).tool_calls:
+            if call.id is not None:
+                used_ids.add(call.id)
     ensured = []
     for call_index, tool_call in enumerate(tool_calls.tool_calls):
         if tool_call.id is None:
-            tool_call = tool_call.model_copy(update={"id": f"call_{turn_index}_{call_index}"})
+            base_id = f"call_{turn_index}_{call_index}"
+            call_id = base_id
+            suffix = 0
+            while call_id in used_ids:
+                suffix += 1
+                call_id = f"{base_id}_{suffix}"
+            used_ids.add(call_id)
+            tool_call = tool_call.model_copy(update={"id": call_id})
         ensured.append(tool_call)
     return ToolCalls(tool_calls=ensured)
 
