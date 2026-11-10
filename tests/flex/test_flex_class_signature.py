@@ -170,3 +170,38 @@ def test_flex_baseline_keeps_string_signature_without_field_metadata():
     flex = dspy.Flex(Answer, interpreter_factory=dspy.LocalInterpreter)
     assert "dspy.Predict(dspy.Signature('question: str -> answer: int', 'Answer the question.'))" in flex.module_src
     assert "class Answer(dspy.Signature)" not in flex.module_src
+
+
+@pytest.mark.parametrize("factory", INTERPRETERS)
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.XMLAdapter, dspy.JSONAdapter])
+@pytest.mark.parametrize("provided", [False, True])
+def test_loaded_sandbox_signature_preserves_output_defaults(factory, adapter_type, provided):
+    source = """
+class Defaults(dspy.Signature):
+    question: str = dspy.InputField()
+    answer: str = dspy.OutputField()
+    note: str | None = dspy.OutputField(default="not provided")
+    label: str = dspy.OutputField(default="unclassified")
+    count: int = dspy.OutputField(default=0)
+    enabled: bool = dspy.OutputField(default=False)
+    tags: list[str] = dspy.OutputField(default=[])
+    pair: tuple[str, int] = dspy.OutputField(default=("fallback", 7))
+
+class DefaultModule(dspy.Module):
+    def forward(self, question):
+        return dspy.Prediction(result=dict(dspy.Predict(Defaults)(question=question)))
+"""
+    defaults = {"note": "not provided", "label": "unclassified", "count": 0, "enabled": False, "tags": [], "pair": ("fallback", 7)}
+    supplied = {"note": "observed", "label": "classified", "count": 13, "enabled": True, "tags": ["seen"], "pair": ("chosen", 19)}
+    response = {"answer": "ok", **(supplied if provided else {})}
+    adapter = adapter_type() if adapter_type is dspy.JSONAdapter else adapter_type(use_json_adapter_fallback=False)
+    flex = dspy.Flex("question -> result: dict", interpreter_factory=factory)
+    flex.load_state({"module_src": source})
+    with dspy.context(lm=DummyLM([response]), adapter=adapter, trace=[]):
+        result = flex(question="a response with optional fields")
+        [(predictor, _, _)] = dspy.settings.trace
+
+    assert result.result == {"answer": "ok", **(supplied if provided else defaults)}
+    # The traced predictor must retain the same defaults when used again on the host.
+    with dspy.context(lm=DummyLM([{"answer": "again"}]), adapter=adapter):
+        assert dict(predictor(question="another response")) == {"answer": "again", **defaults}
