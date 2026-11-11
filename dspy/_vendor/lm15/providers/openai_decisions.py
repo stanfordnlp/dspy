@@ -4,10 +4,10 @@ Wire contract: https://developers.openai.com/api/docs/guides/decisions
 The Responses codec supplies conversation input; decisions have their own
 questions, answers, capabilities, and endpoint. No SDK dependency is needed.
 """
+
 from __future__ import annotations
 
 import json
-import math
 from dataclasses import dataclass, field, fields
 from typing import Any, ClassVar
 
@@ -74,11 +74,18 @@ class OpenAIDecisionsLM(OpenAILM):
                     for key in judgment.keys
                 ]
             else:
-                criteria = criteria if criteria is not None else [judgment.descriptions.get(k) or k for k in judgment.keys]
-                if not isinstance(criteria, list) or len(criteria) != len(judgment.keys) or not 2 <= len(criteria) <= 10:
+                criteria = (
+                    criteria if criteria is not None else [judgment.descriptions.get(k) or k for k in judgment.keys]
+                )
+                if (
+                    not isinstance(criteria, list)
+                    or len(criteria) != len(judgment.keys)
+                    or not 2 <= len(criteria) <= 10
+                ):
                     raise self._refuse("questions", "score criteria must preserve the declared 2–10 levels")
-                question["levels"] = [{"label": key, "description": _text(desc)}
-                                      for key, desc in zip(judgment.keys, criteria)]
+                question["levels"] = [
+                    {"label": key, "description": _text(desc)} for key, desc in zip(judgment.keys, criteria)
+                ]
             questions.append(question)
         return questions
 
@@ -90,9 +97,10 @@ class OpenAIDecisionsLM(OpenAILM):
         cfg = request.config
         defaults = Config()
         for item in fields(cfg):
-            if item.name not in {"response_format", "extensions", "probabilities", "user_id"}:
-                if getattr(cfg, item.name) != getattr(defaults, item.name):
-                    raise self._refuse(f"config.{item.name}", f"{item.name} is not supported")
+            if item.name not in {"response_format", "extensions", "probabilities", "user_id"} and getattr(
+                cfg, item.name
+            ) != getattr(defaults, item.name):
+                raise self._refuse(f"config.{item.name}", f"{item.name} is not supported")
         extensions = cfg.extensions or {}
         extra = extensions.keys() - {"questions", "prompt_cache_key", "prompt_cache_options", "safety_identifier"}
         if extra:
@@ -101,7 +109,13 @@ class OpenAIDecisionsLM(OpenAILM):
         # Responses codec silently drop or send unsupported media.
         for message in request.messages:
             for part in message.parts:
-                allowed = (TextPart, DataPart, ImagePart) if message.role == "user" else (TextPart, RefusalPart)
+                allowed = (
+                    (TextPart, DataPart, ImagePart)
+                    if message.role == "user"
+                    else (TextPart, RefusalPart)
+                    if message.role == "assistant"
+                    else (TextPart,)
+                )
                 if not isinstance(part, allowed) or message.role == "tool":
                     raise self._refuse("messages", "use text/JSON/images in user messages and text in other roles")
         inputs = self._build_input(request.messages, self._compat(request))
@@ -116,9 +130,14 @@ class OpenAIDecisionsLM(OpenAILM):
 
     def build_request(self, request: Request, stream: bool):
         request = self._wire_request(request)
-        return self._emit(method="POST", url=f"{self.base_url.rstrip('/')}/decisions",
-                          endpoint="decisions", model=request.model,
-                          headers=self._headers(), payload=self._payload(request, stream))
+        return self._emit(
+            method="POST",
+            url=f"{self.base_url.rstrip('/')}/decisions",
+            endpoint="decisions",
+            model=request.model,
+            headers=self._headers(),
+            payload=self._payload(request, stream),
+        )
 
     def parse_response(self, request: Request, response: HttpResponse) -> Response:
         request = self._wire_request(request)
@@ -126,8 +145,12 @@ class OpenAIDecisionsLM(OpenAILM):
         questions = self._questions(request)
 
         def invalid(detail):
-            return ProviderError(f"Malformed OpenAI Decisions reply: {detail}", provider=self.provider,
-                                 status=response.status, request_id=response.header("x-request-id"))
+            return ProviderError(
+                f"Malformed OpenAI Decisions reply: {detail}",
+                provider=self.provider,
+                status=response.status,
+                request_id=response.header("x-request-id"),
+            )
 
         def probability(value):
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1:
@@ -156,7 +179,9 @@ class OpenAIDecisionsLM(OpenAILM):
                 evidence[name] = {"noul": p}
                 continue
             raw = answer.get("probabilities")
-            expected = [x["value"] for x in question["choices"]] if kind == "choice" else list(range(len(question["levels"])))
+            expected = (
+                [x["value"] for x in question["choices"]] if kind == "choice" else list(range(len(question["levels"])))
+            )
             if not isinstance(raw, list) or len(raw) != len(expected):
                 raise invalid(f"incomplete distribution for {name!r}")
             probs = {}
@@ -176,20 +201,32 @@ class OpenAIDecisionsLM(OpenAILM):
                     raise invalid(f"invalid selected choice for {name!r}")
             else:
                 score = answer.get("score")
-                if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score):
+                if (
+                    isinstance(score, bool)
+                    or not isinstance(score, (int, float))
+                    or not 0 <= score <= len(expected) - 1
+                ):
                     raise invalid(f"invalid score for {name!r}")
                 value = int(max(probs, key=probs.get))
             values[name], distributions[name] = value, probs
             evidence[name] = {"probabilities": probs, "confidence": confidence}
         try:
-            parts = [DataPart(value=values, probabilities=distributions or None,
-                              method="provider_classification" if distributions else None)]
+            parts = [
+                DataPart(
+                    value=values,
+                    probabilities=distributions or None,
+                    method="provider_classification" if distributions else None,
+                )
+            ]
             if refusals:
                 parts.append(RefusalPart(text="Decisions refused: " + ", ".join(refusals)))
-            return Response(id=response.header("x-request-id"), model=data.get("model", request.model),
-                            message=Message(role="assistant", parts=tuple(parts)),
-                            finish_reason="content_filter" if refusals else "stop",
-                            usage=usage_from_responses(data.get("usage")),
-                            provider_data={self.provider: data, "decisions": {"answers": evidence, "refusals": refusals}})
+            return Response(
+                id=response.header("x-request-id"),
+                model=data.get("model", request.model),
+                message=Message(role="assistant", parts=tuple(parts)),
+                finish_reason="content_filter" if refusals else "stop",
+                usage=usage_from_responses(data.get("usage")),
+                provider_data={self.provider: data, "decisions": {"answers": evidence, "refusals": refusals}},
+            )
         except (TypeError, ValueError, OverflowError) as error:
             raise invalid(str(error)) from error
