@@ -1439,7 +1439,7 @@ class OpenAIChatLM(BaseProviderLM):
         return "auto"
 
     def _stop_in_text(self, request: Request) -> str:
-        return self._compat_for(request.model).stop_in_text
+        return self._compat_for(self._wire_request(request).model).stop_in_text
 
     def _compat_for(self, model: str) -> ResolvedOpenAIChatCompat:
         """The resolved compat for this model: the preset's per-family
