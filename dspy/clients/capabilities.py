@@ -219,8 +219,10 @@ def _capabilities(lm, options=None):
                        "presence_penalty", "frequency_penalty", "logit_bias", "user"})
         if schema or tools:
             params.add("response_format")
-        if compat.json_schema == "reject":
+        if compat.json_schema in {"reject", "none"}:
             schema = False
+        if compat.json_schema == "none":
+            params.discard("response_format")
         if compat.thinking_format == "none":
             reasoning = False
         if route.provider == "xai":
