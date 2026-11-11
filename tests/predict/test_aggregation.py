@@ -75,3 +75,17 @@ def test_majority_with_unhashable_values():
     completions_mixed = [{"answer": 1}, {"answer": 1}, {"answer": [2]}, {"answer": [2]}]
     result_mixed = majority(completions_mixed, normalize=None)
     assert result_mixed.completions[0]["answer"] == 1
+
+
+def test_majority_with_numpy_arrays():
+    import numpy as np
+
+    completions = [
+        {"answer": np.array([1, 2])},
+        {"answer": np.array([3, 4])},
+        {"answer": np.array([1, 2])},
+    ]
+
+    result = majority(completions, normalize=None)
+
+    np.testing.assert_array_equal(result.completions[0]["answer"], np.array([1, 2]))

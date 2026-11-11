@@ -2,6 +2,22 @@ from dspy.evaluate import normalize_text
 from dspy.primitives.prediction import Completions, Prediction
 
 
+def _values_equal(left, right):
+    """Compare vote values, including array-like equality results."""
+    left_shape = getattr(left, "shape", None)
+    right_shape = getattr(right, "shape", None)
+    if left_shape is not None and right_shape is not None and left_shape != right_shape:
+        return False
+
+    try:
+        equal = left == right
+        if not isinstance(equal, bool) and hasattr(equal, "all"):
+            equal = equal.all()
+        return bool(equal)
+    except (TypeError, ValueError):
+        return False
+
+
 def default_normalize(s):
     # Text normalization only applies to strings; vote on other values (ints, bools, enums) as-is.
     if not isinstance(s, str):
@@ -58,7 +74,7 @@ def majority(prediction_or_completions, normalize=default_normalize, field=None)
         counts = []
         for value in normalized_values_ or normalized_values:
             for i, counted in enumerate(counted_values):
-                if counted == value:
+                if _values_equal(counted, value):
                     counts[i] += 1
                     break
             else:
@@ -68,7 +84,7 @@ def majority(prediction_or_completions, normalize=default_normalize, field=None)
 
     # Return the first completion with the majority value in the field
     for completion in completions:
-        if normalize(completion[field]) == majority_value:
+        if _values_equal(normalize(completion[field]), majority_value):
             break
 
     # if input_type == Prediction:
