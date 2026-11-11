@@ -1,3 +1,5 @@
+import pytest
+
 import dspy
 from dspy import Example
 from dspy.teleprompt.signature_opt import COPRO
@@ -85,6 +87,33 @@ def test_compile_without_eval_kwargs():
     optimized_student = optimizer.compile(student, trainset=trainset)
 
     assert optimized_student is not student, "Optimization did not modify the student"
+
+
+@pytest.mark.parametrize(
+    "extra_eval_kwargs",
+    [{"max_errors": 5}, {"provide_traceback": True}, {"failure_score": 0.0}],
+)
+def test_compile_accepts_evaluate_constructor_kwargs(extra_eval_kwargs):
+    # Options accepted only by Evaluate.__init__ must not be re-sent to Evaluate.__call__.
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
+    dspy.configure(
+        lm=DummyLM(
+            [
+                {
+                    "proposed_instruction": "Optimized instruction 1",
+                    "proposed_prefix_for_output_field": "Optimized instruction 2",
+                },
+            ]
+        )
+    )
+
+    optimized_student = optimizer.compile(
+        SimpleModule("input -> output"),
+        trainset=trainset,
+        eval_kwargs={"num_threads": 1, "display_progress": False, **extra_eval_kwargs},
+    )
+
+    assert optimized_student.candidate_programs
 
 
 def test_signature_optimizer_statistics_tracking():
