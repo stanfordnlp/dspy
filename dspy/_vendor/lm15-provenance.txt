@@ -1,4 +1,4 @@
-source=/home/anandpant/Development/shpitdev/lm15-python
+source=https://github.com/anandpant/lm15-python.git
 version=2.2.0
 commit=339e49f1c1e0454cd281c7ad0c023a05f3496ba0
 contract=9d8e1cecd30387e04b129f168ab156c04adf9745
