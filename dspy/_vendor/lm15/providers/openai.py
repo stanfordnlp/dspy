@@ -222,7 +222,9 @@ def _cache_breakpoint_index(request: Request, cache_control: str) -> int | None:
     # implicit caching still applies.
     for index in range(asked, -1, -1):
         msg = request.messages[index]
-        if msg.role in ("assistant", "tool") or not msg.parts or not isinstance(msg.parts[-1], TextPart):
+        # MAP-24 removes empty text blocks before the mark is written.
+        last = next((part for part in reversed(msg.parts) if not isinstance(part, TextPart) or part.text), None)
+        if msg.role in ("assistant", "tool") or not isinstance(last, TextPart):
             continue
         if index != asked:
             adapt("config.cache.prefix_until_index", "substituted",
