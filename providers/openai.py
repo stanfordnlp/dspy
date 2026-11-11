@@ -26,6 +26,7 @@ from ..errors import (
     UnsupportedFeatureError,
     UnsupportedModelError,
     is_pinned_auth_failure,
+    detail_message,
     is_pinned_model_not_found,
     canonical_error_code,
     map_http_error,
@@ -99,6 +100,7 @@ from ..types import (
     TextDelta,
     TextPart,
     ThinkingDelta,
+    DataPart,
     ThinkingPart,
     ToolCallDelta,
     ToolCallPart,
@@ -126,6 +128,8 @@ from .common import (
     openai_file_readiness,
     openai_token_logprobs,
     parse_json_object,
+    data_part_text,
+    is_empty_text_block,
     part_to_openai_input,
     path_id,
     tool_description,
@@ -836,6 +840,10 @@ class OpenAILM(BaseProviderLM):
             data = json.loads(body)
             err = data.get("error", {}) if isinstance(data, dict) else {}
             msg = err.get("message", "") if isinstance(err, dict) else str(err)
+            if not msg:
+                # MAP-21: FastAPI servers (Tinker) answer {"detail": ...}
+                # with no envelope; the detail is the message.
+                msg = detail_message(data) or ""
             code = str(err.get("code") or "") if isinstance(err, dict) else ""
             err_type = str(err.get("type") or "") if isinstance(err, dict) else ""
 
@@ -958,7 +966,14 @@ class OpenAILM(BaseProviderLM):
                 content_parts = []
                 for part in msg.parts:
                     if isinstance(part, TextPart):
-                        content_parts.append({"type": "output_text", "text": part.text})
+                        if part.text:  # MAP-24: an empty text block is never written
+                            content_parts.append({"type": "output_text", "text": part.text})
+                    elif isinstance(part, DataPart):
+                        # An assistant data part (a judged answer kept in the
+                        # history) is its compact JSON on a text slot, as on
+                        # every wire (changes/2026-09-19-jev-state.md D3). It
+                        # was dropped here until 2026-11-11.
+                        content_parts.append({"type": "output_text", "text": data_part_text(part)})
                     elif isinstance(part, RefusalPart):
                         content_parts.append({"type": "refusal", "refusal": part.text})
                     elif isinstance(part, ThinkingPart):
@@ -974,14 +989,20 @@ class OpenAILM(BaseProviderLM):
                             item["summary"] = [{"type": "summary_text", "text": part.text}] if part.text else []
                             items.append(item)
                         elif part.text:
-                            # No native state: replay as assistant text
-                            # (decision G, 2026-09-01) rather than drop it.
+                            # No state this dialect consumes (none, or another
+                            # dialect's: MAP-7 rule 8): replay as assistant
+                            # text (decision G, 2026-09-01); with no text
+                            # there is nothing to write (MAP-24).
                             content_parts.append({"type": "output_text", "text": part.text})
             else:
                 content_parts = [
-                    part_to_openai_input(part, provider=self.provider)
-                    for part in msg.parts
-                    if not isinstance(part, (ToolCallPart, ToolResultPart))
+                    block
+                    for block in (
+                        part_to_openai_input(part, provider=self.provider)
+                        for part in msg.parts
+                        if not isinstance(part, (ToolCallPart, ToolResultPart))
+                    )
+                    if not is_empty_text_block(block)  # MAP-24
                 ]
             if msg_index == breakpoint_index:
                 # CacheConfig.prefix_until_index -> an explicit prompt-cache
@@ -1068,8 +1089,8 @@ class OpenAILM(BaseProviderLM):
             ),
             "stream": stream,
         }
-        if request.system:
-            system_text = request.system if isinstance(request.system, str) else parts_to_text(request.system)
+        system_text = (request.system if isinstance(request.system, str) else parts_to_text(request.system)) if request.system else ""
+        if system_text:  # MAP-24: a system prompt with no characters writes nothing
             if _cache_stable_prefix(request, compat.cache_control):
                 # Top-level `instructions` cannot carry a breakpoint
                 # (prompt-caching guide: "place them in an input_text block

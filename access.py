@@ -330,6 +330,16 @@ PARASAIL = AccessPolicy(
     base_url=OPENAI_CHAT_PRESET_BASE_URLS["parasail"],
 )
 
+# Tinker (Thinking Machines): inference on base models and on the user's own
+# checkpoints (tinker://...) through two compatible doors, one key.
+TINKER = AccessPolicy(
+    provider="tinker",
+    supports=EndpointSupport(complete=True, stream=True, models=True),
+    auth_modes=("bearer",),
+    env_keys=("TINKER_API_KEY",),
+    base_url=OPENAI_CHAT_PRESET_BASE_URLS["tinker"],
+)
+
 # Moonshot's Responses wire (responses--create.md): the same key and root,
 # kimi-k3 only, stateless (no store, no previous_response_id); reasoning
 # returns as summary text and is replayed as-is.  `models` is the same
@@ -395,6 +405,15 @@ MOONSHOTAI_ANTHROPIC = AccessPolicy(
     env_keys=MOONSHOTAI_ENV_KEYS,
     auth_scheme=("bearer",),
     base_url=ANTHROPIC_PRESET_BASE_URLS["moonshotai"],
+)
+
+TINKER_ANTHROPIC = AccessPolicy(
+    provider="tinker-anthropic",
+    supports=EndpointSupport(complete=True, stream=True),
+    auth_modes=("x-api-key",),
+    env_keys=("TINKER_API_KEY",),
+    auth_scheme=("x-api-key",),
+    base_url=ANTHROPIC_PRESET_BASE_URLS["tinker"],
 )
 
 # ─── Cloud hosts (spec/auth.md AUTH-10 host policies; changes/2026-09-03-cloud-hosts.md) ───

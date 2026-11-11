@@ -1100,6 +1100,27 @@ def _cut_events(cutter: _StopCutter, event: StreamEvent):
         yield from cutter.feed(event)
 
 
+class StopCuttingReader:
+    """MAP-22: the stream reader of a server that stops at a stop sequence
+    and returns it in the text.  Text is cut at the first sequence, as for a
+    client-side stop; text after the cut is dropped; every other event
+    (usage, the end) passes, because the server has already stopped."""
+
+    __slots__ = ("_inner", "_cutter")
+
+    def __init__(self, inner: object, stop: tuple[str, ...]) -> None:
+        self._inner = inner
+        self._cutter = _StopCutter(stop)
+
+    def feed(self, raw_event: object) -> Iterator[StreamEvent]:
+        for event in self._inner.feed(raw_event):  # type: ignore[attr-defined]
+            if self._cutter.cut:
+                if not (event.type == "delta" and isinstance(event.delta, TextDelta)):
+                    yield event
+                continue
+            yield from _cut_events(self._cutter, event)
+
+
 def truncate_stream_at_stop(events: Iterator[StreamEvent], stop: tuple[str, ...]) -> Iterator[StreamEvent]:
     cutter = _StopCutter(stop)
     if not cutter.stop:

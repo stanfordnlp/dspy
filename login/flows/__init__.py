@@ -43,7 +43,7 @@ _SERVICE_LABELS = {
     "deepseek-anthropic": "DeepSeek", "groq": "Groq", "openrouter": "OpenRouter", "xai": "xAI",
     "zai": "Z.AI", "typesafe": "TypeSafe", "ollama": "Local", "vllm": "Local", "sglang": "Local",
     "github-copilot": "GitHub", "deepinfra": "DeepInfra", "together": "Together AI", "fireworks": "Fireworks AI",
-    "parasail": "Parasail",
+    "parasail": "Parasail", "tinker": "Thinking Machines", "tinker-anthropic": "Thinking Machines",
 }
 
 
