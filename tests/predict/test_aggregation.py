@@ -89,3 +89,16 @@ def test_majority_with_numpy_arrays():
     result = majority(completions, normalize=None)
 
     np.testing.assert_array_equal(result.completions[0]["answer"], np.array([1, 2]))
+
+
+def test_majority_with_none_and_empty_numpy_array():
+    import numpy as np
+
+    completions = [
+        {"answer": None},
+        {"answer": np.array([])},
+    ]
+
+    result = majority(completions, normalize=None)
+    np.testing.assert_array_equal(result.completions[0]["answer"], np.array([]))
+

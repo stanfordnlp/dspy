@@ -4,6 +4,9 @@ from dspy.primitives.prediction import Completions, Prediction
 
 def _values_equal(left, right):
     """Compare vote values, including array-like equality results."""
+    if left is None or right is None:
+        return left is right
+
     left_shape = getattr(left, "shape", None)
     right_shape = getattr(right, "shape", None)
     if left_shape is not None and right_shape is not None and left_shape != right_shape:
