@@ -157,7 +157,7 @@ class LM(BaseLM):
     def __init__(
         self,
         model: str,
-        model_type: Literal["chat", "text", "responses"] = "chat",
+        model_type: Literal["auto", "chat", "text", "responses"] = "auto",
         temperature: float | None = None,
         max_tokens: int | None = None,
         cache: bool = True,
@@ -179,8 +179,10 @@ class LM(BaseLM):
             model: The model to use. This should be a string of the form
                 `"provider/model"` supported by lm15, a registered provider, or optional LiteLLM. For example,
                 `"openai/gpt-4o"`.
-            model_type: The type of the model, such as `"chat"`, `"text"`, or
-                `"responses"`.
+            model_type: 'auto' (default) uses lm15's native provider API family, independently of engine
+                selection. OpenAI and Azure use Responses; other providers keep their native dialect.
+                'chat', 'responses', and 'text' retain explicit API selection. Unresolved compatibility
+                routes use Chat Completions. Custom engines own their protocol.
             temperature: The sampling temperature to use when generating responses.
             max_tokens: The maximum number of tokens to generate per response.
             cache: Whether to cache the model responses for reuse to improve performance
@@ -313,6 +315,12 @@ class LM(BaseLM):
         from dspy.clients.capabilities import capabilities
 
         return set(capabilities(self).params)
+
+    @property
+    def supported_tool_result_media(self) -> set[str]:
+        from dspy.clients.capabilities import capabilities
+
+        return set(capabilities(self).tool_result_media)
 
     def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
         if not self._warned_zero_temp_rollout and rollout_id is not None and temperature == 0:

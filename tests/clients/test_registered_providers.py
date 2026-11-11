@@ -49,7 +49,11 @@ def server():
                    "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
             if self.path == "/v1/responses":
                 out = {"id": "x", "object": "response", "model": body["model"], "status": "completed",
-                       "output": [{"type": "message", "role": "assistant", "content": [
+                       "created_at": 0, "error": None, "incomplete_details": None, "instructions": None, "metadata": {},
+                       "parallel_tool_calls": True, "temperature": 0.3, "tool_choice": "auto", "tools": [], "top_p": 1,
+                       "max_output_tokens": 37, "previous_response_id": None, "reasoning": None,
+                       "text": {"format": {"type": "text"}}, "truncation": "disabled", "user": None,
+                       "output": [{"id": "msg", "status": "completed", "type": "message", "role": "assistant", "content": [
                            {"type": "output_text", "text": "Paris", "annotations": []}]}],
                        "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}}
             elif self.path == "/v1/messages":
@@ -194,10 +198,14 @@ def test_replacing_a_registration_never_splits_an_lm(server):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("preset", [False, True])
-@pytest.mark.parametrize("dialect", ["chat", "responses", "anthropic"])
-async def test_built_requests_reach_each_registered_dialect(server, dialect, preset, asynchronous):
+@pytest.mark.parametrize("dialect,engine", [
+    ("chat", "lm15"), ("responses", "lm15"), ("anthropic", "lm15"), ("responses", "litellm"),
+])
+async def test_built_requests_reach_each_registered_dialect(server, dialect, preset, asynchronous, engine):
     from dspy.clients.requests import build_request
 
+    if engine == "litellm":
+        pytest.importorskip("litellm")
     base, seen = server
     compat = {"chat": OpenAIChatCompat(max_tokens_field="max_tokens"),
               "responses": OpenAIResponsesCompat(), "anthropic": AnthropicCompat()}[dialect]
@@ -212,7 +220,8 @@ async def test_built_requests_reach_each_registered_dialect(server, dialect, pre
     access = AccessPolicy(provider="private-dialect", base_url=declared_base,
                           auth_modes=(auth,), auth_scheme=(auth,))
     register_provider(getattr(ProviderDefinition, dialect)(access, compat=compat))
-    lm = dspy.LM("private-dialect/private-model", api_key="lm-key", api_base=base, cache=False, num_retries=0)
+    lm = dspy.LM("private-dialect/private-model", engine=engine, api_key="lm-key", api_base=base,
+                 cache=False, num_retries=0)
     try:
         request = build_request(lm, "capital of France?", {"max_tokens": 37, "temperature": 0.3})
         response = await lm.acall(request) if asynchronous else lm(request)
@@ -227,6 +236,23 @@ async def test_built_requests_reach_each_registered_dialect(server, dialect, pre
         assert sent["body"][token_key] == 37
     finally:
         await lm.aclose() if asynchronous else lm.close()
+
+
+def test_auto_cache_separates_registered_api_families(server):
+    base, seen = server
+    chat = _definition(base)
+    register_provider(chat)
+    original = dspy.LM("private-fireworks/model", api_key="fake")
+    assert original("same prompt") == ["Paris"]
+    register_provider(ProviderDefinition.responses(chat.access, compat=OpenAIResponsesCompat()), replace=True)
+    fresh = dspy.LM("private-fireworks/model", api_key="fake")
+    try:
+        assert fresh("same prompt") == ["Paris"]
+        assert original("same prompt") == ["Paris"]
+        assert [request["path"] for request in seen] == ["/v1/chat/completions", "/v1/responses"]
+    finally:
+        original.close()
+        fresh.close()
 
 
 @pytest.mark.parametrize("prefix", ["private-fireworks", "private_fireworks_ai", "private-fireworks-ai"])

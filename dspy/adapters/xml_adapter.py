@@ -3,7 +3,7 @@ import types
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from functools import lru_cache
-from typing import Any, Union, get_args, get_origin
+from typing import Any, Literal, Union, get_args, get_origin
 from xml.sax.saxutils import quoteattr
 
 import pydantic
@@ -15,6 +15,7 @@ from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import (
     apply_output_field_defaults,
     format_field_value,
+    format_tool_calls,
     parse_value,
     serialize_for_json,
     translate_field_type,
@@ -38,6 +39,7 @@ class XMLAdapter(ChatAdapter):
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         output = []
         for field, value in fields_with_values.items():
+            value = format_tool_calls(field.info, value)
             serialized = serialize_for_json(value)
             is_output = (field.info.json_schema_extra or {}).get("__dspy_field_type") == "output"
             nested = isinstance(serialized, (dict, list)) and self._uses_nested_xml(field.info.annotation)
@@ -122,7 +124,10 @@ class XMLAdapter(ChatAdapter):
             elif isinstance(node, list):
                 nodes.extend(node)
         if nullable:
-            text += " Use <field/> for null and <field></field> for an empty string."
+            text += (
+                " For null, self-close the field's own tag."
+                " For an empty string, use an opening and closing tag with no content."
+            )
         if mapping:
             text += ' Dictionary keys: <entry key="...">; escape key attributes only.'
         return self.format_field_structure(signature) + "\n\n" + text
@@ -192,7 +197,8 @@ class XMLAdapter(ChatAdapter):
         for choice in choices:
             if choice.get("type") == "array":
                 names.add("item")
-                siblings.extend(cls._schemas(choice.get("items", {}), definitions))
+                for item in choice.get("prefixItems", [choice.get("items", {})]):
+                    siblings.extend(cls._schemas(item, definitions))
             else:
                 siblings.append(choice)
         for sibling in siblings:
@@ -210,14 +216,15 @@ class XMLAdapter(ChatAdapter):
         return rf"(?:{opening}|{enclosing})"
 
     @classmethod
-    def _schemas(cls, schema: dict, definitions: dict, child: str | None = None) -> list[dict]:
+    def _schemas(cls, schema: dict, definitions: dict, child: str | None = None, index: int = 0) -> list[dict]:
         schema = definitions.get(schema.get("$ref", "").rsplit("/", 1)[-1], schema)
         if choices := schema.get("anyOf", schema.get("oneOf")):
-            return [s for branch in choices for s in cls._schemas(branch, definitions, child)]
+            return [s for branch in choices for s in cls._schemas(branch, definitions, child, index)]
         if child is None:
             return [schema]
         if schema.get("type") == "array":
-            item = schema.get("items", {})
+            prefix = schema.get("prefixItems", [])
+            item = prefix[index] if child == "item" and index < len(prefix) else schema.get("items", {})
             return [item] if child == "item" else cls._schemas(item, definitions, child)
         if schema.get("type") not in ("object", None):
             return []
@@ -258,8 +265,12 @@ class XMLAdapter(ChatAdapter):
                 return "..." if name in seen else example(schema["$defs"][name], seen | {name})
             if choices := node.get("anyOf", node.get("oneOf")):
                 return example(next(s for s in choices if s.get("type") != "null"), seen)
+            if "const" in node:
+                return node["const"]
+            if "enum" in node:
+                return "one of: " + "; ".join(str(value) for value in node["enum"])
             if node.get("type") == "array":
-                return [example(node.get("items", {}), seen)]
+                return [example(item, seen) for item in node.get("prefixItems", [node.get("items", {})])]
             if not node.get("properties") and isinstance(node.get("additionalProperties"), dict):
                 return {"example key": example(node["additionalProperties"], seen)}
             return {name: example(child, seen) for name, child in node.get("properties", {}).items()} or "..."
@@ -269,6 +280,7 @@ class XMLAdapter(ChatAdapter):
     @classmethod
     def _elements_to_value(cls, elements: list[ET.Element], schema: dict, definitions: dict) -> Any:
         schema = definitions.get(schema.get("$ref", "").rsplit("/", 1)[-1], schema)
+        coerce_literal = True
         if (
             len(elements) == 1
             and (schema.get("type") == "null" or {"type": "null"} in schema.get("anyOf", []))
@@ -282,6 +294,7 @@ class XMLAdapter(ChatAdapter):
             if len(tags) == 1 and (ref := discriminator.get("mapping", {}).get((tags[0].text or "").strip())):
                 return cls._elements_to_value(elements, {"$ref": ref}, definitions)
             choices = [choice for choice in choices if choice.get("type") != "null"]
+            coerce_literal = len(choices) == 1  # Leave multi-branch scalar unions to annotation validation.
             schema = choices[0]
             if list(elements[0]):
                 schema = next((choice for choice in choices if choice.get("type") != "string"), schema)
@@ -294,7 +307,11 @@ class XMLAdapter(ChatAdapter):
                     return [] if not text else text
             if len(elements) == 1 and (items := cls._group_children(elements[0]).get("item")):
                 elements = items
-            return [cls._elements_to_value([element], schema.get("items", {}), definitions) for element in elements]
+            prefix = schema.get("prefixItems", [])
+            return [
+                cls._elements_to_value([element], prefix[i] if i < len(prefix) else schema.get("items", {}), definitions)
+                for i, element in enumerate(elements)
+            ]
         element = elements[0]
         if schema.get("type") not in ("object", None) and list(element):
             raise ValueError("Scalar values cannot contain child fields")
@@ -303,6 +320,12 @@ class XMLAdapter(ChatAdapter):
             if schema.get("type") == "object" and not (element.text or "").strip():
                 return {}
             values = [element.text or "" for element in elements]
+            if coerce_literal and ("enum" in schema or "const" in schema):
+                annotation = Literal[tuple(schema["enum"] if "enum" in schema else [schema["const"]])]
+                try:
+                    values = [parse_value(value, annotation) for value in values]
+                except ValueError:
+                    pass  # Enum member names need the original annotation during field validation.
             return values[0] if len(values) == 1 else values
         properties = schema.get("properties", {})
         child_schema = schema.get("additionalProperties", {})
@@ -404,7 +427,7 @@ class _XMLParser:
             name = opening[1]
             element = ET.fromstring(opening[0] if opening[2] else opening[0] + f"</{name}>")
             key = element.get("key", name) if name == "entry" else name
-            children = XMLAdapter._schemas(schema, definitions, key)
+            children = XMLAdapter._schemas(schema, definitions, key, len(parent))
             if not children:
                 raise ET.ParseError(f"Unexpected field {key}")
             parent.append(element)

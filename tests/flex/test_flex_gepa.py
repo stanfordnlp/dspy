@@ -63,7 +63,7 @@ def test_flex_baseline_is_predict_and_lm_free() -> None:
     program = dspy.Flex(Echo)
     assert "dspy.Predict(" in program.module_src
     assert "q: str -> a: str" in program.module_src  # typed signature string
-    assert "result.a" in program.module_src  # unwraps the declared output
+    assert "result['a']" in program.module_src  # unwraps the declared output by key, not a Prediction method
     assert "class EchoModule(dspy.Module)" in program.module_src
 
 
@@ -598,6 +598,43 @@ def test_result_to_dict_keeps_flex_code_components() -> None:
     # The Flex's internal predictors are not components; reporting them would misstate what was
     # optimized and silently stand in for the dropped code.
     assert not any(k.startswith("flex.") for k in candidate)
+
+
+@pytest.mark.deno
+@deno_required
+def test_gepa_optimized_flex_evaluates_after_save_load(tmp_path) -> None:
+    source = textwrap.dedent("""
+        class EchoModule(dspy.Module):
+            def forward(self, q):
+                return dspy.Prediction(a=q)
+    """).strip()
+    student = dspy.Flex(Echo)
+    original_source = student.module_src
+    trainset = [dspy.Example(q="left", a="left").with_inputs("q")]
+    valset = [dspy.Example(q="right", a="right").with_inputs("q")]
+    reflection_lm = DummyLM([{"revised_source": source}])
+
+    with dspy.context(lm=DummyLM([{"a": "wrong"}] * 10)):
+        evaluator = dspy.Evaluate(devset=valset, metric=_metric, num_threads=1, display_progress=False)
+        assert evaluator(student).score == 0.0
+        optimized = dspy.GEPA(
+            metric=_metric, reflection_lm=reflection_lm, max_metric_calls=4,
+            reflection_minibatch_size=1, num_threads=1,
+        ).compile(student, trainset=trainset, valset=valset)
+        assert optimized.module_src == source
+        assert student.module_src == original_source
+        assert evaluator(optimized).score == 100.0
+
+        state_path = tmp_path / "optimized.json"
+        optimized.save(state_path)
+        restored = dspy.Flex(Echo)
+        restored.load(state_path)
+        assert evaluator(restored).score == 100.0
+
+        program_path = tmp_path / "optimized"
+        optimized.save(program_path, save_program=True)
+        restored_program = dspy.load(program_path, allow_pickle=True)
+        assert evaluator(restored_program).score == 100.0
 
 
 # --- GEPA.compile: a non-empty trainset is required ------------------------------------

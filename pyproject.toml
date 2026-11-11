@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="3.4.1"
+version="3.5.0"
 description = "The framework for programming—rather than prompting—language models."
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -35,7 +35,7 @@ dependencies = [
     "cachetools>=5.5.0",
     "cloudpickle>=3.1.2",
     # gepa declares requires-python <3.15.
-    "gepa==0.1.4; python_version < '3.15'",
+    "gepa>=0.1.4,<0.2.0; python_version < '3.15'",
 ]
 
 [project.optional-dependencies]
@@ -48,7 +48,9 @@ langchain = ["langchain_core>=0.3.0"]
 optuna = ["optuna>=3.4.0"]
 numpy = ["numpy>=1.26.0"]
 litellm = [
-    "litellm>=1.65.8",
+    # These releases eagerly import MCP 2-only gateway code for ordinary Responses and Chat tools.
+    # Exclude the affected releases instead of requiring MCP 2 or dropping older working LiteLLM versions.
+    "litellm>=1.65.8,!=1.106.0,!=1.106.1,!=1.106.2,!=1.106.3,!=1.106.4,!=1.106.5,!=1.106.6,!=1.106.7,!=1.108.0,!=1.108.1,!=1.108.2,!=1.108.3",
     "tenacity>=8.2.3",  # LiteLLM's retry helpers use this undeclared dependency.
 ]
 dev = [
@@ -65,7 +67,7 @@ dev = [
     "build>=1.0.3",
     "numpy>=1.26.0",
     "openai>=1.66.2",
-    "gepa==0.1.4",
+    "gepa>=0.1.4,<0.2.0",
 ]
 test_extras = [
     "mcp>=1.2.0; python_version >= '3.10'",  # FastMCP powers the offline test server.

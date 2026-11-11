@@ -6,7 +6,7 @@ This implements the approach described in ["Recursive Language Models" (Zhang, K
 
 ## Migrating from CodeAct or ProgramOfThought
 
-`dspy.CodeAct` and `dspy.ProgramOfThought` were deprecated in DSPy 3.4 and removed in DSPy 3.5, including their `dspy.predict` imports. Use `dspy.RLM` for code-executing programs. RLM remains experimental; it is a replacement, not a compatibility alias.
+`dspy.CodeAct` and `dspy.ProgramOfThought` were deprecated in DSPy 3.4 and removed in DSPy 3.5, including their `dspy.predict` imports. Use `dspy.RLM` for code-executing programs. It is a replacement, not a compatibility alias.
 
 Keep your task signature and named inputs, and replace the module constructor:
 
@@ -149,7 +149,7 @@ Inside the REPL, the LLM has access to:
 
 | Tool | Description |
 |------|-------------|
-| `llm_query(prompt)` | Query a sub-LLM for semantic analysis (~500K char capacity) |
+| `llm_query(prompt)` | Query a sub-LLM for semantic analysis (~500K char capacity). `prompt` may be a list of strings and DSPy values, such as images |
 | `llm_query_batched(prompts)` | Query multiple prompts concurrently (faster for batch operations) |
 | `print()` | Print output (required to see results) |
 | `SUBMIT(...)` | Submit final output and end execution |
@@ -257,6 +257,12 @@ that executes the generated code.
 
 For inputs that should be loaded into the sandbox differently from normal Python values, subclass `dspy.SandboxSerializable`. RLM detects these inputs, sends their serialized payload into the interpreter, runs their setup code, and exposes the reconstructed value under the original input name.
 
+The value crosses on the same path as every other value the interpreter's JSON can't carry (`dspy.Image` and other dspy types): it is rebuilt once per call, so changes the code makes to it persist across turns. The same holds for a `dspy.Flex` input, and for a provided tool's result. In RLM, a tool's result is rebuilt only when the tool's return annotation names its type (for example `-> DataFrame`); otherwise RLM reports an error rather than passing the value's string. Three limits:
+
+- Only host values are rebuilt. A `SandboxSerializable` defined by sandboxed code and passed to a host tool is refused: the host never runs code the sandbox wrote.
+- It is one-way. A value that comes back from the sandbox (via `SUBMIT` or a tool argument) is whatever the code returns, not a rebuilt `SandboxSerializable`.
+- It needs dspy inside the interpreter. An interpreter that can't load it (for example a restricted compiler, or a sandbox without its cached bundle offline) raises an error for these inputs.
+
 ```python
 class DataFrame(dspy.SandboxSerializable):
     def sandbox_setup(self) -> str:
@@ -273,6 +279,52 @@ class DataFrame(dspy.SandboxSerializable):
 ```
 
 `SandboxSerializable` also defines a Pydantic schema hook so subclasses can be used directly in DSPy signatures, for example `data: DataFrame = dspy.InputField()`. The hook is intentionally pass-through: Pydantic accepts the object as-is and serializes it with `str(value)` for schema/metadata purposes. RLM's real sandbox transport still comes from `to_sandbox()` and `sandbox_assignment()`.
+
+### Images and Other DSPy Types
+
+Values of DSPy types such as `dspy.Image` keep their type across the REPL boundary: in inputs, tool arguments and results, `SUBMIT`, `llm_query` prompt lists, and sub-agents built with `dspy` in the REPL. The REPL runs dspy itself, so a `dspy.Image` is a `dspy.Image` there, with its methods. Your own `dspy.Type` subclasses and models arrive as plain data of their fields, with their methods left on the host, as in `dspy.Flex`. A tool's result keeps its type when the tool's return annotation names it (`-> dspy.Image`).
+
+`dspy.Image.to_pil()` needs Pillow in the interpreter. `dspy.LocalInterpreter` uses your environment's. `PythonInterpreter`'s sandbox includes Pyodide's build of Pillow, whether or not your environment has Pillow. Its `sandbox_packages` choose the packages Pyodide ships that the REPL can import, by default `("pillow",)`:
+
+```python
+from functools import partial
+
+import dspy
+
+# numpy as well as Pillow
+rlm = dspy.RLM(
+    "photo: dspy.Image, question -> answer",
+    interpreter_factory=partial(
+        dspy.PythonInterpreter,
+        sandbox_packages=["pillow", "numpy"],
+    ),
+)
+# no packages, for a sandbox that starts slightly faster;
+# images still pass through, but to_pil() raises ImportError
+dspy.configure(
+    interpreter_factory=partial(
+        dspy.PythonInterpreter,
+        sandbox_packages=[],
+    ),
+)
+```
+
+```python
+def take_screenshot() -> dspy.Image:
+    ...
+
+rlm = dspy.RLM("photo: dspy.Image, question -> answer, crop: dspy.Image", tools=[take_screenshot])
+```
+
+The model can then write code such as:
+
+```python
+crop = dspy.Image(photo.to_pil().crop((600, 400, 900, 600)))
+label = llm_query(["Read the label in this crop.", crop])
+screen = take_screenshot()  # a dspy.Image
+answer = dspy.Predict("image: dspy.Image, question -> answer")(image=screen, question=question).answer
+SUBMIT(answer, crop)
+```
 
 ### Async Execution
 
@@ -308,9 +360,6 @@ RLM returns a `Prediction` with:
 - **`final_reasoning`**: The LLM's reasoning on the final step
 
 ## Notes
-
-!!! warning "Experimental"
-    RLM is marked as experimental. The API may change in future releases.
 
 !!! note "Thread Safety"
     Constructor and call-time factories may be called concurrently and must return a fresh interpreter each time. RLM retains that interpreter throughout one invocation and shuts it down afterward. `PythonInterpreter` must stay on the thread where it was first used.

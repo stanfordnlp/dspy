@@ -6,10 +6,11 @@ import pydantic
 import pytest
 
 import dspy
-from dspy.experimental import Citations, Document
+from dspy.experimental import Citations, Document, Score
 from dspy.lm15 import AudioPart, DocumentPart, ImagePart, TextPart
 from dspy.lm15 import Message as LMMessage
-from tests.adapters.conftest import format_messages_and_lm_kwargs, format_request
+from dspy.primitives.repl_types import REPLEntry
+from tests.adapters.conftest import format_messages_and_lm_kwargs, format_request, openai_view
 from tests.test_utils.engines import make_response
 
 
@@ -1024,7 +1025,7 @@ def test_chat_adapter_native_preserves_caller_tools_on_ordinary_signature():
 def test_chat_adapter_native_strips_tool_choice_when_lm_lacks_function_calling():
     """Regression test for #10397.
 
-    ReActV2's forced-submit path always sets `tool_choice` (to force a final
+    ReAct's forced-submit path always sets `tool_choice` (to force a final
     `submit` call), regardless of whether the LM is marked as supporting
     native function calling. When it isn't (e.g. a model missing from DSPy's
     capability catalog), the adapter never adds `tools` - so a `tool_choice`
@@ -1347,6 +1348,87 @@ def test_chat_adapter_native_tool_history_replays_parallel_tool_results():
         ("tool", "call_1", '{"items": ["cat"]}'),
         ("tool", "call_2", '{"items": ["dog"]}'),
     ]
+
+
+def _native_tool_history_request(supported_tool_result_media):
+    class FunctionCallingLM(dspy.utils.DummyLM):
+        @property
+        def supports_function_calling(self):
+            return True
+
+        @property
+        def supported_tool_result_media(self):
+            return supported_tool_result_media
+
+    def screenshot() -> dspy.Image:
+        return image
+
+    class NativeToolHistorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    image = dspy.Image(f"data:image/png;base64,{_PIXEL_PNG}")
+    tool_calls = dspy.ToolCalls(
+        tool_calls=[
+            dspy.ToolCalls.ToolCall(id="call_1", name="screenshot", args={}),
+            dspy.ToolCalls.ToolCall(id="call_2", name="screenshot", args={}),
+            dspy.ToolCalls.ToolCall(id="call_3", name="screenshot", args={}),
+        ]
+    )
+    tool_call_results = dspy.ToolCallResults.from_tool_calls_and_values(
+        tool_calls, [image, {"page": "home", "screenshot": image}, Score(value=0.5, confidence=0.9)]
+    )
+    history = dspy.History(
+        messages=[
+            {"question": "Q1", "tool_calls": tool_calls.model_copy(update={"tool_call_results": tool_call_results})}
+        ]
+    )
+    return format_request(
+        dspy.ChatAdapter(use_native_function_calling=True),
+        NativeToolHistorySignature,
+        [],
+        {"question": "Q2", "history": history, "tools": [dspy.Tool(screenshot)]},
+        lm=FunctionCallingLM([{}]),
+    )
+
+
+_PIXEL_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+
+
+def test_chat_adapter_native_tool_history_sends_tool_result_images_as_image_parts():
+    request = _native_tool_history_request({"image", "document"})
+
+    results = [part for message in request.messages if message.role == "tool" for part in message.parts]
+    bare, nested, structured = (result.content for result in results)
+    assert [(part.type, part.media_type, part.data) for part in bare] == [("image", "image/png", _PIXEL_PNG)]
+    assert [part.type for part in nested] == ["text", "image", "text"]
+    nested_text = "".join(part.text for part in nested if part.type == "text")
+    assert '"page": "home"' in nested_text
+    assert [json.loads(part.text) for part in structured] == [{"value": 0.5, "confidence": 0.9}]
+    assert [message.role for message in request.messages][-2:] == ["tool", "user"]  # no attachments message
+
+
+def test_chat_adapter_moves_tool_result_images_to_a_user_message_when_tool_results_take_text_only():
+    request = _native_tool_history_request(set())
+
+    roles = [message.role for message in request.messages]
+    assert roles[-3:] == ["tool", "user", "user"]
+    tool_message, attachments = request.messages[-3], request.messages[-2]
+    bare, nested, structured = (result.content for result in tool_message.parts)
+    assert [part.type for part in (*bare, *nested, *structured)] == ["text"] * 5
+    assert bare[0].text == "[image attached in the next message]"
+    assert [(part.type, getattr(part, "text", None)) for part in attachments.parts] == [
+        ("text", "Attachments from tool call call_1 (screenshot):"),
+        ("image", None),
+        ("text", "Attachments from tool call call_2 (screenshot):"),
+        ("image", None),
+    ]
+    # The Chat Completions writer, whose tool rows take text only, now accepts the request.
+    messages, _ = openai_view(request)
+    assert [message["role"] for message in messages][-5:] == ["tool", "tool", "tool", "user", "user"]
+    assert messages[-2]["content"][1]["type"] == "image_url"
 
 
 def test_chat_adapter_native_tool_history_skips_empty_user_message():
@@ -1681,6 +1763,152 @@ def test_chat_adapter_format_exact_messages_with_tool_input():
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
+
+
+def test_chat_adapter_repl_history_replay_non_reasoning_lm():
+    class NonReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_reasoning(self):
+            return False
+
+    class REPLHistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        variables_info: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        code: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {
+                "variables_info": "INFO_1",
+                "repl_entry": REPLEntry(
+                    reasoning="First explore the data",
+                    code="x = 10\nprint(f'x = {x}')",
+                    output="x = 10",
+                    max_output_chars=100,
+                ),
+            }
+        ]
+    )
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(),
+        REPLHistorySignature,
+        [],
+        {"variables_info": "INFO_2", "history": history},
+        lm=NonReasoningLM([{}]),
+    )
+
+    assert messages[1]["role"] == "user"
+    assert "INFO_1" in messages[1]["content"]
+    assert messages[2] == {
+        "role": "assistant",
+        "content": "[[ ## reasoning ## ]]\nFirst explore the data\n\n[[ ## code ## ]]\nx = 10\nprint(f'x = {x}')\n\n[[ ## completed ## ]]\n",
+    }
+    assert messages[3] == {
+        "role": "user",
+        "content": "[[ ## repl_output ## ]]\nx = 10",
+    }
+    assert messages[4]["role"] == "user"
+    assert "INFO_2" in messages[4]["content"]
+    assert "history" not in messages[4]["content"]
+    assert "reasoning_effort" not in lm_kwargs
+
+
+def test_chat_adapter_repl_history_replay_reasoning_lm():
+    class ReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_reasoning(self):
+            return True
+
+    class REPLHistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        variables_info: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        code: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {
+                "variables_info": "INFO_1",
+                "repl_entry": REPLEntry(
+                    reasoning="First explore the data",
+                    code="x = 10\nprint(f'x = {x}')",
+                    output="x = 10\n",
+                    max_output_chars=100,
+                ),
+            }
+        ]
+    )
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(),
+        REPLHistorySignature,
+        [],
+        {"variables_info": "INFO_2", "history": history},
+        lm=ReasoningLM([{}]),
+    )
+
+    assert messages[1]["role"] == "user"
+    assert "INFO_1" in messages[1]["content"]
+    assert messages[2] == {
+        "role": "assistant",
+        "content": "[[ ## code ## ]]\nx = 10\nprint(f'x = {x}')\n\n[[ ## completed ## ]]\n",
+    }
+    assert messages[3] == {
+        "role": "user",
+        "content": "[[ ## repl_output ## ]]\nx = 10",
+    }
+    assert messages[4]["role"] == "user"
+    assert "INFO_2" in messages[4]["content"]
+    assert "history" not in messages[4]["content"]
+    assert "reasoning_effort" in lm_kwargs
+
+
+def test_chat_adapter_repl_history_replay_with_output_truncation():
+    class ReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_reasoning(self):
+            return True
+
+    class REPLHistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        variables_info: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        code: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {
+                "variables_info": "INFO_1",
+                "repl_entry": REPLEntry(
+                    reasoning="First explore the data",
+                    code="x = 10\nprint(f'x = {x}')",
+                    output="x = 10\n",
+                    max_output_chars=4,
+                ),
+            }
+        ]
+    )
+
+    messages, _ = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(),
+        REPLHistorySignature,
+        [],
+        {"variables_info": "INFO_2", "history": history},
+        lm=ReasoningLM([{}]),
+    )
+
+    assert messages[1]["role"] == "user"
+    assert "INFO_1" in messages[1]["content"]
+    assert messages[2] == {
+        "role": "assistant",
+        "content": "[[ ## code ## ]]\nx = 10\nprint(f'x = {x}')\n\n[[ ## completed ## ]]\n",
+    }
+    assert messages[3] == {
+        "role": "user",
+        "content": "[[ ## repl_output ## ]]\nx \n\n... (3 characters omitted) ...\n\n0",
+    }
 
 
 def test_chat_adapter_format_exact_messages_kitchen_sink():

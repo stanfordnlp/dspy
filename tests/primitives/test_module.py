@@ -309,25 +309,40 @@ def test_named_sub_modules_dict_keys_do_not_collide():
     assert "self.dict_b[0]" in names
 
 
-def test_load_dspy_program_cross_version():
-    """
-    Test backward compatibility for loading a saved DSPy program.
+def test_save_and_load_react_state(tmp_path):
+    source = dspy.ReAct("question -> answer: int", tools=[], max_iters=1)
+    instructions = "Solve the arithmetic question and submit the integer answer."
+    source.react.signature = source.react.signature.with_instructions(instructions)
+    source.react.demos = [Example(
+        question="What is 2 + 3?",
+        next_thought="Add the two integers.",
+        tool_calls=dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": 5}}]),
+    )]
+    path = tmp_path / "react.json"
+    source.save(path)
 
-    This test verifies that DSPy can load a program saved in version 3.0.1, ensuring compatibility with older versions.
-    The saved state is located in 'test/primitives/resources/saved_program.json' and represents an optimized
-    `dspy.ReAct` program.
-    """
-    path = Path(__file__).parent / "resources" / "saved_program.json"
-    loaded_react = dspy.ReAct("question->answer", tools=[])
-    loaded_react.load(path)
-    assert (
-        "Imagine you are a detective racing against time to solve a high-profile"
-        in loaded_react.react.signature.instructions
-    )
-    assert "Given the very verbose fields `question`" in loaded_react.extract.predict.signature.instructions
+    loaded = dspy.ReAct("question -> answer: int", tools=[], max_iters=1)
+    loaded.load(path)
+    assert loaded.react.signature.instructions == instructions
+    assert len(loaded.react.demos) == 1
+    assert loaded.react.demos[0]["tool_calls"]["tool_calls"][0]["args"] == {"answer": 5}
 
-    assert len(loaded_react.react.demos) == 2
-    assert len(loaded_react.extract.predict.demos) == 2
+    lm = DummyLM([{
+        "next_thought": "Multiply the two integers.",
+        "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": 42}}]),
+    }])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        result = loaded(question="What is 6 times 7?")
+
+    assert result.answer == 42
+    assert result.termination_reason == "submit"
+    assert isinstance(result.history, dspy.History)
+    assert len(result.history.messages) == 1
+    assert result.history.messages[0]["question"] == "What is 6 times 7?"
+    assert result.history.messages[0]["tool_calls"].tool_calls[0].name == "submit"
+    prompt = str(lm.history[0]["messages"])
+    assert instructions in prompt
+    assert "What is 2 + 3?" in prompt
 
 
 def test_load_state_is_transactional():
@@ -367,4 +382,6 @@ def test_load_state_is_transactional():
         with pytest.raises(KeyError):
             template.load(str(path))
 
-        assert template.a.predict.demos == [], "load_state partially mutated module before failing"
+        assert template.a.predict.demos == [], (
+            "load_state partially mutated module before failing"
+        )

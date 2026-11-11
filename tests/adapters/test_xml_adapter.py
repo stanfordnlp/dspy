@@ -8,8 +8,9 @@ from typing_extensions import TypedDict
 import dspy
 from dspy.adapters.chat_adapter import FieldInfoWithName
 from dspy.adapters.xml_adapter import XMLAdapter
+from dspy.primitives.repl_types import REPLEntry
 from tests.adapters.conftest import format_messages_and_lm_kwargs
-from tests.test_utils.engines import make_response
+from tests.test_utils.engines import make_response, recording_lm
 
 
 def test_xml_adapter_format_and_parse_basic():
@@ -27,6 +28,115 @@ def test_xml_adapter_format_and_parse_basic():
     completion = "<answer>Paris</answer>"
     parsed = adapter.parse(TestSignature, completion)
     assert parsed == {"answer": "Paris"}
+
+
+@pytest.mark.parametrize(
+    "annotation, text, expected",
+    [
+        (Literal[-1, 2], "-1", -1),
+        (Literal[-1, 2], "2", 2),
+        (Literal[True], "True", True),
+        (Literal[False], "false", False),
+        (Literal[-1, 2] | None, "-1", -1),
+        (Literal["2", 2], "2", "2"),
+        (Literal["False"], "False", "False"),
+    ],
+)
+def test_xml_adapter_nested_literals(annotation, text, expected):
+    class Record(pydantic.BaseModel):
+        value: annotation
+
+    signature = dspy.Signature({"answer": (list[Record], dspy.OutputField())})
+    wire = f"<answer><item><value>{text}</value></item></answer>"
+    lm = recording_lm([wire])
+    adapter = XMLAdapter(use_json_adapter_fallback=False)
+    with dspy.context(lm=lm, adapter=adapter):
+        value = dspy.Predict(signature)().answer[0].value
+    assert value == expected and type(value) is type(expected)
+    assert len(lm.engine.requests) == 1
+    formatted = adapter.format_assistant_message_content(signature, {"answer": [Record(value=expected)]})
+    assert adapter.parse(signature, formatted)["answer"] == [Record(value=expected)]
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+        adapter.parse(signature, wire.replace(f">{text}<", ">not-allowed<"))
+
+
+@pytest.mark.parametrize("annotation, text, expected", [
+    (Literal[1] | str, "1", "1"),
+    (Literal[True] | str, "True", "True"),
+    (Literal[1] | float, "1", 1.0),
+])
+def test_xml_adapter_literal_unions_preserve_scalar_types(annotation, text, expected):
+    signature = dspy.Signature({"answer": (list[annotation], dspy.OutputField())})
+    adapter = XMLAdapter(use_json_adapter_fallback=False)
+    wire = adapter.format_assistant_message_content(signature, {"answer": [text]})
+    with dspy.context(lm=recording_lm([wire]), adapter=adapter):
+        value = dspy.Predict(signature)().answer[0]
+    assert value == expected and type(value) is type(expected)
+
+
+@pytest.mark.parametrize("compact", [False, True])
+@pytest.mark.parametrize("pair_type, pair", [
+    (tuple[str, list[int]], ("<b>tag</b>", [2, 3])),
+    (tuple[list[int], str], ([2, 3], "<b>tag</b>")),
+    (tuple[list[int], str], ([], "tag")),
+    (tuple[int, ...], (2, -3, 7)),
+    (tuple[()], ()),
+])
+def test_xml_adapter_nested_positional_tuples(compact, pair_type, pair):
+    class Record(pydantic.BaseModel):
+        pair: pair_type
+
+    signature = dspy.Signature({"answer": (Record, dspy.OutputField())})
+    expected = Record(pair=pair)
+    adapter = XMLAdapter(use_json_adapter_fallback=False)
+    wire = adapter.format_assistant_message_content(signature, {"answer": expected})
+    if compact:
+        wire = wire.replace("\n", "")
+    lm = recording_lm([wire])
+    with dspy.context(lm=lm, adapter=adapter):
+        assert dspy.Predict(signature)().answer == expected
+    assert len(lm.engine.requests) == 1
+
+
+def test_xml_adapter_positional_tuple_schema_and_validation():
+    class Record(pydantic.BaseModel):
+        pair: tuple[str, list[int]]
+
+    signature = dspy.Signature({"answer": (Record, dspy.OutputField())})
+    adapter = XMLAdapter()
+    wire = "<answer><pair><item>tag</item><item><item>2</item><item>3</item></item></pair></answer>"
+    assert adapter.parse(signature, wire)["answer"] == Record(pair=("tag", [2, 3]))
+    assert "<pair>\n<item>\n...\n</item>\n<item>\n<item>\n...\n</item>\n</item>\n</pair>" in adapter.format_field_structure(signature)
+    for invalid in [wire.replace("<item>tag</item>", ""), wire.replace("</pair>", "<item>extra</item></pair>")]:
+        with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+            adapter.parse(signature, invalid)
+
+
+@pytest.mark.anyio
+async def test_xml_adapter_repeated_tuple_fields_preserve_following_stream():
+    class Left(pydantic.BaseModel):
+        name: str
+        count: int
+
+    class Record(pydantic.BaseModel):
+        pair: tuple[Left, str]
+
+    signature = dspy.Signature({"record": (Record, dspy.OutputField()), "answer": (str, dspy.OutputField())})
+    wire = "<record><pair><name>a</name><count>1</count></pair><pair>tail</pair></record><answer>right</answer>"
+    program = dspy.streamify(dspy.Predict(signature), stream_listeners=[dspy.streaming.StreamListener("answer")])
+    with dspy.context(lm=recording_lm([wire]), adapter=XMLAdapter(use_json_adapter_fallback=False)):
+        chunks = [chunk async for chunk in program()]
+    assert chunks[-1].record == Record(pair=(Left(name="a", count=1), "tail"))
+    assert chunks[-1].answer == "right"
+    assert "".join(chunk.chunk for chunk in chunks if isinstance(chunk, dspy.streaming.StreamResponse)) == "right"
+
+
+def test_xml_adapter_positional_tuple_preserves_literal_closing_tag():
+    signature = dspy.Signature({"answer": (list[tuple[str, str]], dspy.OutputField())})
+    expected = [("before\n</item>\n<b>\nafter\n</b>", "tail")]
+    adapter = XMLAdapter()
+    wire = adapter.format_assistant_message_content(signature, {"answer": expected})
+    assert adapter.parse(signature, wire)["answer"] == expected
 
 
 def test_xml_adapter_parse_multiple_fields():
@@ -348,7 +458,7 @@ def test_xml_adapter_nullable_text_round_trip_distinguishes_empty_from_null(valu
         "Output format (replace placeholders):\n<text>\n{text}\n</text>\n\n"
         "Use this format for text outputs. Put field tags on separate lines. "
         "Write string values literally, without XML or JSON escaping."
-        " Use <field/> for null and <field></field> for an empty string."
+        " For null, self-close the field's own tag. For an empty string, use an opening and closing tag with no content."
     )
     assert "JSON" not in prompt.system
 
@@ -399,6 +509,30 @@ def test_xml_adapter_concise_prompt_preserves_type_guidance_and_dictionary_keys(
         "Write string values literally, without XML or JSON escaping."
         ' Dictionary keys: <entry key="...">; escape key attributes only.'
     )
+
+
+def test_xml_adapter_nested_enum_and_literal_constraints_in_prompt():
+    from enum import Enum
+
+    class Priority(Enum):
+        LOW = "low"
+        HIGH = "high"
+
+    class Item(pydantic.BaseModel):
+        kind: Literal["ticket"]
+        label: Literal["question", "complaint", "praise"]
+        priority: Priority | None
+        urgent: Literal[False]
+
+    class Result(dspy.Signature):
+        items: list[Item] = dspy.OutputField()
+
+    prompt = XMLAdapter().format(Result, [], {})
+    for text in (prompt.system, prompt.messages[-1].text):
+        assert "<kind>\nticket\n</kind>" in text
+        assert "<label>\none of: question; complaint; praise\n</label>" in text
+        assert "<priority>\none of: low; high\n</priority>" in text
+        assert "<urgent>\nFalse\n</urgent>" in text
 
 
 def test_xml_adapter_structured_union_uses_structural_tag_lines():
@@ -518,7 +652,7 @@ def test_xml_adapter_typed_dict_schema_and_parsing():
         f"Output format (replace placeholders):\n{order_schema}\n\n{orders_schema}\n\n"
         "Use this format for text outputs. Put field tags on separate lines. "
         "Write string values literally, without XML or JSON escaping."
-        " Use <field/> for null and <field></field> for an empty string."
+        " For null, self-close the field's own tag. For an empty string, use an opening and closing tag with no content."
     )
 
     completion = (
@@ -1371,6 +1505,155 @@ def test_xml_adapter_format_exact_messages_with_incomplete_demo():
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
+
+
+def test_xml_adapter_format_messages_and_lm_kwargs_with_repl_history_non_reasoning_lm():
+    class NonReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_reasoning(self):
+            return False
+
+    class REPLHistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        variables_info: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        code: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {
+                "variables_info": "INFO_1",
+                "repl_entry": REPLEntry(
+                    reasoning="First explore the data",
+                    code="x = 10\nprint(f'x = {x}')",
+                    output="x = 20",
+                    max_output_chars=100,
+                ),
+            }
+        ]
+    )
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
+        REPLHistorySignature,
+        [],
+        {"variables_info": "INFO_2", "history": history},
+        lm=NonReasoningLM([{}]),
+    )
+
+    assert messages[1]["role"] == "user"
+    assert "INFO_1" in messages[1]["content"]
+    assert messages[2] == {
+        "role": "assistant",
+        "content": "<reasoning>\nFirst explore the data\n</reasoning>\n\n<code>\nx = 10\nprint(f'x = {x}')\n</code>",
+    }
+    assert messages[3] == {
+        "role": "user",
+        "content": "<repl_output>\nx = 20\n</repl_output>",
+    }
+    assert messages[4]["role"] == "user"
+    assert "INFO_2" in messages[4]["content"]
+    assert "history" not in messages[4]["content"]
+    assert "reasoning_effort" not in lm_kwargs
+
+
+def test_xml_adapter_format_messages_and_lm_kwargs_with_repl_history_reasoning_lm():
+    class ReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_reasoning(self):
+            return True
+
+    class REPLHistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        variables_info: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        code: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {
+                "variables_info": "INFO_1",
+                "repl_entry": REPLEntry(
+                    reasoning="First explore the data",
+                    code="x = 10\nprint(f'x = {x}')",
+                    output="x = 20",
+                    max_output_chars=100,
+                ),
+            }
+        ]
+    )
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
+        REPLHistorySignature,
+        [],
+        {"variables_info": "INFO_2", "history": history},
+        lm=ReasoningLM([{}]),
+    )
+
+    assert messages[1]["role"] == "user"
+    assert "INFO_1" in messages[1]["content"]
+    assert messages[2] == {
+        "role": "assistant",
+        "content": "<code>\nx = 10\nprint(f'x = {x}')\n</code>",
+    }
+    assert messages[3] == {
+        "role": "user",
+        "content": "<repl_output>\nx = 20\n</repl_output>",
+    }
+    assert messages[4]["role"] == "user"
+    assert "INFO_2" in messages[4]["content"]
+    assert "history" not in messages[4]["content"]
+    assert "reasoning_effort" in lm_kwargs
+
+
+def test_xml_adapter_format_messages_and_lm_kwargs_with_repl_history_and_truncation():
+    class ReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_reasoning(self):
+            return True
+
+    class REPLHistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        variables_info: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        code: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {
+                "variables_info": "INFO_1",
+                "repl_entry": REPLEntry(
+                    reasoning="First explore the data",
+                    code="x = 10\nprint(f'x = {x}')",
+                    output="x = 20",
+                    max_output_chars=4,
+                ),
+            }
+        ]
+    )
+
+    messages, _ = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
+        REPLHistorySignature,
+        [],
+        {"variables_info": "INFO_2", "history": history},
+        lm=ReasoningLM([{}]),
+    )
+
+    assert messages[1]["role"] == "user"
+    assert "INFO_1" in messages[1]["content"]
+    assert messages[2] == {
+        "role": "assistant",
+        "content": "<code>\nx = 10\nprint(f'x = {x}')\n</code>",
+    }
+    assert messages[3] == {
+        "role": "user",
+        "content": "<repl_output>\nx \n\n... (2 characters omitted) ...\n\n20\n</repl_output>",
+    }
+    assert messages[4]["role"] == "user"
+    assert "INFO_2" in messages[4]["content"]
+    assert "history" not in messages[4]["content"]
 
 
 def test_format_system_message():

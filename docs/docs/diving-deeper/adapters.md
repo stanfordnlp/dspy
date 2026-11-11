@@ -10,7 +10,7 @@ Read this when you want to know what the prompt looks like on the wire, why a ty
 
 ### 1. Adapters are pluggable
 
-Same Signature, different prompt shape, no Signature changes. LMs vary a lot in what they prefer to read and produce: a model trained on instruction-following with markers loves ChatAdapter’s `[[ ## field ## ]]` format; a model with native structured-output mode does best with JSONAdapter; a reasoning model that formats unreliably wants TwoStepAdapter. Putting this decision behind one interface means Signatures, modules, and optimizers don’t have to know which family of LM they’re running against.
+Same Signature, different prompt shape, no Signature changes. LMs vary a lot in what they prefer to read and produce: a model trained on instruction-following with markers loves ChatAdapter’s `[[ ## field ## ]]` format; a model with native structured-output mode does best with JSONAdapter; XMLAdapter is the default for text-formatted outputs. Putting this decision behind one interface means Signatures, modules, and optimizers don’t have to know which family of LM they’re running against.
 
 ### 2. XMLAdapter is the default
 
@@ -42,7 +42,11 @@ It checks `lm.supported_params` and falls through tiers: OpenAI-style `response_
 
 ### 9. TwoStepAdapter splits generation from extraction
 
-For reasoning models that produce free-form text but format unreliably. Stage one: the main LM gets the task as plain prose, no field markers, and produces whatever shape it wants. Stage two: a smaller extractor LM with ChatAdapter reads the output and pulls out the declared fields. Useful for o1, o3-mini, and similar models where formatting reliability is the bottleneck.
+!!! warning "Deprecated in DSPy 3.5"
+
+    `dspy.TwoStepAdapter` will be removed in DSPy 3.6. Use `dspy.JSONAdapter()` for models supporting structured outputs, or `dspy.XMLAdapter()` otherwise. `JSONAdapter` automatically requests native structured outputs when the LM and output schema support them. Neither replacement uses a separate extraction LM; migration changes the prompting and extraction strategy.
+
+TwoStepAdapter remains available until removal. Stage one: the main LM gets the task as plain prose, no field markers, and produces free-form text. Stage two: a smaller extractor LM with ChatAdapter reads the output and pulls out the declared fields.
 
 ### 10. Field marker format is hard-coded
 
@@ -70,7 +74,7 @@ The implicit default passes `use_native_function_calling=True`; explicit constru
 Container-closing tag sequences are reserved inside strings. Undeclared object fields are rejected unless the schema allows extras.
 
 **`dspy.TwoStepAdapter(extraction_model: BaseLM, **kwargs)`**  
-Two LM calls per inference. Use it when the main LM is a reasoning model that’s bad at formatting — the extractor is usually a cheap general-purpose LM with ChatAdapter. Doesn’t support finetuning yet.
+Deprecated in DSPy 3.5; removal in DSPy 3.6. Prefer `dspy.JSONAdapter()` for models supporting structured outputs, or `dspy.XMLAdapter()` otherwise (see section 9). Two LM calls per inference, with a separate extraction LM using ChatAdapter. Doesn’t support finetuning.
 
 **`dspy.BAMLAdapter`**  
 JSON-backed, but renders the output schema in BAML-style commented Pydantic form. Worth trying when JSONAdapter’s raw JSON schema is too verbose for complex nested types.
@@ -189,4 +193,4 @@ Safe in-memory inputs such as data URIs, bytes, PIL images, audio arrays, and st
 - [Signatures in depth](signatures-in-depth.md) — what the adapter consumes.
 - [Settings and context()](settings-and-context.md) — how `configure` and `context` propagate the adapter choice.
 - [Tools and MCP](tools.md) — `Tool` and `ToolCalls` are adapter-formatted but module-driven.
-- [ReAct and ReActV2](react.md) — how the two agent loops present history and tool calls to adapters.
+- [ReAct](react.md) — how the structured-history agent loop presents history and tool calls to adapters.
