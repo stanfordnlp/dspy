@@ -2,6 +2,7 @@ import pytest
 
 import dspy
 from dspy import Example
+from dspy.evaluate import Evaluate
 from dspy.teleprompt.signature_opt import COPRO
 from dspy.utils.dummies import DummyLM
 
@@ -114,6 +115,39 @@ def test_compile_accepts_evaluate_constructor_kwargs(extra_eval_kwargs):
     )
 
     assert optimized_student.candidate_programs
+
+
+def test_compile_forwards_callback_metadata_to_evaluate_call(monkeypatch):
+    # Evaluate.__init__ swallows unknown kwargs, so callback_metadata only takes effect if it reaches __call__.
+    received = []
+    original_call = Evaluate.__call__
+
+    def recording_call(self, *args, **kwargs):
+        received.append(kwargs.get("callback_metadata"))
+        return original_call(self, *args, **kwargs)
+
+    monkeypatch.setattr(Evaluate, "__call__", recording_call)
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
+    dspy.configure(
+        lm=DummyLM(
+            [
+                {
+                    "proposed_instruction": "Optimized instruction 1",
+                    "proposed_prefix_for_output_field": "Optimized instruction 2",
+                },
+            ]
+        )
+    )
+    metadata = {"run": "copro"}
+
+    optimizer.compile(
+        SimpleModule("input -> output"),
+        trainset=trainset,
+        eval_kwargs={"num_threads": 1, "callback_metadata": metadata},
+    )
+
+    assert received
+    assert all(value == metadata for value in received)
 
 
 def test_signature_optimizer_statistics_tracking():
