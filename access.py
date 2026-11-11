@@ -157,6 +157,13 @@ OPENAI_CODEX = AccessPolicy(
     base_url=DEFAULT_CODEX_BASE_URL,
 )
 
+OPENAI_DECISIONS_API = AccessPolicy(
+    provider="openai-decisions",
+    supports=EndpointSupport(complete=True, stream=False),
+    auth_modes=("bearer",),
+    env_keys=("OPENAI_API_KEY",),
+)
+
 OPENAI_CHAT_API = AccessPolicy(
     provider="openai-chat",
     supports=EndpointSupport(complete=True, stream=True, models=True),
