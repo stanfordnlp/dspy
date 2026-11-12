@@ -803,3 +803,30 @@ def test_tool_observation_preserves_custom_type():
     ]
     assert len(images) == 2
     assert result.answer == "done"
+
+
+def test_react_rejects_duplicate_tool_names():
+    class Orders:
+        def search(self, query: str) -> str:
+            return "orders"
+
+    class Customers:
+        def search(self, query: str) -> str:
+            return "customers"
+
+    with pytest.raises(ValueError, match="`search`"):
+        dspy.ReAct("question -> answer", tools=[Orders().search, Customers().search])
+
+    react = dspy.ReAct("question -> answer", tools=[Orders().search, dspy.Tool(Customers().search, name="search_customers")])
+    assert list(react.tools) == ["search", "search_customers", "submit"]
+
+
+def test_react_allows_the_same_tool_twice():
+    def search(query: str) -> str:
+        return "results"
+
+    tool = dspy.Tool(search)
+    for tools in ([search, search], [tool, tool], [search, tool]):
+        react = dspy.ReAct("question -> answer", tools=tools)
+        assert list(react.tools) == ["search", "submit"]
+        assert react.tools["search"].func is search
