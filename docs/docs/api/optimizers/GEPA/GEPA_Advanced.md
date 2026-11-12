@@ -503,3 +503,50 @@ gepa = dspy.GEPA(
     auto="medium"
 )
 ```
+
+## Opt-in signature field descriptions
+
+By default GEPA optimizes predictor instructions (and Flex source). To also evolve the
+**top-level input and output field descriptions** in each predictor, enable
+`optimize_field_descriptions`:
+
+```python
+optimizer = dspy.GEPA(
+    metric=metric,
+    reflection_lm=reflection_lm,
+    max_metric_calls=100,
+    optimize_field_descriptions=True,
+    track_stats=True,
+    log_dir="runs/field-descriptions",
+)
+optimized = optimizer.compile(student, trainset=trainset, valset=valset)
+```
+
+Each field is a separate selectable component. Its reflection records come from the
+owning predictor and identify the field's role and type. GEPA changes a candidate copy
+of the signature, retaining names, annotations, prefixes, defaults, constraints, and
+validators. The original student and its tool objects are not changed. This option does
+not rename fields, edit prefixes, or recursively optimize fields inside Pydantic types.
+Flex source remains a separate component; its internal generated signatures are not
+exposed as field components.
+
+Custom proposers and component selectors continue to receive predictor names for
+instruction components. Field descriptions use opaque IDs beginning with `@field:`
+followed by a JSON array of the predictor path and field name. Proposers must return
+only a description for such a component, rather than replacement program instructions.
+Automatic budgets count these additional components. Explicit metric-call budgets keep
+the same meaning, so the search has more components competing for that budget.
+
+Candidate statistics include all evolved descriptions. Ordinary JSON state saves retain
+field descriptions; whole-program saves also retain the derived signature class and its
+validators. JSON state loading retains the existing `Signature.load_state` behavior and
+should not be used to preserve custom signature validators; use a trusted whole-program
+save when they are required.
+
+Use a different `log_dir` when changing this option or the seed signature contract. A
+resume checks seed descriptions, instructions, field order, role, type, prefix, and
+constraint metadata before accepting saved adapter state. This is a structural guard,
+not a complete program fingerprint: changing a validator's implementation, a default,
+closures, or a nested model's internals still requires a new run directory. Callable
+metadata is identified by module and qualified name so equivalent programs can resume
+across processes without depending on memory addresses.
