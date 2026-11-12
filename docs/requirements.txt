@@ -5,7 +5,7 @@ mdformat==0.7.22
 mdformat-tables==1.0.0
 mkdocstrings==1.0.7
 mkdocstrings-python==2.0.9
-nbconvert==7.17.1
+nbconvert==7.17.2
 pillow==12.3.0
 zensical==0.0.69
 mike==2.2.0
