@@ -155,3 +155,14 @@ def test_get_json_schema_preserves_property_declaration_order():
     assert list(item_schema["properties"].keys()) == ["zeta", "alpha"]
     assert item_schema["required"] == ["zeta", "alpha"]
 
+
+def test_get_json_schema_preserves_field_named_type_order():
+    class ModelWithType(BaseModel):
+        name: str
+        type: str
+
+    schema = _get_json_schema(ModelWithType)
+    assert next(iter(schema.keys())) == "type"
+    assert list(schema["properties"].keys()) == ["name", "type"]
+    assert schema["required"] == ["name", "type"]
+    assert schema["properties"]["type"]["type"] == "string"

@@ -142,14 +142,18 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> s
 
 
 def _get_json_schema(field_type):
-    def move_type_to_front(d):
-        # Move the 'type' key to the front of the dictionary, recursively, for LLM readability/adherence.
+    def move_type_to_front(d, is_properties_map=False):
+        # Move the 'type' key to the front of schema dictionaries for LLM readability/adherence,
+        # but preserve property declaration order for 'properties' mappings.
         if isinstance(d, Mapping):
+            if is_properties_map:
+                return {k: move_type_to_front(v, is_properties_map=False) for k, v in d.items()}
             return {
-                k: move_type_to_front(v) for k, v in sorted(d.items(), key=lambda item: item[0] != "type")
+                k: move_type_to_front(v, is_properties_map=(k in ("properties", "patternProperties")))
+                for k, v in sorted(d.items(), key=lambda item: item[0] != "type")
             }
         elif isinstance(d, list):
-            return [move_type_to_front(item) for item in d]
+            return [move_type_to_front(item, is_properties_map=False) for item in d]
         return d
 
     schema = pydantic.TypeAdapter(field_type).json_schema()
