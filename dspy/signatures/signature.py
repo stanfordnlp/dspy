@@ -63,10 +63,15 @@ class SignatureMeta(type(BaseModel)):
         `custom_types` parameter when creating a Signature.
         """
 
-        # Extract potential type names from the signature string, including dotted names
-        # Match both simple types like 'MyType' and dotted names like 'Module.Type'
-        type_pattern = r":\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)"
-        type_names = re.findall(type_pattern, signature_str)
+        type_names = []
+        for fields_str in signature_str.split("->"):
+            try:
+                args = ast.parse(f"def f({fields_str}): pass").body[0].args.args
+            except SyntaxError:
+                continue
+            for arg in args:
+                if arg.annotation is not None:
+                    type_names.extend(node.id for node in ast.walk(arg.annotation) if isinstance(node, ast.Name))
         if not type_names:
             return None
 

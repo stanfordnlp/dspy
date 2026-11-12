@@ -144,3 +144,17 @@ def test_explicit_custom_types_do_not_depend_on_the_caller_frame():
     with_instructions = Signature("query: str -> found: OffStackItem", "Find it.", custom_types=types)
     assert with_instructions.output_fields["found"].annotation is item
     assert with_instructions.instructions == "Find it."
+
+
+def test_auto_resolves_custom_types_nested_in_generics():
+    class LocalItem(pydantic.BaseModel):
+        value: str
+
+    sig = Signature(
+        "items: list[LocalItem], lookup: dict[str, GlobalCustomType] -> best: Optional[LocalItem], "
+        "ranked: list[OuterContainer.InnerType]"
+    )
+    assert sig.input_fields["items"].annotation == list[LocalItem]
+    assert sig.input_fields["lookup"].annotation == dict[str, GlobalCustomType]
+    assert sig.output_fields["best"].annotation == LocalItem | None
+    assert sig.output_fields["ranked"].annotation == list[OuterContainer.InnerType]
