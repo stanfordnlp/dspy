@@ -656,13 +656,27 @@ def _resolve_json_schema_reference(schema: dict) -> dict:
     if "$defs" not in schema and "definitions" not in schema:
         return schema
 
+    # Track the refs currently being expanded so a self-referential (recursive)
+    # model does not recurse forever. When a $ref points back to a def already on
+    # the resolution stack, leave the reference in place instead of inlining it.
+    resolving: set[str] = set()
+    cycle_detected = False
+
     def resolve_refs(obj: Any) -> Any:
+        nonlocal cycle_detected
         if not isinstance(obj, (dict, list)):
             return obj
         if isinstance(obj, dict):
             if "$ref" in obj:
                 ref_path = obj["$ref"].split("/")[-1]
-                return resolve_refs(schema["$defs"][ref_path])
+                if ref_path in resolving:
+                    cycle_detected = True
+                    return dict(obj)
+                resolving.add(ref_path)
+                try:
+                    return resolve_refs(schema["$defs"][ref_path])
+                finally:
+                    resolving.discard(ref_path)
             return {k: resolve_refs(v) for k, v in obj.items()}
 
         # Must be a list
@@ -670,8 +684,13 @@ def _resolve_json_schema_reference(schema: dict) -> dict:
 
     # Resolve all references in the main schema
     resolved_schema = resolve_refs(schema)
-    # Remove the $defs key as it's no longer needed
-    resolved_schema.pop("$defs", None)
+    if cycle_detected:
+        # A recursive schema still contains unresolved $ref nodes; keep $defs so
+        # the surviving references stay resolvable and the schema is self-contained.
+        resolved_schema["$defs"] = schema["$defs"]
+    else:
+        # Remove the $defs key as it's no longer needed
+        resolved_schema.pop("$defs", None)
     return resolved_schema
 
 
