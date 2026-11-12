@@ -10,7 +10,7 @@ from collections.abc import Callable, Collection, Generator
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from enum import Enum
 from types import FrameType
-from typing import Any, Literal, TypeVar, cast
+from typing import Any, TypeVar, cast
 
 import tqdm
 
@@ -19,7 +19,14 @@ from dspy.utils.callback_context import _bind_active_call_id
 
 T = TypeVar("T")
 R = TypeVar("R")
-_WorkerResult = tuple[int, R | Exception | Literal["cancelled"] | None]
+
+
+class _Cancelled(Enum):
+    # Marks an input the worker gate skipped; no task result can be this object.
+    CANCELLED = "cancelled"
+
+
+_WorkerResult = tuple[int, R | Exception | _Cancelled | None]
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +53,10 @@ class ParallelExecutor:
         """
         Propagates DSPy settings and callback ancestry into each task while isolating task-local changes,
         irrespective of whether num_threads == 1 or > 1. Handles also straggler timeouts.
+
+        Cancellation is cooperative: execute() stops waiting and returns/raises, but a task
+        already running on a pool thread cannot be killed -- it keeps running in the background
+        until it finishes, and may delay interpreter exit if it blocks indefinitely.
         """
         self.num_threads = num_threads or settings.num_threads
         self.max_errors = settings.max_errors if max_errors is None else max_errors
@@ -58,8 +69,12 @@ class ParallelExecutor:
         self.error_count = 0
         self.error_lock = threading.Lock()
         self.cancel_jobs = threading.Event()
+        self.interrupted = threading.Event()
         self.failed_indices: list[int] = []
         self.exceptions_map: dict[int, Exception] = {}
+        # Index -> whether its failure currently counts toward error_count. An index is
+        # charged at most once, however many of its attempts fail.
+        self._charged: dict[int, bool] = {}
 
     def execute(self, function: Callable[[T], R], data: Collection[T]) -> list[R | None]:
         """Return results in input iteration order, with None for failed or unfinished items.
@@ -69,26 +84,30 @@ class ParallelExecutor:
         must support indexing its final element as a numeric score.
         """
         tqdm.tqdm._instances.clear()
+        self._charged.clear()
         function = _bind_active_call_id(function)
         if self.num_threads == 1:
             return self._execute_sequential(function, data)
         return self._execute_parallel(function, data)
 
+    def _record_error(self, idx: int, item: Any, e: Exception) -> None:
+        with self.error_lock:
+            if idx in self._charged:
+                return
+            self._charged[idx] = True
+            self.error_count += 1
+            if self.error_count >= self.max_errors:
+                self.cancel_jobs.set()
+        if self.provide_traceback:
+            logger.error(f"Error for {item}: {e}\n{traceback.format_exc()}")
+        else:
+            logger.error(f"Error for {item}: {e}. Set `provide_traceback=True` for traceback.")
+
     def _wrap_function(self, user_function: Callable[[T], R]) -> Callable[[T], R | Exception | None]:
         def safe_func(item: T) -> R | Exception | None:
-            if self.cancel_jobs.is_set():
-                return None
             try:
                 return user_function(item)
             except Exception as e:
-                with self.error_lock:
-                    self.error_count += 1
-                    if self.error_count >= self.max_errors:
-                        self.cancel_jobs.set()
-                if self.provide_traceback:
-                    logger.error(f"Error for {item}: {e}\n{traceback.format_exc()}")
-                else:
-                    logger.error(f"Error for {item}: {e}. Set `provide_traceback=True` for traceback.")
                 return e
 
         return safe_func
@@ -112,8 +131,11 @@ class ParallelExecutor:
 
                 outcome = safe_function(item)
                 self._process_outcome(results, idx, outcome)
+                if isinstance(outcome, Exception):
+                    self._record_error(idx, item, outcome)
                 self._report_progress(pbar, results, len(data))
         except KeyboardInterrupt:
+            self.interrupted.set()
             self.cancel_jobs.set()
             logger.warning("SIGINT received. Cancelling.")
             raise
@@ -129,19 +151,21 @@ class ParallelExecutor:
     def _execute_parallel(self, function: Callable[[T], R], data: Collection[T]) -> list[R | None]:
         safe_function = self._wrap_function(function)
         results: list[R | _ResultState | None] = [_UNSET] * len(data)
-        job_cancelled = "cancelled"
+        job_cancelled = _Cancelled.CANCELLED
 
-        # We resubmit at most once per item.
+        # We resubmit at most once per logical index.
         start_time_map: dict[int, float] = {}
         start_time_lock = threading.Lock()
-        resubmitted: set[Future[_WorkerResult[R]]] = set()
+        resubmitted: set[int] = set()
+        skipped: list[tuple[int, T]] = []
 
         # This is the worker function each thread will run.
         def worker(
             parent_overrides: dict[str, Any], submission_id: int, index: int, item: T
         ) -> _WorkerResult[R]:
             if self.cancel_jobs.is_set():
-                return index, job_cancelled
+                if self.interrupted.is_set() or not self._charged.get(index):
+                    return index, job_cancelled
             # Record actual start time
             with start_time_lock:
                 start_time_map[submission_id] = time.time()
@@ -155,7 +179,12 @@ class ParallelExecutor:
             token = thread_local_overrides.set(new_overrides)
 
             try:
-                return index, safe_function(item)
+                outcome = safe_function(item)
+                if isinstance(outcome, Exception):
+                    # Charged here, not when the main thread collects it, so the error budget
+                    # cancels queued work before this worker starts its next input.
+                    self._record_error(index, item, outcome)
+                return index, outcome
             finally:
                 thread_local_overrides.reset(token)
 
@@ -166,6 +195,7 @@ class ParallelExecutor:
                 orig_handler = signal.getsignal(signal.SIGINT)
 
                 def handler(sig: int, frame: FrameType | None) -> None:
+                    self.interrupted.set()
                     self.cancel_jobs.set()
                     logger.warning("SIGINT received. Cancelling.")
                     if callable(orig_handler):
@@ -209,7 +239,43 @@ class ParallelExecutor:
                 def all_done() -> bool:
                     return all(result is not _UNSET for result in results)
 
-                while futures_set and not self.cancel_jobs.is_set():
+                def submit(idx, item):
+                    nonlocal submission_counter
+                    nf = executor.submit(worker, parent_overrides, submission_counter, idx, item)
+                    futures_map[nf] = (submission_counter, idx, item)
+                    futures_set.add(nf)
+                    submission_counter += 1
+
+                recovery_grace = None
+
+                def keep_running():
+                    # After budget cancellation, futures for charged indices (a failure not yet
+                    # collected, or an in-flight retry) get one straggler-timeout grace period to
+                    # land or recover; then they are abandoned explicitly and the cancellation
+                    # stands. A real interrupt exits at once.
+                    nonlocal recovery_grace
+                    if not self.cancel_jobs.is_set():
+                        recovery_grace = None
+                        return True
+                    if self.interrupted.is_set():
+                        return False
+                    recoverable = [f for f in futures_set if self._charged.get(futures_map[f][1])]
+                    if not recoverable:
+                        return False
+                    recovery_grace = recovery_grace or time.time() + max(self.timeout, 1.0)
+                    if time.time() < recovery_grace:
+                        return True
+                    for f in recoverable:
+                        futures_set.discard(f)
+                        logger.warning(
+                            f"Abandoning in-flight retry for {futures_map[f][2]} after the "
+                            "cancellation grace period; its recorded failure stands. The retry "
+                            "cannot be killed and keeps running on its pool thread until it "
+                            "finishes; if it blocks indefinitely it may delay interpreter exit."
+                        )
+                    return False
+
+                while futures_set and keep_running():
                     if all_done():
                         break
                     done, not_done = wait(futures_set, timeout=1, return_when=FIRST_COMPLETED)
@@ -217,13 +283,26 @@ class ParallelExecutor:
                         futures_set.remove(f)
                         try:
                             index, outcome = f.result()
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            # A harness-internal failure (e.g. copying thread-local overrides), not a
+                            # user-function exception — record it the same way so it isn't silently dropped.
+                            _, idx, item = futures_map[f]
+                            if self._should_finalize(idx, e, results):
+                                self._process_outcome(results, idx, e)
+                                self._record_error(idx, item, e)
+                            self._report_progress(pbar, results, len(data))
                         else:
-                            if outcome != job_cancelled and results[index] is _UNSET:
+                            if outcome is job_cancelled:
+                                skipped.append((index, futures_map[f][2]))
+                            elif self._should_finalize(index, outcome, results):
                                 # Restore R after excluding the cancellation marker; ty otherwise
                                 # infers a narrower R incompatible with the invariant results list.
                                 self._process_outcome(results, index, cast(R | Exception | None, outcome))
+                                if not isinstance(outcome, Exception):
+                                    # The retry (or the original, if this is the retry) recovered after
+                                    # the other future for this index failed -- a success always wins,
+                                    # so drop the stale failure record instead of reporting both.
+                                    self._clear_stale_failure(index)
 
                             self._report_progress(pbar, results, len(data))
 
@@ -234,28 +313,28 @@ class ParallelExecutor:
                     if 0 < self.timeout and len(not_done) <= self.straggler_limit:
                         now = time.time()
                         for f in list(not_done):
-                            if f not in resubmitted:
-                                sid, idx, item = futures_map[f]
+                            sid, idx, item = futures_map[f]
+                            if idx not in resubmitted:
                                 with start_time_lock:
                                     st = start_time_map.get(sid, None)
                                 if st and (now - st) >= self.timeout:
-                                    resubmitted.add(f)
-                                    nf = executor.submit(
-                                        worker,
-                                        parent_overrides,
-                                        submission_counter,
-                                        idx,
-                                        item,
-                                    )
-                                    futures_map[nf] = (submission_counter, idx, item)
-                                    futures_set.add(nf)
-                                    submission_counter += 1
+                                    resubmitted.add(idx)
+                                    submit(idx, item)
+
+                    # Items skipped by the worker gate during a since-revoked cancellation
+                    # would otherwise end as silent Nones -- resubmit them.
+                    if skipped and not self.cancel_jobs.is_set():
+                        for idx, item in skipped:
+                            if results[idx] is _UNSET and idx not in self.exceptions_map:
+                                submit(idx, item)
+                        skipped.clear()
 
                 pbar.close()
 
         finally:
-            # Avoid waiting on leftover tasks that no longer matter
-            executor.shutdown(wait=False)
+            # Avoid waiting on leftover tasks that no longer matter; queued-but-unstarted
+            # ones are cancelled outright so they never run after execute() returns.
+            executor.shutdown(wait=False, cancel_futures=True)
 
         if self.cancel_jobs.is_set():
             logger.warning("Execution cancelled due to errors or interruption.")
@@ -273,6 +352,41 @@ class ParallelExecutor:
                 self.exceptions_map[idx] = outcome
         else:
             results[idx] = outcome
+
+    def _should_finalize(self, idx: int, outcome: object, results: list[Any]) -> bool:
+        """Whether this future's outcome should be recorded for idx, given what the other
+        future for the same straggler-retried index may have already recorded.
+
+        results[idx] stays _UNSET for an exception outcome (see _process_outcome), so
+        checking against _UNSET -- not None, which a task can legitimately return -- is
+        what lets this tell "not yet recorded" apart from "already recorded by the other
+        future" once both completions are failures. A later success always overrides an
+        earlier failure (the retry recovered); a later failure is dropped once idx already
+        has an outcome either way, so one logical input can't be double-counted or have its
+        result silently overwritten by a duplicate completion.
+        """
+        if results[idx] is not _UNSET:
+            return False
+        if isinstance(outcome, Exception):
+            return idx not in self.exceptions_map
+        return True
+
+    def _clear_stale_failure(self, idx: int) -> None:
+        """A retry recovered idx after its original attempt failed. Undo what _record_error
+        did for that stale failure: give back error_count, and cancel_jobs too if it was the
+        error budget (not a real interrupt) that set it. The recovery grace in keep_running applies
+        only while cancel_jobs is set. Once this clears cancel_jobs, in-flight futures are waited on
+        as in any run under max_errors."""
+        with self.error_lock:
+            self.exceptions_map.pop(idx, None)
+            if self._charged.get(idx):
+                self.error_count -= 1
+                if not self.interrupted.is_set() and self.error_count < self.max_errors:
+                    self.cancel_jobs.clear()
+            # Settled: a later failing attempt for idx must not charge the budget again.
+            self._charged[idx] = False
+            if idx in self.failed_indices:
+                self.failed_indices.remove(idx)
 
     def _report_progress(self, pbar: tqdm.tqdm, results: Collection[Any], total: int) -> None:
         """Compute progress; compare_results opts into dynamically shaped, score-bearing results."""
