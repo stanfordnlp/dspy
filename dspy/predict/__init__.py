@@ -9,6 +9,7 @@ from dspy.predict.react import ReAct, Tool
 from dspy.predict.react_v2 import ReActV2
 from dspy.predict.refine import Refine
 from dspy.predict.rlm import RLM
+from dspy.predict.skills_react import SkillsReAct
 
 __all__ = [
     "majority",
@@ -21,6 +22,7 @@ __all__ = [
     "ReActV2",
     "Refine",
     "RLM",
+    "SkillsReAct",
     "Tool",
     "Parallel",
 ]
