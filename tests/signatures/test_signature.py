@@ -181,6 +181,28 @@ def test_insert_field_at_various_positions():
     assert "new_output_end" == list(s4.output_fields.keys())[-1]
 
 
+def test_insert_refreshes_default_instructions():
+    # https://github.com/stanfordnlp/dspy/issues/1705
+    sig = Signature("input1 -> output1")
+    extended = sig.prepend("new_input", InputField(), str)
+    assert extended.instructions == "Given the fields `new_input`, `input1`, produce the fields `output1`."
+    # The original signature is unchanged.
+    assert sig.instructions == "Given the fields `input1`, produce the fields `output1`."
+
+    # Custom instructions are preserved as-is.
+    custom = Signature("input1 -> output1", "Do the thing.")
+    assert custom.prepend("new_input", InputField(), str).instructions == "Do the thing."
+
+
+def test_chain_of_thought_instructions_include_reasoning():
+    # https://github.com/stanfordnlp/dspy/issues/1705
+    cot = dspy.ChainOfThought("question -> answer")
+    assert "`reasoning`" in cot.predict.signature.instructions
+    assert cot.predict.signature.instructions == (
+        "Given the fields `question`, produce the fields `reasoning`, `answer`."
+    )
+
+
 def test_order_preserved_with_mixed_annotations():
     class ExampleSignature(dspy.Signature):
         text: str = dspy.InputField()

@@ -504,7 +504,12 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         lst.insert(index, (name, (type_, field)))
 
         new_fields = dict(input_fields + output_fields)
-        return Signature(new_fields, cls.instructions)
+        # If the instructions are still the auto-generated default for the old field set,
+        # regenerate them for the new field set so the inserted field is reflected
+        # (e.g. ChainOfThought's prepended `reasoning` field). Custom instructions are
+        # preserved unchanged.
+        instructions = None if cls.instructions == _default_instructions(cls) else cls.instructions
+        return Signature(new_fields, instructions)
 
     @classmethod
     def equals(cls, other) -> bool:
