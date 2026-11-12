@@ -152,6 +152,101 @@ def test_signature_inequality():
     assert not sig1.equals(sig2)
 
 
+def test_signature_inequality_different_types():
+    sig1 = Signature("input: int -> output: str")
+    sig2 = Signature("input: str -> output: int")
+    assert not sig1.equals(sig2)
+
+
+def test_signature_inequality_different_defaults():
+    class SigWithDefault(Signature):
+        input: str = InputField(default="abc")
+        output: str = OutputField()
+
+    class SigNoDefault(Signature):
+        input: str = InputField()
+        output: str = OutputField()
+
+    assert not SigWithDefault.equals(SigNoDefault)
+
+
+def test_signature_default_factory():
+    class SigWithFactory(Signature):
+        input: list = InputField(default_factory=list)
+        output: str = OutputField()
+
+    class SigWithDiffFactory(Signature):
+        input: dict = InputField(default_factory=dict)
+        output: str = OutputField()
+
+    class SigNoFactory(Signature):
+        input: list = InputField()
+        output: str = OutputField()
+
+    assert SigWithFactory.equals(SigWithFactory)
+    assert not SigWithFactory.equals(SigWithDiffFactory)
+    assert not SigWithFactory.equals(SigNoFactory)
+
+
+def test_signature_non_scalar_and_nan_defaults():
+    import numpy as np
+
+    class SigWithArray1(Signature):
+        input: object = InputField(default=np.array([1, 2]))
+        output: str = OutputField()
+
+    class SigWithArray2(Signature):
+        input: object = InputField(default=np.array([1, 2]))
+        output: str = OutputField()
+
+    class SigWithDiffArray(Signature):
+        input: object = InputField(default=np.array([1, 3]))
+        output: str = OutputField()
+
+    class SigWithNan(Signature):
+        input: float = InputField(default=float("nan"))
+        output: str = OutputField()
+
+    assert SigWithArray1.equals(SigWithArray1)
+    assert SigWithArray1.equals(SigWithArray2)
+    assert not SigWithArray1.equals(SigWithDiffArray)
+    assert SigWithNan.equals(SigWithNan)
+
+
+def test_signature_dataframe_defaults():
+    pd = pytest.importorskip("pandas")
+
+    class SigWithDf1(Signature):
+        input: object = InputField(default=pd.DataFrame({"text": ["alpha"]}))
+        output: str = OutputField()
+
+    class SigWithDf2(Signature):
+        input: object = InputField(default=pd.DataFrame({"text": ["alpha"]}))
+        output: str = OutputField()
+
+    class SigWithDiffDf(Signature):
+        input: object = InputField(default=pd.DataFrame({"text": ["beta"]}))
+        output: str = OutputField()
+
+    assert SigWithDf1.equals(SigWithDf1)
+    assert SigWithDf1.equals(SigWithDf2)
+    assert not SigWithDf1.equals(SigWithDiffDf)
+
+
+def test_signature_equals_non_signature_classes():
+    from pydantic import BaseModel
+
+    class PlainModel(BaseModel):
+        input: str
+
+    sig = Signature("input -> output")
+    assert not sig.equals(PlainModel)
+    assert not sig.equals(BaseModel)
+    assert not sig.equals(object)
+    assert not sig.equals(None)
+    assert not sig.equals("string")
+
+
 def test_equality_format():
     class TestSignature(Signature):
         input = InputField(format=lambda x: x)
