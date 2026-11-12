@@ -255,7 +255,13 @@ def request_cache(
             if cache_arg_name:
                 # When `cache_arg_name` is provided, use the value of the argument with this name as the request for
                 # caching.
-                modified_request = copy.deepcopy(kwargs[cache_arg_name])
+                if cache_arg_name in kwargs:
+                    request = kwargs[cache_arg_name]
+                else:
+                    bound = inspect.signature(fn).bind(*args, **kwargs)
+                    bound.apply_defaults()
+                    request = bound.arguments[cache_arg_name]
+                modified_request = copy.deepcopy(request)
             else:
                 # When `cache_arg_name` is not provided, use the entire kwargs as the request for caching.
                 modified_request = copy.deepcopy(kwargs)
