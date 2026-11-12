@@ -1699,3 +1699,72 @@ def test_xml_adapter_missing_optional_output_fields_fall_back_to_defaults():
     adapter = XMLAdapter()
     parsed = adapter.parse(TestSignature, "<answer>Paris</answer>")
     assert parsed == {"answer": "Paris", "note": "No note", "maybe": None}
+
+
+def test_xml_adapter_preserves_nested_output_metadata():
+    """Nested XML skeletons must not drop descriptions, Literals or docstrings (#10754)."""
+    from pydantic import BaseModel, Field
+
+    class Policy(BaseModel):
+        """Refund rules stated in the passages."""
+
+        days: int = Field(description="Calendar days; never assume 30 if the passages do not say")
+        channel: Literal["web_form", "courier_pickup"] = Field(description="How the customer starts a return")
+
+    class Signature(dspy.Signature):
+        """Answer from the passages."""
+
+        passages: str = dspy.InputField()
+        policy: Policy = dspy.OutputField(desc="The policy")
+
+    structure = XMLAdapter().format_field_structure(Signature)
+
+    assert "Calendar days; never assume 30" in structure
+    assert "How the customer starts a return" in structure
+    assert "courier_pickup" in structure
+    assert "Refund rules stated in the passages." in structure
+
+
+def test_xml_adapter_nested_schema_note_uses_xml_tag_names():
+    """The schema note must not suggest alias names the XML parser rejects."""
+    from pydantic import BaseModel, Field
+
+    class Address(BaseModel):
+        country_code: str = Field(alias="country-code", description="Country code")
+
+    class Signature(dspy.Signature):
+        address: Address = dspy.OutputField()
+
+    structure = XMLAdapter().format_field_structure(Signature)
+
+    assert "<country_code>" in structure
+    assert "country-code" not in structure
+    assert '"country_code"' in structure
+
+
+def test_xml_adapter_plain_field_named_description_gets_no_schema_note():
+    """Only real schema metadata should trigger the extra schema note."""
+    from pydantic import BaseModel
+
+    class Plain(BaseModel):
+        description: str
+        enum: str
+        const: str
+
+    class Signature(dspy.Signature):
+        plain: Plain = dspy.OutputField()
+
+    structure = XMLAdapter().format_field_structure(Signature)
+
+    assert "# note:" not in structure
+
+
+def test_xml_adapter_dict_literal_keys_get_schema_note():
+    """Allowed dictionary keys live under propertyNames and must not be dropped."""
+    class Signature(dspy.Signature):
+        counts: dict[Literal["web", "courier"], int] = dspy.OutputField()
+
+    structure = XMLAdapter().format_field_structure(Signature)
+
+    assert "web" in structure
+    assert "courier" in structure
