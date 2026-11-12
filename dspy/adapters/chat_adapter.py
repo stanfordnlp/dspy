@@ -27,7 +27,6 @@ class FieldInfoWithName(NamedTuple):
     name: str
     info: FieldInfo
 
-
 class ChatAdapter(Adapter):
     """Formats and parses fields using `[[ ## field_name ## ]]` markers.
 
