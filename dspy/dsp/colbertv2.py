@@ -31,6 +31,9 @@ class ColBERTv2:
         else:
             topk: list[dict[str, Any]] = colbertv2_get_request(self.url, query, k)
 
+        # Older POST responses may be cached without long_text at either cache layer.
+        topk = [psg if "long_text" in psg else {**psg, "long_text": psg["text"]} for psg in topk]
+
         if simplify:
             return [psg["long_text"] for psg in topk]
 
@@ -79,7 +82,7 @@ def colbertv2_post_request_v2(url: str, query: str, k: int):
     if "topk" not in res_json:
         raise ValueError(f"ColBERTv2 server returned an unexpected response: {res_json}")
 
-    return res_json["topk"][:k]
+    return [{**d, "long_text": d["text"]} for d in res_json["topk"][:k]]
 
 
 @request_cache()
