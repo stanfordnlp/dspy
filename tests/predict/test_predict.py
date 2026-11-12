@@ -4,6 +4,7 @@ import enum
 import logging
 import time
 import types
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from unittest.mock import patch
 
@@ -1395,6 +1396,33 @@ def test_nested_dict_type_validation(caplog):
         predict_instance(mapping={1: 1, 2: 2, 3: 3})
 
     assert "Type mismatch for field 'mapping': expected dict[str, int]" in caplog.text
+
+
+def test_abstract_collection_type_validation(caplog):
+    """Sequence and Mapping annotations accept the concrete collections that satisfy them."""
+    log_test_helper()
+
+    class AbstractCollectionSignature(dspy.Signature):
+        names: Sequence[str] = dspy.InputField()
+        counts: Mapping[str, int] = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    predict_instance = Predict(AbstractCollectionSignature)
+
+    caplog.clear()
+    dspy.configure(lm=DummyLM([{"result": "test output"}]))
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(names=["a", "b"], counts={"a": 1})
+
+    assert "Type mismatch" not in caplog.text
+
+    caplog.clear()
+    dspy.configure(lm=DummyLM([{"result": "test output"}]))
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(names=[1, 2], counts={"a": "1"})
+
+    assert "Type mismatch for field 'names': expected Sequence[str]" in caplog.text
+    assert "Type mismatch for field 'counts': expected Mapping[str, int]" in caplog.text
 
 
 def test_nested_tuple_type_validation(caplog):
