@@ -302,6 +302,7 @@ plugins:
             "learn/programming/adapters.md": "getting-started/first-program.md"
             "learn/programming/tools.md": "getting-started/react-and-tools.md"
             "learn/programming/mcp.md": "getting-started/react-and-tools.md"
+            "learn/programming/7-assertions.md": "diving-deeper/built-in-module-variants.md"
             "learn/evaluation/overview.md": "getting-started/metrics.md"
             "learn/evaluation/data.md": "getting-started/metrics.md"
             "learn/evaluation/metrics.md": "getting-started/metrics.md"
