@@ -3,14 +3,14 @@ from dspy.primitives.example import Example
 
 class Prediction(Example):
     """A prediction object that contains the output of a DSPy module.
-    
+
     Prediction inherits from Example.
-    
+
     To allow feedback-augmented scores, Prediction supports comparison operations
     (<, >, <=, >=) for Predictions with a `score` field. The comparison operations
     compare the 'score' values as floats. For equality comparison, Predictions are equal
     if their underlying data stores are equal (inherited from Example).
-    
+
     Arithmetic operations (+, /, etc.) are also supported for Predictions with a 'score'
     field, operating on the score value.
     """
@@ -45,7 +45,7 @@ class Prediction(Example):
             return f"Prediction(\n    {store_repr}\n)"
 
         num_completions = len(self._completions)
-        return f"Prediction(\n    {store_repr},\n    completions=Completions(...)\n) ({num_completions-1} completions omitted)"
+        return f"Prediction(\n    {store_repr},\n    completions=Completions(...)\n) ({num_completions - 1} completions omitted)"
 
     def __str__(self):
         return self.__repr__()
@@ -141,10 +141,19 @@ class Completions:
 
     def __getitem__(self, key):
         if isinstance(key, int):
-            if key < 0 or key >= len(self):
+            length = len(self)
+            if key < 0:
+                key += length
+            if key < 0 or key >= length:
                 raise IndexError("Index out of range")
 
             return Prediction(**{k: v[key] for k, v in self._completions.items()})
+
+        if isinstance(key, slice):
+            return Completions(
+                {k: v[key] for k, v in self._completions.items()},
+                signature=self.signature,
+            )
 
         return self._completions[key]
 
@@ -163,6 +172,19 @@ class Completions:
 
     def __contains__(self, key):
         return key in self._completions
+
+    def __eq__(self, other):
+        if not isinstance(other, Completions):
+            return False
+        if self._completions != other._completions:
+            return False
+        if self.signature == other.signature:
+            return True
+        if hasattr(self.signature, "equals") and callable(self.signature.equals):
+            return bool(self.signature.equals(other.signature))
+        if hasattr(other.signature, "equals") and callable(other.signature.equals):
+            return bool(other.signature.equals(self.signature))
+        return False
 
     def __repr__(self):
         items_repr = ",\n    ".join(f"{k}={v!r}" for k, v in self._completions.items())
