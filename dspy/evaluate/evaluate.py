@@ -81,6 +81,8 @@ class Evaluate:
         failure_score: float = 0.0,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        timeout: float = 120,
+        straggler_limit: int = 3,
         **kwargs,
     ):
         """
@@ -97,6 +99,9 @@ class Evaluate:
             failure_score (float): The default score to use if evaluation fails due to an exception.
             save_as_csv (Optional[str]): The file name where the csv will be saved.
             save_as_json (Optional[str]): The file name where the json will be saved.
+            timeout (float): The maximum number of seconds an item may run before it is considered a straggler
+                and resubmitted. Set to 0 to disable straggler resubmission for long-running items.
+            straggler_limit (int): The maximum number of remaining items below which straggler resubmission kicks in.
 
         """
         self.devset = devset
@@ -109,6 +114,8 @@ class Evaluate:
         self.failure_score = failure_score
         self.save_as_csv = save_as_csv
         self.save_as_json = save_as_json
+        self.timeout = timeout
+        self.straggler_limit = straggler_limit
 
         if "return_outputs" in kwargs:
             raise ValueError("`return_outputs` is no longer supported. Results are always returned inside the `results` field of the `EvaluationResult` object.")
@@ -125,6 +132,8 @@ class Evaluate:
         callback_metadata: dict[str, Any] | None = None,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        timeout: float | None = None,
+        straggler_limit: int | None = None,
     ) -> EvaluationResult:
         """
         Args:
@@ -138,6 +147,9 @@ class Evaluate:
             display_table (Union[bool, int]): Whether to display the evaluation results in a table. if not provided, use
                 `self.display_table`. If a number is passed, the evaluation results will be truncated to that number before displayed.
             callback_metadata (dict): Metadata to be used for evaluate callback handlers.
+            timeout (Optional[float]): Override the straggler timeout configured on the ``Evaluate`` instance.
+                Set to 0 to disable straggler resubmission for long-running items.
+            straggler_limit (Optional[int]): Override the straggler limit configured on the ``Evaluate`` instance.
 
         Returns:
             The evaluation results are returned as a dspy.EvaluationResult object containing the following attributes:
@@ -153,6 +165,8 @@ class Evaluate:
         display_table = display_table if display_table is not None else self.display_table
         save_as_csv = save_as_csv if save_as_csv is not None else self.save_as_csv
         save_as_json = save_as_json if save_as_json is not None else self.save_as_json
+        timeout = timeout if timeout is not None else self.timeout
+        straggler_limit = straggler_limit if straggler_limit is not None else self.straggler_limit
 
         if not devset:
             raise ValueError("devset must contain at least one example, got an empty devset.")
@@ -168,6 +182,8 @@ class Evaluate:
             max_errors=(self.max_errors if self.max_errors is not None else dspy.settings.max_errors),
             provide_traceback=self.provide_traceback,
             compare_results=True,
+            timeout=timeout,
+            straggler_limit=straggler_limit,
         )
 
         def process_item(example):
