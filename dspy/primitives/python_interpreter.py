@@ -7,6 +7,7 @@ protocol defined in interpreter.py.
 """
 
 import asyncio
+import base64
 import dataclasses
 import functools
 import inspect
@@ -243,6 +244,7 @@ class PythonInterpreter:
         callbacks: list[BaseCallback] | None = None,
         sandbox_cache: bool | None = None,
         sandbox_packages: Sequence[str] = ("pillow",),
+        snapshot: bytes | None = None,
     ) -> None:
         """
         Args:
@@ -269,6 +271,9 @@ class PythonInterpreter:
                    import them. The default, Pillow, is what ``dspy.Image.to_pil()`` needs. ``()`` leaves it out, for
                    a smaller bundle that starts a little faster; images still pass through the sandbox, and
                    ``to_pil()`` raises ``ImportError``. Each package makes the sandbox start a little slower.
+            snapshot: Python state to start from, as ``snapshot()`` returned it, instead of a fresh one. It needs an
+                   interpreter that starts as the one that made it did: from the same dspy and Pyodide, with the same
+                   ``sandbox_cache`` and, if that one had it, ``provide_dspy()``.
         """
         if isinstance(deno_command, dict):
             raise TypeError("deno_command must be a list of strings, not a dict")
@@ -349,6 +354,9 @@ class PythonInterpreter:
                 args.append(f"--dspy-deno-dir={_canonicalize_path(deno_dir)}")
             self.deno_command = args
 
+        self._restore = snapshot
+        if snapshot is not None:
+            self.deno_command.append("--dspy-restore")
         self.deno_process = None
         self._mounted_files = False
         self._last_diagnostic: str | None = None
@@ -634,6 +642,9 @@ class PythonInterpreter:
             _validate_deno_version(self.deno_command[0])
             self._start_from_compiled_stdlib()
         self._popen()
+        if self._restore is not None:
+            self._write_message(base64.b64encode(self._restore).decode(), "while restoring its snapshot")
+            self._restore = None
         try:
             self._health_check()
         except CodeInterpreterError as e:
@@ -681,7 +692,10 @@ class PythonInterpreter:
             return response_line
 
         diagnostic = f" (last sandbox diagnostic: {self._last_diagnostic})" if self._last_diagnostic else ""
-        exit_code = self.deno_process.poll()
+        try:
+            exit_code = self.deno_process.wait(timeout=1)  # its stdout closed: give it a moment to exit
+        except subprocess.TimeoutExpired:
+            exit_code = None
         if exit_code is not None:
             stderr = self.deno_process.stderr.read() if self.deno_process.stderr else ""
             self._raise_terminal_error(f"Deno exited (code {exit_code}) {context}: {stderr}{diagnostic}")
@@ -756,9 +770,10 @@ class PythonInterpreter:
 
     def _health_check(self) -> None:
         """Verify the subprocess is alive by executing a simple expression."""
-        response = self._send_request("execute", {"code": "print(1+1)"}, "during health check")
+        # It calls nothing, which a restored session may have redefined, like print.
+        response = self._send_request("execute", {"code": "1 + 1"}, "during health check")
         result = response["result"]
-        if not isinstance(result, dict) or result.get("output", "").strip() != "2":
+        if not isinstance(result, dict) or result.get("output") != 2:
             self._raise_terminal_error(f"Unexpected ping response: {response}")
 
     def _to_json_compatible(self, value: Any) -> Any:
@@ -943,6 +958,22 @@ class PythonInterpreter:
             self._raise_terminal_error(f"Unexpected message format from sandbox: {msg}")
 
         self._raise_terminal_error(f"Too many skipped lines ({skipped}) during execution")
+
+    def snapshot(self) -> bytes:
+        """Return the sandbox's Python state, for ``PythonInterpreter(snapshot=...)`` to start from.
+
+        It is the sandbox's whole memory, compressed: what its code computed, the results of tool calls, and the
+        environment variables passed in. Files its code wrote are not in it.
+        """
+        if self._handling_tool_call:
+            raise CodeInterpreterError("PythonInterpreter cannot snapshot itself from one of its tools.")
+        self._check_session_active()
+        self._check_thread_ownership()
+        self._ensure_deno_process()
+        result = self._send_request("snapshot", {}, "while taking a snapshot")["result"]
+        if "refused" in result:
+            raise CodeInterpreterError(f"This sandbox cannot be snapshotted: {result['refused']}")
+        return base64.b64decode(result["snapshot"])
 
     @with_callbacks
     def start(self) -> None:

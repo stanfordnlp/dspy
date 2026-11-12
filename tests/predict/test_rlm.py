@@ -1947,6 +1947,22 @@ async def test_extracted_media_history_replays_without_payloads(adapter_type, se
     assert image.url.split(",", 1)[1] not in text
 
 
+def test_saved_interpreter_states_are_the_most_recently_used_within_the_budget(monkeypatch, tmp_path):
+    import os
+
+    import dspy.predict.rlm as rlm_module
+
+    monkeypatch.setattr(rlm_module, "_states_dir", lambda cache: tmp_path)
+    monkeypatch.setattr(rlm_module, "_STATE_BUDGET", 10)
+    a, b = rlm_module._save_state(b"a" * 4, cache=True), rlm_module._save_state(b"b" * 4, cache=True)
+    os.utime(tmp_path / f"{b}.snap", (1, 1))
+    os.utime(tmp_path / f"{a}.snap", (2, 2))
+    assert rlm_module._load_state(a) == b"a" * 4  # now the most recently used
+    c = rlm_module._save_state(b"c" * 4, cache=True)
+    assert rlm_module._load_state(b) is None and rlm_module._load_state(c) == b"c" * 4
+    assert sorted(path.name for path in tmp_path.iterdir()) == sorted([f"{a}.snap", f"{c}.snap"])
+
+
 @pytest.mark.deno
 class TestRLMHistoryWithDummyLM:
     """End-to-end tests of RLM History using DummyLM with RLM and PythonInterpreter.
@@ -2041,6 +2057,32 @@ class TestRLMHistoryWithDummyLM:
         assert result.history.messages[0] == seed
         assert result.history.messages[1]["query"] == "now"
         assert result.history.messages[1]["answer"] == 2
+
+    def test_a_history_continues_from_the_interpreter_state_its_last_step_left(self, monkeypatch, caplog, tmp_path):
+        import dspy.predict.rlm as rlm_module
+
+        monkeypatch.setattr(rlm_module, "_states_dir", lambda cache: tmp_path)
+        rlm = RLM("question -> answer", max_iters=2, sub_lm=DummyLM([{"a": "sub-agent"}, {"a": "query"}]))
+        extend = "import dspy\nrows.append(dspy.Predict('q -> a')(q='hi').a)\nSUBMIT(f'{len(rows)} {rows[-1]} {ask(\"hi\")}')"
+        with dummy_lm_context([
+            {"plan": "load", "code": "rows = list(range(10))\nask = llm_query\nSUBMIT(str(len(rows)))"},
+            {"plan": "extend", "code": extend},
+            {"plan": "count", "code": "SUBMIT(str(len(rows)))"},
+            {"plan": "check", "code": "SUBMIT(str('rows' in globals()))"},
+        ]):
+            first = rlm(question="load")
+            assert first.history.messages[-1]["repl_entry"].interpreter_state
+            # Its variables, a helper it kept, and dspy wired to this call's host.
+            answer = rlm(question="extend", history=first.history).answer
+            assert answer.startswith("11 sub-agent") and "query" in answer
+            # The state that step left, after a JSON round trip, not where the call above took it.
+            restored = dspy.History.model_validate_json(first.history.model_dump_json())
+            assert rlm(question="count", history=restored).answer == "10"
+
+            (tmp_path / f"{first.history.messages[-1]['repl_entry'].interpreter_state}.snap").unlink()
+            with caplog.at_level("WARNING", logger="dspy.predict.rlm"):
+                assert rlm(question="check", history=first.history).answer == "False"
+            assert "starts a fresh REPL" in caplog.text
 
     def test_repl_trajectory_resets_but_not_history(self):
 

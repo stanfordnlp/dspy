@@ -1967,8 +1967,8 @@ def test_an_edited_source_file_makes_a_new_dspy_bundle(tmp_path, monkeypatch):
     assert sandbox_bundle._prepare_bundle((), None, "", root) != first
 
 
-def _with_dspy() -> PythonInterpreter:
-    interpreter = PythonInterpreter()
+def _with_dspy(**kwargs) -> PythonInterpreter:
+    interpreter = PythonInterpreter(**kwargs)
     interpreter.provide_dspy()
     return interpreter
 
@@ -2028,6 +2028,51 @@ def test_a_sandbox_that_cannot_restore_its_snapshot_starts_without_it(tmp_path, 
     assert _flag(interpreter, "--dspy-snapshot") is None
     assert not tampered.exists()  # discarded, so that the next process builds a new one
     assert tampered.name in sandbox_bundle._refused
+
+
+def test_a_snapshot_restores_the_session_in_a_new_sandbox():
+    def double(x: int) -> int:
+        return x * 2
+
+    with PythonInterpreter(tools={"double": double}) as interpreter:
+        interpreter.execute(
+            "class Counter:\n    n = 0\n    def bump(self):\n        self.n += 1\n        return self.n\n"
+            "counter = Counter()\ncounter.bump()\nsquares = (i * i for i in range(9))\nnext(squares)\nhalf = double(x=21)\n"
+            "print = lambda *args: None"  # nothing a restore runs may depend on it
+        )
+        snapshot = interpreter.snapshot()
+        assert interpreter.execute("counter.bump()") == 2  # the original goes on
+
+    with PythonInterpreter(tools={"double": double}, snapshot=snapshot) as restored:
+        assert restored.execute("[counter.bump(), next(squares), half, double(x=5)]") == [2, 1, 42, 10]
+        again = restored.snapshot()
+    with PythonInterpreter(snapshot=again) as chained:
+        assert chained.execute("counter.bump()") == 3
+
+
+def test_a_sandbox_with_dspy_restores_a_snapshot_of_its_session():
+    with _with_dspy() as interpreter:
+        interpreter.execute("import dspy, regex\nsignature = dspy.Signature('question -> answer')")
+        snapshot = interpreter.snapshot()
+    with _with_dspy(snapshot=snapshot) as restored:
+        assert restored.execute("[list(signature.output_fields), regex.match('a+', 'aa')[0]]") == [["answer"], "aa"]
+
+
+def test_a_snapshot_is_refused_where_it_could_not_be_restored():
+    with PythonInterpreter(sandbox_cache=True) as interpreter:
+        interpreter.execute("import js\nnow = js.Date.new()")
+        with pytest.raises(CodeInterpreterError, match="holds JavaScript objects"):
+            interpreter.snapshot()
+        interpreter.execute("del now")
+        snapshot = interpreter.snapshot()
+
+    # Raised, never a fresh session in its place.
+    with PythonInterpreter(sandbox_cache=False, snapshot=snapshot) as other:
+        with pytest.raises(CodeInterpreterError, match="sandbox that started differently"):
+            other.execute("1")
+    with PythonInterpreter(snapshot=b"not a snapshot") as other:
+        with pytest.raises(CodeInterpreterError, match="snapshot could not be restored"):
+            other.execute("1")
 
 
 def test_a_new_standard_library_archive_makes_a_new_snapshot(tmp_path, monkeypatch):
