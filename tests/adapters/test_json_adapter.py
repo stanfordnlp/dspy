@@ -6,6 +6,7 @@ import pydantic
 import pytest
 
 import dspy
+import dspy.experimental
 from dspy.clients.lm15_boundary import request_kwargs
 from dspy.lm15 import ImagePart, Usage
 from dspy.primitives.repl_types import REPLEntry
@@ -472,10 +473,10 @@ def test_json_adapter_format_exact_messages_with_nested_pydantic_output():
                  '{\\"type\\": \\"object\\", \\"properties\\": {\\"city\\": {\\"type\\": \\"string\\", '
                  '\\"title\\": \\"City\\"}, \\"country\\": {\\"type\\": \\"string\\", \\"title\\": '
                  '\\"Country\\"}}, \\"required\\": [\\"city\\", \\"country\\"], \\"title\\": '
-                 '\\"JsonNestedAddress\\"}}, \\"properties\\": {\\"address\\": {\\"$ref\\": '
+                 '\\"JsonNestedAddress\\"}}, \\"properties\\": {\\"title\\": {\\"type\\": \\"string\\", '
+                 '\\"title\\": \\"Title\\"}, \\"address\\": {\\"$ref\\": '
                  '\\"#/$defs/JsonNestedAddress\\"}, \\"scores\\": {\\"type\\": \\"array\\", '
-                 '\\"items\\": {\\"type\\": \\"number\\"}, \\"title\\": \\"Scores\\"}, \\"title\\": '
-                 '{\\"type\\": \\"string\\", \\"title\\": \\"Title\\"}}, \\"required\\": [\\"title\\", '
+                 '\\"items\\": {\\"type\\": \\"number\\"}, \\"title\\": \\"Scores\\"}}, \\"required\\": [\\"title\\", '
                  '\\"address\\", \\"scores\\"], \\"title\\": \\"JsonNestedSummary\\"}"\n'
                  '}\n'
                  'In adhering to this structure, your objective is: \n'
@@ -791,9 +792,9 @@ def test_json_adapter_format_exact_messages_with_tool_calls_output_demo():
                  '{\n'
                  '  "tool_calls": "{tool_calls}        # note: the value you produce must adhere to '
                  'the JSON schema: {\\"type\\": \\"object\\", \\"$defs\\": {\\"ToolCall\\": '
-                 '{\\"type\\": \\"object\\", \\"properties\\": {\\"args\\": {\\"type\\": \\"object\\", '
-                 '\\"additionalProperties\\": true, \\"title\\": \\"Args\\"}, \\"name\\": {\\"type\\": '
-                 '\\"string\\", \\"title\\": \\"Name\\"}}, \\"required\\": [\\"name\\", \\"args\\"], '
+                 '{\\"type\\": \\"object\\", \\"properties\\": {\\"name\\": {\\"type\\": '
+                 '\\"string\\", \\"title\\": \\"Name\\"}, \\"args\\": {\\"type\\": \\"object\\", '
+                 '\\"additionalProperties\\": true, \\"title\\": \\"Args\\"}}, \\"required\\": [\\"name\\", \\"args\\"], '
                  '\\"title\\": \\"ToolCall\\"}}, \\"properties\\": {\\"tool_calls\\": {\\"type\\": '
                  '\\"array\\", \\"items\\": {\\"$ref\\": \\"#/$defs/ToolCall\\"}, \\"title\\": \\"Tool '
                  'Calls\\"}}, \\"required\\": [\\"tool_calls\\"], \\"title\\": \\"ToolCalls\\"}"\n'

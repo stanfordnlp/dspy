@@ -146,7 +146,7 @@ def _get_json_schema(field_type):
         # Move the 'type' key to the front of the dictionary, recursively, for LLM readability/adherence.
         if isinstance(d, Mapping):
             return {
-                k: move_type_to_front(v) for k, v in sorted(d.items(), key=lambda item: (item[0] != "type", item[0]))
+                k: move_type_to_front(v) for k, v in sorted(d.items(), key=lambda item: item[0] != "type")
             }
         elif isinstance(d, list):
             return [move_type_to_front(item) for item in d]
