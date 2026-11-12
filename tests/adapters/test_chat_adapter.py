@@ -1592,8 +1592,8 @@ def test_chat_adapter_format_exact_messages_with_non_native_tool_history():
             "\n"
             "[[ ## tool_calls ## ]]\n"
             '{tool_calls}        # note: the value you produce must adhere to the JSON schema: {"type": "object", '
-            '"$defs": {"ToolCall": {"type": "object", "properties": {"args": {"type": "object", '
-            '"additionalProperties": true, "title": "Args"}, "name": {"type": "string", "title": "Name"}}, '
+            '"$defs": {"ToolCall": {"type": "object", "properties": {"name": {"type": "string", "title": "Name"}, "args": {"type": "object", '
+            '"additionalProperties": true, "title": "Args"}}, '
             '"required": ["name", "args"], "title": "ToolCall"}}, "properties": {"tool_calls": {"type": "array", '
             '"items": {"$ref": "#/$defs/ToolCall"}, "title": "Tool Calls"}}, "required": ["tool_calls"], "title": '
             '"ToolCalls"}\n'
