@@ -101,18 +101,17 @@ Modules can be frozen by setting their `._compiled` attribute to be True, indica
 
 - **How do I use DSPy assertions?**
 
-    a) **How to Add Assertions to Your Program**:
-    - **Define Constraints**: Use `dspy.Assert` and/or `dspy.Suggest` to define constraints within your DSPy program. These are based on boolean validation checks for the outcomes you want to enforce, which can simply be Python functions to validate the model outputs.
-    - **Integrating Assertions**: Keep your Assertion statements following a model generations (hint: following a module layer)
+    Assertions are no longer part of DSPy: `dspy.Assert`, `dspy.Suggest`, `assert_transform_module`,
+    `backtrack_handler` and `activate_assertions` do not exist any more, so snippets that import
+    them fail with `ImportError` or `AttributeError`. For "sample until the output passes a check",
+    use the module variants, which take a module, an attempt budget and a reward function:
 
-    b) **How to Activate the Assertions**:
-    1. **Using `assert_transform_module`**:
-        - Wrap your DSPy module with assertions using the `assert_transform_module` function, along with a `backtrack_handler`. This function transforms your program to include internal assertions backtracking and retry logic, which can be customized as well:
-        `program_with_assertions = assert_transform_module(ProgramWithAssertions(), backtrack_handler)`
-    2. **Activate Assertions**:
-        - Directly call `activate_assertions` on your DSPy program with assertions: `program_with_assertions = ProgramWithAssertions().activate_assertions()`
+    - `dspy.BestOfN(module, N, reward_fn, threshold, fail_count=None)` samples the module and keeps
+      the best attempt, stopping as soon as one meets `threshold`.
+    - `dspy.Refine(module, N, reward_fn, threshold, fail_count=None)` does the same and feeds the
+      failure back into the next attempt.
 
-    **Note**: To use Assertions properly, you must **activate** a DSPy program that includes `dspy.Assert` or `dspy.Suggest` statements from either of the methods above. 
+    See [built-in module variants](diving-deeper/built-in-module-variants.md) for the full signatures.
 
 ## Errors
 
