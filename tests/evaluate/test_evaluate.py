@@ -59,9 +59,7 @@ def test_evaluate_call():
 
 def test_evaluate_single_thread_runs_in_main_thread():
     """Evaluate with num_threads=1 should run in the main thread."""
-    dspy.configure(
-        lm=DummyLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}})
-    )
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
 
     execution_threads = []
@@ -87,6 +85,7 @@ def test_evaluate_single_thread_runs_in_main_thread():
 @pytest.mark.extra
 def test_construct_result_df():
     import pandas as pd
+
     devset = [
         new_example("What is 1+1?", "2"),
         new_example("What is 2+2?", "4"),
@@ -420,6 +419,7 @@ def test_evaluate_save_as_json_with_history():
 
     finally:
         import os
+
         if os.path.exists(temp_json):
             os.unlink(temp_json)
 
@@ -466,6 +466,7 @@ def test_evaluate_save_as_csv_with_history():
 
         # Verify CSV file was created
         import csv
+
         with open(temp_csv) as f:
             reader = csv.DictReader(f)
             rows = list(reader)
@@ -477,6 +478,7 @@ def test_evaluate_save_as_csv_with_history():
 
     finally:
         import os
+
         if os.path.exists(temp_csv):
             os.unlink(temp_csv)
 
@@ -577,3 +579,36 @@ def test_evaluate_raises_on_empty_devset():
     )
     with pytest.raises(ValueError, match="devset"):
         ev(program)
+
+
+def test_evaluate_save_as_csv_writes_utf8(tmp_path):
+    """The CSV export must be UTF-8 regardless of the platform default encoding.
+
+    On Windows the default is cp1252, so a non-ASCII prediction used to either
+    raise UnicodeEncodeError or produce a file other tools could not read back.
+    """
+
+    class Program(dspy.Module):
+        def forward(self, x):
+            return dspy.Prediction(answer="café — naïve ✓")
+
+    examples = [dspy.Example(x=1, answer="gold").with_inputs("x")]
+    csv_path = tmp_path / "results.csv"
+
+    def graded(example, prediction):
+        return 1.0
+
+    evaluator = Evaluate(
+        devset=examples,
+        metric=graded,
+        display_progress=False,
+        save_as_csv=str(csv_path),
+    )
+    evaluator(Program())
+
+    raw = csv_path.read_bytes()
+    # Bytes, not text: this is the assertion the encoding change exists for.
+    assert "café — naïve ✓".encode() in raw
+    with csv_path.open(newline="", encoding="utf-8") as csvfile:
+        rows = list(csv.DictReader(csvfile))
+    assert rows[0]["pred_answer"] == "café — naïve ✓"
