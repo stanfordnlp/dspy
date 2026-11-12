@@ -226,10 +226,10 @@ def add_missing_titles(docs: Path, entries: dict[str, str]) -> None:
 
 def source_title(source: Path) -> str:
     if source.suffix == ".ipynb":
-        notebook = json.loads(source.read_text())
+        notebook = json.loads(source.read_text(encoding="utf-8"))
         text = "\n".join("".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "markdown")
     else:
-        text = source.read_text(errors="replace")
+        text = source.read_text(encoding="utf-8", errors="replace")
     match = re.search(r"(?m)^#\s+(.+?)\s*$", text)
     return re.sub(r"\s*\{[^}]+\}\s*$", "", match.group(1)) if match else source.stem.replace("-", " ").title()
 
