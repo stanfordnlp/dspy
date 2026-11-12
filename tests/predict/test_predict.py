@@ -1060,6 +1060,41 @@ def test_input_field_default_value():
     user_message = lm.calls[0]["messages"][-1]["content"]
     assert "DEFAULT_CONTEXT" in user_message
 
+def test_input_field_default_factory(caplog):
+    log_test_helper()
+
+    class SignatureWithDefaultFactory(dspy.Signature):
+        context: list[str] = dspy.InputField(default_factory=lambda: ["DEFAULT_CONTEXT"])
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    lm = spy_lm("dummy", replies=["<answer>\ntest\n</answer>"])
+    dspy.configure(lm=lm)
+    predictor = Predict(SignatureWithDefaultFactory)
+
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predictor(question="test")
+
+    user_message = lm.calls[0]["messages"][-1]["content"]
+    assert "DEFAULT_CONTEXT" in user_message
+    assert "Not all input fields were provided" not in caplog.text
+
+
+def test_input_field_default_factory_receives_inputs():
+    class SignatureWithFactoryData(dspy.Signature):
+        question: str = dspy.InputField()
+        context: list[str] = dspy.InputField(default_factory=lambda data: [data["question"]])
+        answer: str = dspy.OutputField()
+
+    lm = spy_lm("dummy", replies=["<answer>\ntest\n</answer>"])
+    dspy.configure(lm=lm)
+    predictor = Predict(SignatureWithFactoryData)
+    predictor(question="hello")
+
+    user_message = lm.calls[0]["messages"][-1]["content"]
+    assert "hello" in user_message.split("<context>")[1].split("</context>")[0]
+
+
 def log_test_helper():
     lm = DummyLM([{"answer": "test output"}])
     dspy.configure(lm=lm)
