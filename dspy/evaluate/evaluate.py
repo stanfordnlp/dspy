@@ -187,7 +187,7 @@ class Evaluate:
         if display_table:
             if importlib.util.find_spec("pandas") is not None:
                 # Rename the 'correct' column to the name of the metric object
-                metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
+                metric_name = _get_metric_name(metric)
                 # Construct a pandas DataFrame from the results
                 result_df = self._construct_result_table(results, metric_name)
 
@@ -196,11 +196,7 @@ class Evaluate:
                 logger.warning("Skipping table display since `pandas` is not installed.")
 
         if save_as_csv:
-            metric_name = (
-                metric.__name__
-                if isinstance(metric, types.FunctionType)
-                else metric.__class__.__name__
-            )
+            metric_name = _get_metric_name(metric)
             data = self._prepare_results_output(results, metric_name)
 
             with open(save_as_csv, "w", newline="") as csvfile:
@@ -211,11 +207,7 @@ class Evaluate:
                 for row in data:
                     writer.writerow(row)
         if save_as_json:
-            metric_name = (
-                metric.__name__
-                if isinstance(metric, types.FunctionType)
-                else metric.__class__.__name__
-            )
+            metric_name = _get_metric_name(metric)
             data = self._prepare_results_output(results, metric_name)
             with open(
                     save_as_json,
@@ -299,6 +291,19 @@ class Evaluate:
             </div>
             """
             display(HTML(message))
+
+
+def _get_metric_name(metric: Callable) -> str:
+    # Name the results column after the metric: functions by their own name, callable objects by
+    # their class name. Bound methods (e.g. `judge.score`) are qualified with their class
+    # (`Judge.score`), so the column can't overwrite an example or prediction field of the same name.
+    if isinstance(metric, types.MethodType):
+        owner = metric.__self__
+        owner_class = owner if isinstance(owner, type) else type(owner)
+        return f"{owner_class.__name__}.{metric.__name__}"
+    if isinstance(metric, types.FunctionType):
+        return metric.__name__
+    return metric.__class__.__name__
 
 
 def prediction_is_dictlike(prediction):

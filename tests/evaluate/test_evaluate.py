@@ -568,6 +568,60 @@ def test_evaluate_save_as_csv_with_later_prediction_fields(tmp_path):
     assert rows[1]["explanation"] == "later field"
 
 
+def test_evaluate_save_as_csv_names_metric_column_after_bound_method(tmp_path):
+    class Grader:
+        def exact(self, example, prediction, trace=None):
+            return example.answer == prediction.answer
+
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}}))
+    csv_path = tmp_path / "results.csv"
+
+    evaluator = Evaluate(
+        devset=[new_example("What is 1+1?", "2")],
+        metric=Grader().exact,
+        display_progress=False,
+        save_as_csv=str(csv_path),
+    )
+    evaluator(Predict("question -> answer"))
+
+    with csv_path.open(newline="", encoding="utf-8") as csvfile:
+        reader = csv.DictReader(csvfile)
+        rows = list(reader)
+
+    assert reader.fieldnames == ["question", "example_answer", "pred_answer", "Grader.exact"]
+    assert rows[0]["Grader.exact"] == "True"
+
+
+def test_evaluate_bound_method_metric_does_not_overwrite_prediction_field(tmp_path):
+    class Judge:
+        def score(self, example, prediction, trace=None):
+            return prediction.score == "high"
+
+        @classmethod
+        def strict(cls, example, prediction, trace=None):
+            return False
+
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"score": "high"}}))
+    program = Predict("question -> score")
+
+    for metric, column, value in [(Judge().score, "Judge.score", "True"), (Judge.strict, "Judge.strict", "False")]:
+        csv_path = tmp_path / f"{column}.csv"
+        Evaluate(
+            devset=[new_example("What is 1+1?", "2")],
+            metric=metric,
+            display_progress=False,
+            save_as_csv=str(csv_path),
+        )(program)
+
+        with csv_path.open(newline="", encoding="utf-8") as csvfile:
+            reader = csv.DictReader(csvfile)
+            rows = list(reader)
+
+        assert reader.fieldnames == ["question", "answer", "score", column]
+        assert rows[0]["score"] == "high"
+        assert rows[0][column] == value
+
+
 def test_evaluate_raises_on_empty_devset():
     program = Predict("question -> answer")
     ev = Evaluate(
