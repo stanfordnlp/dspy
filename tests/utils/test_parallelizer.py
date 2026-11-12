@@ -195,3 +195,49 @@ def test_none_returning_tasks_are_counted_as_complete(num_threads):
 
     assert results == [None] * len(data)
     assert update_progress.call_args == mock.call(mock.ANY, len(data), len(data))
+
+
+def test_straggler_resubmission_happens_at_most_once_per_item(monkeypatch):
+    """A straggler must not be resubmitted repeatedly (see the "at most once per item" invariant).
+
+    The wait interval is shortened so the straggler check runs many times while item 2 blocks on an
+    event. Item 1 finishes immediately, so item 2 is the only straggler and the resubmission path is
+    entered deterministically. Regression coverage for tracking resubmissions by item index instead
+    of by Future object.
+    """
+    from dspy.utils import parallelizer
+
+    real_wait = parallelizer.wait
+
+    def fast_wait(futures, timeout=None, return_when=None):
+        return real_wait(futures, timeout=0.02, return_when=return_when)
+
+    monkeypatch.setattr(parallelizer, "wait", fast_wait)
+
+    invocations = []
+    lock = threading.Lock()
+    release = threading.Event()
+
+    def task(item):
+        with lock:
+            invocations.append(item)
+        if item == 1:
+            return item
+        # Straggler: block until released, long enough for many poll cycles.
+        release.wait(timeout=5)
+        return item
+
+    executor = ParallelExecutor(num_threads=4, timeout=0.05, straggler_limit=3, disable_progress_bar=True)
+    # Release the straggler mid-run instead of after execute() returns, so the
+    # test does not always sit out the full 5 s wait timeout (review nit).
+    release_timer = threading.Timer(0.5, release.set)
+    release_timer.start()
+    try:
+        results = executor.execute(task, [1, 2])
+    finally:
+        release_timer.cancel()
+        release.set()
+
+    assert results == [1, 2]
+    per_item = {item: invocations.count(item) for item in (1, 2)}
+    assert per_item == {1: 1, 2: 2}, f"straggler should run exactly twice (original + one resubmit), got {per_item}"

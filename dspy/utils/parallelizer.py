@@ -134,7 +134,7 @@ class ParallelExecutor:
         # We resubmit at most once per item.
         start_time_map: dict[int, float] = {}
         start_time_lock = threading.Lock()
-        resubmitted: set[Future[_WorkerResult[R]]] = set()
+        resubmitted_indices: set[int] = set()
 
         # This is the worker function each thread will run.
         def worker(
@@ -234,12 +234,12 @@ class ParallelExecutor:
                     if 0 < self.timeout and len(not_done) <= self.straggler_limit:
                         now = time.time()
                         for f in list(not_done):
-                            if f not in resubmitted:
-                                sid, idx, item = futures_map[f]
+                            sid, idx, item = futures_map[f]
+                            if idx not in resubmitted_indices:
                                 with start_time_lock:
                                     st = start_time_map.get(sid, None)
                                 if st and (now - st) >= self.timeout:
-                                    resubmitted.add(f)
+                                    resubmitted_indices.add(idx)
                                     nf = executor.submit(
                                         worker,
                                         parent_overrides,
