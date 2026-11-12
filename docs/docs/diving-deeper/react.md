@@ -4,7 +4,7 @@
 
 ReAct is DSPy's general-purpose tool-using agent loop: the language model reasons about a task, chooses tools, observes their results, and repeats until it can produce the signature's outputs.
 
-In DSPy 3.5, `dspy.ReAct` uses structured `dspy.History`, typed output submission, and synchronous or asynchronous execution. A model turn can request multiple tool calls, which execute sequentially. `dspy.ReActV2` remains a deprecated compatibility subclass that warns on construction and will be removed in DSPy 3.6.
+In DSPy 3.5, `dspy.ReAct` uses structured `dspy.History`, typed output submission, and synchronous or asynchronous execution. A model turn can request multiple tool calls, which execute sequentially by default. Async callers can opt into bounded concurrency. `dspy.ReActV2` remains a deprecated compatibility subclass that warns on construction and will be removed in DSPy 3.6.
 
 Read this page to understand how ReAct stores and formats history, calls tools, finishes a run, and interacts with provider prompt caching. For changes from DSPy 3.4 and earlier, see [Migration to DSPy 3.5](#migration-to-dspy-35). For defining tools or importing them from MCP, see [Tools and MCP](tools.md).
 
@@ -98,7 +98,7 @@ Provider support varies. `JSONAdapter` enables native function calling by defaul
 
 ### How tools are called
 
-The internal predictor returns `dspy.ToolCalls`, so one model turn can request multiple tools. ReAct preserves each requested call/result pair by ID. The `parallel_tool_calls` adapter option asks a capable provider to generate multiple independent calls in the same turn; ReAct executes the returned calls one after another in Python, not concurrently.
+The internal predictor returns `dspy.ToolCalls`, so one model turn can request multiple tools. ReAct preserves each requested call/result pair by ID. The `parallel_tool_calls` adapter option asks a capable provider to generate multiple independent calls in the same turn. ReAct executes the returned calls sequentially by default; `max_tool_concurrency` separately controls execution in the async loop.
 
 Callables supplied to the constructor are converted to `dspy.Tool`. Unknown tool names and execution exceptions become error results in history so the next model turn can respond to them.
 
@@ -114,7 +114,18 @@ ReAct does not automatically truncate old history events on context overflow.
 
 ### Async execution
 
-Use `await agent.acall(...)` for asynchronous execution. The async loop awaits tool calls sequentially and supports async tools, including MCP tools; multiple calls in one model turn do not imply concurrent execution.
+Use `await agent.acall(...)` for asynchronous execution. Tool calls execute sequentially by default. For independent async tools, opt into bounded concurrency:
+
+```python
+agent = dspy.ReAct("question -> answer", tools=[lookup], max_tool_concurrency=4)
+result = await agent.acall(question="Compare the independent results.")
+```
+
+`max_tool_concurrency` must be a positive integer and defaults to `1`. It bounds in-flight tool calls within each model turn, while returned history retains the model's requested order. Ordinary tool errors remain observations. Cancelling the run cancels and awaits active and queued tool tasks before returning control.
+
+Only enable concurrency for tools that can safely run independently: calls may overlap and share application resources. Batches containing `submit` remain sequential, and synchronous `agent(...)` execution is unchanged. Synchronous tool bodies are not moved to worker threads and can still block the event loop.
+
+The adapter's `parallel_tool_calls` option asks the provider to generate multiple calls; it does not execute them concurrently. Conversely, `max_tool_concurrency` does not make the provider generate more calls.
 
 ### Turn budget
 
@@ -144,7 +155,7 @@ Native tool replay gives the cleanest provider-visible structure, but non-native
 
 ## Migration to DSPy 3.5
 
-The structured-history implementation previously named `ReActV2` is now canonical `dspy.ReAct`. The constructor remains `dspy.ReAct(signature, tools, max_iters=20)`.
+The structured-history implementation previously named `ReActV2` is now canonical `dspy.ReAct`. Existing constructor calls remain valid; the optional keyword-only `max_tool_concurrency` defaults to `1`.
 
 For users of ReAct in DSPy 3.4 and earlier:
 
@@ -164,7 +175,7 @@ For users of the experimental name, replace `dspy.ReActV2(...)` with `dspy.ReAct
 
 ## API summary
 
-**`dspy.ReAct(signature, tools, max_iters=20)`**
+**`dspy.ReAct(signature, tools, max_iters=20, *, max_tool_concurrency=1)`**
 Runs the structured-history loop and reserves `submit` for final typed outputs.
 
 **`ReAct.forward(**inputs)` / `ReAct.aforward(**inputs)`**
