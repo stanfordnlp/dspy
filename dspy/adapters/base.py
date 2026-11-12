@@ -123,7 +123,7 @@ class Adapter:
         native feature (tool calling, reasoning, ...) are removed from it and
         filled in from the `Response` in `_call_postprocess`.
         """
-        original_signature = signature
+        signature = self._prepare_reasoning(lm, lm_kwargs, signature)
         if not self.use_native_function_calling:
             for key in ("tools", "tool_choice", "parallel_tool_calls"):
                 lm_kwargs.pop(key, None)
@@ -154,14 +154,26 @@ class Adapter:
                 for key in ("tools", "tool_choice", "parallel_tool_calls"):
                     lm_kwargs.pop(key, None)
 
-        # Custom types that use native LM features, e.g., reasoning, citations.
+        # Other custom types that use native LM features, e.g., citations.
         for name, field in signature.output_fields.items():
             if (
                 isinstance(field.annotation, type)
+                and field.annotation is not Reasoning
                 and field.annotation in self.native_response_types
                 and issubclass(field.annotation, Type)
             ):
                 signature = field.annotation.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
+
+        return signature
+
+    def _prepare_reasoning(
+        self, lm: BaseLM, lm_kwargs: dict[str, Any], signature: type[Signature]
+    ) -> type[Signature]:
+        """Resolve native reasoning and explicit fallback fields without preparing tools."""
+        original_signature = signature
+        for name, field in signature.output_fields.items():
+            if field.annotation is Reasoning and Reasoning in self.native_response_types:
+                signature = Reasoning.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
 
         # Only surviving default reasoning fields need the explicit plan fallback.
         for name in signature.output_fields:

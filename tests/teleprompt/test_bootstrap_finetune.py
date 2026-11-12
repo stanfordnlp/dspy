@@ -1,10 +1,207 @@
 from unittest.mock import patch
 
+import pytest
+
 import dspy
 from dspy import Example
+from dspy.clients import Provider
 from dspy.predict import Predict
 from dspy.teleprompt import BootstrapFinetune
 from dspy.utils.dummies import DummyLM
+
+
+class RecordingTrainingProvider(Provider):
+    """Capture training data locally without launching a remote job."""
+
+    def __init__(self):
+        super().__init__()
+        self.finetunable = True
+        self.data = []
+
+    def finetune(self, job, model, train_data, train_data_format, train_kwargs=None):
+        self.data = train_data
+        return "custom/fitted"
+
+
+class TrainingReplayEngine:
+    def __init__(self, provider, native=False):
+        self.provider = provider
+        self.supports_reasoning = native
+
+    def complete(self, request):
+        from tests.test_utils.engines import make_response
+
+        if request.model == "custom/fitted":
+            text = self.provider.data[0]["messages"][-1]["content"]
+        else:
+            xml = "<answer>" in request.system
+            fields = {"plan_2": "training-plan-73", "plan": "training-plan-73",
+                      "reasoning": "training-plan-73", "answer": "learned-91"}
+            if "<plan_2>" in request.system or "[[ ## plan_2 ## ]]" in request.system:
+                fields["plan"] = "task-plan-19"
+            text = "\n".join(
+                f"<{name}>{value}</{name}>" if xml else f"[[ ## {name} ## ]]\n{value}"
+                for name, value in fields.items()
+                if (f"<{name}>" if xml else f"[[ ## {name} ## ]]") in request.system
+            )
+        return make_response(text, thinking="training-plan-73" if self.supports_reasoning else None)
+
+
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.XMLAdapter])
+@pytest.mark.parametrize("mode", [
+    "default", "string", "collision", "native-teacher", "native-student", "disabled-student", "disabled-teacher",
+])
+def test_bootstrap_finetune_target_replays_at_inference(adapter_type, mode):
+    provider = RecordingTrainingProvider()
+    engine = TrainingReplayEngine(provider, native=mode in ("native-student", "disabled-student", "disabled-teacher"))
+    lm = dspy.LM("custom/student", engine=engine, provider=provider, cache=False)
+    signature = "question -> plan, answer" if mode == "collision" else "question -> answer"
+    student = dspy.ChainOfThought(signature, **({"rationale_field_type": str} if mode == "string" else {}))
+    student.set_lm(lm)
+    if mode == "disabled-student":
+        student.predict.update_config(reasoning_effort="none")
+    if mode == "collision":
+        student.predict.demos = [dspy.Example(question="demo", reasoning="demo-reasoning-23",
+                                            plan="demo-plan-47", answer="demo-answer-59")]
+    teacher = None
+    if mode in ("native-teacher", "disabled-student", "disabled-teacher"):
+        teacher = dspy.ChainOfThought(signature, reasoning_effort="none" if mode == "disabled-teacher" else "high")
+        teacher.set_lm(dspy.LM("custom/teacher", engine=TrainingReplayEngine(provider, native=True), cache=False))
+    with dspy.context(adapter=adapter_type(use_json_adapter_fallback=False)):
+        compiled = dspy.BootstrapFinetune(num_threads=1).compile(
+            student, teacher=teacher,
+            trainset=[dspy.Example(question="learn this", answer="learned-91").with_inputs("question")],
+        )
+        assert len(provider.data) == 1
+        result = compiled(question="learn this")
+    target = provider.data[0]["messages"][-1]["content"]
+    expected_fields = {"string": {"reasoning"}, "collision": {"plan", "plan_2"},
+                       "native-student": set(), "disabled-teacher": set()}.get(mode, {"plan"})
+    for field in ("reasoning", "plan", "plan_2"):
+        marker = f"<{field}>" if adapter_type is dspy.XMLAdapter else f"[[ ## {field} ## ]]"
+        assert (marker in target) == (field in expected_fields)
+    assert result.answer == "learned-91"
+    assert str(result.reasoning) == "training-plan-73"
+    if mode == "collision":
+        assert result.plan == "task-plan-19"
+        demo = provider.data[0]["messages"][2]["content"]
+        marker = "<plan_2>" if adapter_type is dspy.XMLAdapter else "[[ ## plan_2 ## ]]"
+        assert marker in demo and "demo-reasoning-23" in demo and "demo-plan-47" in demo
+        assert student.predict.demos[0].reasoning == "demo-reasoning-23"
+    assert list(student.predict.signature.output_fields) == ["reasoning", *signature.split(" -> ")[1].split(", ")]
+
+
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.XMLAdapter])
+def test_bootstrap_finetune_preserves_tool_supervision(adapter_type):
+    from tests.test_utils.engines import RecordingEngine, make_response
+
+    provider = RecordingTrainingProvider()
+    engine = RecordingEngine([make_response(tool_calls=[("call-73", "lookup", {"query": "tool-query-91"})])])
+    lm = dspy.LM("custom/student", engine=engine, provider=provider, cache=False)
+    student = dspy.Predict("question, tools: list[dspy.Tool] -> tool_calls: dspy.ToolCalls")
+    student.set_lm(lm)
+    tool = dspy.Tool(lambda query: query, name="lookup")
+    example = dspy.Example(question="find this", tools=[tool]).with_inputs("question", "tools")
+    with dspy.context(adapter=adapter_type(use_native_function_calling=True, use_json_adapter_fallback=False)):
+        dspy.BootstrapFinetune(num_threads=1).compile(student, trainset=[example])
+    target = provider.data[0]["messages"][-1]["content"]
+    assert "lookup" in target and "tool-query-91" in target
+
+
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.XMLAdapter])
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("teacher_source", ["student", "separate", "student-list"])
+def test_bootstrap_finetune_call_reasoning_config(adapter_type, asynchronous, teacher_source):
+    import asyncio
+
+    from tests.test_utils.engines import AsyncRecordingEngine
+
+    class Program(dspy.Module):
+        def __init__(self, call_config):
+            super().__init__()
+            self.cot = dspy.ChainOfThought("question -> answer")
+            self.call_config = call_config
+
+        def forward(self, question):
+            kwargs = {"question": question, "config": self.call_config}
+            return asyncio.run(self.cot.acall(**kwargs)) if asynchronous else self.cot(**kwargs)
+
+    provider = RecordingTrainingProvider()
+    engine = TrainingReplayEngine(provider, native=True)
+    lm = dspy.LM("custom/student", engine=engine, async_engine=AsyncRecordingEngine(engine),
+                 provider=provider, cache=False)
+    student = Program({} if teacher_source == "separate" else {"reasoning_effort": "none"})
+    student.set_lm(lm)
+    teacher = Program({"reasoning_effort": "none"}) if teacher_source == "separate" else None
+    if teacher is not None:
+        teacher.set_lm(lm)
+    if teacher_source == "student-list":
+        teacher = [None]
+    with dspy.context(adapter=adapter_type(use_json_adapter_fallback=False)):
+        compiled = dspy.BootstrapFinetune(num_threads=1).compile(
+            student, teacher=teacher, trainset=[dspy.Example(question="learn this").with_inputs("question")],
+        )
+        result = compiled(question="learn this")
+    target = provider.data[0]["messages"][-1]["content"]
+    marker = "<plan>" if adapter_type is dspy.XMLAdapter else "[[ ## plan ## ]]"
+    assert (marker in target) == (teacher_source != "separate")
+    assert result.answer == "learned-91" and result.reasoning == "training-plan-73"
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("copied_predictor", [False, True])
+def test_bootstrap_finetune_concurrent_call_configs(asynchronous, copied_predictor):
+    import asyncio
+    import threading
+
+    from tests.test_utils.engines import AsyncRecordingEngine, make_response
+
+    questions = ["explicit-73", "native-91", "explicit-19", "native-47"]
+    barrier = threading.Barrier(len(questions))
+    provider = RecordingTrainingProvider()
+
+    class Engine(TrainingReplayEngine):
+        def complete(self, request):
+            if request.model == "custom/fitted":
+                question = next(q for q in questions if q in request.messages[-1].text)
+                row = next(row for row in provider.data if question in row["messages"][-2]["content"])
+                return make_response(row["messages"][-1]["content"], thinking="training-plan-73")
+            barrier.wait(timeout=10)
+            return super().complete(request)
+
+    class Program(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.cot = dspy.ChainOfThought("question -> answer")
+
+        def forward(self, question):
+            cot = self.cot.deepcopy() if copied_predictor else self.cot
+            config = {"reasoning_effort": "none"} if question.startswith("explicit") else {"reasoning": {"effort": "high"}}
+            kwargs = {"question": question, "config": config}
+            result = asyncio.run(cot.acall(**kwargs)) if asynchronous else cot(**kwargs)
+            if "reasoning" in config:
+                config["reasoning"]["effort"] = "none"  # A trace must keep the completed call's snapshot.
+            return result
+
+    engine = Engine(provider, native=True)
+    lm = dspy.LM("custom/student", engine=engine, async_engine=AsyncRecordingEngine(engine),
+                 provider=provider, cache=False)
+    student = Program()
+    student.set_lm(lm)
+    with dspy.context(adapter=dspy.XMLAdapter(use_json_adapter_fallback=False)):
+        compiled = dspy.BootstrapFinetune(num_threads=4).compile(
+            student, trainset=[dspy.Example(question=q).with_inputs("question") for q in questions],
+        )
+        for question in questions:
+            with dspy.context(trace=[]):
+                result = compiled(question=question)
+                trace = dspy.settings.trace
+                assert len(trace[0]) == 3 and trace[0][1] == {"question": question}
+                assert set(result.keys()) == {"reasoning", "answer"}
+                assert result.reasoning == "training-plan-73" and result.answer == "learned-91"
+    for row in provider.data:
+        assert ("<plan>" in row["messages"][-1]["content"]) == ("explicit-" in row["messages"][-2]["content"])
+    assert student.cot.predict.config == {}
 
 
 # Define a simple metric function for testing
