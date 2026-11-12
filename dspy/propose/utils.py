@@ -143,6 +143,20 @@ def create_example_string(fields, example):
     # Joining all the field strings
     return "\n".join(output)
 
+def _signature_source(signature):
+    """Render a signature as source-ish text, for inclusion in the proposer prompt.
+
+    Signatures created at runtime (``dspy.Signature("question -> answer")``) have no
+    file to read from, so ``inspect.getsource`` cannot serve them and their ``str()``
+    is used instead. The result is also what callers deduplicate on: it identifies a
+    signature by its fields and instructions, which is the granularity the proposer
+    cares about.
+    """
+    try:
+        return inspect.getsource(signature)
+    except (TypeError, OSError):
+        return str(signature)
+
 def get_dspy_source_code(module):
     header = []
     base_code = ""
@@ -172,13 +186,12 @@ def get_dspy_source_code(module):
             except TypeError:
                 continue
             if isinstance(item, Parameter):
-                if hasattr(item, "signature") and item.signature is not None and item.signature.__pydantic_parent_namespace__["signature_name"] + "_sig" not in completed_set:
-                    try:
-                        header.append(inspect.getsource(item.signature))
-                        print(inspect.getsource(item.signature))
-                    except (TypeError, OSError):
-                        header.append(str(item.signature))
-                    completed_set.add(item.signature.__pydantic_parent_namespace__["signature_name"] + "_sig")
+                signature = getattr(item, "signature", None)
+                if signature is not None:
+                    signature_code = _signature_source(signature)
+                    if signature_code not in completed_set:
+                        header.append(signature_code)
+                        completed_set.add(signature_code)
             if isinstance(item, dspy.Module):
                 code = get_dspy_source_code(item).strip()
                 if code not in completed_set:
