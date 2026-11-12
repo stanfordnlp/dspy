@@ -69,10 +69,10 @@ class ChatAdapter(Adapter):
             use_native_function_calling=use_native_function_calling,
             parallel_tool_calls=parallel_tool_calls,
             native_response_types=native_response_types,
-        )
+               )
         self.use_json_adapter_fallback = use_json_adapter_fallback
         self.field_markers = field_markers
-        
+
     def _validate_field_markers(self, signature: type[Signature]) -> None:
         if not self.field_markers and len(signature.output_fields) > 1:
             raise ValueError(
@@ -214,13 +214,13 @@ class ChatAdapter(Adapter):
                 return f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})"
             else:
                 return ""
-                
+
         if not self.field_markers:
             if not signature.output_fields:
                 return None
-            (f, v), = signature.output_fields.items()
+            ((f, v),) = signature.output_fields.items()
             return f"Respond with the value for `{f}`{type_info(v)}. Do not include any other text."
-          
+
         message = "Respond with the corresponding output fields, starting with the field "
         message += ", then ".join(f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items())
         message += ", and then ending with the marker for `[[ ## completed ## ]]`."
