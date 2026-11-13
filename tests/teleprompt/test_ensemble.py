@@ -50,6 +50,13 @@ def test_ensemble_with_size_limitation():
     assert len(outputs) == ensemble_size, "Ensemble did not respect the specified size limitation"
 
 
+def test_ensemble_size_larger_than_program_count():
+    programs = [MockProgram(i) for i in range(2)]
+    ensembled_program = Ensemble(size=5).compile(programs)
+    outputs = ensembled_program()
+    assert len(outputs) == 2
+
+
 def test_ensemble_deterministic_behavior():
     """Verify that the Ensemble class raises an assertion for deterministic behavior."""
     with pytest.raises(
