@@ -30,7 +30,7 @@ another identity.
 Rungs that are declared but not implemented raise ``NotConfiguredError``
 naming the gap and the fix; they never fall through silently
 (``aws login`` refresh with a DPoP key; Azure Service Fabric managed
-identity; GCP ``external_account`` with an AWS source).
+identity).
 """
 
 from __future__ import annotations
@@ -1064,14 +1064,115 @@ def _gcp_impersonate(ctx: ChainContext, source: BearerToken, url: str, delegates
     return BearerToken(str(token), expires_at=expires)
 
 
+def _gcp_aws_source(source: Mapping[str, Any], where: str) -> str:
+    """The verification URL of an AWS ``credential_source``, checked as google-auth checks it."""
+    m = re.fullmatch(r"aws(\d+)", str(source.get("environment_id") or ""))
+    url = source.get("regional_cred_verification_url")
+    if not m or not url:
+        raise NotConfiguredError(f"{where}: an AWS credential_source needs environment_id \"aws1\" and regional_cred_verification_url")
+    if int(m.group(1)) != 1:
+        raise NotConfiguredError(f"{where}: AWS credential_source version {m.group(1)} is not supported (only aws1)")
+    return str(url)
+
+
+def _gcp_aws_imds_session(ctx: ChainContext, source: Mapping[str, Any], where: str) -> Callable[[], dict[str, str]]:
+    """IMDSv2's session header when the source names its token URL (google-auth: TTL 300), else none; asked for once."""
+    got: list[dict[str, str]] = []
+
+    def header() -> dict[str, str]:
+        if not got:
+            url = source.get("imdsv2_session_token_url")
+            if not url or ctx.http is None:
+                got.append({})
+            else:
+                status, _, raw = ctx.http("PUT", str(url), {"X-aws-ec2-metadata-token-ttl-seconds": "300"}, None, 5.0)
+                if status != 200:
+                    raise AuthError(f"{where}: AWS IMDSv2 session token: HTTP {status}")
+                got.append({"X-aws-ec2-metadata-token": raw.decode("utf-8", "replace")})
+        return got[0]
+    return header
+
+
+def _gcp_aws_region(ctx: ChainContext, source: Mapping[str, Any], where: str, imds: Callable[[], dict[str, str]]) -> str:
+    """AWS_REGION, AWS_DEFAULT_REGION, else the source's region_url (an availability zone, its last letter dropped)."""
+    for var in ("AWS_REGION", "AWS_DEFAULT_REGION"):
+        if ctx.env.get(var):
+            return str(ctx.env[var])
+    url = source.get("region_url")
+    if not url or ctx.http is None:
+        raise NotConfiguredError(f"{where}: no AWS region: set AWS_REGION (the AWS source names no region_url)")
+    status, _, raw = ctx.http("GET", str(url), imds(), None, 5.0)
+    if status != 200:
+        raise AuthError(f"{where}: AWS region from {url}: HTTP {status}")
+    return raw.decode("utf-8", "replace").strip()[:-1]
+
+
+def _gcp_aws_credentials(ctx: ChainContext, source: Mapping[str, Any], where: str, imds: Callable[[], dict[str, str]]) -> AwsCredentials:
+    """The AWS identity an AWS source signs with: the environment's keys, then (an lm15 addition, stated: Google's
+    library reads only the other two, and so fails on ECS) the container endpoint, then EC2 metadata at the source's
+    ``url``."""
+    env = _env_aws(ctx)
+    if env is not None:
+        return env
+    if _container_config(ctx) is not None:
+        got = _container_acquire(ctx)
+        if got is not None:
+            return got
+    url = source.get("url")
+    if not url or ctx.http is None:
+        raise NotConfiguredError(f"{where}: no AWS credentials: neither AWS_ACCESS_KEY_ID nor a container endpoint is set, "
+                                 "and the AWS source names no metadata url")
+    headers = imds()
+    status, _, role = ctx.http("GET", str(url), headers, None, 5.0)
+    if status != 200 or not role.strip():
+        raise AuthError(f"{where}: AWS role name from {url}: HTTP {status}")
+    name = role.decode("utf-8", "replace").strip().splitlines()[0]
+    status, _, raw = ctx.http("GET", f"{url}/{name}", headers, None, 5.0)
+    if status != 200:
+        raise AuthError(f"{where}: AWS credentials from {url}/{name}: HTTP {status}")
+    return _aws_from_response(_json_body(raw))
+
+
+def gcp_aws_subject_token(ctx: ChainContext, info: Mapping[str, Any], where: str) -> str:
+    """An AWS source's subject token: a signed AWS STS GetCallerIdentity request, serialized as Google's STS reads it
+    (google-auth aws.py: headers as ``[{key, value}]`` in signing order, the pool provider's name added unsigned as
+    ``x-goog-cloud-target-resource``, compact JSON with sorted keys, percent-encoded keeping ``/``)."""
+    source = info.get("credential_source") or {}
+    template = _gcp_aws_source(source, where)
+    imds = _gcp_aws_imds_session(ctx, source, where)
+    region = _gcp_aws_region(ctx, source, where, imds)
+    creds = _gcp_aws_credentials(ctx, source, where, imds)
+    url = template.replace("{region}", region)
+    sig = sigv4.sign(method="POST", url=url, headers={}, payload=b"", credentials=creds, region=region,
+                     service=urllib.parse.urlsplit(url).hostname.split(".")[0], now=ctx.now())  # type: ignore[union-attr]
+    headers = [("Authorization", sig.authorization), ("host", sig.headers["host"]), ("x-amz-date", sig.headers["x-amz-date"])]
+    if creds.session_token:
+        headers.append(("x-amz-security-token", creds.session_token))
+    headers.append(("x-goog-cloud-target-resource", str(info.get("audience") or "")))
+    signed = {"headers": [{"key": k, "value": v} for k, v in headers], "method": "POST", "url": url}
+    return urllib.parse.quote(json.dumps(signed, separators=(",", ":"), sort_keys=True), safe="/")
+
+
+def gcp_sts_request(info: Mapping[str, Any], subject: str) -> tuple[str, dict[str, Any]]:
+    """The STS token exchange an external_account sends: ``(url, JSON body)``."""
+    return str(info.get("token_url") or _GCP_STS_URL), {
+        "grantType": "urn:ietf:params:oauth:grant-type:token-exchange",
+        "audience": str(info["audience"]),
+        "scope": _GCP_SCOPE,
+        "requestedTokenType": "urn:ietf:params:oauth:token-type:access_token",
+        "subjectToken": subject,
+        "subjectTokenType": str(info["subject_token_type"]),
+    }
+
+
 def _gcp_external_account(ctx: ChainContext, info: Mapping[str, Any], where: str) -> BearerToken:
     source = info.get("credential_source") or {}
-    if "environment_id" in source:
-        raise NotConfiguredError(f"{where}: external_account with an AWS credential_source is a stated gap in lm15; "
-                                 "use a file/url/executable source or a service account")
     subject: str | None = None
     fmt = source.get("format") or {}
-    if source.get("file"):
+    if "environment_id" in source:
+        subject = gcp_aws_subject_token(ctx, info, where)
+        fmt = {"type": "text"}
+    elif source.get("file"):
         raw = ctx.read(str(source["file"]))
         if raw is None:
             raise NotConfiguredError(f"{where}: subject token file {source['file']} is unreadable")
@@ -1095,19 +1196,12 @@ def _gcp_external_account(ctx: ChainContext, info: Mapping[str, Any], where: str
         subject = data.get("id_token") or data.get("saml_response")
         fmt = {"type": "text"}
     if subject is None:
-        raise NotConfiguredError(f"{where}: external_account credential_source is not file/url/executable")
+        raise NotConfiguredError(f"{where}: external_account credential_source is not file/url/executable/AWS")
     if fmt.get("type") == "json":
         field_name = str(fmt.get("subject_token_field_name") or "")
         subject = str(_json_body(subject.encode()).get(field_name) or "")
-    body = json.dumps({
-        "grantType": "urn:ietf:params:oauth:grant-type:token-exchange",
-        "audience": str(info["audience"]),
-        "scope": _GCP_SCOPE,
-        "requestedTokenType": "urn:ietf:params:oauth:token-type:access_token",
-        "subjectToken": subject,
-        "subjectTokenType": str(info["subject_token_type"]),
-    }).encode()
-    data = _exchange(ctx, "POST", str(info.get("token_url") or _GCP_STS_URL), {"content-type": "application/json"}, body,
+    sts_url, sts_body = gcp_sts_request(info, subject)
+    data = _exchange(ctx, "POST", sts_url, {"content-type": "application/json"}, json.dumps(sts_body).encode(),
                      f"Google STS exchange ({where})",
                      "the workload identity pool refused the external token: check the provider's issuer, allowed "
                      "audience and attribute condition, and that the subject token is fresh")
@@ -1605,6 +1699,12 @@ def credential_provider(policy: AccessPolicy, ctx: ChainContext, named: str | No
 
 def token_exchange_build(policy: AccessPolicy, rung: str, inputs: Mapping[str, Any], ctx: ChainContext) -> dict[str, Any]:
     """The exact token-exchange request a rung would send under ``ctx.now``."""
+    if rung in ("adc-env", "adc-file") and inputs["credential_file"].get("type") == "external_account":
+        info = inputs["credential_file"]
+        if "environment_id" not in (info.get("credential_source") or {}):
+            raise ValueError("token_exchange_build: only an AWS-sourced external_account is deterministic")
+        url, body = gcp_sts_request(info, gcp_aws_subject_token(ctx, info, "credential_file"))
+        return {"method": "POST", "url": url, "headers": {"content-type": "application/json"}, "body_encoding": "json", "body": body}
     if rung in ("adc-env", "adc-file", "service-account"):
         info = inputs["credential_file"]
         scope = str(inputs.get("scope") or _GCP_SCOPE)
