@@ -77,6 +77,11 @@ class Parallel:
     def forward(self, exec_pairs: list[tuple[Any, Example]], num_threads: int | None = None) -> list[Any]:
         num_threads = num_threads if num_threads is not None else self.num_threads
 
+        # Reset per-call accumulators so a reused Parallel instance does not carry
+        # failed examples/exceptions over from a previous forward() call.
+        self.failed_examples = []
+        self.exceptions = []
+
         executor = ParallelExecutor(
             num_threads=num_threads,
             max_errors=self.max_errors,
