@@ -114,7 +114,7 @@ def test_complex_module_traversal():
         "self",
         "self.sub_module",
         "self.sub_module.nested_list[0]",
-        "self.sub_module.nested_list[1][key]",
+        "self.sub_module.nested_list[1]['key']",
         "self.sub_module.nested_tuple[0]",
         "self.sub_module.nested_tuple[1][0]",
         "self.sub_module.nested_tuple[1][1]",
@@ -136,7 +136,7 @@ def test_complex_module_traversal_with_same_module():
         "self",
         "self.sub_module",
         "self.sub_module.nested_list[0]",
-        "self.sub_module.nested_list[1][key]",  # NOTE: named_sub_modules allows recursive structures
+        "self.sub_module.nested_list[1]['key']",  # NOTE: named_sub_modules allows recursive structures
         "self.sub_module.nested_tuple[0]",
         "self.sub_module.nested_tuple[1][0]",  # NEW: named_sub_modules allows recursive structures, but named_parameters does not
     }
@@ -181,6 +181,132 @@ def test_named_parameters_duplicate_references():
     # Only testing for whether exceptions are thrown or not
     # As Module.named_parameters() is recursive, this is mainly for catching infinite recursion
     module.named_parameters()
+
+
+def test_named_parameters_dict_keys_do_not_collide():
+    """
+    Regression test for https://github.com/stanfordnlp/dspy/issues/1302
+
+    Dict keys that stringify to the same text but differ in type/value (e.g. "0" vs 0) must not
+    be collapsed into the same parameter name, or distinct parameters silently merge/get lost.
+    """
+    from dspy.predict.parameter import Parameter
+
+    module = Module()
+    module.dict_a = {"0": Parameter(), 0: Parameter()}
+
+    names = [name for name, _ in module.named_parameters()]
+    assert len(names) == len(set(names)) == 2
+    assert "dict_a['0']" in names
+    assert "dict_a[0]" in names
+
+
+def test_load_state_accepts_pre_fix_dict_key_names():
+    """
+    Backward-compatibility regression test for https://github.com/stanfordnlp/dspy/issues/1302.
+
+    State saved by a DSPy version before the #1302 fix quoted dict keys as if they were strings
+    (e.g. an int key 0 was persisted as "dict_a['0']" instead of the current "dict_a[0]").
+    load_state() must still restore such state after upgrading, not merely fail with a clearer
+    error - old save files must keep working.
+    """
+
+    class Prog(Module):
+        def __init__(self):
+            super().__init__()
+            self.dict_a = {0: dspy.Predict("question -> answer")}
+
+    prog = Prog()
+    legacy_state = {"dict_a['0']": prog.dict_a[0].dump_state()}
+
+    prog.load_state(legacy_state)  # must not raise
+
+
+def test_load_state_rejects_ambiguous_pre_fix_dict_key_names():
+    """
+    Distinct keys "0" and 0 shared the single legacy name "dict_a['0']", so a legacy state cannot say which
+    parameter it belongs to. load_state() must reject it rather than apply one state to both parameters.
+    """
+
+    class Prog(Module):
+        def __init__(self):
+            super().__init__()
+            self.dict_a = {"0": dspy.Predict("question -> answer"), 0: dspy.Predict("question -> answer")}
+
+    prog = Prog()
+    legacy_state = {"dict_a['0']": prog.dict_a["0"].dump_state()}
+
+    with pytest.raises(KeyError, match="ambiguous"):
+        prog.load_state(legacy_state)
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("nested", [False, True])
+def test_load_state_keeps_escaped_dict_keys_distinct(legacy, nested):
+    source = Module()
+    container = Module() if nested else source
+    if nested:
+        source.child = container
+    container.dict_a = {"\n": dspy.Predict("question -> answer"), r"\n": dspy.Predict("question -> answer")}
+    instructions = ["Handle the newline key", "Handle the literal backslash key"]
+    for predictor, instruction in zip(container.dict_a.values(), instructions, strict=True):
+        predictor.signature = predictor.signature.with_instructions(instruction)
+
+    if legacy:
+        prefix = "child." if nested else ""
+        state = {f"{prefix}dict_a['{key}']": predictor.dump_state() for key, predictor in container.dict_a.items()}
+    else:
+        state = source.dump_state()
+
+    for predictor in container.dict_a.values():
+        predictor.signature = predictor.signature.with_instructions("Reset")
+    source.load_state(state)
+
+    assert [predictor.signature.instructions for predictor in container.dict_a.values()] == instructions
+
+
+def test_load_state_rejects_mixed_dict_key_formats_without_mutating():
+    module = Module()
+    module.dict_a = {key: dspy.Predict("question -> answer") for key in [0, "\n", r"\n"]}
+    original = module.dump_state()
+    state = module.dump_state()
+    state["dict_a['0']"] = state.pop("dict_a[0]")
+    state["dict_a['0']"]["signature"]["instructions"] = "Changed before the missing entry"
+
+    with pytest.raises(KeyError, match="issues/1302"):
+        module.load_state(state)
+
+    assert module.dump_state() == original
+
+
+def test_load_state_raises_clear_error_when_name_missing_in_both_formats():
+    """
+    A parameter missing under BOTH its current name and its pre-#1302 legacy name is a genuine
+    problem (not just an old save format) and must still fail loudly - matching the existing
+    "fail-fast, no partial corruption" design (see test_load_state_is_transactional, regression
+    test for #9589).
+    """
+
+    class Prog(Module):
+        def __init__(self):
+            super().__init__()
+            self.dict_a = {0: dspy.Predict("question -> answer")}
+
+    prog = Prog()
+
+    with pytest.raises(KeyError, match="issues/1302"):
+        prog.load_state({})
+
+
+def test_named_sub_modules_dict_keys_do_not_collide():
+    """Regression test for https://github.com/stanfordnlp/dspy/issues/1302 (named_sub_modules side)."""
+    module = Module()
+    module.dict_b = {"0": Module(), 0: Module()}
+
+    names = [name for name, _ in module.named_sub_modules()]
+    assert len(names) == len(set(names))
+    assert "self.dict_b['0']" in names
+    assert "self.dict_b[0]" in names
 
 
 def test_save_and_load_react_state(tmp_path):
