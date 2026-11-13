@@ -62,7 +62,7 @@ class Embeddings:
         q_embeds = self.embedder(queries)
         q_embeds = self._normalize(q_embeds) if self.normalize else q_embeds
 
-        pids = self._faiss_search(q_embeds, self.k * 10) if self.index else None
+        pids = self._faiss_search(q_embeds, min(self.k * 10, len(self.corpus))) if self.index else None
 
         return self._rerank_and_predict(q_embeds, pids)
 
@@ -97,8 +97,10 @@ class Embeddings:
             self.corpus_embeddings = np.ascontiguousarray(self.corpus_embeddings)
             scores = np.einsum("qd,kd->qk", q_embeds, self.corpus_embeddings, order="C")
         else:
-            candidate_embeddings = self.corpus_embeddings[candidate_indices]
+            valid = (candidate_indices >= 0) & (candidate_indices < len(self.corpus))
+            candidate_embeddings = self.corpus_embeddings[np.where(valid, candidate_indices, 0)]
             scores = np.einsum("qd,qkd->qk", q_embeds, candidate_embeddings)
+            scores = np.where(valid, scores, -np.inf)
 
         top_k_indices = np.argsort(-scores, axis=1)[:, : self.k]
         top_indices = (
@@ -110,6 +112,9 @@ class Embeddings:
 
         results = []
         for indices, query_scores in zip(top_indices, top_scores, strict=True):
+            if candidate_indices is not None:
+                valid = (indices >= 0) & (indices < len(self.corpus))
+                indices, query_scores = indices[valid], query_scores[valid]
             passages = [self.corpus[idx] for idx in indices]
             results.append((passages, indices.tolist(), query_scores.tolist()))
         return results
