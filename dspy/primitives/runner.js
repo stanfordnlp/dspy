@@ -148,6 +148,7 @@ const argValue = (name) => Deno.args.find((arg) => arg.startsWith(`${name}=`))?.
 const stdlib = argValue("--dspy-stdlib");
 const bundle = argValue("--dspy-bundle");
 const snapshot = argValue("--dspy-snapshot");
+const libraries = argValue("--dspy-libraries");
 const buildTarget = argValue("--dspy-build");
 const buildSource = argValue("--dspy-build-from");
 const snapshotTarget = argValue("--dspy-build-snapshot");
@@ -299,6 +300,15 @@ del InlineExecutor
     const name = entry.endsWith(".dist-info") ? entry.split("-")[0].toLowerCase() : null;
     if (name) for (const key of [name.replaceAll("_", "-"), name.replaceAll("-", "_")]) pyodide.loadedPackages[key] = "dspy";
   }
+}
+
+// The source files of the user's own code that a module's libraries reach (sandbox_bundle.py). They change far more
+// often than the bundle, so they are written here, after Python has started or its snapshot is restored: neither the
+// bundle nor the snapshot depends on them.
+if (libraries) {
+  writeArchive(pyodide.FS, pyodide.runPython("import site; site.getsitepackages()[0]"), Deno.readFileSync(libraries));
+  await Deno.permissions.revoke({ name: "read", path: libraries });
+  pyodide.runPython("import importlib; importlib.invalidate_caches()");
 }
 
 // Tool call support: allows Python code to call host-side functions

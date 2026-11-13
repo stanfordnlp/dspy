@@ -263,6 +263,42 @@ class Tool(Type):
             },
         )
 
+    def as_function(self) -> Callable[..., Any]:
+        """This tool as a plain Python function, for libraries and agent SDKs that build their tools from a function.
+
+        The function has the tool's name, its description as docstring, and a typed keyword parameter per argument,
+        with the argument's default. Calling it calls the tool, so its arguments are validated the same way.
+
+        ```python
+        from langchain_core.tools import StructuredTool
+
+        lc_tool = StructuredTool.from_function(dspy.Tool(search).as_function())
+        ```
+        """
+        parameters = []
+        for name, schema in (self.args or {}).items():
+            annotation = (self.arg_types or {}).get(name, Any)
+            if annotation is Any:  # a tool known only by its schema, like one a sandbox calls on the host
+                annotation = _JSON_SCHEMA_TYPES.get(schema.get("type"), Any)
+            default = schema["default"] if "default" in schema else inspect.Parameter.empty
+            parameters.append(inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY, default=default, annotation=annotation))
+
+        # Keyword arguments only, as its signature says, like the tool itself: nothing is matched by position.
+        if inspect.iscoroutinefunction(self.func):
+
+            async def function(**kwargs):
+                return await self.acall(**kwargs)
+        else:
+
+            def function(**kwargs):
+                return self(**kwargs)
+
+        function.__name__ = function.__qualname__ = self.name
+        function.__doc__ = self.desc
+        function.__signature__ = inspect.Signature(parameters)
+        function.__annotations__ = {parameter.name: parameter.annotation for parameter in parameters}
+        return function
+
     def _run_async_in_sync(self, coroutine):
         try:
             loop = asyncio.get_running_loop()
@@ -373,6 +409,9 @@ class Tool(Type):
         desc = f", whose description is <desc>{self.desc}</desc>.".replace("\n", "  ") if self.desc else "."
         arg_desc = f"It takes arguments {self.args}."
         return f"{self.name}{desc} {arg_desc}"
+
+
+_JSON_SCHEMA_TYPES = {"string": str, "integer": int, "number": float, "boolean": bool, "array": list, "object": dict}
 
 
 class ToolCalls(Type):

@@ -212,3 +212,130 @@ def test_a_program_with_a_pool_can_be_copied_and_saved(tmp_path):
             assert (restored._factory, restored._size) == (dspy.LocalInterpreter, 1)
         finally:
             restored.close()
+
+
+class Provided:
+    """A factory of interpreters that record the libraries each was given before it started."""
+
+    def __init__(self):
+        self.made = []
+
+    def __call__(self):
+        interpreter = dspy.LocalInterpreter()
+        interpreter.given = None
+        interpreter.provide_libraries = lambda modules, interpreter=interpreter: setattr(interpreter, "given", tuple(modules))
+        self.made.append(interpreter)
+        return interpreter
+
+
+def test_a_pool_starts_its_interpreters_with_the_libraries_it_is_asked_for():
+    factory = Provided()
+    with dspy.InterpreterPool(factory, size=2) as pool:
+        _wait_for(lambda: pool._ready.qsize() == 2)
+        before = list(factory.made)
+        assert [interpreter.given for interpreter in before] == [None, None]
+
+        pool.provide_libraries(["shop"])  # as a dspy.Flex with libraries does before it takes an interpreter
+
+        assert all(interpreter._process is None for interpreter in before)  # those without it were shut down
+        _wait_for(lambda: pool._ready.qsize() == 2)
+        first = pool()
+        assert first.given == ("shop",) and first._process is not None
+        first.shutdown()
+
+        made = len(factory.made)
+        pool.provide_libraries(["shop"])  # nothing new: nothing is replaced
+        assert len(factory.made) == made
+        pool.provide_libraries(["tax", "shop"])  # another module's: the pool keeps both
+        _wait_for(lambda: pool._ready.qsize() == 2)
+        second = pool()
+        assert second.given == ("shop", "tax")
+        second.shutdown()
+
+
+def test_an_interpreter_that_started_before_the_pool_was_asked_for_more_is_replaced():
+    release = threading.Event()
+
+    class Slow(Provided):
+        def __call__(self):
+            interpreter = super().__call__()
+            if len(self.made) == 1:
+                release.wait(30)  # still starting when the pool is asked for a library
+            return interpreter
+
+    factory = Slow()
+    with dspy.InterpreterPool(factory, size=1) as pool:
+        _wait_for(lambda: len(factory.made) == 1)
+        pool.provide_libraries(["shop"])
+        release.set()
+        _wait_for(lambda: pool._ready.qsize() == 1 and len(factory.made) >= 2)
+        ready = pool()
+        assert ready.given == ("shop",)
+        ready.shutdown()
+        assert factory.made[0]._process is None  # the one that started without it
+
+
+def test_a_call_never_gets_an_interpreter_that_started_without_the_pool_s_libraries():
+    class Watched:
+        """The pool's lock, which lets another call in each time the pool lets go of it."""
+
+        def __init__(self, lock, between):
+            self.lock, self.between = lock, between
+
+        def __enter__(self):
+            return self.lock.__enter__()
+
+        def __exit__(self, *error):
+            self.lock.__exit__(*error)
+            self.between()
+
+    factory = Provided()
+    with dspy.InterpreterPool(factory, size=1) as pool:
+        _wait_for(lambda: pool._ready.qsize() == 1)
+        taken = []
+
+        def another_call():  # one that arrives while the pool is being told about a library
+            if pool._libraries and not taken:
+                taken.append(None)  # only once, and not from within itself
+                taken[0] = pool()
+
+        pool._lock = Watched(pool._lock, another_call)
+        pool.provide_libraries(["shop"])
+        pool._lock = pool._lock.lock
+
+        # It got a new, unstarted interpreter, to be given the library: not the one started without it.
+        assert taken[0].given is None and taken[0]._process is None
+        taken[0].shutdown()
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        pytest.param(dspy.LocalInterpreter, id="local"),
+        pytest.param(dspy.PythonInterpreter, marks=pytest.mark.deno, id="deno"),  # run by CI's Deno job
+    ],
+)
+def test_a_flex_with_libraries_tells_its_pool(factory, tmp_path, monkeypatch):
+    (tmp_path / "flexpooled.py").write_text("def double(value):\n    return value * 2\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    source = textwrap.dedent(
+        """
+        from flexpooled import double
+
+
+        class M(dspy.Module):
+            def forward(self, value):
+                return dspy.Prediction(result=double(value))
+        """
+    )
+    with dspy.InterpreterPool(factory, size=1) as pool:
+        _wait_for(lambda: pool._ready.qsize() == 1)  # started before any module said what it needs
+        flex = dspy.Flex("value: int -> result: int", libraries=["flexpooled"], module_src=source, interpreter_factory=pool)
+        plain = dspy.Flex("value: int -> result: int", interpreter_factory=pool, module_src=source.replace(
+            "from flexpooled import double", "double = lambda value: value * 2"))
+
+        assert flex(value=2).result == 4  # no setup of the pool for it
+        assert pool._libraries == ("flexpooled",)
+        _wait_for(lambda: pool._ready.qsize() == 1)
+        assert flex(value=3).result == 6  # on an interpreter the pool started with the library
+        assert plain(value=4).result == 8  # which serves a module without libraries as well
