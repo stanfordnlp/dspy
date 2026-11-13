@@ -719,11 +719,11 @@ class AnthropicLM(BaseProviderLM):
                       asked=reasoning.effort, applied=nearest, provider=self.provider)
                 reasoning = replace(reasoning, effort=nearest)
             if reasoning.summary in ("concise", "detailed"):
-                # MAP-13: a visibility level the wire lacks; thinking blocks
-                # are returned whenever thinking runs, which is "auto".
+                # MAP-13: a visibility level the wire lacks; the thinking it
+                # returns is one summary, which is "auto".
                 adapt("config.reasoning.summary", "substituted",
-                      "the Messages API has no summary detail levels; it returns thinking blocks "
-                      "whenever thinking runs, which is 'auto'",
+                      "the Messages API has no summary detail levels; it returns one summary of the "
+                      "thinking, which is 'auto'",
                       asked=reasoning.summary, applied="auto", provider=self.provider)
                 reasoning = replace(reasoning, summary="auto")
             if adaptive:
@@ -865,6 +865,13 @@ class AnthropicLM(BaseProviderLM):
                 "type": "enabled",
                 "budget_tokens": thinking_budget,
             }
+        if (compat.thinking_format == "anthropic" and reasoning is not None and reasoning.summary is not None
+                and payload.get("thinking", {}).get("type") in ("adaptive", "enabled")):
+            # MAP-7 rule 7 (amended 2026-11-07): the thinking is shown only when
+            # asked on Opus 4.7, 4.8 and every Claude 5 (display defaults to
+            # "omitted": a thinking block with empty text); every Claude model
+            # accepts "summarized" (live 2026-11-07, 14 models).
+            payload["thinking"]["display"] = "summarized"
         if request.config.response_format:
             if compat.structured_output == "reject":
                 # The server accepts output_config.format and ignores the

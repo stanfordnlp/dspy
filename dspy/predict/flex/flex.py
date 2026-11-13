@@ -18,12 +18,10 @@ from dspy.primitives.code_interpreter import CodeInterpreter, _validate_interpre
 from dspy.primitives.module import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
-from dspy.utils.annotation import experimental
 
 logger = logging.getLogger(__name__)
 
 
-@experimental(version="3.3.0")
 class Flex(Module, Parameter):
     """A module whose implementation is optimizable code, not just a prompt.
 

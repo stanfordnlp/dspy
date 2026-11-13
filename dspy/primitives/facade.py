@@ -43,6 +43,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
 import pydantic
+import pydantic_core
 from pydantic.json_schema import GenerateJsonSchema
 
 import dspy
@@ -74,6 +75,7 @@ from dspy.primitives.sandbox_guest import (
     decode_prompt,
     encode_options,
 )
+from dspy.primitives.sandbox_serializable import KEEP_IN_DUMP, SandboxSerializable
 from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import make_signature
 from dspy.utils.exceptions import LMError, LMNotConfiguredError
@@ -410,26 +412,6 @@ def _entrypoint(tool: Any) -> Callable[..., Any]:
     return entrypoint
 
 
-def recorded(name: str, function: Callable[..., Any], calls: list[dict[str, Any]] | None) -> Callable[..., Any]:
-    """``function``, appending each call to ``calls`` (if given): the tool's name, its arguments, and its result or
-    error. Calls are listed when they start, so nested ones follow the call they are part of."""
-    if calls is None:
-        return function
-
-    @functools.wraps(function)
-    def recording(**kwargs: Any) -> Any:
-        call: dict[str, Any] = {"name": name, "args": kwargs}
-        calls.append(call)
-        try:
-            call["result"] = function(**kwargs)
-        except BaseException as e:
-            call["error"] = f"{type(e).__name__}: {e}"
-            raise
-        return call["result"]
-
-    return recording
-
-
 class SandboxSession:
     """Host side of one interpreter session that runs the real dspy: one Flex forward, or one RLM call.
 
@@ -447,12 +429,8 @@ class SandboxSession:
         lm: Any = None,
         reserve: Callable[[int], None] | None = None,
         interpreter_factory: Callable[[], Any] | None = None,
-        libraries: list[str] | None = None,
-        tool_calls: list[dict[str, Any]] | None = None,
     ) -> None:
         self._tools = tools
-        self._tool_calls = tool_calls  # where calls to the provided tools are recorded, see ``recorded``
-        self._libraries = list(libraries or [])  # module names the sandboxed code may import
         self._custom_types = custom_types or {}
         self._values = HostValues(tools)
         self._lm = lm
@@ -466,12 +444,13 @@ class SandboxSession:
         self._sealed: list[dict[str, Any]] = []  # see _seal
         self.lm_error: tuple[LMError, str] | None = None
         self.in_host = False
+        self.id: str | None = None  # the session's id in the interpreter, once installed
 
     def install(self, interpreter: Any, *, import_dspy: bool) -> None:
         """Bootstrap the bridge in ``interpreter``; with ``import_dspy``, import dspy there right away."""
         provide = getattr(interpreter, "provide_dspy", None)
         if callable(provide):
-            provide(libraries=self._libraries) if self._libraries else provide()
+            provide()
         self._interpreter = interpreter
         interpreter.tools[LM_TOOL] = self._serve_lm
         interpreter.tools[TRACE_TOOL] = self._serve_trace
@@ -479,14 +458,14 @@ class SandboxSession:
         # Inside a sandbox, the host already gave this interpreter the host's own interpreter tool.
         if self._interpreter_factory is not None and not isinstance(interpreter, HostInterpreter):
             interpreter.tools[INTERPRETER_TOOL] = self._serve_interpreter
-        session = secrets.token_hex(8)
+        session = self.id = secrets.token_hex(8)
         spec = self._spec(session)
         interpreter.execute(BOOTSTRAP, variables={"__dspy_spec": spec})
         namespace = _in_host.pop(session, None)
         if namespace is not None:
             # Code in the host's memory has the host's own types and values: nothing crosses.
             self.in_host = True
-            self._values = InMemory()
+            self._values = InMemory(namespace)
             namespace["__dspy_guest_spec"] = spec
             namespace["__dspy_values"] = self._values
             namespace["__dspy_types"] = dict(self._custom_types)
@@ -534,7 +513,7 @@ class SandboxSession:
             interpreter = _create_interpreter(self._interpreter_factory)
             interpreter.tools[INTERPRETER_TOOL] = self._serve_interpreter  # for the modules its own code builds
             handle = secrets.token_hex(8)
-            host_tools = {name: recorded(name, _entrypoint(tool), self._tool_calls) for name, tool in self._tools.items()}
+            host_tools = {name: _entrypoint(tool) for name, tool in self._tools.items()}
             self._nested[handle] = _NestedInterpreter(interpreter, host_tools, self._values)
             return handle
         nested = self._nested.get(id)
@@ -561,9 +540,16 @@ class SandboxSession:
         so a call is the same whether sandboxed code makes it through dspy or directly."""
         if tool not in self._tools:
             raise CodeInterpreterError(f"Unknown tool {tool!r}")
+        provided = self._tools[tool]
         registered = (getattr(self._interpreter, "tools", None) or {}).get(tool)
-        function = registered if callable(registered) else _entrypoint(self._tools[tool])
-        result = recorded(tool, function, self._tool_calls)(**self._values.decode(arguments or {}))
+        function = registered if callable(registered) else _entrypoint(provided)
+        kwargs = self._values.decode(arguments or {})
+        # A dspy.Tool (an RLM's registered tools call theirs) reads its arguments as declared itself: reading them here
+        # too would validate a model twice. Only a plain function gets them as declared from here.
+        if not isinstance(provided, Tool):
+            declared = Tool(provided).arg_types
+            kwargs = {name: _as_declared(value, declared.get(name)) for name, value in kwargs.items()}
+        result = function(**kwargs)
         if asyncio.iscoroutine(result):
             from dspy.primitives.python_interpreter import _await_in_sync
 
@@ -586,6 +572,10 @@ class SandboxSession:
         trace.append((dspy.Predict(signature) if signature is not None else None, inputs, dspy.Prediction(**outputs)))
 
     def _signature(self, signature: dict[str, Any]) -> Any:
+        fields = {name: dict(kwargs) for name, kwargs in signature.get("fields", {}).items()}
+        for name, value in signature.get("defaults", {}).items():
+            fields.setdefault(name, {})["default"] = self._values.decode(value)
+        signature = {**signature, "fields": fields}
         try:
             names = {}
             for name, where in signature.get("types", {}).items():
@@ -754,6 +744,17 @@ def from_wire(value: Any, annotation: Any) -> Any:
             return parse_value(value, annotation)
 
 
+def _as_declared(value: Any, annotation: Any) -> Any:
+    """A tool argument as the type the tool declares, when it came as plain data (as a value of the user's types
+    crosses), or as it came: the tool then checks it as sent."""
+    if annotation in (None, Any) or not isinstance(value, (dict, list)):
+        return value
+    try:
+        return from_wire(value, annotation)
+    except Exception:
+        return value
+
+
 def _typed(value: Any, field: Any) -> Any:
     """``value`` as its field's declared type, or as is if it does not parse."""
     if field is None:
@@ -788,7 +789,7 @@ class HostValues(Wire):
 
     def encode_object(self, value: Any, fields: dict[str, Any]) -> Any:
         if _import_path(type(value)) is None:  # the user's: plain data, as its type writes it for a round trip
-            return self.encode(_jsonable(value))
+            return self.encode(_plain_data(value))
         return {**super().encode_object(value, fields), "ref": self._keep(value)}
 
     def find_class(self, node: dict[str, Any]) -> Any:
@@ -824,6 +825,44 @@ class HostValues(Wire):
             ref = self._refs[id(value)] = len(self._objects)
             self._objects.append(value)  # kept for the session, so its id stays its own
         return ref
+
+
+def _plain_data(value: Any) -> Any:
+    """``value`` as plain data, as its type writes it for a round trip, except that a ``SandboxSerializable`` it holds
+    stays itself where the dump has its str, to cross in its own form: its str can't rebuild it. Where a serializer of
+    the user's reads what one writes (a wrap serializer of its field, say), the dump is as before, from the str."""
+    kept: dict[str, Any] = {}
+
+    def keep(item: Any) -> str:  # a placeholder no serializer can turn into another
+        placeholder = secrets.token_hex(16)
+        kept[placeholder] = item
+        return placeholder
+
+    try:
+        marked = pydantic_core.to_jsonable_python(
+            value,
+            by_alias=False,
+            round_trip=True,
+            context={KEEP_IN_DUMP: keep},  # in a model's fields
+            fallback=lambda item: keep(item) if isinstance(item, SandboxSerializable) else str(item),  # in other values
+        )
+    except pydantic_core.PydanticSerializationError:
+        marked = None  # a serializer that fails on a placeholder, or fails anyway
+    if marked is not None and not kept:
+        return marked  # holds no SandboxSerializable: the dump as before
+    plain = _jsonable(value)
+
+    def merge(marked: Any, plain: Any) -> Any:
+        # A placeholder no serializer changed, where the dump as before has the value's str, is the value.
+        if isinstance(marked, str) and marked in kept and plain == str(kept[marked]):
+            return kept[marked]
+        if isinstance(marked, list) and isinstance(plain, list) and len(marked) == len(plain):
+            return [merge(m, p) for m, p in zip(marked, plain, strict=True)]
+        if isinstance(marked, dict) and isinstance(plain, dict) and marked.keys() == plain.keys():
+            return {key: merge(marked[key], plain[key]) for key in plain}
+        return plain
+
+    return plain if marked is None else merge(marked, plain)
 
 
 def _type_binding(t: Any) -> dict[str, Any]:

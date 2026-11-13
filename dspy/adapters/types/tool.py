@@ -1,7 +1,10 @@
 import asyncio
 import inspect
+import json
 from decimal import Decimal
+from numbers import Number
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
+from urllib.parse import quote
 
 import json_repair
 import pydantic
@@ -23,6 +26,68 @@ _TYPE_MAPPING = {"string": str, "integer": int, "number": float, "boolean": bool
 
 class _MCPToolClient(Protocol):
     async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any: ...
+
+
+def _json_schema_instance(value: Any, bytes_mode: Literal["utf8", "base64", "hex"] | None = None) -> Any:
+    """``value`` as the JSON its schema describes, for JSON-schema validation. A model is checked as its fields, keyed
+    by the names its validation schema uses (its dump would key them by serialization alias, and a custom type's dump
+    is a prompt)."""
+    if isinstance(value, pydantic.RootModel):
+        return _json_schema_instance(value.root, type(value).model_config.get("ser_json_bytes", "utf8"))
+    if isinstance(value, BaseModel):
+        # Only the fields its JSON schema shows; e.g. Score's provider-evidence fields are hidden from it.
+        shown = type(value).model_json_schema().get("properties")
+        # A plain model's round-trip dump is the input its schema describes (a `Json` field as text). Python mode keeps
+        # JSON-only serializers, which may change a field's type, out of the check. A custom type's dump is a prompt,
+        # and a field holding a model is checked through that model, keyed as its schema is.
+        own = {} if isinstance(value, Type) else value.model_dump(round_trip=True)
+        # The schema describes bytes as a string in every mode, so encode them as the model's JSON does.
+        bytes_mode = type(value).model_config.get("ser_json_bytes", "utf8")
+        fields = {}
+        for name, info in type(value).model_fields.items():
+            # Key each field by the name its validation schema uses: a validation alias (or one of its choices), else the name.
+            alias = info.validation_alias
+            choices = alias.choices if isinstance(alias, pydantic.AliasChoices) else [alias]
+            keys = [key for key in (*choices, info.alias, name) if isinstance(key, str)]
+            key = next((key for key in keys if shown is None or key in shown), None)
+            if key is not None:
+                item = getattr(value, name)
+                fields[key] = _json_field_value(own[name] if name in own and not _holds_model(item) else _json_schema_instance(item), bytes_mode)
+        extra = {key: _json_field_value(_json_schema_instance(item), bytes_mode) for key, item in (value.model_extra or {}).items()}
+        return fields | extra
+    if isinstance(value, dict):
+        return {k: _json_schema_instance(v, bytes_mode) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_json_schema_instance(v, bytes_mode) for v in value]
+    # Root values need JSON conversion too, but numbers already support numeric schema constraints.
+    if bytes_mode is not None and not isinstance(value, Number):
+        return _json_field_value(value, bytes_mode)
+    return value
+
+
+def _is_json(value: Any) -> bool:
+    """Whether ``value`` is plain JSON data: dicts with string keys, lists, strings, numbers, booleans and None. Not
+    their subclasses, like a defaultdict, which JSON can't carry."""
+    if type(value) is dict:
+        return all(type(key) is str and _is_json(item) for key, item in value.items())
+    if type(value) is list:
+        return all(_is_json(item) for item in value)
+    return value is None or type(value) in (str, int, float, bool)
+
+
+def _holds_model(value: Any) -> bool:
+    if isinstance(value, BaseModel):
+        return True
+    items = value.values() if isinstance(value, dict) else value if isinstance(value, (list, tuple, set, frozenset)) else ()
+    return any(_holds_model(item) for item in items)
+
+
+def _json_field_value(value: Any, bytes_mode: Literal["utf8", "base64", "hex"]) -> Any:
+    """A model's field value in the JSON form its schema describes, e.g. a date as an ISO string."""
+    try:
+        return pydantic_core.to_jsonable_python(value, bytes_mode=bytes_mode)
+    except (pydantic_core.PydanticSerializationError, ValueError):
+        return value  # e.g. an arbitrary object, which the schema leaves unchecked
 
 
 class Tool(Type):
@@ -133,7 +198,7 @@ class Tool(Type):
                 else:
                     raise ValueError(f"Arg {k} is not in the tool's args.")
             try:
-                instance = v.model_dump() if hasattr(v, "model_dump") else v
+                instance = _json_schema_instance(v)
                 type_str = self.args[k].get("type")
                 if type_str is not None and type_str != "Any":
                     validate(instance=instance, schema=self.args[k])
@@ -147,7 +212,11 @@ class Tool(Type):
                 # Create a pydantic model wrapper with a dummy field `value` to parse the arg to the correct type.
                 # This is specifically useful for handling nested Pydantic models like `list[list[MyPydanticModel]]`
                 pydantic_wrapper = create_model("Wrapper", value=(self.arg_types[k], ...))
-                parsed = pydantic_wrapper.model_validate({"value": v})
+                if type(v) in (dict, list) and _is_json(v):
+                    # JSON data, as an LM or a sandbox sends: read as JSON, where a strict model's tuple is a list.
+                    parsed = pydantic_wrapper.model_validate_json(json.dumps({"value": v}))
+                else:
+                    parsed = pydantic_wrapper.model_validate({"value": v})
                 parsed_kwargs[k] = parsed.value
             else:
                 parsed_kwargs[k] = v
@@ -158,12 +227,38 @@ class Tool(Type):
 
     def as_function_tool(self) -> FunctionTool:
         """The lm15 tool declaration sent to models that call tools natively."""
+        def rebase_refs(schema: Any, prefix: str) -> Any:
+            if not isinstance(schema, dict) or "$id" in schema:
+                return schema
+            result = dict(schema)
+            ref = result.get("$ref", "")
+            if ref == "#" or ref.startswith("#/"):
+                result["$ref"] = prefix + ref[1:]
+            # Visit schemas, not literal data in defaults, const, enum, examples, or extensions.
+            for key in ("$defs", "definitions", "properties", "patternProperties", "dependentSchemas", "dependencies"):
+                if key in result:
+                    result[key] = {name: rebase_refs(item, prefix) for name, item in result[key].items()}
+            for key in (
+                "items", "additionalItems", "additionalProperties", "contains", "propertyNames",
+                "unevaluatedItems", "unevaluatedProperties", "not", "if", "then", "else",
+                "allOf", "anyOf", "oneOf", "prefixItems",
+            ):
+                if key in result:
+                    item = result[key]
+                    result[key] = [rebase_refs(v, prefix) for v in item] if isinstance(item, list) else rebase_refs(item, prefix)
+            return result
+
+        # Each argument is a standalone schema. Its local references must follow it under properties.
+        properties = {
+            name: rebase_refs(schema, "#/properties/" + quote(name.replace("~", "~0").replace("/", "~1"), safe=""))
+            for name, schema in self.args.items()
+        }
         return FunctionTool(
             name=self.name,
             description=self.desc,
             parameters={
                 "type": "object",
-                "properties": self.args,
+                "properties": properties,
                 "required": [k for k in self.args if "default" not in self.args[k]],
             },
         )
@@ -324,6 +419,7 @@ class ToolCalls(Type):
         id: str | None = None
         name: str
         args: dict[str, Any] = pydantic.Field(json_schema_extra={"additionalProperties": True})
+        continuation: list[dict[str, Any]] = pydantic.Field(default_factory=list)
 
         @classmethod
         def __get_pydantic_json_schema__(cls, core_schema: Any, handler: Any) -> dict[str, Any]:
@@ -332,6 +428,7 @@ class ToolCalls(Type):
             properties = schema.get("properties")
             if isinstance(properties, dict):
                 properties.pop("id", None)
+                properties.pop("continuation", None)
             required = schema.get("required")
             if isinstance(required, list):
                 schema["required"] = [field for field in required if field != "id"]
@@ -438,7 +535,13 @@ class ToolCalls(Type):
 
     @pydantic.model_serializer()
     def serialize_model(self):
-        data = self.format()
+        calls = []
+        for call in self.tool_calls:
+            saved = {"id": call.id, "name": call.name, "args": call.args}
+            if call.continuation:
+                saved["continuation"] = call.continuation
+            calls.append(saved)
+        data = {"tool_calls": calls}
         if self.tool_call_results is not None:
             data["tool_call_results"] = TypeAdapter(type(self.tool_call_results)).dump_python(
                 self.tool_call_results,
@@ -570,6 +673,7 @@ def _normalize_tool_call_dict(data: dict[str, Any]) -> dict[str, Any]:
         "id": data.get("id") or data.get("call_id"),
         "name": name,
         "args": arguments,
+        "continuation": data.get("continuation", []),
     }
 
 

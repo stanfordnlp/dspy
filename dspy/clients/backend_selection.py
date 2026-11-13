@@ -8,6 +8,7 @@ before execution. No provider client is constructed and no credential is invoked
 import os
 from dataclasses import dataclass, field
 
+from dspy._vendor.lm15.registry import lookup
 from dspy.clients.engines.lm15_engine import LM15Engine, timeouts_for
 from dspy.lm15 import RouterConfig, UnknownModelError, UnsupportedFeatureError, _definitions
 
@@ -24,6 +25,21 @@ class BackendSelection:
     native: bool
     resolution: object = None
     clients: dict = field(default_factory=dict, repr=False)
+    model_type: str = "chat"
+
+
+def compatibility_model(lm, selection):
+    """Keep known compatibility spellings; normalize native OpenAI/Azure ids."""
+    route = selection.resolution
+    if lm.model_type == "auto" and route is not None and not route.declared:
+        if route.provider in {"openai", "openai-chat", "azure", "azure-chat"}:
+            return f"{route.provider.removesuffix('-chat')}/{route.model}"
+        if selection.model_type == "responses":
+            raise UnsupportedFeatureError(
+                f"{lm.model!r} has no LiteLLM mapping for its native Responses route. "
+                "Use native client settings or register the endpoint with its dialect and credentials."
+            )
+    return lm.model
 
 
 def select_backend(lm, options=None, request=None):
@@ -43,13 +59,21 @@ def select_backend(lm, options=None, request=None):
     # A declared provider is resolved even under engine="litellm": its
     # LiteLLM route is built from the declaration (address, credential), not
     # from a model-string prefix LiteLLM may read as another service.
-    if native or (providers and lm.model_type != "text"):
+    if native or lm.model_type == "auto" or (providers and lm.model_type != "text"):
         try:
             resolution = LM15Engine(RouterConfig(env={}, providers=providers), model_type=lm.model_type).resolve(lm.model)
         except (UnknownModelError, UnsupportedFeatureError):
             if spec == "lm15":
                 raise
             native = False
+    model_type = lm.model_type
+    if model_type == "auto":
+        # Family selection is independent of backend selection: compatibility
+        # must not send a Responses route to Chat Completions on fallback.
+        definition = None
+        if resolution is not None:
+            definition = next((d for d in providers if d.id == resolution.provider), None) or lookup(resolution.provider)
+        model_type = "responses" if definition is not None and definition.dialect == "openai-responses" else "chat"
     if native and request is not None:
         from dspy.clients.requests import passthrough_keys
 
@@ -96,7 +120,7 @@ def select_backend(lm, options=None, request=None):
             if spec == "lm15":
                 raise
             native = False
-    if spec == "litellm" and resolution is not None and not resolution.declared:
+    if spec == "litellm" and lm.model_type != "auto" and resolution is not None and not resolution.declared:
         resolution = None  # as before: the compatibility engine reads the model string itself
     if spec == "lm15" and not native:
         unsupported = sorted(key for key, value in clients.items() if key not in NATIVE_CLIENT_KEYS and value is not None)
@@ -104,4 +128,4 @@ def select_backend(lm, options=None, request=None):
             f"The native LM cannot carry these client settings: {unsupported}, or model_type={lm.model_type!r}. "
             "Use engine='auto' with dspy[litellm], or configure a custom engine."
         )
-    return BackendSelection(native, resolution, clients)
+    return BackendSelection(native, resolution, clients, model_type)

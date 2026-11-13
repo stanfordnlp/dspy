@@ -55,10 +55,10 @@ const makeToolWrapper = (toolName, parameters = []) => {
 
   return `
 import json
-from pyodide.ffi import run_sync, JsProxy
+from pyodide.ffi import run_sync
 def ${toolName}(${signature}):
     result = run_sync(_js_tool_call("${toolName}", json.dumps({"kwargs": {${kwargParts}}})))
-    parsed = result.to_py() if isinstance(result, JsProxy) else result
+    parsed = json.loads(result)
     if isinstance(parsed, dict) and parsed.get("${TOOL_BRIDGE_ERROR_KEY}"):
         raise RuntimeError(parsed.get("message", "Tool bridge error"))
     return parsed
@@ -68,8 +68,8 @@ def ${toolName}(${signature}):
 // Generate SUBMIT function with output field signature.
 // Outputs is an array of {name, type?} objects.
 const makeSubmitWrapper = (outputs) => {
-  if (!outputs || outputs.length === 0) {
-    // Fallback to single-arg SUBMIT if no outputs defined
+  if (!outputs) {
+    // Omitted output fields use single-arg SUBMIT; an explicit [] defines SUBMIT().
     return `
 def SUBMIT(output):
     raise _DSPyFinalOutput({"output": output})
@@ -331,34 +331,31 @@ async function toolCallBridge(name, argsJson) {
 
     // Expect JSON-RPC result or error with matching id
     if (response.id !== requestId) {
-      return {
+      return JSON.stringify({
         [TOOL_BRIDGE_ERROR_KEY]: true,
         message: `Tool bridge error for '${name}': Unexpected response: expected id ${requestId}, got ${response.id}`
-      };
+      });
     }
 
     if (response.error) {
       const errorType = response.error.data?.type || "ToolError";
       const errorMessage = response.error.message || "Tool call failed";
-      return {
+      return JSON.stringify({
         [TOOL_BRIDGE_ERROR_KEY]: true,
         message: `${errorType}: ${errorMessage}`
-      };
+      });
     }
 
-    // Deserialize result based on type
+    // Decode JSON in Python so null becomes None, not Pyodide's JsNull.
     const result = response.result;
-    if (result.type === "json") {
-      return JSON.parse(result.value);
-    }
-    return result.value;
+    return result.type === "json" ? result.value : JSON.stringify(result.value);
   } catch (error) {
     // Return a structured error payload so Python can raise with full context
     // without triggering a top-level unhandled rejection in Deno.
-    return {
+    return JSON.stringify({
       [TOOL_BRIDGE_ERROR_KEY]: true,
       message: `Tool bridge error for '${name}': ${error.message}`
-    };
+    });
   }
 }
 

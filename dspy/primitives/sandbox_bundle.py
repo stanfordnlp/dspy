@@ -8,7 +8,8 @@ that executes no sandboxed code byte-compiles each archive once, so sandboxes st
 - ``dspy-<digest>.zip``, for sandboxes whose code imports dspy (``PythonInterpreter.provide_dspy``), which have no
   network to install packages with. It holds dspy and every package its installed metadata says it needs: those
   Pyodide ships as Pyodide builds them (checked against Pyodide's lock file), the others from this environment if
-  they are pure Python. There is one per set of sources.
+  they are pure Python, and the packages of Pyodide's ``PythonInterpreter(sandbox_packages=...)`` asks for, by
+  default Pillow, for ``dspy.Image.to_pil``. There is one per set of sources and packages.
 - ``dspy-<digest>-<stamp>.snap``: the memory of a sandbox that has installed that bundle and imported dspy, which a
   new one restores instead of doing both. There is one per bundle and standard library archive.
 
@@ -105,14 +106,20 @@ def prepare_stdlib(deno_command: list[str], deno_dir: str | None, runner: str) -
 
 
 def prepare_bundle(
-    deno_command: list[str], deno_dir: str | None, runner: str, libraries: tuple[str, ...] = (), root: Path | None = None
+    deno_command: list[str], deno_dir: str | None, runner: str, root: Path | None = None, packages: tuple[str, ...] = ()
 ) -> Path:
-    """Return the dspy bundle for the current sources, building it in ``root`` (by default the cache) if it is
-    missing. ``libraries``, top-level module names, are added with what they need, like dspy's own dependencies.
-    Thread-safe."""
+    """Return the dspy bundle for the current sources, with ``packages`` of Pyodide's and what they need, building it
+    in ``root`` (by default the cache) if it is missing. Thread-safe."""
+    packages = tuple(sorted({_normalize(name) for name in packages}))  # one bundle, whatever their order or spelling
     with _lock:
-        libraries = tuple(sorted(set(libraries)))
-        return _guarded(_prepare_bundle, tuple(deno_command), deno_dir, runner, libraries, root or bundle_root())
+        # Raised past _guarded: a name Pyodide doesn't have is a mistake to fix, not a bundle to start without.
+        unknown = [name for name in packages if name not in _guarded(_pyodide_lock, deno_dir)]
+        if unknown:
+            raise ValueError(
+                f"Pyodide {PYODIDE_VERSION} has no package named {', '.join(map(repr, unknown))}. sandbox_packages "
+                f"takes names from https://pyodide.org/en/{PYODIDE_VERSION}/usage/packages-in-pyodide.html"
+            )
+        return _guarded(_prepare_bundle, tuple(deno_command), deno_dir, runner, root or bundle_root(), packages)
 
 
 def prepare_snapshot(deno_command: list[str], deno_dir: str | None, runner: str, bundle: Path, stdlib: Path) -> Path:
@@ -163,10 +170,10 @@ def _prepare_stdlib(deno_command: tuple[str, ...], deno_dir: str | None, runner:
 
 
 def _prepare_bundle(
-    deno_command: tuple[str, ...], deno_dir: str | None, runner: str, libraries: tuple[str, ...], root: Path
+    deno_command: tuple[str, ...], deno_dir: str | None, runner: str, root: Path, packages: tuple[str, ...] = ()
 ) -> Path:
     root.mkdir(parents=True, exist_ok=True)
-    wheels, files = _contents(root, deno_dir, libraries)
+    wheels, files = _contents(root, deno_dir, packages)  # the digest covers the wheels, so each set has its own
     stamp = [_FORMAT, PYODIDE_VERSION, wheels, [(name, path.stat().st_size, path.stat().st_mtime_ns) for path, name in files]]
     target = root / f"dspy-{hashlib.sha256(json.dumps(stamp).encode()).hexdigest()[:16]}.zip"
     if target.exists():
@@ -240,21 +247,19 @@ def _build(
         temp.unlink(missing_ok=True)
 
 
-def _contents(
-    root: Path, deno_dir: str | None, libraries: tuple[str, ...] = ()
-) -> tuple[list[str], list[tuple[Path, str]]]:
+def _contents(root: Path, deno_dir: str | None, packages: tuple[str, ...]) -> tuple[list[str], list[tuple[Path, str]]]:
     """The Pyodide wheels and the files of this environment that make up the bundle."""
-    lock, needed, files = _plan(deno_dir, libraries)
-    if _planned_at.setdefault((deno_dir, libraries), _folder_times(files)) != _folder_times(files):
+    lock, needed, files = _plan(deno_dir, packages)
+    if _planned_at.setdefault(deno_dir, _folder_times(files)) != _folder_times(files):
         # A file was added, removed or renamed in a folder the plan lists files from: list them again.
         _plan.cache_clear()
-        lock, needed, files = _plan(deno_dir, libraries)
-        _planned_at[(deno_dir, libraries)] = _folder_times(files)
+        lock, needed, files = _plan(deno_dir, packages)
+        _planned_at[deno_dir] = _folder_times(files)
     return [_fetch_wheel(root, lock[name], deno_dir) for name in needed], files
 
 
 # The modification times of the folders each plan's files are in, when it was made.
-_planned_at: dict[tuple[str | None, tuple[str, ...]], list[int | None]] = {}
+_planned_at: dict[str | None, list[int | None]] = {}
 
 
 def _folder_times(files: list[tuple[Path, str]]) -> list[int | None]:
@@ -270,45 +275,35 @@ def _folder_times(files: list[tuple[Path, str]]) -> list[int | None]:
 
 
 @functools.cache
-def _plan(deno_dir: str | None, libraries: tuple[str, ...] = ()) -> tuple[dict, list[str], list[tuple[Path, str]]]:
+def _plan(deno_dir: str | None, packages: tuple[str, ...] = ()) -> tuple[dict, list[str], list[tuple[Path, str]]]:
     """Which packages come from Pyodide and which files from this environment, once per process and again when the
     files' folders change (see ``_contents``). The files' sizes and times are read on every call, so an edited file
     still makes a new bundle."""
     lock = _pyodide_lock(deno_dir)
-    providers = metadata.packages_distributions() if libraries else {}
     shipped, files = [], []
-    for dist in _distributions(tuple(name for top in libraries for name in providers.get(top, ()))):
+    for dist in _distributions():
         name = _normalize(dist.metadata["Name"])
         if name in lock:
             shipped.append(name)
         else:
             files += _files(dist)
-    for top in libraries:
-        if top not in providers:  # a module of the user's own project
-            files += _module_files(top) or []
+    shipped += packages
     needed: list[str] = []
     while shipped:  # with what they need, by Pyodide's lock file
         name = _normalize(shipped.pop())
         if name not in needed:
             needed.append(name)
             shipped += lock[name]["depends"]
-    bundled = {arcname.split("/")[0].removesuffix(".py") for _, arcname in files}
-    bundled |= {module for name in needed for module in lock[name].get("imports", ())}
-    if missing := [top for top in libraries if top not in bundled]:
-        raise SandboxBundleError(
-            f"{', '.join(missing)} cannot run in the Pyodide sandbox: it has compiled code that Pyodide does not ship. "
-            "Use an interpreter that runs this environment's Python, like dspy.LocalInterpreter."
-        )
     return lock, sorted(needed), files
 
 
-def _distributions(extra: tuple[str, ...] = ()) -> list[metadata.Distribution]:
-    """dspy's distribution, the ``extra`` ones, and every one they require, at any depth, from this environment's
-    metadata."""
+def _distributions() -> list[metadata.Distribution]:
+    """dspy's distribution and every one it requires, at any depth, from this environment's metadata."""
     from dspy.utils.lazy_import import _detect_dspy_dist
 
     found: dict[str, metadata.Distribution] = {}
-    todo = [_detect_dspy_dist(), *extra]
+    # The distribution that installed the dspy package, whatever its name (a fork, or a renamed release build).
+    todo = list(metadata.packages_distributions().get("dspy") or [_detect_dspy_dist()])
     while todo:
         name = _normalize(todo.pop())
         if name in found:
@@ -339,37 +334,29 @@ def _files(dist: metadata.Distribution) -> list[tuple[Path, str]]:
     compiled distribution is left out: Pyodide cannot run it."""
     out = []
     for top in sorted(_top_level(dist)):
-        found = _module_files(top, dist)
-        if found is None:
+        spec = importlib.util.find_spec(top)
+        if spec is None:
+            continue
+        if spec.submodule_search_locations:
+            where, name = Path(next(iter(spec.submodule_search_locations))).resolve(), top
+        elif spec.origin and spec.origin.endswith(".py"):
+            where, name = Path(spec.origin).resolve(), f"{top}.py"
+        else:
             return []
-        out += found
+        # A wheel install's RECORD lists each file (an egg-info's listing can be out of date).
+        recorded = [file for file in dist.files or () if file.parts[0] == name] if dist.read_text("RECORD") else []
+        if recorded and Path(dist.locate_file(name)).resolve() == where:
+            paths = [(Path(dist.locate_file(file)), file.as_posix()) for file in recorded]
+        elif where.is_file():
+            paths = [(where, name)]
+        else:
+            data = _DSPY_PACKAGE_DATA if top == "dspy" else ()
+            paths = [(path, f"{top}/{path.relative_to(where).as_posix()}") for path in _shipped(where, data)]
+        if any(path.suffix in _COMPILED for path, _ in paths):
+            return []
+        out += [(path, arcname) for path, arcname in paths
+                if "__pycache__" not in path.parts and path.suffix != ".pyc"]
     return out
-
-
-def _module_files(top: str, dist: metadata.Distribution | None = None) -> list[tuple[Path, str]] | None:
-    """A top-level module's files, from where it is imported here, or ``None`` if it is compiled."""
-    spec = importlib.util.find_spec(top)
-    if spec is None:
-        return []
-    if spec.submodule_search_locations:
-        where, name = Path(next(iter(spec.submodule_search_locations))).resolve(), top
-    elif spec.origin and spec.origin.endswith(".py"):
-        where, name = Path(spec.origin).resolve(), f"{top}.py"
-    else:
-        return None
-    # A wheel install's RECORD lists each file (an egg-info's listing can be out of date).
-    recorded = [file for file in dist.files or () if file.parts[0] == name] if dist and dist.read_text("RECORD") else []
-    if dist and recorded and Path(dist.locate_file(name)).resolve() == where:
-        paths = [(Path(dist.locate_file(file)), file.as_posix()) for file in recorded]
-    elif where.is_file():
-        paths = [(where, name)]
-    else:
-        data = _DSPY_PACKAGE_DATA if top == "dspy" else ()
-        paths = [(path, f"{top}/{path.relative_to(where).as_posix()}") for path in _shipped(where, data)]
-    if any(path.suffix in _COMPILED for path, _ in paths):
-        return None
-    return [(path, arcname) for path, arcname in paths
-            if "__pycache__" not in path.parts and path.suffix != ".pyc"]
 
 
 def _shipped(where: Path, data: tuple[str, ...] = ()) -> list[Path]:
@@ -432,6 +419,7 @@ def _last_used(path: Path) -> float | None:
         return None
 
 
+@functools.cache
 def _pyodide_lock(deno_dir: str | None) -> dict:
     local = _npm_dir(deno_dir) / "pyodide-lock.json" if deno_dir else None
     if local is not None and local.exists():

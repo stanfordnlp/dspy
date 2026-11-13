@@ -14,8 +14,7 @@ from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
 from dspy.adapters.types.tool import ToolCallResults, ToolCalls
-from dspy.primitives.repl_types import REPLHistory
-from dspy.utils.annotation import experimental
+from dspy.primitives.repl_types import REPLEntry, REPLHistory, restore_repl_events
 
 ReflectiveExample = TypedDict(
     "ReflectiveExample",
@@ -221,19 +220,22 @@ _COMPACTED_CHARS = 500
 
 
 def compact_history(history: History, max_chars: int = _COMPACTED_CHARS) -> History:
-    """Return a copy of `history` with every tool result longer than `max_chars` cut to that length.
+    """Return a copy of `history` with long tool results and REPL observations shortened.
 
-    Only the `value` of each `ToolCallResult` attached to a `ToolCalls` message value is shortened; a cut
-    value ends with a marker naming how many characters were removed. Thoughts, tool names, tool
-    arguments, user inputs, and error flags are untouched. The input is never mutated: `dspy.ReAct`
-    appends to its `History` in place and the trace shares that object.
+    Tool result values use a prefix and a cut-count marker; REPL outputs retain their head and tail and
+    respect any smaller per-entry limit. Thoughts, code, user inputs, and error flags are untouched.
+    The input is never mutated: traces can share their History with the running program.
     """
     messages = []
-    for message in history.messages:
+    for message in restore_repl_events(history.messages):
         new_message = dict(message)
         for key, value in message.items():
             if isinstance(value, ToolCalls) and isinstance(value.tool_call_results, ToolCallResults):
                 new_message[key] = _compact_tool_calls(value, max_chars)
+            elif isinstance(value, REPLEntry):
+                new_message[key] = value.model_copy(update={
+                    "output": value.format_output(value.output, min(value.max_output_chars, max_chars)),
+                })
         messages.append(new_message)
     return history.model_copy(update={"messages": messages})
 
@@ -266,7 +268,6 @@ def compact_repl_history(history: REPLHistory, max_chars: int = _COMPACTED_CHARS
 # --------------------------------------------------------------------------- #
 
 
-@experimental(version="3.4.1")
 class InstructionProposer(ProposalFn):
     """GEPA's default instruction proposer.
 

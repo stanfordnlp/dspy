@@ -38,7 +38,7 @@ The default `PythonInterpreter` executes Python in a Deno and Pyodide WASM sandb
 
 ### 8. `SandboxSerializable` loads large inputs into the sandbox once
 
-Some inputs are not plain strings. A DataFrame, a parsed corpus, or a binary blob would be wasteful and lossy to re-marshal into code on every turn. `SandboxSerializable` lets an input define how it crosses into the sandbox through four hooks: `sandbox_setup()` for imports, `to_sandbox()` for the payload, `sandbox_assignment()` for the reconstruction, and `rlm_preview()` for the metadata the model sees. `dspy.RLM` runs this once at the start of `forward()`, so the value is rebuilt under its original name and stays live across turns. The model works with a real pandas DataFrame rather than a stringified copy.
+Some inputs are not plain strings. A DataFrame, a parsed corpus, or a binary blob would be wasteful and lossy to re-marshal into code on every turn. `SandboxSerializable` lets an input define how it crosses into the sandbox through four hooks: `sandbox_setup()` for imports, `to_sandbox()` for the payload, `sandbox_assignment()` for the reconstruction, and `rlm_preview()` for the metadata the model sees. `dspy.RLM` runs this once at the start of `forward()`, so the value is rebuilt under its original name and stays live across turns. It crosses on the same path as dspy types, so the same value also works as a `dspy.Flex` input or a tool's result. The model works with a real pandas DataFrame rather than a stringified copy.
 
 ### 9. An extract pass salvages outputs when the loop ends early
 
@@ -47,10 +47,6 @@ A model can exhaust `max_iters` without ever submitting final outputs. Rather th
 ### 10. RLM optimizes like any other module
 
 The action and extract steps are ordinary `dspy.Predict` instances; `dspy.RLM` exposes them through `named_predictors` and compiles like any module. The task instructions, output-field descriptions, and tool docs are formatted into the action prompt when you construct the module, which is the surface an optimizer tunes. Running GEPA or MIPROv2 against a metric improves the loop’s behavior, not just the task instructions.
-
-### 11. RLM is marked experimental and the interface is in flux
-
-The class carries the `@experimental` decorator. The hard parts are still settling: call budgeting, sandbox lifetime, error recovery, and the action prompt itself. Treat the API as subject to change between releases and pin a version if you depend on it.
 
 ## API walkthrough
 
@@ -67,7 +63,7 @@ The public call validates the inputs against the signature, builds the variable 
 The model writes these into its code blocks. You don’t call them, but knowing them tells you what the model can do.
 
 **`llm_query(prompt)`**
-One sub-LLM call. It sends the prompt to `sub_lm` or the configured LM, increments the counter, and returns the response text. It raises if the prompt is empty or the budget is spent.
+One sub-LLM call. It sends the prompt to `sub_lm` or the configured LM, increments the counter, and returns the response text. The prompt may also be a list of strings and DSPy values such as images, sent as one multimodal message. It raises if the prompt is empty or the budget is spent.
 
 **`llm_query_batched(prompts)`**
 Concurrent sub-LLM calls over a list, run on an eight-worker thread pool and returned in input order. A failed call comes back as an `[ERROR] ...` string in its slot rather than aborting the batch. This beats a Python loop of `llm_query` when the model has many independent snippets to read.

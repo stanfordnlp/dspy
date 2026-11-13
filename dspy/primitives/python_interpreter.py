@@ -20,6 +20,7 @@ import secrets
 import shutil
 import subprocess
 import threading
+from collections.abc import Sequence
 from os import PathLike
 from typing import Any, Callable, NoReturn
 
@@ -241,6 +242,7 @@ class PythonInterpreter:
         output_fields: list[dict] | None = None,
         callbacks: list[BaseCallback] | None = None,
         sandbox_cache: bool | None = None,
+        sandbox_packages: Sequence[str] = ("pillow",),
     ) -> None:
         """
         Args:
@@ -262,6 +264,11 @@ class PythonInterpreter:
                    faster. With ``False`` nothing is written there, and Pyodide starts from its own standard library.
                    A sandbox that imports dspy (``provide_dspy``) then gets its bundle built in a temporary directory.
                    Defaults to the ``DSPY_SANDBOX_CACHE`` environment variable, where ``0`` turns it off.
+            sandbox_packages: Packages Pyodide ships (by the names in its package list) that a sandbox with dspy
+                   (``provide_dspy``, as in ``dspy.RLM`` and ``dspy.Flex``) gets, with what they need, so its code can
+                   import them. The default, Pillow, is what ``dspy.Image.to_pil()`` needs. ``()`` leaves it out, for
+                   a smaller bundle that starts a little faster; images still pass through the sandbox, and
+                   ``to_pil()`` raises ``ImportError``. Each package makes the sandbox start a little slower.
         """
         if isinstance(deno_command, dict):
             raise TypeError("deno_command must be a list of strings, not a dict")
@@ -283,6 +290,9 @@ class PythonInterpreter:
         self.output_fields = output_fields
         self.callbacks = list(callbacks or [])
         self.sandbox_cache = sandbox_cache_env_enabled() if sandbox_cache is None else sandbox_cache
+        if isinstance(sandbox_packages, str):
+            raise TypeError(f"sandbox_packages must be a list of package names, like [{sandbox_packages!r}]")
+        self.sandbox_packages = tuple(sandbox_packages)
         self._tools_registered = False
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
@@ -346,18 +356,15 @@ class PythonInterpreter:
         self._handling_tool_call = False
         self._pending_large_vars = {}
         self._session_ended = False
-        self._provided_libraries: tuple[str, ...] | None = None  # set once provide_dspy() has run
 
-    def provide_dspy(self, *, libraries: list[str] | tuple[str, ...] = ()) -> None:
+    def provide_dspy(self) -> None:
         """Make ``import dspy`` work in the sandbox, with the host's dspy and Pyodide builds of its dependencies.
 
         The first call for a dspy source tree fetches the dependencies, byte-compiles the bundle, and records the
         memory of a sandbox that has imported it (see ``dspy.primitives.sandbox_bundle``). The sandbox restores that
         snapshot when it starts, so dspy is already imported. Without one, it installs the bundle and imports dspy on
-        first use. ``libraries``, module names, go into the bundle with what they need, so code can import them too.
-        Call before the interpreter starts. A later call that asks for no other library does nothing. With
-        ``sandbox_cache=False`` the bundle is built in a temporary directory of the process instead of the cache,
-        and no snapshot is recorded.
+        first use. Call before the interpreter starts; a second call does nothing. With ``sandbox_cache=False`` the
+        bundle is built in a temporary directory of the process instead of the cache, and no snapshot is recorded.
         """
         from dspy.primitives.sandbox_bundle import (
             SandboxBundleError,
@@ -367,17 +374,8 @@ class PythonInterpreter:
             scratch_root,
         )
 
-        wanted = {name.split(".")[0] for name in libraries}
-        if self._provided_libraries is not None:
-            if wanted <= set(self._provided_libraries):
-                return
-            if self.deno_process is not None:
-                raise SandboxBundleError(
-                    f"This interpreter started without {', '.join(sorted(wanted - set(self._provided_libraries)))}. "
-                    "Provide libraries before it starts, as dspy.InterpreterPool(libraries=[...]) does."
-                )
-            wanted |= set(self._provided_libraries)
-            self.deno_command = [arg for arg in self.deno_command if not arg.startswith(("--dspy-bundle=", "--dspy-snapshot="))]
+        if any(arg.startswith("--dspy-bundle=") for arg in self.deno_command):
+            return
         if self.deno_process is not None:
             raise SandboxBundleError("provide_dspy() must be called before the interpreter starts.")
         if not self._uses_default_deno_command:
@@ -387,9 +385,7 @@ class PythonInterpreter:
             root = scratch_root()
             if any(_paths_overlap(_canonicalize_path(path), _canonicalize_path(root)) for path in self.enable_write_paths):
                 raise CodeInterpreterError("Write paths cannot overlap PythonInterpreter runtime files.")
-        libraries = tuple(sorted(wanted))
-        bundle = _canonicalize_path(prepare_bundle(self._deno_run, self._deno_dir, self._runner, libraries, root))
-        self._provided_libraries = libraries
+        bundle = _canonicalize_path(prepare_bundle(self._deno_run, self._deno_dir, self._runner, root, self.sandbox_packages))
         self._allow_read(bundle)
         self.deno_command.append(f"--dspy-bundle={bundle}")
         if root is not None:  # no snapshot, without the cache: each sandbox imports dspy itself
@@ -573,7 +569,7 @@ class PythonInterpreter:
                 })
             params["tools"] = tools_info
 
-        if self.output_fields:
+        if self.output_fields is not None:
             params["outputs"] = self.output_fields
 
         # Skip if nothing to register

@@ -57,7 +57,7 @@ def test_completed_response_stop_preserves_billed_usage_and_logprobs(stop):
 @pytest.mark.parametrize("asynchronous", [False, True])
 async def test_native_chat_still_sends_stop_to_provider(asynchronous, monkeypatch):
     transport = native_transport(monkeypatch, [wire("stopped upstream")])
-    lm = dspy.LM("openai/gpt-4o", cache=False, num_retries=0)
+    lm = dspy.LM("openai/gpt-4o", model_type="chat", cache=False, num_retries=0)
     request = lm15.Request(model=lm.model, messages=(lm15.Message.user("hi"),), config=lm15.Config(stop=("STOP",)))
     response = await invoke(lm, asynchronous, request)
     assert json.loads(transport.requests[0].body)["stop"] == ["STOP"]
@@ -160,7 +160,7 @@ async def test_judgment_response_preserves_json_prediction_and_typed_value(async
     transport = native_transport(monkeypatch, [
         DualResponse(status=200, body=json.dumps(body).encode()) for _ in range(2)
     ])
-    lm = dspy.LM("openai/gpt-4o", api_key="test", cache=False, num_retries=0)
+    lm = dspy.LM("openai/gpt-4o", model_type="chat", api_key="test", cache=False, num_retries=0)
     request = prepare(lm, "test", {"response_format": {
         "type": "json_schema", "json_schema": {"name": "Answer", "schema": {
             "type": "object", "properties": {"accepted": {"type": "boolean"}},
@@ -326,3 +326,134 @@ async def test_rate_limit_evidence_survives_public_boundary(asynchronous, stream
     assert error.request_id == "req-123" and error.provider_code == "limited"
     assert error.retry_after == 23 and _delay(error, 0) == 23
     assert error.rate_limit_headers == {"retry-after": ("23",)}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("provider", ["openai", "openai-codex", "gemini"])
+async def test_parallel_stream_calls_keep_final_arguments(asynchronous, provider, monkeypatch, tmp_path):
+    import base64
+
+    model = f"{provider}:gpt-5-codex" if provider == "openai-codex" else f"{provider}/test-model"
+    calls = [{"type": "function_call", "name": "weather", "call_id": f"c{i}",
+              "arguments": json.dumps({"city": city})} for i, city in enumerate(("Paris", "Oslo"))]
+    if provider == "gemini":
+        payloads = [{"candidates": [{"content": {"parts": [{
+            "functionCall": {"name": "weather", "args": {"city": city}},
+            "thoughtSignature": f"sig-{i}",
+        }]}}]} for i, city in enumerate(("Paris", "Oslo"))]
+        payloads[-1]["candidates"][0]["finishReason"] = "STOP"
+        payloads[-1]["usageMetadata"] = {"promptTokenCount": 3, "candidatesTokenCount": 2}
+    else:
+        payloads = [{"type": "response.created", "response": {"id": "r", "model": model}}]
+        for i, call in enumerate(calls):
+            payloads.extend([
+                {"type": "response.output_item.added", "output_index": i, "item": {**call, "arguments": ""}},
+                {"type": "response.output_item.done", "output_index": i, "item": call},
+            ])
+        payloads.append({"type": "response.completed", "response": {
+            "id": "r", "status": "completed", "output": calls,
+            "usage": {"input_tokens": 3, "output_tokens": 2},
+        }})
+    token = base64.urlsafe_b64encode(json.dumps({
+        "https://api.openai.com/auth": {"chatgpt_account_id": "offline"},
+    }).encode()).decode().rstrip("=")
+    if provider == "openai-codex":
+        from dspy._vendor.lm15 import auth
+
+        auth_path = tmp_path / "auth.json"
+        auth_path.write_text(json.dumps({"tokens": {"access_token": f"e30.{token}.offline"}}), encoding="utf-8")
+        monkeypatch.setattr(auth, "CODEX_CLI_AUTH_PATH", auth_path)
+    transport = native_transport(monkeypatch, [DualResponse(200, b"", chunks=[
+        ("data: " + json.dumps(p) + "\n\n").encode() for p in payloads
+    ], headers=[("content-type", "text/event-stream")])])
+    lm = dspy.LM(model, engine="lm15", model_type="chat" if provider == "gemini" else "responses",
+                 api_key=f"e30.{token}.offline", cache=False, num_retries=0)
+    request = lm15.Request(model=model, messages=(lm15.Message.user("weather"),), tools=(
+        lm15.FunctionTool(name="weather", parameters={"type": "object"}),
+    ))
+    try:
+        # Codex complete() itself materializes SSE; other routes use DSPy's stream driver.
+        with dspy.context(send_stream=None if provider == "openai-codex" else Sink()):
+            result = await invoke(lm, asynchronous, request)
+        assert [(p.name, p.input) for p in result.tool_calls] == [
+            ("weather", {"city": "Paris"}), ("weather", {"city": "Oslo"}),
+        ]
+        assert len({p.id for p in result.tool_calls}) == 2
+        assert result.usage.input_tokens == 3 and result.usage.output_tokens == 2
+        assert len(transport.requests) == 1
+    finally:
+        await lm.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_response_final_text_summary_and_incomplete_usage(asynchronous, monkeypatch):
+    payloads = [
+        {"type": "response.created", "response": {"id": "r", "model": "test-model"}},
+        {"type": "response.output_item.added", "output_index": 0, "item": {"type": "reasoning"}},
+        {"type": "response.reasoning_summary_text.delta", "output_index": 0, "summary_index": 0, "delta": "First"},
+        {"type": "response.reasoning_summary_text.delta", "output_index": 0, "summary_index": 1, "delta": "Second"},
+        {"type": "response.output_item.done", "output_index": 0, "item": {
+            "type": "reasoning", "summary": [{"text": "First"}, {"text": "Second"}],
+        }},
+        {"type": "response.output_text.delta", "output_index": 1, "delta": "Hel"},
+        {"type": "response.output_item.done", "output_index": 1, "item": {
+            "type": "message", "content": [{"type": "output_text", "text": "Hello"}],
+        }},
+        {"type": "response.incomplete", "response": {
+            "id": "r", "status": "incomplete", "incomplete_details": {"reason": "max_output_tokens"},
+            "output": [], "usage": {"input_tokens": 3, "output_tokens": 40},
+        }},
+    ]
+    native_transport(monkeypatch, [DualResponse(200, b"", chunks=[
+        ("data: " + json.dumps(p) + "\n\n").encode() for p in payloads
+    ], headers=[("content-type", "text/event-stream")])])
+    lm = dspy.LM("openai/test-model", model_type="responses", engine="lm15", api_key="fake", cache=False)
+    try:
+        with dspy.context(send_stream=Sink()):
+            result = await invoke(lm, asynchronous, lm15.Request(model=lm.model, messages=(lm15.Message.user("hi"),)))
+        assert [(p.type, p.text) for p in result.message.parts] == [("thinking", "First\nSecond"), ("text", "Hello")]
+        assert result.finish_reason == "length"
+        assert result.usage == lm15.Usage(input_tokens=3, output_tokens=40, total_tokens=43)
+        assert lm.history[-1]["usage"]["total_tokens"] == 43
+    finally:
+        await lm.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("fragment, final, contradicts", [
+    ('{"x":true}', '{"x":1}', True),
+    ('{"x":2}', '{"x":1}', True),
+    ('{"x":1}', '{"x": 1.0}', False),
+])
+async def test_stream_final_argument_contradictions_reach_public_error(asynchronous, fragment, final, contradicts, monkeypatch):
+    call = {"type": "function_call", "call_id": "a", "name": "f", "arguments": final}
+    payloads = [
+        {"type": "response.created", "response": {"id": "r", "model": "test-model"}},
+        {"type": "response.output_item.added", "output_index": 0, "item": {**call, "arguments": ""}},
+        {"type": "response.function_call_arguments.delta", "output_index": 0, "delta": fragment},
+        {"type": "response.output_item.done", "output_index": 0, "item": call},
+        {"type": "response.completed", "response": {"id": "r", "status": "completed", "output": [call]}},
+    ]
+    transport = native_transport(monkeypatch, [DualResponse(200, b"", chunks=[
+        ("data: " + json.dumps(p) + "\n\n").encode() for p in payloads
+    ], headers=[("content-type", "text/event-stream")])])
+    lm = dspy.LM("openai/test-model", model_type="responses", engine="lm15", api_key="fake", cache=False, num_retries=2)
+    request = lm15.Request(model=lm.model, messages=(lm15.Message.user("hi"),), tools=(
+        lm15.FunctionTool(name="f", parameters={"type": "object"}),
+    ))
+    try:
+        with dspy.context(send_stream=Sink()):
+            if contradicts:
+                with pytest.raises(dspy.LMStreamAssemblyError) as caught:
+                    await invoke(lm, asynchronous, request)
+                assert caught.value.part_index == 0 and caught.value.code == "stream_assembly"
+                assert not dspy.is_retryable_lm_error(caught.value) and not lm.history
+            else:
+                result = await invoke(lm, asynchronous, request)
+                assert result.tool_calls[0].input == {"x": 1}
+        assert len(transport.requests) == 1
+    finally:
+        await lm.aclose()

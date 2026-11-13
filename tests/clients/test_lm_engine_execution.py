@@ -53,7 +53,7 @@ def native_transport(monkeypatch, responses):
 
 def test_default_native_cache_and_typed_request(monkeypatch):
     transport = native_transport(monkeypatch, [wire(), wire("typed")])
-    lm = dspy.LM("openai/gpt-4o-mini")
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat")
     with track_usage() as usage:
         assert lm("hello") == ["hello"]
         assert lm("hello") == ["hello"]
@@ -71,7 +71,7 @@ def test_default_native_cache_and_typed_request(monkeypatch):
 @pytest.mark.asyncio
 async def test_async_native_cache_and_history(monkeypatch):
     transport = native_transport(monkeypatch, [wire("async")])
-    lm = dspy.LM("openai/gpt-4o-mini")
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat")
     try:
         with track_usage() as usage:
             assert await lm.acall("hello") == ["async"]
@@ -97,7 +97,7 @@ def test_native_n_fans_out_but_bookkeeping_is_one_call(monkeypatch):
             self.events.append(("end", call_id))
 
     trace = Trace()
-    lm = dspy.LM("openai/gpt-4o-mini", callbacks=[trace])
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat", callbacks=[trace])
     with track_usage() as usage:
         assert lm("hello", n=2) == ["first", "second"]
     assert len(transport.requests) == 2
@@ -115,7 +115,7 @@ def test_native_retries_without_backend_fallback(monkeypatch):
     transport = native_transport(monkeypatch, [wire(status=429), wire("recovered")])
     delays = []
     monkeypatch.setattr(execution.time, "sleep", delays.append)
-    lm = dspy.LM("openai/gpt-4o-mini", num_retries=1, cache=False)
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat", num_retries=1, cache=False)
     assert lm("hello") == ["recovered"]
     assert len(transport.requests) == 2
     assert delays == [1]
@@ -144,7 +144,7 @@ def test_new_native_cache_uses_restricted_plain_data(monkeypatch, tmp_path):
     transport = native_transport(monkeypatch, [wire()])
     dspy.configure_cache(enable_disk_cache=True, enable_memory_cache=False, disk_cache_dir=tmp_path, restrict_pickle=True)
     try:
-        lm = dspy.LM("openai/gpt-4o-mini")
+        lm = dspy.LM("openai/gpt-4o-mini", model_type="chat")
         assert lm("hello") == ["hello"]
         assert lm("hello") == ["hello"]
         assert len(transport.requests) == 1
@@ -153,15 +153,27 @@ def test_new_native_cache_uses_restricted_plain_data(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_native_streaming_reaches_existing_listener(monkeypatch):
-    payloads = [{"choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}]}
-                for text in ("<answer>", "native", "</answer>")]
-    payloads.append({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-                     "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3}})
+@pytest.mark.parametrize("model_type", [None, "chat"])
+async def test_native_streaming_reaches_existing_listener(model_type, monkeypatch):
+    text_parts = ("<answer>", "native", "</answer>")
+    if model_type == "chat":
+        payloads = [{"choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}]}
+                    for text in text_parts]
+        payloads.append({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                         "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3}})
+    else:
+        payloads = [{"type": "response.created", "response": {"id": "r", "model": "gpt-4o-mini"}}]
+        payloads.extend({"type": "response.output_text.delta", "output_index": 0, "delta": text} for text in text_parts)
+        payloads.append({"type": "response.completed", "response": {
+            "id": "r", "status": "completed", "output": [{"type": "message", "role": "assistant", "content": [
+                {"type": "output_text", "text": "".join(text_parts)},
+            ]}], "usage": {"input_tokens": 2, "output_tokens": 1, "total_tokens": 3},
+        }})
     chunks = [f"data: {json.dumps(payload)}\n\n".encode() for payload in payloads]
     chunks.append(b"data: [DONE]\n\n")
     transport = native_transport(monkeypatch, [FakeResponse(status=200, body=b"", chunks=chunks)])
-    lm = dspy.LM("openai/gpt-4o-mini")
+    options = {} if model_type is None else {"model_type": model_type}
+    lm = dspy.LM("openai/gpt-4o-mini", api_key="fake", **options)
     predict = dspy.Predict("question -> answer")
     streamer = dspy.streamify(predict, stream_listeners=[dspy.streaming.StreamListener("answer")])
     with dspy.context(lm=lm):
@@ -171,6 +183,7 @@ async def test_native_streaming_reaches_existing_listener(monkeypatch):
     assert "".join(value.chunk for value in values if isinstance(value, dspy.streaming.StreamResponse)) == "native"
     assert len(cached) == 1 and cached[0].answer == "native"
     assert len(transport.requests) == 1
+    assert transport.requests[0].url.endswith("/chat/completions" if model_type == "chat" else "/responses")
 
 
 @pytest.mark.asyncio

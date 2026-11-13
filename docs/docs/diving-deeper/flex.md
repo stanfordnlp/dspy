@@ -44,10 +44,6 @@ Everything the generated code returns crosses back from the sandbox, so `Flex` p
 
 A saved `Flex` is `{"module_src": ..., "lm": ...}` — the code, plus any LM set directly on the module. The internal predictors are not saved: they are derived from the code, and each `forward` reconstructs them from the bound source. The interpreter is a live runtime resource and is not serialized; `save(path, save_program=True)` cloudpickles the program with the bridge excluded, and loading rebuilds it. Reconstructing with `dspy.Flex(signature)` restores the configured sandbox, so you only re-supply the `interpreter_factory` before `load` if you optimized with one passed to the constructor.
 
-### 10. Flex is experimental and the interface is in flux
-
-The class carries the `@experimental` decorator. Treat the API and serialization format as subject to change between minor releases and pin a version if you depend on it.
-
 ## API walkthrough
 
 ### Defining and running a Flex

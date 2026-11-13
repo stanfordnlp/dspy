@@ -205,6 +205,9 @@ def recursive_mask(o):
     except TypeError:
         pass
 
+    if isinstance(o, dspy.Reasoning):
+        return str(o)
+
     # If it's a dictionary, apply recursively to its values.
     if isinstance(o, dict):
         return {k: recursive_mask(v) for k, v in o.items()}

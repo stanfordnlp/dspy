@@ -196,6 +196,7 @@ nav:
         - Built with DSPy: community/built-with-dspy.md
         - Resources: community/community-resources.md
         - Contributing: community/how-to-contribute.md
+        - Upgrading to 3.5: community/upgrading-to-3-5.md
         - The LM Contract (lm15): community/normalized-lm-api-migration.md
     - FAQ:
         - FAQ: faqs.md

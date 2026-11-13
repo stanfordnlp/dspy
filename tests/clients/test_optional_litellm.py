@@ -3,9 +3,33 @@
 import pytest
 
 import dspy
-from dspy.lm15 import Message, Request, request_from_openai_chat
+from dspy.lm15 import FunctionTool, Message, Request, request_from_openai_chat
 from tests.clients.test_lm_engine_execution import native_transport, wire
 from tests.test_utils.server import read_test_server_request_logs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("model_type", [None, "chat", "responses"])
+@pytest.mark.parametrize("with_tools", [False, True])
+async def test_optional_inference_without_mcp_gateway(model_type, with_tools, asynchronous, openai_test_server):
+    pytest.importorskip("litellm")
+    url, log_path = openai_test_server
+    # Omission exercises the public default, which selects Responses for OpenAI.
+    options = {} if model_type is None else {"model_type": model_type}
+    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", api_base=url, api_key="fake",
+                 cache=False, num_retries=0, **options)
+    request = Request(model=lm.model, messages=(Message.user("hello"),),
+                      tools=(FunctionTool(name="lookup_invoice"),) if with_tools else ())
+    try:
+        response = await lm.acall(request) if asynchronous else lm(request)
+        assert response.text == "Hi!"
+        assert response.usage.total_tokens == 20
+        requests = read_test_server_request_logs(log_path)
+        assert len(requests) == 1
+        assert bool(requests[0].get("tools")) == with_tools
+    finally:
+        await lm.aclose()
 
 
 @pytest.mark.asyncio
@@ -16,7 +40,8 @@ async def test_optional_chat_candidates_and_cache(engine, asynchronous, monkeypa
     transport = native_transport(monkeypatch, [])
     url, log_path = openai_test_server
     options = {"extra_headers": {"x-test": "compatibility"}} if engine == "auto" else {}
-    lm = dspy.LM("openai/gpt-4o-mini", engine=engine, api_base=url, api_key="fake", num_retries=0, **options)
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat", engine=engine, api_base=url,
+                 api_key="fake", num_retries=0, **options)
     try:
         for _ in range(2):
             result = await lm.acall("hello", n=2, seed=11) if asynchronous else lm("hello", n=2, seed=11)
@@ -39,7 +64,7 @@ async def test_auto_disabled_timeout_uses_compatibility(asynchronous, monkeypatc
 
     transport = native_transport(monkeypatch, [])
     url, log_path = openai_test_server
-    lm = dspy.LM("openai/gpt-4o-mini", api_base=url, api_key="fake", cache=False, num_retries=0,
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat", api_base=url, api_key="fake", cache=False, num_retries=0,
                  timeout=httpx.Timeout(None))
     try:
         assert (await lm.acall("hello") if asynchronous else lm("hello")) == ["Hi!"]
@@ -82,7 +107,7 @@ async def test_auto_representation_fallback_preserves_media(part, asynchronous, 
     pytest.importorskip("litellm")
     transport = native_transport(monkeypatch, [])
     url, log_path = openai_test_server
-    lm = dspy.LM("openai/gpt-4o-mini", api_base=url, api_key="fake", cache=False, num_retries=0)
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat", api_base=url, api_key="fake", cache=False, num_retries=0)
     request = request_from_openai_chat({"model": lm.model, "messages": [{"role": "user", "content": [part]}]})
     try:
         response = await lm.acall(request) if asynchronous else lm(request)
@@ -116,7 +141,8 @@ async def test_native_failure_never_replays_through_litellm(status, error, async
 async def test_compatibility_errors_keep_public_types(status, error, asynchronous, openai_test_server):
     pytest.importorskip("litellm")
     url, log_path = openai_test_server
-    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", api_base=url, api_key="fake", num_retries=0)
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat", engine="litellm", api_base=url,
+                 api_key="fake", num_retries=0)
     try:
         for _ in range(2):
             with pytest.raises(error):

@@ -17,7 +17,7 @@ from tests.test_utils.engines import RecordingEngine, make_response, recording_l
 ])
 async def test_strict_native_media_predictions_refuse_before_execution(media, expected, asynchronous, monkeypatch):
     transport = native_transport(monkeypatch, [])
-    lm = dspy.LM("openai/gpt-4o-mini", engine="lm15", cache=False, num_retries=0)
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat", engine="lm15", cache=False, num_retries=0)
     predict = dspy.Predict(f"media: dspy.{type(media).__name__} -> answer")
     with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False)):
         with pytest.raises(dspy.LMUnsupportedFeatureError):
@@ -85,7 +85,7 @@ def test_call_cache_includes_effective_timeout(on_constructor, via_predict, monk
 @pytest.mark.parametrize("asynchronous", [False, True])
 async def test_predict_can_clear_client_defaults(asynchronous, monkeypatch):
     transport = native_transport(monkeypatch, [wire("<answer>hello</answer>")])
-    lm = dspy.LM("openai/gpt-4o", cache=False, base_url="https://override.test/v1")
+    lm = dspy.LM("openai/gpt-4o", model_type="chat", cache=False, base_url="https://override.test/v1")
     predictor = dspy.Predict("question -> answer")
     options = {"question": "hi", "lm": lm, "config": {"base_url": None}}
     result = await predictor.acall(**options) if asynchronous else predictor(**options)
@@ -316,4 +316,6 @@ def test_audio_on_a_native_chat_completions_engine_fails_before_the_wire():
     """The bundled lm15 chat writer carries text and images only; the refusal is loud, not silent."""
     lm = dspy.LM("openai/gpt-4o-mini", engine="lm15", api_key="unused", cache=False, num_retries=0)
     with pytest.raises(dspy.LMUnsupportedFeatureError, match="audio part"):
-        dspy.Predict("audio: dspy.Audio -> transcript")(audio=dspy.Audio(data="QUJD", audio_format="wav"), lm=lm)
+        dspy.Predict("audio: dspy.Audio -> transcript")(
+            audio=dspy.Audio(data="QUJD", audio_format="wav"), lm=lm.copy(model_type="chat"),
+        )

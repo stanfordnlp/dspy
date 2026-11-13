@@ -1,8 +1,25 @@
 import asyncio
-from typing import Any
+import json
+from collections import defaultdict
+from copy import deepcopy
+from decimal import Decimal
+from fractions import Fraction
+from typing import Annotated, Any, Optional
 
 import pytest
-from pydantic import BaseModel, TypeAdapter
+from jsonschema import ValidationError, validate
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    Json,
+    RootModel,
+    TypeAdapter,
+    field_serializer,
+    model_serializer,
+    model_validator,
+)
 
 import dspy
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls, convert_input_schema_to_tool_args
@@ -146,6 +163,47 @@ def test_tool_from_function():
     assert tool.args["y"]["default"] == "hello"
 
 
+def test_tool_accepts_custom_type_instances_for_custom_type_args():
+    def caption(image: dspy.Image, prefix: str) -> str:
+        return f"{prefix}: {image.url}"
+
+    image = dspy.Image("https://example.com/cat.png")
+
+    assert Tool(caption)(image=image, prefix="cat") == "cat: https://example.com/cat.png"
+
+    def count(images: list[dspy.Image]) -> int:
+        return len(images)
+
+    assert Tool(count)(images=[image, image]) == 2
+    with pytest.raises(ValueError):
+        Tool(count)(images=[image, 3])
+
+    from dspy.adapters.types.decision import Noul
+
+    def judge(verdict: Noul) -> bool:
+        return verdict.value
+
+    assert Tool(judge)(verdict=Noul(value=True, confidence=0.7)) is True  # its hidden probability field is not checked
+
+    class Labeled(dspy.Type):
+        label: str = Field(validation_alias="wire_label")
+        tag: str = Field(validation_alias=AliasChoices("wire_tag", "tag_name"))
+
+        def format(self):
+            return self.label
+
+    def read(item: Labeled) -> str:
+        return f"{item.label}/{item.tag}"
+
+    # The schema requires the validation aliases, so the fields are checked under those names.
+    assert Tool(read)(item=Labeled(wire_label="a", wire_tag="b")) == "a/b"
+
+    https_only = {"type": "object", "properties": {"url": {"type": "string", "pattern": "^https://"}}}
+    restricted = Tool(caption, args={"image": https_only, "prefix": {"type": "string"}})
+    with pytest.raises(ValueError, match="does not match"):
+        restricted(image=dspy.Image("http://example.com/cat.png"), prefix="cat")
+
+
 def test_tool_defaults_are_json_serializable():
     import datetime
     import enum
@@ -182,6 +240,24 @@ def test_tool_defaults_without_json_form_are_kept():
     assert tool.args["data"]["default"] == b"\xff"
 
 
+def test_tool_checks_custom_type_fields_as_json_and_leaves_other_values_alone():
+    import datetime
+    from decimal import Decimal
+
+    class Visit(dspy.Type):
+        day: datetime.date
+        tags: set[str]
+
+    def describe(visit: Visit, amount: float, note) -> str:
+        return f"{visit.day.isoformat()} {sorted(visit.tags)} {amount} {type(note).__name__}"
+
+    class Note:
+        pass
+
+    visit = Visit(day=datetime.date(2026, 11, 4), tags={"x"})
+    assert Tool(describe)(visit=visit, amount=Decimal("1.5"), note=Note()) == "2026-11-04 ['x'] 1.5 Note"
+
+
 def test_as_function_tool_excludes_defaulted_args_from_required():
     # `x` has no default and must be required; `y` has a default and must be optional.
     tool = Tool(dummy_function)
@@ -194,6 +270,48 @@ def test_as_function_tool_excludes_defaulted_args_from_required():
     assert "y" not in parameters["required"]
     # The default is still advertised on the property itself.
     assert parameters["properties"]["y"]["default"] == "hello"
+
+
+@pytest.mark.parametrize("resource_id", [None, "https://example.invalid/argument"])
+def test_as_function_tool_preserves_schema_scopes_and_literals(resource_id):
+    literal = {"$ref": "#/literal"}
+    schema = {
+        "type": "object",
+        "$defs": {"Value": {"type": "integer"}},
+        "properties": {
+            "number": {"$ref": "#/$defs/Value"},
+            "literal": {"const": literal, "default": literal, "examples": [literal]},
+        },
+    }
+    if resource_id:
+        schema["$id"] = resource_id
+    args = {"a~/b%": schema}
+    original = deepcopy(args)
+    tool = Tool(lambda **kwargs: kwargs, args=args)
+    value = {"a~/b%": {"number": 7, "literal": literal}}
+    for _ in range(2):
+        parameters = tool.as_function_tool().parameters
+        validate(value, parameters)
+        with pytest.raises(ValidationError):
+            validate({"a~/b%": {"number": "wrong", "literal": literal}}, parameters)
+        assert parameters["properties"]["a~/b%"]["properties"]["literal"] == schema["properties"]["literal"]
+        assert tool(**value) == value
+        assert tool.args == original
+
+
+def test_as_function_tool_preserves_recursive_argument_scopes():
+    class Node(BaseModel):
+        value: int
+        children: list["Node"] = []
+
+    schema = Node.model_json_schema()
+    root_schema = {"type": "object", "properties": {"child": {"$ref": "#"}}}
+    tool = Tool(lambda **kwargs: kwargs, args={"tree": schema, "other": root_schema})
+    parameters = tool.as_function_tool().parameters
+    validate({"tree": {"value": 7, "children": [{"value": 2}]}, "other": {"child": {"child": {}}}}, parameters)
+    with pytest.raises(ValidationError):
+        validate({"tree": {"value": 7, "children": [{"value": "wrong"}]}, "other": {}}, parameters)
+    assert tool.args == {"tree": schema, "other": root_schema}
 
 
 def test_tool_from_class():
@@ -258,6 +376,104 @@ def test_tool_with_pydantic_callable():
     assert result == "test 123"
 
 
+def test_tool_checks_plain_model_args_as_the_json_their_schema_describes():
+    import datetime
+
+    class Row(BaseModel):
+        model_config = ConfigDict(ser_json_bytes="hex")
+        label: str = Field(alias="wire_label")
+        note: str = Field(serialization_alias="wire_note")
+        box: tuple[int, int]
+        day: datetime.date
+        meta: Json[dict[str, int]]
+        qty: int
+        raw: bytes
+
+        @field_serializer("qty", when_used="json")
+        def _qty_label(self, qty: int) -> str:
+            return f"{qty} units"
+
+    def describe(row: Row, tags: set[str]) -> str:
+        return f"{row.label} {row.note} {row.box} {row.day.isoformat()} {sorted(tags)} {row.meta} {row.qty}"
+
+    row = Row(wire_label="a", note="n", box=(1, 2), day=datetime.date(2026, 11, 4), meta='{"k": 1}', qty=3, raw=b"\xff")
+    assert Tool(describe)(row=row, tags={"x"}) == "a n (1, 2) 2026-11-04 ['x'] {'k': 1} 3"
+
+    class Counts(RootModel[list[int]]):
+        pass
+
+    class Tagged(BaseModel):
+        model_config = ConfigDict(extra="allow")
+
+    def total(counts: Counts, tagged: Tagged) -> str:
+        return f"{sum(counts.root)} {tagged.source}"
+
+    args = {"counts": {"type": "array"}, "tagged": {"type": "object", "required": ["source"]}}
+    tool = Tool(total, args=args, arg_types={"counts": Counts, "tagged": Tagged})
+    assert tool(counts=Counts([1, 2]), tagged=Tagged(source="web")) == "3 web"
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("as_json", [False, True])
+def test_tool_root_model_date_argument(asynchronous, as_json):
+    from datetime import date
+
+    class Day(RootModel[date]):
+        @model_serializer
+        def serialize(self):
+            return self.root.isoformat()
+
+    def read_day(value: Day) -> str:
+        return value.root.isoformat()
+
+    tool = dspy.Tool(read_day)
+    value = "2026-11-09" if as_json else Day(date(2026, 11, 9))
+    result = asyncio.run(tool.acall(value=value)) if asynchronous else tool(value=value)
+    assert result == "2026-11-09"
+
+
+def test_tool_root_model_validates_root_not_custom_serializer():
+    class Count(RootModel[int]):
+        @model_serializer
+        def serialize(self):
+            return 0
+
+    def read_count(value: Count) -> int:
+        return value.root
+
+    tool = dspy.Tool(read_count, args={"value": {"type": "integer", "maximum": 3}})
+    assert tool(value=Count(2)) == 2
+    with pytest.raises(ValueError, match="greater than the maximum"):
+        tool(value=Count(4))
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("number", [Decimal("2.75"), Fraction(1, 2)])
+def test_tool_root_model_preserves_numeric_constraints(asynchronous, number):
+    class Amount(RootModel[type(number)]):
+        pass
+
+    def read_amount(value: Amount):
+        return value.root
+
+    tool = dspy.Tool(read_amount, args={"value": {"type": "number", "maximum": 3}})
+    value = Amount(number)
+    result = asyncio.run(tool.acall(value=value)) if asynchronous else tool(value=value)
+    assert result == number
+
+    class Amounts(RootModel[list[Annotated[Decimal, Field(le=3)]]]):
+        pass
+
+    def read_amounts(value: Amounts):
+        return value.root
+
+    tool = dspy.Tool(read_amounts)
+    value = Amounts([Decimal(2)])
+    value.root.append(Decimal(4))
+    with pytest.raises(ValueError, match="Arg value is invalid"):
+        asyncio.run(tool.acall(value=value)) if asynchronous else tool(value=value)
+
+
 def test_invalid_function_call():
     tool = Tool(dummy_function)
     with pytest.raises(ValueError):
@@ -310,6 +526,38 @@ def test_tool_call_parses_nested_list_of_pydantic_model():
 
     result = tool(**args)
     assert result == [[DummyModel(field1="hello", field2=123)]]
+
+
+def test_tool_call_reads_json_arguments_as_json_and_validates_instances():
+    class Window(BaseModel):
+        model_config = ConfigDict(strict=True)
+        span: tuple[int, int]
+        runs: int = 0
+
+        @model_validator(mode="after")
+        def _ordered(self):
+            if self.span[0] > self.span[1]:
+                raise ValueError("start after end")
+            self.runs += 1
+            return self
+
+    def widths(windows: list[Window], spare: Window | None = None) -> list[tuple[int, int]]:
+        return [(w.span[1] - w.span[0], w.runs) for w in windows + ([spare] if spare else [])]
+
+    tool = Tool(widths)
+    # JSON data, as an LM or a sandbox sends: a strict tuple comes as a list, and each model is validated once.
+    assert tool(windows=[{"span": [2, 9]}], spare={"span": [1, 4]}) == [(7, 1), (3, 1)]
+    # A model instance is validated as given, so a change that breaks its validator is still caught.
+    window = Window(span=(2, 9))
+    window.span = (9, 1)
+    with pytest.raises(ValueError, match="start after end"):
+        tool(windows=[window])
+
+    # A Python container that only looks like JSON, such as a defaultdict, keeps its own behavior.
+    def missing(counts: defaultdict[str, int]) -> int:
+        return counts["present"] + counts["absent"]
+
+    assert Tool(missing)(counts=defaultdict(lambda: 7, present=3)) == 10
 
 
 def test_tool_call_kwarg():
@@ -508,7 +756,8 @@ def test_tool_calls_format_from_dict_list():
     assert result["tool_calls"][1]["name"] == "translate"
 
 
-def test_tool_calls_preserves_ids_from_dict_list_and_format_omits_ids():
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
+def test_tool_calls_preserves_ids_from_dict_list_and_format_omits_ids(adapter_type):
     tool_calls = ToolCalls.from_dict_list(
         [
             {"id": "call_1", "name": "search", "args": {"query": "hello"}},
@@ -523,12 +772,20 @@ def test_tool_calls_preserves_ids_from_dict_list_and_format_omits_ids():
     assert "id" not in formatted[0]
     assert "id" not in formatted[1]
 
+    restored = ToolCalls.model_validate_json(tool_calls.model_dump_json())
+    assert [call.id for call in restored.tool_calls] == ["call_1", None]
+    signature = dspy.Signature("question -> calls: dspy.ToolCalls")
+    content = adapter_type().format_assistant_message_content(signature, {"calls": tool_calls})
+    assert "call_1" not in content
+    assert "hello" in content
+
 
 def test_tool_calls_json_schema_omits_internal_id_field():
     schema = TypeAdapter(ToolCalls).json_schema()
 
     assert "tool_call_results" not in schema["properties"]
     assert "id" not in schema["$defs"]["ToolCall"]["properties"]
+    assert "continuation" not in schema["$defs"]["ToolCall"]["properties"]
     assert schema["$defs"]["ToolCall"]["properties"]["args"]["additionalProperties"] is True
     assert schema["$defs"]["ToolCall"]["required"] == ["name", "args"]
 
@@ -544,6 +801,40 @@ def test_tool_calls_can_carry_results_without_formatting_them_for_lm():
             {"call_id": "call_1", "name": "search", "value": {"answer": "world"}, "is_error": False}
         ]
     }
+
+
+@pytest.mark.parametrize("adapter_type", [dspy.ChatAdapter, dspy.JSONAdapter, dspy.XMLAdapter])
+@pytest.mark.parametrize("saved_demo", [False, True])
+@pytest.mark.parametrize("annotation", [ToolCalls, ToolCalls | None, Optional[ToolCalls]])  # noqa: UP045 -- both union spellings
+def test_tool_call_examples_preserve_attached_results_and_nested_application_data(adapter_type, saved_demo, annotation):
+    inner = ToolCalls.from_dict_list([{"id": "inner-id", "name": "lookup", "args": {"query": "hello"}}])
+    outer = ToolCalls.from_dict_list([{"id": "outer-id", "name": "search", "args": {
+        "nested": inner, "tool_calls": [{"id": "business-id"}],
+    }}])
+    outer.tool_call_results = ToolCallResults.from_tool_calls_and_values(outer.tool_calls, [inner])
+    outer.tool_calls[0].continuation = [{"provider": "gemini", "kind": "thought_signature", "data": {"value": "opaque-root"}}]
+
+    saved = outer.model_dump(mode="json")
+    assert saved["tool_calls"][0]["args"]["nested"]["tool_calls"][0]["id"] == "inner-id"
+    assert saved["tool_call_results"]["tool_call_results"][0]["value"]["tool_calls"][0]["id"] == "inner-id"
+    signature = dspy.Signature({"question": (str, dspy.InputField()), "calls": (annotation, dspy.OutputField())})
+    predictor = dspy.Predict(signature)
+    predictor.demos = [dspy.Example(question="Look up the order.", calls=outer)]
+    if saved_demo:
+        state = json.loads(json.dumps(predictor.dump_state()))
+        predictor = dspy.Predict(signature).load_state(state)
+    content = adapter_type().format_demos(predictor.signature, predictor.demos)[-1].text
+    rendered = adapter_type().parse(signature, content)["calls"]
+    assert rendered.tool_calls[0].id is None
+    assert rendered.tool_calls[0].continuation == []
+    assert "opaque-root" not in content
+    assert rendered.tool_calls[0].args == saved["tool_calls"][0]["args"]
+    assert rendered.tool_call_results == saved["tool_call_results"]
+    assert outer.model_dump(mode="json") == saved
+    # An application dictionary with identical keys is data, not a typed tool-call example.
+    data_signature = dspy.Signature("question -> record: dict")
+    content = adapter_type().format_assistant_message_content(data_signature, {"record": saved})
+    assert adapter_type().parse(data_signature, content)["record"] == saved
 
 
 def test_tool_call_results_from_tool_calls_and_values():
@@ -585,7 +876,7 @@ def test_tool_call_results_history_serialization_round_trip():
             {
                 "tool_calls": {
                     "tool_calls": [
-                        {"name": "search", "args": {"query": "hello"}}
+                        {"id": "call_1", "name": "search", "args": {"query": "hello"}}
                     ],
                     "tool_call_results": {
                         "tool_call_results": [

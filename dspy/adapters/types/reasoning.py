@@ -4,6 +4,7 @@ import pydantic
 
 from dspy.adapters.types.base_type import Type
 from dspy.clients.base_lm import BaseLM
+from dspy.clients.requests import generation_options
 from dspy.lm15 import Response, ThinkingPart
 
 if TYPE_CHECKING:
@@ -65,6 +66,14 @@ class Reasoning(Type):
         lm: BaseLM,
         lm_kwargs: dict[str, Any],
     ) -> type["Signature"]:
+        reasoning = generation_options(lm, lm_kwargs).get("reasoning")
+        if isinstance(reasoning, dict):
+            # Use the same alias precedence as the request builder without injecting
+            # a default effort that would override the caller's dictionary.
+            if reasoning.get("enabled") is False or reasoning.get("effort") in ("none", "off") or not lm.supports_reasoning:
+                return signature
+            return signature.delete(field_name)
+
         thinking = lm_kwargs.get("thinking", lm.kwargs.get("thinking"))
         if isinstance(thinking, dict) and thinking.get("type") in ("disabled", "enabled", "adaptive"):
             # An explicit provider control already decides whether thinking is on.
