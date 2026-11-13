@@ -275,6 +275,39 @@ def test_an_interpreter_that_started_before_the_pool_was_asked_for_more_is_repla
         assert factory.made[0]._process is None  # the one that started without it
 
 
+def test_a_call_never_gets_an_interpreter_that_started_without_the_pool_s_libraries():
+    class Watched:
+        """The pool's lock, which lets another call in each time the pool lets go of it."""
+
+        def __init__(self, lock, between):
+            self.lock, self.between = lock, between
+
+        def __enter__(self):
+            return self.lock.__enter__()
+
+        def __exit__(self, *error):
+            self.lock.__exit__(*error)
+            self.between()
+
+    factory = Provided()
+    with dspy.InterpreterPool(factory, size=1) as pool:
+        _wait_for(lambda: pool._ready.qsize() == 1)
+        taken = []
+
+        def another_call():  # one that arrives while the pool is being told about a library
+            if pool._libraries and not taken:
+                taken.append(None)  # only once, and not from within itself
+                taken[0] = pool()
+
+        pool._lock = Watched(pool._lock, another_call)
+        pool.provide_libraries(["shop"])
+        pool._lock = pool._lock.lock
+
+        # It got a new, unstarted interpreter, to be given the library: not the one started without it.
+        assert taken[0].given is None and taken[0]._process is None
+        taken[0].shutdown()
+
+
 @pytest.mark.parametrize(
     "factory",
     [

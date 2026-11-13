@@ -58,10 +58,11 @@ class InterpreterPool:
         return getattr(self._factory, "execution_instructions", "") or ""
 
     def __call__(self) -> CodeInterpreter:
-        try:
-            interpreter = self._ready.get_nowait()
-        except queue.Empty:
-            interpreter = None
+        with self._lock:  # see provide_libraries
+            try:
+                interpreter = self._ready.get_nowait()
+            except queue.Empty:
+                interpreter = None
         self._refill()
         return interpreter if interpreter is not None else self._factory()
 
@@ -70,12 +71,22 @@ class InterpreterPool:
         ``provide_libraries`` says how). A ``dspy.Flex`` with ``libraries`` calls this before it takes an interpreter.
         The pool keeps every module it was asked for: an interpreter with more than a call needs serves it as well.
         The interpreters it had ready are shut down and replaced, and a call that finds none ready gets a new,
-        unstarted one, as always."""
+        unstarted one, as always.
+
+        A ready interpreter always has the pool's libraries: they change, the ready ones are taken out, one that
+        finished starting is put in, and one is handed out, all under the same lock."""
+        stale = []
         with self._lock:
             if set(modules) <= set(self._libraries):
                 return
             self._libraries = tuple(sorted({*self._libraries, *modules}))
-        _shut_down_idle(self._ready)
+            while True:
+                try:
+                    stale.append(self._ready.get_nowait())
+                except queue.Empty:
+                    break
+        for interpreter in stale:
+            _shut_down(interpreter)
         self._refill()
 
     def close(self) -> None:

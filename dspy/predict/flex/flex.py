@@ -14,7 +14,12 @@ from dspy.predict.flex.bridge import BridgeRuntime
 from dspy.predict.flex.ctx import FlexContext
 from dspy.predict.parameter import Parameter
 from dspy.predict.predict import _sanitize_lm_state
-from dspy.primitives.code_interpreter import CodeInterpreter, CodeInterpreterError, _validate_interpreter_factory
+from dspy.primitives.code_interpreter import (
+    CodeInterpreter,
+    CodeInterpreterError,
+    _validate_interpreter_factory,
+    resolve_interpreter_factory,
+)
 from dspy.primitives.libraries import spec_of
 from dspy.primitives.module import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -24,8 +29,9 @@ logger = logging.getLogger(__name__)
 
 # Asks the interpreter about its own environment: what it reads there is what the code will run against.
 _ASK = "from dspy.primitives import libraries as __dspy_libraries\n__dspy_libraries.{question}(__dspy_argument)"
-# The recorded environments this process has compared with its own, so that each is compared, and reported, once.
-_checked: set[str] = set()
+# The comparisons of a recorded environment with the one the code runs in that this process has made, each by all
+# that its outcome depends on (``Flex._comparison``), so that each is made, and reported, once.
+_checked: set[Any] = set()
 _checked_lock = threading.Lock()
 
 
@@ -142,9 +148,6 @@ class Flex(Module, Parameter):
         that ``check_environment`` reported turned out to be harmless. With ``libraries``, this asks an interpreter.
         """
         self._environment = self._resolve_environment() or None
-        if self._environment:
-            with _checked_lock:
-                _checked.add(self._environment_key())
         return self.environment
 
     def check_environment(self) -> list[str]:
@@ -225,17 +228,25 @@ class Flex(Module, Parameter):
                 changes.append(f"tool {name} changed")
         return changes
 
-    def _environment_key(self) -> str:
-        described = [self._module_src, self._environment, self._flex_ctx.libraries]
-        return hashlib.sha256(json.dumps(described, sort_keys=True, default=str).encode()).hexdigest()
+    def _comparison(self) -> Any:
+        """What the outcome of ``_changes`` depends on: the record, the libraries and tools this module has now, and
+        where its interpreters come from. Two modules alike in all of these would be told the same."""
+        tools = {name: _fingerprint(tool) for name, tool in self._flex_ctx.context_names().items()}
+        described = json.dumps([self._environment, self._flex_ctx.libraries, tools], sort_keys=True, default=str)
+        factory = resolve_interpreter_factory(self._interpreter_factory)
+        try:
+            hash(factory)
+        except TypeError:
+            factory = id(factory)
+        return hashlib.sha256(described.encode()).hexdigest(), factory
 
     def _check_environment_once(self, interpreter: Any) -> None:
         """Compare the recorded environment with the one of ``interpreter``, set up for a forward, and warn about
-        what differs: once per process for each recorded environment, and never failing the forward."""
+        what differs: once per process for each such comparison, and never failing the forward."""
         if not self._environment:
             return
         try:
-            key = self._environment_key()
+            key = self._comparison()
             with _checked_lock:
                 if key in _checked:
                     return

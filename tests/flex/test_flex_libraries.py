@@ -55,8 +55,19 @@ SHOP = {
             unit_cents: int
 
 
+        class Basket:
+            """What any basket of lines can tell."""
+
+            def is_empty(self) -> bool:
+                """Whether it has no line."""
+                return not self.lines
+
+            def gross_cents(self) -> int:
+                raise NotImplementedError
+
+
         @dataclass
-        class Cart:
+        class Cart(Basket):
             """A cart for one country (ISO code), which decides the VAT rate."""
 
             country: str
@@ -294,6 +305,12 @@ def test_a_library_is_documented_from_its_own_api(shop):
     assert "    def add(sku: str, qty: int, unit_cents: int) -> flexshop.cart.Cart\n        # Add a line" in reference
     assert "class flexshop.Country(*values)\n    # members: DE, FR" in reference or "    # members: DE, FR" in reference
     assert "_audit" not in reference and "flexshop.field" not in reference  # private, and what it imported
+    # A class has what its bases in the library give it, once, as the class nearest to it defines it.
+    assert "    def is_empty() -> bool\n        # Whether it has no line." in reference
+    assert reference.count("    def gross_cents() -> int\n") == 1 and "Net plus VAT" in reference
+    # What a base from elsewhere gives it is named, not listed.
+    receipt = libraries.reference(["flexshop.receipts:Receipt"])
+    assert "    # inherits from pydantic.main.BaseModel" in receipt and "model_dump" not in receipt
     # One function, named on its own: how to import it, and its whole docstring.
     assert (
         "### flexshop.vat.vat_rate\n\nfrom flexshop.vat import vat_rate\ndef vat_rate(country: str) -> float\n"
@@ -336,35 +353,6 @@ def test_the_sandbox_gets_what_the_libraries_reach_and_no_more(shop):
     assert f"pydantic=={out.pydantic}" in flex.pin()["requires"]
 
 
-@deno_required
-def test_the_sandbox_gets_the_data_files_git_tracks_in_a_reached_package(shop, tmp_path):
-    if shutil.which("git") is None:
-        pytest.skip("git is not installed")
-    (tmp_path / "flexshop" / "rates.json").write_text('{"CH": 0.081}')
-    (tmp_path / "flexshop" / "templates").mkdir()
-    (tmp_path / "flexshop" / "templates" / "receipt.txt").write_text("Total: {total}")
-    (tmp_path / "flexshop" / "secrets.env").write_text("KEY=local")  # not tracked
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "add", "flexshop/rates.json", "flexshop/templates"], cwd=tmp_path, check=True)
-    source = textwrap.dedent(
-        """
-        import flexshop
-
-
-        class Probe(dspy.Module):
-            def forward(self, **inputs):
-                from pathlib import Path
-                folder = Path(flexshop.__file__).parent
-                return dspy.Prediction(found=sorted(
-                    path.relative_to(folder).as_posix() for path in folder.rglob("*")
-                    if path.is_file() and path.suffix not in (".py", ".pyc")
-                ))
-        """
-    )
-    flex = dspy.Flex("-> found: list[str]", libraries=[shop], module_src=source)
-    assert flex().found == ["rates.json", "templates/receipt.txt"]
-
-
 def test_a_library_this_environment_lacks_is_refused_for_the_sandbox(shop, monkeypatch):
     monkeypatch.setattr(sandbox_bundle, "_distributions", lambda: [])
     with pytest.raises(sandbox_bundle.SandboxBundleError, match=r"flexshop\.nope cannot be imported in this environment"):
@@ -391,6 +379,21 @@ def test_a_compiled_library_is_refused_for_the_sandbox_and_one_it_only_imports_i
     ]
 
 
+def test_only_the_code_the_libraries_import_is_copied(shop, tmp_path, monkeypatch):
+    monkeypatch.setattr(sandbox_bundle, "_distributions", lambda: [])
+    # Files next to the code may hold anything, and a link may point anywhere: none of it leaves the host.
+    secret = tmp_path / "credentials.json"
+    secret.write_text('{"key": "local"}')
+    (tmp_path / "flexshop" / "rates.json").write_text('{"CH": 0.081}')
+    (tmp_path / "flexshop" / "config.json").symlink_to(secret)
+    if shutil.which("git"):  # tracked by git or not
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "add", "flexshop"], cwd=tmp_path, check=True)
+    _, files, own = sandbox_bundle._library_plan({}, ("flexshop",))
+    assert files == []
+    assert sorted(name for _, name in own) == ["flexshop/__init__.py", "flexshop/cart.py", "flexshop/vat.py"]
+
+
 def test_a_plan_is_made_again_when_a_file_it_followed_changes(shop, tmp_path, monkeypatch):
     monkeypatch.setattr(sandbox_bundle, "_distributions", lambda: [])
     first = sandbox_bundle._library_plan({}, ("flexshop",))
@@ -400,6 +403,31 @@ def test_a_plan_is_made_again_when_a_file_it_followed_changes(shop, tmp_path, mo
     again = sandbox_bundle._library_plan({}, ("flexshop",))
     assert "flexshop/reports.py" in {name for _, name in again[2]}
     assert "flexshop/reports.py" not in {name for _, name in first[2]}
+
+    # A file it listed that is gone is not listed again.
+    (tmp_path / "flexshop" / "reports.py").unlink()
+    vat.write_text(vat.read_text().replace("\nfrom flexshop import reports\n", ""))
+    assert "flexshop/reports.py" not in {name for _, name in sandbox_bundle._library_plan({}, ("flexshop",))[2]}
+
+
+def test_a_plan_is_made_again_when_the_files_of_a_package_it_listed_change(shop, monkeypatch):
+    monkeypatch.setattr(sandbox_bundle, "_distributions", lambda: [])
+    times = {"now": 1}
+    monkeypatch.setattr(sandbox_bundle, "_folder_times", lambda files: [times["now"]] if files else [])
+    first = sandbox_bundle._library_plan({}, ("flexshop.receipts",))  # lists pydantic's files, from this environment
+    assert first[1] and sandbox_bundle._library_plan({}, ("flexshop.receipts",)) is first
+    times["now"] = 2  # as after the package was upgraded: a file added to, or gone from, one of its folders
+    assert sandbox_bundle._library_plan({}, ("flexshop.receipts",)) is not first
+
+
+def test_a_plan_is_made_again_when_a_module_an_import_names_appears(shop, tmp_path, monkeypatch):
+    monkeypatch.setattr(sandbox_bundle, "_distributions", lambda: [])
+    vat = tmp_path / "flexshop" / "vat.py"
+    vat.write_text(vat.read_text() + "\ntry:\n    from flexshop import extras\nexcept ImportError:\n    extras = None\n")
+    first = sandbox_bundle._library_plan({}, ("flexshop",))
+    assert "flexshop/extras.py" not in {name for _, name in first[2]}
+    (tmp_path / "flexshop" / "extras.py").write_text("RATE = 1\n")  # no file it listed changed: its folder did
+    assert "flexshop/extras.py" in {name for _, name in sandbox_bundle._library_plan({}, ("flexshop",))[2]}
 
 
 @deno_required
@@ -632,6 +660,35 @@ def test_the_record_covers_the_tools_and_what_a_module_no_longer_has(shop, warni
     assert only_tools.pin() == {"tools": state["environment"]["tools"]}  # no interpreter is asked without libraries
 
 
+def test_a_comparison_made_for_one_program_does_not_stand_for_another(shop, warnings_seen):
+    def lookup(order_id: int) -> dict:
+        """Look up an order."""
+        return {}
+
+    def other_lookup(order_id: int) -> dict:
+        """Look up an order, with its items."""
+        return {}
+
+    flex = _total(shop, tools=[lookup])
+    state = {**flex.dump_state(), "environment": flex.pin()}
+    flex(lines=LINES, country="DE")
+    assert not warnings_seen.records  # compared, in this process: nothing differs
+
+    # The same code and record in a program whose tool changed: its own first call says so.
+    changed = _total(shop, tools=[dspy.Tool(other_lookup, name="lookup")])
+    changed.load_state(state)
+    changed(lines=LINES, country="DE")
+    assert "validated against another environment (tool lookup changed)" in warnings_seen.text
+
+    # And in one that runs it elsewhere: compared there too, where nothing differs.
+    warnings_seen.clear()
+    elsewhere = _total(shop, tools=[lookup], interpreter_factory=lambda: dspy.LocalInterpreter())
+    elsewhere.load_state(state)
+    assert elsewhere._comparison() != flex._comparison()
+    elsewhere(lines=LINES, country="DE")
+    assert not warnings_seen.records
+
+
 def test_a_forward_is_not_failed_by_an_environment_that_cannot_be_compared(shop, warnings_seen):
     flex = _total(shop)
     flex.load_state({**flex.dump_state(), "environment": {"python": "3.13", "sources": "not a record"}})
@@ -763,3 +820,36 @@ def test_the_tool_calls_of_a_forward_are_on_its_prediction():
         {"name": "refund", "args": {"order_id": 7, "cents": 1250}, "error": "RuntimeError: refunds are closed"},
     ]
     assert "tool_calls" not in prediction.keys()
+
+
+def test_the_calls_of_an_async_tool_are_recorded_when_they_are_over():
+    async def lookup(order_id: int) -> dict:
+        """Look up an order."""
+        return {"id": order_id, "paid": 1250}
+
+    async def refund(order_id: int) -> str:
+        """Refund an order."""
+        raise RuntimeError("refunds are closed")
+
+    source = textwrap.dedent(
+        """
+        class Support(dspy.Module):
+            def forward(self, **inputs):
+                order = lookup(order_id=inputs["order_id"])
+                try:
+                    refund(order_id=order["id"])
+                except Exception:
+                    pass
+                return dspy.Prediction(reply=str(order["paid"]))
+        """
+    )
+    flex = dspy.Flex("order_id: int -> reply", tools=[lookup, refund], module_src=source,
+                     interpreter_factory=dspy.LocalInterpreter)
+
+    prediction = flex(order_id=7)
+
+    assert prediction.reply == "1250"
+    assert prediction.tool_calls == [  # what each call came to, not the coroutine it started as
+        {"name": "lookup", "args": {"order_id": 7}, "result": {"id": 7, "paid": 1250}},
+        {"name": "refund", "args": {"order_id": 7}, "error": "RuntimeError: refunds are closed"},
+    ]

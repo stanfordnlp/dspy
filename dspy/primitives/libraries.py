@@ -381,7 +381,10 @@ def _api(qualified: str, value: Any, doc_chars: int = 800) -> list[str]:
         if issubclass(value, enum.Enum):
             lines.append(f"    # members: {', '.join(member.name for member in value)}")
             return lines
-        for name, attribute in vars(value).items():
+        attributes, elsewhere = _interface(value)
+        if elsewhere:  # what those give it is theirs to document
+            lines.append(f"    # inherits from {', '.join(elsewhere)}")
+        for name, attribute in attributes.items():
             function = attribute.__func__ if isinstance(attribute, (staticmethod, classmethod)) else attribute
             if name.startswith("_") or not callable(function):
                 continue
@@ -395,6 +398,26 @@ def _api(qualified: str, value: Any, doc_chars: int = 800) -> list[str]:
     except Exception:
         return []
     return [f"{qualified} = {text if len(text) <= 80 else text[:77] + '...'}"]
+
+
+def _interface(cls: type) -> tuple[dict[str, Any], list[str]]:
+    """What a class has as its library defines it: its own attributes and those of its bases in the same library,
+    where the class nearest to it wins, and the names of the classes from elsewhere that those derive from."""
+    library = (cls.__module__ or "").split(".")[0]
+    attributes: dict[str, Any] = {}
+    elsewhere: list[str] = []
+    for base in cls.__mro__:
+        if base is object or (base.__module__ or "").split(".")[0] != library:
+            continue
+        for name, attribute in vars(base).items():
+            attributes.setdefault(name, attribute)
+        for parent in base.__bases__:
+            if parent is object or (parent.__module__ or "").split(".")[0] == library:
+                continue
+            named = parent.__qualname__ if parent.__module__ == "builtins" else f"{parent.__module__}.{parent.__qualname__}"
+            if named not in elsewhere:
+                elsewhere.append(named)
+    return attributes, elsewhere
 
 
 def _signature(value: Any, drop_self: bool = False, returns: bool = True) -> str:

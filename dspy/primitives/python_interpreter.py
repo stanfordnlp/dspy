@@ -362,10 +362,10 @@ class PythonInterpreter:
         """Make ``modules`` of this environment importable in the sandbox, next to dspy (``provide_dspy``), as
         ``dspy.Flex(libraries=...)`` asks for its code.
 
-        The sandbox gets what they reach and no more: the source files of your own code that importing them leads
-        to, with their packages' data files, and the installed packages those import, as Pyodide builds them or
-        from this environment if they are pure Python (see ``dspy.primitives.sandbox_bundle``). Your own files are
-        an archive of their own, so editing one rebuilds neither the dspy bundle nor its snapshot. A library with
+        The sandbox gets what they reach and no more: the Python source files of your own code that importing them
+        leads to (no data files), and the installed packages those import, as Pyodide builds them or from this
+        environment if they are pure Python (see ``dspy.primitives.sandbox_bundle``). Your own files are an
+        archive of their own, so editing one rebuilds neither the dspy bundle nor its snapshot. A library with
         compiled code that Pyodide does not ship is refused when the bundle is prepared. Call before the interpreter
         starts. Asking again for modules it already has does nothing.
         """

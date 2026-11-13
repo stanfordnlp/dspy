@@ -266,8 +266,8 @@ class Tool(Type):
     def as_function(self) -> Callable[..., Any]:
         """This tool as a plain Python function, for libraries and agent SDKs that build their tools from a function.
 
-        The function has the tool's name, its description as docstring, and a typed parameter per argument, with
-        the argument's default. Calling it calls the tool, so its arguments are validated the same way.
+        The function has the tool's name, its description as docstring, and a typed keyword parameter per argument,
+        with the argument's default. Calling it calls the tool, so its arguments are validated the same way.
 
         ```python
         from langchain_core.tools import StructuredTool
@@ -275,7 +275,6 @@ class Tool(Type):
         lc_tool = StructuredTool.from_function(dspy.Tool(search).as_function())
         ```
         """
-        names = list(self.args or {})
         parameters = []
         for name, schema in (self.args or {}).items():
             annotation = (self.arg_types or {}).get(name, Any)
@@ -284,14 +283,15 @@ class Tool(Type):
             default = schema["default"] if "default" in schema else inspect.Parameter.empty
             parameters.append(inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY, default=default, annotation=annotation))
 
+        # Keyword arguments only, as its signature says, like the tool itself: nothing is matched by position.
         if inspect.iscoroutinefunction(self.func):
 
-            async def function(*args, **kwargs):
-                return await self.acall(**dict(zip(names, args, strict=False)), **kwargs)
+            async def function(**kwargs):
+                return await self.acall(**kwargs)
         else:
 
-            def function(*args, **kwargs):
-                return self(**dict(zip(names, args, strict=False)), **kwargs)
+            def function(**kwargs):
+                return self(**kwargs)
 
         function.__name__ = function.__qualname__ = self.name
         function.__doc__ = self.desc

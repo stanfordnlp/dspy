@@ -417,20 +417,35 @@ def _entrypoint(tool: Any) -> Callable[..., Any]:
 
 def recorded(name: str, function: Callable[..., Any], calls: list[dict[str, Any]] | None) -> Callable[..., Any]:
     """``function``, appending each call to ``calls`` (if given): the tool's name, its arguments, and its result or
-    error. Calls are listed when they start, so nested ones follow the call they are part of."""
+    error. Calls are listed when they start, so nested ones follow the call they are part of. An async tool's call
+    is over when what it returned has been awaited, by whoever calls it: its result or error is recorded then."""
     if calls is None:
         return function
+
+    def failed(call: dict[str, Any], error: BaseException) -> None:
+        call["error"] = f"{type(error).__name__}: {error}"
+
+    async def awaited(call: dict[str, Any], pending: Any) -> Any:
+        try:
+            call["result"] = await pending
+        except BaseException as e:
+            failed(call, e)
+            raise
+        return call["result"]
 
     @functools.wraps(function)
     def recording(**kwargs: Any) -> Any:
         call: dict[str, Any] = {"name": name, "args": kwargs}
         calls.append(call)
         try:
-            call["result"] = function(**kwargs)
+            result = function(**kwargs)
         except BaseException as e:
-            call["error"] = f"{type(e).__name__}: {e}"
+            failed(call, e)
             raise
-        return call["result"]
+        if inspect.isawaitable(result):
+            return awaited(call, result)
+        call["result"] = result
+        return result
 
     return recording
 

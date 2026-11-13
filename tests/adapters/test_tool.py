@@ -1145,7 +1145,10 @@ def test_a_tool_as_a_function_has_its_name_description_and_typed_arguments():
     assert function.__doc__ == "Look up an order by its id."
     assert str(inspect.signature(function)) == "(*, order_id: int, include_items: bool = False)"
     assert function(order_id=7, include_items=True) == {"id": 7, "items": ["mug"]}
-    assert function(8) == {"id": 8, "items": []}  # positionally, in the tool's argument order
+    with pytest.raises(TypeError):  # keyword arguments only, as its signature says: nothing is matched by position
+        function(8)
+    with pytest.raises(TypeError):
+        function(8, True, "extra")
     with pytest.raises(ValueError, match="order_id is invalid"):  # validated like the tool
         function(order_id="7")
 

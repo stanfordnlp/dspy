@@ -14,8 +14,8 @@ that executes no sandboxed code byte-compiles each archive once, so sandboxes st
   and packages.
 - ``dspy-<digest>-<stamp>.snap``: the memory of a sandbox that has installed that bundle and imported dspy, which a
   new one restores instead of doing both. There is one per bundle and standard library archive.
-- ``dspy-libraries-<digest>.libs``: the source files of the user's own code that those libraries reach, with their
-  packages' data files. They change far more often than dspy does, so they are an archive of their own, a few
+- ``dspy-libraries-<digest>.libs``: the Python source files of the user's own code that those libraries reach, and
+  nothing else of it. They change far more often than dspy does, so they are an archive of their own, a few
   kilobytes that a sandbox unpacks after it starts: editing one of them rebuilds neither the bundle nor its snapshot.
 
 ``DSPY_SANDBOX_CACHE=0`` or ``PythonInterpreter(sandbox_cache=False)`` turns the cache off, for environments where
@@ -367,9 +367,8 @@ def _plan(deno_dir: str | None, packages: tuple[str, ...] = ()) -> tuple[dict, l
     return lock, sorted(needed), files
 
 
-# What each set of libraries adds to a sandbox, with the sizes and times of the source files whose imports were
-# followed for it: one of those changing makes a new plan.
-_library_plans: dict[tuple[str, ...], tuple[list[tuple[str, int, int]], tuple[list[str], list, list]]] = {}
+# What each set of libraries adds to a sandbox, with what it was made from, to tell when to make it again (``_made_from``).
+_library_plans: dict[tuple[str, ...], tuple[tuple[list, list], tuple[list[str], list, list]]] = {}
 
 
 def _library_plan(
@@ -377,11 +376,12 @@ def _library_plan(
 ) -> tuple[list[str], list[tuple[Path, str]], list[tuple[Path, str]]]:
     """What the ``libraries`` (modules of this environment) add to a sandbox, going by what they reach
     (``dspy.primitives.libraries.reach``): to the bundle, the Pyodide packages and the files of this environment's
-    pure-Python ones, and, for an archive of their own, the source files of the user's own code with their packages'
-    data files. A library that the sandbox cannot have raises a ``SandboxBundleError`` that says why. A package one
-    of them imports that it cannot have is left out, with a warning: the import may be an optional one."""
+    pure-Python ones, and, for an archive of their own, the Python source files of the user's own code. Only code
+    the libraries import is copied: a data file next to it may hold anything, so it stays on the host. A library
+    that the sandbox cannot have raises a ``SandboxBundleError`` that says why. A package one of them imports that
+    it cannot have is left out, with a warning: the import may be an optional one."""
     kept = _library_plans.get(libraries)
-    if kept is not None and kept[0] == _stamps(path for path, _, _ in kept[0]):
+    if kept is not None and kept[0] == _made_from(kept[1]):
         return kept[1]
     if absent := _libraries.missing(libraries):
         raise SandboxBundleError(
@@ -425,21 +425,24 @@ def _library_plan(
         if name not in needed:
             needed.append(name)
             shipped += lock[name]["depends"]
-    plan = sorted(needed), files, [(path, key) for key, path in sorted(sources.items())] + _package_data(sources)
-    _library_plans[libraries] = _stamps(sources.values()), plan
+    plan = sorted(needed), files, [(path, key) for key, path in sorted(sources.items())]
+    _library_plans[libraries] = _made_from(plan), plan
     return plan
 
 
-def _stamps(paths) -> list[tuple[str, int, int]]:
-    """The size and modification time of each file, or zeros for one that is gone."""
-    out = []
-    for path in paths:
+def _made_from(plan: tuple[list[str], list[tuple[Path, str]], list[tuple[Path, str]]]) -> tuple[list, list]:
+    """What a library plan's lists depend on, as it is now. The source files it lists are those their own imports
+    lead to, so their sizes and times tell when an import was added or dropped. A file added to, renamed in or
+    removed from a folder it lists files of, the packages' among them, shows in the folder's time, as for the
+    bundle's own files (``_folder_times``)."""
+    sources = []
+    for path, _ in plan[2]:
         try:
-            stat = Path(path).stat()
-            out.append((str(path), stat.st_size, stat.st_mtime_ns))
-        except OSError:
-            out.append((str(path), 0, 0))
-    return out
+            stat = path.stat()
+            sources.append((str(path), stat.st_size, stat.st_mtime_ns))
+        except OSError:  # gone
+            sources.append((str(path), 0, 0))
+    return sources, _folder_times([*plan[1], *plan[2]])
 
 
 def _metadata_files(dist: metadata.Distribution) -> list[tuple[Path, str]]:
@@ -450,28 +453,6 @@ def _metadata_files(dist: metadata.Distribution) -> list[tuple[Path, str]]:
         if len(file.parts) == 2 and file.parts[0].endswith(".dist-info")
         and file.name in ("METADATA", "RECORD", "top_level.txt") and Path(dist.locate_file(file)).is_file()
     ]
-
-
-def _package_data(sources: dict[str, Path]) -> list[tuple[Path, str]]:
-    """The data files of the packages the source files are in: what git tracks, besides Python, in a package's own
-    folder and in the folders below it that are not packages themselves. Hidden files are left out, and outside a git
-    work tree so is all of it, since local files like credentials may sit next to the code."""
-    packages = {path.parent: key.rpartition("/")[0] for key, path in sources.items() if path.name == "__init__.py"}
-    out = []
-    for top, arcname in sorted(packages.items()):
-        if "/" in arcname:
-            continue  # once per top-level package: its folder holds the others
-        for relative in sorted(_git_files(top) or ()):
-            path = top / relative
-            parts = Path(relative).parts
-            if path.suffix in (".py", ".pyc", *_COMPILED) or any(part.startswith(".") for part in parts):
-                continue
-            owner = next(  # the package the file belongs to: the nearest folder above it that is one
-                (folder for folder in path.parents if (folder / "__init__.py").is_file()), None
-            )
-            if owner in packages and path.is_file():
-                out.append((path, f"{arcname}/{Path(relative).as_posix()}"))
-    return out
 
 
 def _distributions() -> list[metadata.Distribution]:
