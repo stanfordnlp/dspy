@@ -164,6 +164,8 @@ def _capabilities(lm, options=None):
         )
     selection = select_backend(lm, options)
     route = selection.resolution
+    if route is not None and route.provider == "openai-decisions":
+        return Capabilities(params=frozenset({"response_format"}))
     if not selection.native and not (route is not None and route.declared):
         return _litellm_capabilities(lm, selection)
     # A declared provider is described by its declaration on either route:

@@ -68,6 +68,8 @@ def _model_string(model: str, model_type: str, providers=()) -> str:
     """
     head, separator, rest = model.partition("/")
     if separator and rest:
+        if head in {"openai-decisions", "openai_decisions"}:
+            return f"openai-decisions:{rest}"
         if head in LITELLM_PROVIDER_PREFIXES:
             provider = LITELLM_PROVIDER_PREFIXES[head]
             if model_type in {"auto", "responses"}:
