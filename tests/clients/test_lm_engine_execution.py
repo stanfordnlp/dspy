@@ -312,7 +312,7 @@ async def test_native_vertex_aws_federation(monkeypatch, asynchronous, provider,
             assert len(auth_calls) == (3 if identity == "container" else 2)
             assert len(transport.requests) == 1 and len(lm.history) == 1
             sent = transport.requests[0]
-            assert dict(sent.headers)["authorization"] == "Bearer sa-token"
+            assert {k.lower(): v for k, v in sent.headers}["authorization"] == "Bearer sa-token"
             assert "/projects/offline-project/locations/us-central1/" in sent.url
     finally:
         await lm.aclose()
