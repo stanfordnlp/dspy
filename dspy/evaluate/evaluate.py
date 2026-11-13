@@ -219,9 +219,10 @@ class Evaluate:
             )
             data = self._prepare_results_output(results, metric_name)
             # Convert before opening the file, so a value that can't be encoded doesn't leave it half written.
-            # Dates, enums and Pydantic models are encoded like Pydantic does, also as dict keys; other unsupported
+            # Dates, enums and Pydantic models are encoded like Pydantic does, also as dict keys; dspy.Prediction and
+            # dspy.Example values (e.g. a metric returning a score and feedback) become dicts; other unsupported
             # values become their string form.
-            json_data = to_jsonable_python(data, fallback=str)
+            json_data = to_jsonable_python(data, fallback=_json_fallback)
             with open(
                     save_as_json,
                     "w",
@@ -333,6 +334,13 @@ def merge_dicts(d1, d2) -> dict:
             merged[k] = v
 
     return merged
+
+
+def _json_fallback(obj):
+    # Called by to_jsonable_python for values it can't encode; whatever is returned is encoded again.
+    if hasattr(obj, "toDict"):
+        return obj.toDict()
+    return str(obj)
 
 
 def truncate_cell(content) -> str:

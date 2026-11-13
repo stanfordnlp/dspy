@@ -606,6 +606,25 @@ def test_evaluate_save_as_json_with_non_json_output_types(tmp_path):
     assert rows[0]["by_day"] == {"2026-11-05": "red"}
 
 
+def test_evaluate_save_as_json_with_prediction_metric_holding_a_date(tmp_path):
+    def graded(example, prediction, trace=None):
+        return dspy.Prediction(score=1.0, feedback="correct", checked_on=datetime.date(2026, 11, 6))
+
+    json_path = tmp_path / "results.json"
+    evaluator = Evaluate(
+        devset=[dspy.Example(x=1).with_inputs("x")],
+        metric=graded,
+        display_progress=False,
+        save_as_json=str(json_path),
+    )
+
+    result = evaluator(lambda x: dspy.Prediction(answer="2"))
+
+    assert result.score == 100.0
+    rows = json.loads(json_path.read_text())
+    assert rows[0]["graded"] == {"score": 1.0, "feedback": "correct", "checked_on": "2026-11-06"}
+
+
 def test_evaluate_raises_on_empty_devset():
     program = Predict("question -> answer")
     ev = Evaluate(
