@@ -685,12 +685,26 @@ def install(namespace: dict[str, Any], spec: dict[str, Any]) -> None:
     settings["trace"] = HostTrace(namespace[TRACE_TOOL]) if spec.get("trace") and TRACE_TOOL in namespace else None
     dspy.configure(**settings)
     namespace["__dspy_values"] = _wire
-    namespace["__dspy_types"] = {
-        name: _import(entry["import"]) if "import" in entry else _host_type(name, entry.get("schema") or {})
-        for name, entry in spec["types"].items()
-    }
+    _library_types.clear()
+    namespace["__dspy_types"] = {name: _bound_type(name, entry) for name, entry in spec["types"].items()}
     namespace["__dspy_guest_spec"] = spec
     bind(namespace)
+
+
+# The host's custom types that this sandbox imports from the session's libraries, by the name the host knows each by.
+_library_types: dict[str, type] = {}
+
+
+def _bound_type(name: str, entry: dict[str, Any]) -> Any:
+    """What the custom type ``name`` is here: imported, if the host says where from, or else a ``HostType`` with the
+    schema it sent. One of the session's libraries comes with both: it is imported if the libraries reach it here."""
+    if "import" in entry and "schema" not in entry:
+        return _import(entry["import"])
+    if "import" in entry:
+        with contextlib.suppress(Exception):
+            _library_types[name] = _import(entry["import"])
+            return _library_types[name]
+    return _host_type(name, entry.get("schema") or {})
 
 
 def bind(namespace: dict[str, Any]) -> None:
@@ -754,6 +768,8 @@ def signature_spec(signature: Any) -> dict[str, Any]:
     for name, t in ctx.custom_types().items():
         if isinstance(t, type) and issubclass(t, HostType):
             types[name] = {"host": t.__name__}
+        elif _library_types.get(name) is t:  # a library's, which the host knows by this name and reads as its own
+            types[name] = {"host": name}
         elif t.__module__.split(".")[0] == "dspy" or t.__module__.split(".")[0] in sys.stdlib_module_names:
             types[name] = {"import": f"{t.__module__}.{t.__qualname__}"}
     extra = {name: {key: value for key, value in (field.json_schema_extra or {}).items() if _is_json(value)}

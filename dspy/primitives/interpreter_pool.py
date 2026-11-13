@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import functools
 import logging
 import queue
 import threading
 import weakref
+from collections.abc import Sequence
 from typing import Any, Callable
 
 from dspy.primitives.code_interpreter import CodeInterpreter
@@ -22,8 +22,8 @@ class InterpreterPool:
     it is usually already started: the pool starts ``size`` interpreters in the background and starts a replacement
     whenever it hands one out, or after a start failed. When none is ready, a call returns a new, unstarted
     interpreter instead. A pooled ``PythonInterpreter`` has dspy installed, and usually already imported, which is
-    what ``dspy.Flex`` imports first. For a ``dspy.Flex`` whose code imports ``libraries``, pass their module names
-    too, so that pooled interpreters have them.
+    what ``dspy.Flex`` imports first. A ``dspy.Flex`` with ``libraries`` tells the pool it uses (``provide_libraries``),
+    which starts its interpreters with them from then on, so the pool needs no setup for them.
 
     Pass it wherever an ``interpreter_factory`` goes:
 
@@ -39,18 +39,12 @@ class InterpreterPool:
     interpreters are shut down by ``close()``, when the pool is garbage-collected, and at exit.
     """
 
-    def __init__(
-        self,
-        factory: Callable[[], CodeInterpreter] = PythonInterpreter,
-        size: int = 1,
-        *,
-        libraries: list[str] | None = None,
-    ) -> None:
+    def __init__(self, factory: Callable[[], CodeInterpreter] = PythonInterpreter, size: int = 1) -> None:
         if size < 1:
             raise ValueError("size must be at least 1")
         self._factory = factory
         self._size = size
-        self._libraries = tuple(libraries or ())  # modules a pooled PythonInterpreter can import besides dspy
+        self._libraries: tuple[str, ...] = ()  # the modules its interpreters start with, see provide_libraries
         self._starting = 0
         self._ready: queue.Queue[CodeInterpreter] = queue.Queue()
         self._lock = threading.Lock()
@@ -71,6 +65,19 @@ class InterpreterPool:
         self._refill()
         return interpreter if interpreter is not None else self._factory()
 
+    def provide_libraries(self, modules: Sequence[str]) -> None:
+        """Start the interpreters with ``modules`` importable too, from now on (each interpreter's own
+        ``provide_libraries`` says how). A ``dspy.Flex`` with ``libraries`` calls this before it takes an interpreter.
+        The pool keeps every module it was asked for: an interpreter with more than a call needs serves it as well.
+        The interpreters it had ready are shut down and replaced, and a call that finds none ready gets a new,
+        unstarted one, as always."""
+        with self._lock:
+            if set(modules) <= set(self._libraries):
+                return
+            self._libraries = tuple(sorted({*self._libraries, *modules}))
+        _shut_down_idle(self._ready)
+        self._refill()
+
     def close(self) -> None:
         """Shut down the idle interpreters and stop starting new ones."""
         with self._lock:
@@ -88,7 +95,7 @@ class InterpreterPool:
 
     def __reduce__(self) -> tuple:
         # Saved with a program: its interpreters are processes, so loading it makes a new pool like this one.
-        return functools.partial(type(self), libraries=list(self._libraries)), (self._factory, self._size)
+        return type(self), (self._factory, self._size)
 
     def __exit__(self, *_: Any) -> None:
         self.close()
@@ -103,11 +110,16 @@ class InterpreterPool:
 
     def _start_one(self) -> None:
         interpreter = None
+        with self._lock:
+            libraries = self._libraries
         try:
             interpreter = self._factory()
+            provide = getattr(interpreter, "provide_libraries", None)
+            if libraries and callable(provide):
+                provide(libraries)
             if isinstance(interpreter, PythonInterpreter):
                 # Flex and RLM add the dspy bundle to their interpreters, which must happen before one starts.
-                interpreter.provide_dspy(libraries=self._libraries)
+                interpreter.provide_dspy()
             interpreter.start()
         except Exception:
             # A call that finds no interpreter ready makes its own, and surfaces the failure there.
@@ -119,10 +131,11 @@ class InterpreterPool:
             return
         with self._lock:
             self._starting -= 1
-            if not self._closed:
+            if not self._closed and libraries == self._libraries:
                 self._ready.put(interpreter)
                 return
         _shut_down(interpreter)
+        self._refill()  # one that started before the pool was asked for more libraries is replaced
 
 
 def _shut_down_idle(ready: queue.Queue[CodeInterpreter]) -> None:

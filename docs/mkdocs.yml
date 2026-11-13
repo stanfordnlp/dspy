@@ -124,7 +124,6 @@ nav:
             - BestOfN: api/modules/BestOfN.md
             - ChainOfThought: api/modules/ChainOfThought.md
             - Flex: api/modules/Flex.md
-            - Library: api/modules/Library.md
             - Module: api/modules/Module.md
             - MultiChainComparison: api/modules/MultiChainComparison.md
             - Parallel: api/modules/Parallel.md

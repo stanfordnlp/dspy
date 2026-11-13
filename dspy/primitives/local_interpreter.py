@@ -119,11 +119,12 @@ class LocalInterpreter:
         except (TypeError, ValueError) as exc:
             raise ValueError(f"output fields must be JSON-compatible: {exc}") from exc
 
-    def provide_dspy(self, *, libraries: list[str] | tuple[str, ...] = ()) -> None:
-        """Make ``libraries``, module names, importable in the worker. It runs Python in isolated mode, which sees only
-        installed packages, so the directories the libraries are imported from here are added after its own path."""
+    def provide_libraries(self, modules: list[str] | tuple[str, ...]) -> None:
+        """Make ``modules`` of this environment importable in the worker, as ``dspy.Flex(libraries=...)`` asks for its
+        code. The worker runs Python in isolated mode, which sees only installed packages, so the folders the modules
+        are imported from here are added after its own path."""
         directories = []
-        for name in libraries:
+        for name in modules:
             spec = importlib.util.find_spec(name.split(".")[0])
             if spec is None:
                 continue

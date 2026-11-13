@@ -9,6 +9,7 @@ from gepa import EvaluationBatch
 import dspy
 from dspy.predict.flex import Flex
 from dspy.predict.flex.ctx import _strip_code_fences
+from dspy.predict.flex.flex import differences
 from dspy.predict.flex.primitives_doc import PRIMITIVES_CATALOG
 from dspy.primitives import Prediction
 from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
@@ -32,8 +33,43 @@ def flex_task_context(student_module) -> tuple[dict[str, str], dict[str, str]]:
         ctx = getattr(sub, "_flex_ctx", None)
         if ctx is not None and hasattr(ctx, "render_signature_spec"):
             task_descriptions[path] = ctx.render_signature_spec()
-            context_blurbs[path] = ctx.render_context_blurb(sandboxed=True)
+            # The libraries' API is read in the submodule's interpreter, which may have other versions than this
+            # process. One the interpreter cannot import fails here, before any budget is spent.
+            context_blurbs[path] = ctx.render_context_blurb(sandboxed=True, library_reference=sub._library_reference())
     return task_descriptions, context_blurbs
+
+
+def flex_environments(program) -> dict[str, dict[str, Any]]:
+    """Per flex submodule path, what its code runs against now (see ``dspy.Flex.environment``)."""
+    return {path: sub._resolve_environment() for path, sub in enumerate_flex_submodules(program).items()}
+
+
+def pin_flex_environments(program, started: dict[str, dict[str, Any]]) -> None:
+    """Record, on each flex submodule of the optimized ``program``, the environment its code was validated against.
+
+    ``started`` is what ``flex_environments`` read before the run. A library that changed since then, like a file of
+    yours edited while the optimizer ran, means the candidates were scored against different code: that is reported,
+    and so is an environment that cannot be read, without losing the optimized program.
+    """
+    for path, sub in enumerate_flex_submodules(program).items():
+        try:
+            record = sub.pin() or {}
+            before = started.get(path)
+            if not before or "python" not in before:
+                continue
+            versions = {name: version for name, _, version in (r.partition("==") for r in record.get("requires") or ())}
+            hashes = {key: digest for files in (record.get("sources") or {}).values() for key, digest in files.items()}
+            changes = differences(before, record.get("python"), versions, hashes)
+        except Exception as e:  # the run is over: its result is worth more than the record
+            logger.warning("Could not record the environment %s was optimized against (%s: %s).", path, type(e).__name__, e)
+            continue
+        if changes:
+            logger.warning(
+                "The libraries of %s changed while it was being optimized (%s): its candidates were scored against "
+                "different code. Evaluate the result again.",
+                path,
+                "; ".join(changes),
+            )
 
 
 def _render_prediction(prediction: Any) -> Any:
@@ -107,8 +143,8 @@ class CodeProposalSignature(dspy.Signature):
         desc="The submodule's Signature: name, objective, input and output fields."
     )
     available_context: str = dspy.InputField(
-        desc="Tools (in scope by name) and style notes available to the module. May be "
-        "'(no extra context)'."
+        desc="Tools (in scope by name), libraries the module may import, and style notes available to the module. "
+        "May be '(no extra context)'."
     )
     primitives_catalog: str = dspy.InputField(
         desc="Catalog of allowed primitives and conventions the revised code must follow."

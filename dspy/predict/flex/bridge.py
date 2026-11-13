@@ -6,7 +6,7 @@ every ``forward``:
 1. creates a fresh interpreter from the Flex's ``interpreter_factory``, or from
    ``dspy.settings.interpreter_factory`` when Flex uses its default (``BridgeRuntime.forward``);
 2. imports the real dspy there, wired to the host by a ``SandboxSession`` (``dspy.primitives.facade``) over the
-   Flex's tools, custom types and LM-call budget;
+   Flex's tools, custom types and LM-call budget, with the Flex's libraries importable;
 3. executes ``module_src`` and drives its ``forward`` with the call's inputs.
 
 User tools passed to ``dspy.Flex(tools=...)`` are bound by name so sandbox code can call them
@@ -97,18 +97,38 @@ class BridgeRuntime:
             custom_types=ctx.custom_types(),
             reserve=_Budget(self._max_predictor_calls).reserve,
             interpreter_factory=self._factory,
-            libraries=[library.name for library in ctx.libraries],
+            libraries=ctx.library_modules(),
             tool_calls=tool_calls,
         )
+
+    def run(self, code: str, variables: dict[str, Any]) -> Any:
+        """Run ``code`` in a fresh interpreter set up as a forward's, with dspy and the libraries importable, and
+        return what it evaluates to."""
+        session = self.session()
+        interp = _create_interpreter(self._factory, self._flex._flex_ctx.library_modules())
+        try:
+            session.install(interp, import_dspy=True)
+            return interp.execute(code, variables=variables)
+        finally:
+            self._close(session, interp)
+
+    @staticmethod
+    def _close(session: SandboxSession, interp: Any) -> None:
+        session.close()
+        try:
+            interp.shutdown()
+        except Exception:
+            logger.warning("dspy.Flex: interpreter.shutdown() raised after forward", exc_info=True)
 
     def forward(self, inputs: dict[str, Any]) -> Any:
         fields = self._flex.signature.input_fields
         inputs = {name: _typed(value, fields.get(name)) for name, value in inputs.items()}
         tool_calls: list[dict[str, Any]] = []
         session = self.session(tool_calls)
-        interp = _create_interpreter(self._factory)
+        interp = _create_interpreter(self._factory, self._flex._flex_ctx.library_modules())
         try:
             session.install(interp, import_dspy=True)
+            self._flex._check_environment_once(interp)
             interp.execute(self._module_src)  # defines the class in the sandbox
             code = (
                 "from dspy.primitives.sandbox_guest import run_forward as __dspy_run_forward\n"
@@ -123,11 +143,7 @@ class BridgeRuntime:
                     raise lm_error from e
             raise
         finally:
-            session.close()
-            try:
-                interp.shutdown()
-            except Exception:
-                logger.warning("dspy.Flex: interpreter.shutdown() raised after forward", exc_info=True)
+            self._close(session, interp)
         if isinstance(result, str) and result:
             result = json.loads(result)
         if not isinstance(result, dict) or "fields" not in result:  # an in-process forward's fields are as they are

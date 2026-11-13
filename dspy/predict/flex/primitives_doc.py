@@ -34,9 +34,10 @@ class SolveModule(dspy.Module):
 ```
 
 `dspy` is already in scope — do NOT add `import` statements at module scope (import
-stdlib modules like `re` *inside* `forward` if you need them). Python and standard-library
-availability is defined by this Flex's configured interpreter; candidates are evaluated in that
-interpreter and should not assume host-Python access.
+stdlib modules like `re` *inside* `forward` if you need them). The one exception: libraries
+that the available context lists are imported at the top of the module, as it says. Python and
+standard-library availability is defined by this Flex's configured interpreter; candidates are
+evaluated in that interpreter and should not assume host-Python access.
 
 Available DSPy primitives:
 
@@ -119,9 +120,9 @@ Rules you MUST follow:
   pure-Python `forward` and define no predictors in `__init__`.
 
 - Define any helper functions NESTED inside `forward` (not at module scope), and
-  add no module-scope code other than the module class and any signature classes it
-  uses, defined above it, so the persisted
-  module file and the live module execute identically.
+  add no module-scope code other than the module class, any signature classes it
+  uses, defined above it, and imports of the libraries the available context lists,
+  so the persisted module file and the live module execute identically.
 
 - Keep the design composable: prefer two short predictors with clear signatures
   over one all-knowing prompt.

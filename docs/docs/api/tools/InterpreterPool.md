@@ -27,6 +27,10 @@ as `dspy.Evaluate(num_threads=...)`, need one for each call in flight.
 `factory` must return interchangeable interpreters, because the pool calls it before the interpreter is needed. A
 factory whose interpreters depend on when it is called, for example on the current input, should not be pooled.
 
+A `dspy.Flex` with [`libraries`](../modules/Flex.md#your-own-libraries) needs no setup of the pool: it tells the pool
+it uses (`provide_libraries`), which starts its interpreters with them from then on. A pool shared by several modules
+keeps the libraries of all of them.
+
 <!-- START_API_REF -->
 ::: dspy.InterpreterPool
     handler: python
@@ -34,6 +38,7 @@ factory whose interpreters depend on when it is called, for example on the curre
         members:
             - __call__
             - close
+            - provide_libraries
         show_source: true
         show_root_heading: true
         heading_level: 2

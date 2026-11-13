@@ -40,6 +40,9 @@ dependencies. `dspy.Flex` and `dspy.RLM` call it on the interpreters they create
 snapshot of one that has already imported dspy, which DSPy records once per dspy source, so it starts faster than a
 plain one. To start interpreters before they are needed, see [`InterpreterPool`](InterpreterPool.md).
 
+`provide_libraries(modules)` adds modules of your own environment to that bundle, with what they reach, as
+[`dspy.Flex(libraries=...)`](../modules/Flex.md#your-own-libraries) asks for its code.
+
 ## Execution Instructions
 
 `PythonInterpreter.execution_instructions` describes stable constraints of its Pyodide execution environment. It
@@ -57,6 +60,7 @@ factory without it remains valid and uses RLM's generic action prompt.
             - __call__
             - execute
             - provide_dspy
+            - provide_libraries
             - shutdown
             - start
         show_source: true

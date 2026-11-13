@@ -15,6 +15,9 @@ read and written on the host by the session's ``HostValues``:
   reads back as the type (``HostValues``).
 - ``INTERPRETER_TOOL``: a fresh interpreter from ``interpreter_factory`` for each code-executing module built in the
   sandbox, so its code shares nothing with the sandbox that built it.
+- The libraries a ``dspy.Flex`` lets its code import are importable in the sandbox (``provide_libraries``), where
+  they run. A value of one of their classes is an object of that class there. Coming back it is plain data like any
+  other value of the user's types, which the host reads as the type where a signature declares it.
 
 An interpreter that runs code in the host's own memory (an in-process interpreter) uses the host's dspy as is:
 the bootstrap leaves it alone, and the caller scopes its execution with ``SandboxSession.scope``.
@@ -412,6 +415,26 @@ def _entrypoint(tool: Any) -> Callable[..., Any]:
     return entrypoint
 
 
+def recorded(name: str, function: Callable[..., Any], calls: list[dict[str, Any]] | None) -> Callable[..., Any]:
+    """``function``, appending each call to ``calls`` (if given): the tool's name, its arguments, and its result or
+    error. Calls are listed when they start, so nested ones follow the call they are part of."""
+    if calls is None:
+        return function
+
+    @functools.wraps(function)
+    def recording(**kwargs: Any) -> Any:
+        call: dict[str, Any] = {"name": name, "args": kwargs}
+        calls.append(call)
+        try:
+            call["result"] = function(**kwargs)
+        except BaseException as e:
+            call["error"] = f"{type(e).__name__}: {e}"
+            raise
+        return call["result"]
+
+    return recording
+
+
 class SandboxSession:
     """Host side of one interpreter session that runs the real dspy: one Flex forward, or one RLM call.
 
@@ -429,10 +452,14 @@ class SandboxSession:
         lm: Any = None,
         reserve: Callable[[int], None] | None = None,
         interpreter_factory: Callable[[], Any] | None = None,
+        libraries: list[str] | None = None,
+        tool_calls: list[dict[str, Any]] | None = None,
     ) -> None:
         self._tools = tools
+        self._tool_calls = tool_calls  # where calls to the provided tools are recorded, see ``recorded``
+        self._libraries = list(libraries or [])  # the modules sandboxed code may import, see ``provide_libraries``
         self._custom_types = custom_types or {}
-        self._values = HostValues(tools)
+        self._values = HostValues(tools, self._libraries)
         self._lm = lm
         self._reserve = reserve
         self._interpreter_factory = interpreter_factory
@@ -448,6 +475,7 @@ class SandboxSession:
 
     def install(self, interpreter: Any, *, import_dspy: bool) -> None:
         """Bootstrap the bridge in ``interpreter``; with ``import_dspy``, import dspy there right away."""
+        self._provide_libraries(interpreter)
         provide = getattr(interpreter, "provide_dspy", None)
         if callable(provide):
             provide()
@@ -472,6 +500,12 @@ class SandboxSession:
             namespace.update({**{k: v for k, v in TYPING_NAMES.items() if k not in namespace}, **self._custom_types})
         if import_dspy:
             interpreter.execute("import dspy")
+
+    def _provide_libraries(self, interpreter: Any) -> None:
+        """Have ``interpreter`` make the session's libraries importable, if it has to do something for that."""
+        provide = getattr(interpreter, "provide_libraries", None)
+        if self._libraries and callable(provide):
+            provide(self._libraries)
 
     def encode(self, value: Any) -> Any:
         """``value`` as it crosses into the sandbox."""
@@ -510,16 +544,17 @@ class SandboxSession:
     ) -> Any:
         """The ``INTERPRETER_TOOL`` host tool behind ``HostInterpreter``: one fresh interpreter per ``create``."""
         if op == "create":
-            interpreter = _create_interpreter(self._interpreter_factory)
+            interpreter = _create_interpreter(self._interpreter_factory, self._libraries)
             interpreter.tools[INTERPRETER_TOOL] = self._serve_interpreter  # for the modules its own code builds
             handle = secrets.token_hex(8)
-            host_tools = {name: _entrypoint(tool) for name, tool in self._tools.items()}
+            host_tools = {name: recorded(name, _entrypoint(tool), self._tool_calls) for name, tool in self._tools.items()}
             self._nested[handle] = _NestedInterpreter(interpreter, host_tools, self._values)
             return handle
         nested = self._nested.get(id)
         if nested is None:
             raise CodeInterpreterError(f"Unknown nested interpreter {id!r}")
         if op == "provide":
+            self._provide_libraries(nested.interpreter)
             provide = getattr(nested.interpreter, "provide_dspy", None)
             if callable(provide):
                 provide()
@@ -549,7 +584,7 @@ class SandboxSession:
         if not isinstance(provided, Tool):
             declared = Tool(provided).arg_types
             kwargs = {name: _as_declared(value, declared.get(name)) for name, value in kwargs.items()}
-        result = function(**kwargs)
+        result = recorded(tool, function, self._tool_calls)(**kwargs)
         if asyncio.iscoroutine(result):
             from dspy.primitives.python_interpreter import _await_in_sync
 
@@ -609,7 +644,7 @@ class SandboxSession:
             "session": session,
             "lm": _lm_spec(lm) if lm is not None else None,
             "tools": {name: _tool_spec(name, tool) for name, tool in self._tools.items()},
-            "types": {name: _type_binding(t) for name, t in self._custom_types.items()},
+            "types": {name: _type_binding(t, self._libraries) for name, t in self._custom_types.items()},
             "execution_instructions": self._execution_instructions(),
             "trace": dspy.settings.trace is not None and dspy.settings.max_trace_size > 0,
         }
@@ -775,20 +810,24 @@ class HostValues(Wire):
     pydantic's own contract, which the host reads back as the type where a signature declares it (``from_wire``).
     Sandboxed code can name the type (``sandbox_guest.HostType``), but the type and its code stay here. An object of a
     class both sides have (dspy's, the standard library's) crosses as that class, with a reference to it kept here, so
-    one that comes back unchanged is the host's own object again. Types only go one way: the host never builds a class
-    from what the sandbox sends.
+    one that comes back unchanged is the host's own object again. So does an object of a class of the session's
+    ``libraries``, which the sandbox imports, on its way there. Types only go one way: the host never builds a class
+    from what the sandbox sends, so what comes back of a library's class is its fields, read as the type where a
+    signature declares it, like any other value of the user's types.
     """
 
-    def __init__(self, tools: dict[str, Any] | None = None) -> None:
+    def __init__(self, tools: dict[str, Any] | None = None, libraries: list[str] | None = None) -> None:
         self._tools = tools or {}  # the provided tools, which a tool crossing back may name
+        self._libraries = libraries or []  # the modules the sandbox imports besides dspy's
         self._objects: list[Any] = []
         self._refs: dict[int, int] = {}  # by id, the reference of each object sent
 
     def encode_enum(self, member: enum.Enum) -> Any:
-        return self.encode(_jsonable(member)) if _import_path(type(member)) is None else super().encode_enum(member)
+        there = _import_path(type(member), self._libraries)
+        return self.encode(_jsonable(member)) if there is None else super().encode_enum(member)
 
     def encode_object(self, value: Any, fields: dict[str, Any]) -> Any:
-        if _import_path(type(value)) is None:  # the user's: plain data, as its type writes it for a round trip
+        if _import_path(type(value), self._libraries) is None:  # the user's: plain data, as its type writes it
             return self.encode(_plain_data(value))
         return {**super().encode_object(value, fields), "ref": self._keep(value)}
 
@@ -865,15 +904,19 @@ def _plain_data(value: Any) -> Any:
     return plain if marked is None else merge(marked, plain)
 
 
-def _type_binding(t: Any) -> dict[str, Any]:
+def _type_binding(t: Any, libraries: list[str] | tuple[str, ...] = ()) -> dict[str, Any]:
     """How sandboxed code names the custom type ``t``: imported there if it can be, like dspy's types, or else by name
-    only (``sandbox_guest.HostType``), described by the JSON schema of what crosses of it."""
+    only (``sandbox_guest.HostType``), described by the JSON schema of what crosses of it. A type of the session's
+    ``libraries`` is imported there as well, and still comes with its schema, for a sandbox whose libraries do not
+    reach it."""
     if (path := _import_path(t)) is not None:
         return {"import": path}
     try:
-        return {"schema": _inline_refs(pydantic.TypeAdapter(t).json_schema(schema_generator=_CrossingSchema))}
+        schema = _inline_refs(pydantic.TypeAdapter(t).json_schema(schema_generator=_CrossingSchema))
     except Exception:  # a type pydantic can't describe
-        return {"schema": {}}
+        schema = {}
+    path = _import_path(t, libraries)
+    return {"schema": schema} if path is None else {"import": path, "schema": schema}
 
 
 class _CrossingSchema(GenerateJsonSchema):
@@ -905,17 +948,22 @@ def _inline_refs(schema: dict[str, Any]) -> dict[str, Any]:
     return inline(schema, frozenset())
 
 
-def _in_sandbox(module: str) -> bool:
-    """Whether the sandbox can import ``module``: the standard library's, or a package of dspy's own install."""
+def _in_sandbox(module: str, libraries: list[str] | tuple[str, ...] = ()) -> bool:
+    """Whether the sandbox can import ``module``: the standard library's, a package of dspy's own install, or one of
+    a session's ``libraries``."""
     top = module.split(".")[0]
-    return (top in sys.stdlib_module_names and not top.startswith("_")) or top in sandbox_modules()
+    if (top in sys.stdlib_module_names and not top.startswith("_")) or top in sandbox_modules():
+        return True
+    return any(top == library.split(".")[0] for library in libraries)
 
 
-def _import_path(t: Any) -> str | None:
-    """Where the sandbox imports ``t`` from, if it can (dspy's types, the standard library's, pydantic's...)."""
+def _import_path(t: Any, libraries: list[str] | tuple[str, ...] = ()) -> str | None:
+    """Where the sandbox imports ``t`` from, if it can (dspy's types, the standard library's, pydantic's..., and
+    those of a session's ``libraries``)."""
     module, name = getattr(t, "__module__", None), getattr(t, "__qualname__", "")
     importable = isinstance(name, str) and all(part.isidentifier() for part in name.split("."))  # no <locals>
-    return f"{module}.{name}" if isinstance(module, str) and importable and _in_sandbox(module) else None
+    there = isinstance(module, str) and importable and _in_sandbox(module, libraries)
+    return f"{module}.{name}" if there else None
 
 
 def _loaded_class(path: str) -> type:
