@@ -235,3 +235,84 @@ def test_dummy_uses_canonical_engine_without_changing_script_behavior():
         assert predict(question="same").answer == "one"
         assert predict(question="same").answer == "two"
     assert len(lm.history) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("provider", ["vertex", "vertex-anthropic"])
+@pytest.mark.parametrize("identity", ["environment", "container", "invalid-source"])
+async def test_native_vertex_aws_federation(monkeypatch, asynchronous, provider, identity):
+    import datetime as dt
+    from urllib.parse import unquote
+
+    from dspy._vendor.lm15.cloud.chains import ChainContext
+    from dspy.clients.engines.lm15_engine import AsyncLM15Engine, LM15Engine
+
+    audience = "//iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/p/providers/aws"
+    info = {
+        "type": "external_account", "audience": audience,
+        "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+        "credential_source": {
+            "environment_id": "aws2" if identity == "invalid-source" else "aws1",
+            "regional_cred_verification_url":
+                "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
+        },
+        "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/test:generateAccessToken",
+    }
+    env = {"GOOGLE_APPLICATION_CREDENTIALS": "/offline/wif.json", "AWS_REGION": "us-east-2",
+           "AWS_DEFAULT_REGION": "eu-west-1", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI": "/v2/credentials/task"}
+    if identity != "container":
+        env.update(AWS_ACCESS_KEY_ID="AKIDENV", AWS_SECRET_ACCESS_KEY="fake-secret")
+    auth_calls = []
+
+    def http(method, url, headers, body, timeout):
+        auth_calls.append((method, url))
+        if url == "http://169.254.170.2/v2/credentials/task":
+            assert identity == "container"
+            reply = {"AccessKeyId": "ASIATASK", "SecretAccessKey": "fake-secret", "Token": "task-session"}
+        elif url == "https://sts.googleapis.com/v1/token":
+            exchange = json.loads(body)
+            assert exchange["audience"] == audience
+            assert exchange["subjectTokenType"] == info["subject_token_type"]
+            signed = json.loads(unquote(exchange["subjectToken"]))
+            assert signed["method"] == "POST"
+            assert signed["url"] == "https://sts.us-east-2.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"
+            signing_headers = {h["key"]: h["value"] for h in signed["headers"]}
+            key = "ASIATASK" if identity == "container" else "AKIDENV"
+            assert f"Credential={key}/20261113/us-east-2/sts/aws4_request" in signing_headers["Authorization"]
+            assert signing_headers["x-goog-cloud-target-resource"] == audience
+            assert signing_headers.get("x-amz-security-token") == ("task-session" if identity == "container" else None)
+            reply = {"access_token": "federated", "expires_in": 3600, "token_type": "Bearer"}
+        else:
+            assert url == info["service_account_impersonation_url"]
+            assert headers["authorization"] == "Bearer federated"
+            reply = {"accessToken": "sa-token", "expireTime": "2099-01-01T00:00:00Z"}
+        return 200, {}, json.dumps(reply).encode()
+
+    monkeypatch.setattr(ChainContext, "online", classmethod(lambda cls, env: cls(
+        env=env, files={"/offline/wif.json": json.dumps(info)}, http=http,
+        now=lambda: dt.datetime(2026, 11, 13, 12, tzinfo=dt.timezone.utc),
+    )))
+    reply = ({"candidates": [{"content": {"parts": [{"text": "ok"}]}, "finishReason": "STOP"}]}
+             if provider == "vertex" else {"role": "assistant", "content": [{"type": "text", "text": "ok"}],
+                                           "stop_reason": "end_turn", "usage": {"input_tokens": 3, "output_tokens": 2}})
+    transport = FakeTransport([DualResponse(200, json.dumps(reply).encode())])
+    config = RouterConfig(env=env, credentials={provider: "workload"}, transport=transport,
+                          settings={provider: {"project": "offline-project", "location": "us-central1"}})
+    model = "gemini-2.5-flash" if provider == "vertex" else "claude-sonnet-4-5"
+    lm = dspy.LM(f"{provider}:{model}", cache=False, num_retries=0,
+                 engine=LM15Engine(config, model_type="auto"), async_engine=AsyncLM15Engine(config, model_type="auto"))
+    try:
+        if identity == "invalid-source":
+            with pytest.raises(dspy.LMNotConfiguredError):
+                await lm.acall("hello") if asynchronous else lm("hello")
+            assert not auth_calls and not transport.requests and not lm.history
+        else:
+            assert (await lm.acall("hello") if asynchronous else lm("hello")) == ["ok"]
+            assert len(auth_calls) == (3 if identity == "container" else 2)
+            assert len(transport.requests) == 1 and len(lm.history) == 1
+            sent = transport.requests[0]
+            assert dict(sent.headers)["authorization"] == "Bearer sa-token"
+            assert "/projects/offline-project/locations/us-central1/" in sent.url
+    finally:
+        await lm.aclose()
