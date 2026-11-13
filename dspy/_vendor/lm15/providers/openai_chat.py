@@ -83,6 +83,7 @@ from .common import (
     with_partial_usage,
     parts_to_text,
     data_part_text,
+    is_empty_text_block,
 )
 from .openai import (
     OpenAILM,
@@ -137,7 +138,10 @@ def _chat_content_parts(msg: Message, *, force_array: bool = False, provider: st
     A part the wire has no slot for RAISES (MAP-10); it is never rendered
     as text or dropped.
     """
-    parts = [p for p in msg.parts if not isinstance(p, (ToolCallPart, ToolResultPart))]
+    # MAP-24: an empty text part writes nothing, so it does not turn a lone
+    # text part's string into the array form either.
+    parts = [p for p in msg.parts if not isinstance(p, (ToolCallPart, ToolResultPart))
+             and not (isinstance(p, TextPart) and p.text == "")]
     if len(parts) == 1 and isinstance(parts[0], TextPart) and not force_array:
         return parts[0].text
     if len(parts) == 1 and isinstance(parts[0], DataPart) and not force_array:
@@ -157,7 +161,9 @@ def _chat_content_parts(msg: Message, *, force_array: bool = False, provider: st
                 provider=provider, feature=f"messages[*].parts[{part.type}]",
             )
         else:
-            out.append({"type": "text", "text": parts_to_text((part,), provider=provider)})
+            block = {"type": "text", "text": parts_to_text((part,), provider=provider)}
+            if not is_empty_text_block(block):  # MAP-24 (a citation with nothing to say)
+                out.append(block)
     return out
 
 
@@ -174,7 +180,9 @@ def _tool_row_content(provider: str, part: ToolResultPart, policy: str) -> str |
         if p.type == "image":
             blocks.append(_chat_image_block(p, provider))
         else:
-            blocks.append({"type": "text", "text": parts_to_text((p,), provider=provider)})
+            block = {"type": "text", "text": parts_to_text((p,), provider=provider)}
+            if not is_empty_text_block(block):  # MAP-24: the row is written, its empty text block is not
+                blocks.append(block)
     if part.is_error:
         first = next((b for b in blocks if b["type"] == "text"), None)
         if first is None:
@@ -713,6 +721,7 @@ def _ingest_reasoning(provider: str, body: Mapping[str, Any], compat: ResolvedOp
         "kimi": {"thinking", "reasoning_effort"},
         "qwen": {"enable_thinking"},
         "qwen_chat_template": {"chat_template_kwargs"},
+        "reasoning_effort_switch": {"reasoning_effort"},
         "none": set(),
     }[fmt]
     if compat.builtin_tools == "groq":
@@ -727,8 +736,21 @@ def _ingest_reasoning(provider: str, body: Mapping[str, Any], compat: ResolvedOp
     effort: str | None = None
     off = False
 
-    if "reasoning_effort" in present:
+    if "reasoning_effort" in present and isinstance(body["reasoning_effort"], bool):
+        # The switch's spelling (reasoning_effort_switch; reasoning_off
+        # "switch"): false is off; true has no level to read back.
+        if fmt != "reasoning_effort_switch" and not (fmt == "reasoning_effort" and compat.reasoning_off == "switch"):
+            raise _ingest_unsupported(provider, f"reasoning_effort = {str(body['reasoning_effort']).lower()}",
+                                      "this server's reasoning_effort is a word, not a switch")
+        if body["reasoning_effort"] is False:
+            off = True
+        else:
+            raise _ingest_unsupported(provider, "reasoning_effort = true",
+                                      "this switch has no effort level; lm15's dial is a level (MAP-7) — set config.reasoning yourself")
+    elif "reasoning_effort" in present:
         word = _ingest_str(body["reasoning_effort"], "reasoning_effort")
+        if fmt == "reasoning_effort_switch":
+            raise _ingest_unsupported(provider, f"reasoning_effort = {word!r}", "this server's reasoning_effort is an on/off switch (true or false)")
         if word == "none":
             off = True
         else:
@@ -1178,6 +1200,11 @@ class OpenAIChatLM(BaseProviderLM):
 
     # MAP-13 policy: "note" (adapt and record), "silent", or "refuse".
     adaptations: AdaptationPolicy = field(default="note", kw_only=True)
+    # What a fine-tune was trained from, by model id: a model whose name
+    # matches no compat.model_overrides entry follows its base model's
+    # entry (RouterConfig(base_models=...); a Tinker checkpoint's reasoning
+    # switch is its base model's).  Never sent; never discovered.
+    base_models: "Mapping[str, str] | None" = field(default=None, kw_only=True)
     provider: str = field(default="openai-chat", init=False)
     account_id: str | None = field(default=None, init=False, repr=False)
     manifest: ClassVar[ProviderManifest] = OPENAI_CHAT_API
@@ -1254,8 +1281,8 @@ class OpenAIChatLM(BaseProviderLM):
 
     def _build_messages(self, request: Request, compat: ResolvedOpenAIChatCompat, *, breakpoint_index: int | None = None) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
-        if request.system:
-            system_text = request.system if isinstance(request.system, str) else parts_to_text(request.system)
+        system_text = (request.system if isinstance(request.system, str) else parts_to_text(request.system)) if request.system else ""
+        if system_text:  # MAP-24: a system prompt with no characters writes nothing
             if _cache_stable_prefix(request, compat.cache_control):
                 # prefix="stable": the mark rides on the system message's
                 # text content part (array form; a bare string cannot carry it).
@@ -1285,7 +1312,13 @@ class OpenAIChatLM(BaseProviderLM):
                 text_bits: list[str] = []
                 for part in msg.parts:
                     if isinstance(part, TextPart):
-                        text_bits.append(part.text)
+                        if part.text:  # MAP-24: no empty text, and no newline joining one
+                            text_bits.append(part.text)
+                    elif isinstance(part, DataPart):
+                        # An assistant data part is its compact JSON on a text
+                        # slot, as on every wire (changes/2026-09-19-jev-state.md
+                        # D3). It was dropped here until 2026-11-11.
+                        text_bits.append(data_part_text(part))
                     elif isinstance(part, RefusalPart) and part.text:
                         text_bits.append(part.text)
                     elif isinstance(part, ThinkingPart) and compat.thinking_replay == "as_text" and part.text:
@@ -1309,6 +1342,12 @@ class OpenAIChatLM(BaseProviderLM):
                         item["reasoning_content"] = thinking
                 if tool_calls:
                     item["tool_calls"] = tool_calls
+                if item["content"] is None and not tool_calls and not item.get("reasoning_content"):
+                    # MAP-24: a row with no content, no call and no reasoning
+                    # has nothing to write and is refused where the server
+                    # checks ("content or tool_calls must be set", DeepSeek;
+                    # "must not be empty", Moonshot; live 2026-11-11).
+                    continue
                 messages.append(item)
                 continue
 
@@ -1323,7 +1362,7 @@ class OpenAIChatLM(BaseProviderLM):
                 if not isinstance(content, list) or not content or content[-1].get("type") != "text":
                     raise _breakpoint_unsupported(self.provider, msg_index, msg.role)
                 content[-1]["prompt_cache_breakpoint"] = {"mode": "explicit"}
-            if content or content == "":
+            if content:  # MAP-24: a message with nothing to write is not written
                 messages.append({"role": role, "content": content})
         return messages
 
@@ -1399,13 +1438,17 @@ class OpenAIChatLM(BaseProviderLM):
             return "required"
         return "auto"
 
+    def _stop_in_text(self, request: Request) -> str:
+        return self._compat_for(self._wire_request(request).model).stop_in_text
+
     def _compat_for(self, model: str) -> ResolvedOpenAIChatCompat:
         """The resolved compat for this model: the preset's per-family
         overrides applied (OpenAIChatCompat.model_overrides)."""
         partial = self._compat_partial
         if partial is None or not partial.model_overrides:
             return self._resolved_compat
-        return resolve_openai_chat_compat(partial.for_model(model))
+        base = self.base_models.get(model) if self.base_models else None
+        return resolve_openai_chat_compat(partial.for_model(model, base))
 
     def _payload(self, request: Request, stream: bool) -> dict[str, Any]:
         check_message_media(request, dialect="openai_chat", provider=self.provider)
@@ -1500,7 +1543,15 @@ class OpenAIChatLM(BaseProviderLM):
         if request.config.tool_choice and request.config.tool_choice.parallel is not None:
             payload["parallel_tool_calls"] = request.config.tool_choice.parallel
         if request.config.response_format:
-            if compat.json_schema == "reject" and request.config.response_format["type"] != "json_object":
+            if compat.json_schema == "none":
+                # The server applies no response_format of either type and
+                # answers 200 with free text (Tinker, live 2026-11-09):
+                # sending it would be a silent no-op (MAP-8).
+                adapt("config.response_format", "dropped",
+                      f"this server accepts response_format type {request.config.response_format['type']!r} "
+                      "and applies no response_format at all; describe the shape in the prompt",
+                      asked=request.config.response_format, provider=self.provider)
+            elif compat.json_schema == "reject" and request.config.response_format["type"] != "json_object":
                 # The server accepts response_format.type=json_schema and
                 # ignores it (Z.AI, live 2026-09-03: HTTP 200, fenced JSON with
                 # keys the schema never named).  json_object is honoured.
@@ -1574,6 +1625,13 @@ class OpenAIChatLM(BaseProviderLM):
                     payload["reasoning_format"] = "parsed"
                 if compat.thinking_format == "reasoning_effort":
                     payload["reasoning_effort"] = effort
+                elif compat.thinking_format == "reasoning_effort_switch":
+                    # An on/off switch with no levels (Tinker's Qwen, Kimi
+                    # K2.6, Nemotron): a level's nearest value is "on".
+                    adapt("config.reasoning.effort", "substituted",
+                          "this model's reasoning is an on/off switch with no levels; reasoning was switched on",
+                          asked=effort, applied="on", provider=self.provider)
+                    payload["reasoning_effort"] = True
                 elif compat.thinking_format == "openrouter":
                     payload["reasoning"] = {"effort": effort}
                 elif compat.thinking_format == "deepseek":
@@ -1603,7 +1661,12 @@ class OpenAIChatLM(BaseProviderLM):
                 # reasoning tokens when the field was omitted).  Servers
                 # whose models cannot disable reasoning reject "none" with
                 # a clear 400 — loud failure over a silent paid no-op.
-                if compat.thinking_format == "reasoning_effort":
+                if compat.thinking_format == "reasoning_effort_switch" or (
+                    compat.thinking_format == "reasoning_effort" and compat.reasoning_off == "switch"
+                ):
+                    # The switch's off (Tinker: `false`; `none` is refused).
+                    payload["reasoning_effort"] = False
+                elif compat.thinking_format == "reasoning_effort":
                     payload["reasoning_effort"] = "none"
                 elif compat.thinking_format == "openrouter":
                     payload["reasoning"] = {"enabled": False}
@@ -1677,6 +1740,10 @@ class OpenAIChatLM(BaseProviderLM):
         return mapped
 
     def parse_response(self, request: Request, response: HttpResponse) -> Response:
+        # MAP-22: a server that returns the matched stop sequence is cut here.
+        return self._cut_returned_stop(request, self._parse_response(request, response))
+
+    def _parse_response(self, request: Request, response: HttpResponse) -> Response:
         request = self._wire_request(request)
         resp = _response_from_chat_body(
             self.provider, response.json(), model=request.model,
@@ -2135,7 +2202,13 @@ class OpenAIChatLM(BaseProviderLM):
         """A Chat Completions response body → canonical :class:`Response`
         under this adapter's provider name and error mapping; see
         :func:`response_from_openai_chat`.  ``response_format`` (the
-        request's) folds a judgment answer into a DataPart (MAP-14)."""
+        request's) folds a judgment answer into a DataPart (MAP-14).
+
+        The body is read as the server returned it.  A server whose preset
+        says ``stop_in_text="included"`` (Tinker) ends the text with the
+        stop sequence it stopped at; :meth:`parse_response` cuts it with
+        the request's ``Config.stop`` (MAP-22), and this door, given no
+        request, does not."""
         compat = self._compat_for(model) if model is not None else self._resolved_compat
         resp = _response_from_chat_body(self.provider, body, model=model, choice=choice, on_error=self._response_error,
                                          reasoning_usage=compat.reasoning_usage)
