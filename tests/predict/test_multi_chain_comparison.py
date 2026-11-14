@@ -1,3 +1,5 @@
+import pytest
+
 import dspy
 from dspy.utils.dummies import DummyLM
 
@@ -55,3 +57,37 @@ def test_comparing_native_completions_without_summaries():
     prompt = lm.history[-1]["messages"][-1]["content"]
     assert "blue" in prompt and "green" in prompt
     assert "None" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_async_example():
+    compare_answers = dspy.MultiChainComparison(BasicQA)
+    question = "What is the color of the sky?"
+    lm = DummyLM([{"rationale": "async rationale", "answer": "blue"}])
+    with dspy.context(lm=lm):
+        final_pred = await compare_answers.acall(completions, question=question)
+
+    assert final_pred.rationale == "async rationale"
+    assert final_pred.answer == "blue"
+
+
+def test_mismatched_completions_count_raises_value_error():
+    compare_answers = dspy.MultiChainComparison(BasicQA, M=3)
+    with pytest.raises(ValueError, match="The number of attempts \\(2\\) doesn't match the expected number M \\(3\\)"):
+        compare_answers(completions[:2], question="What is the color of the sky?")
+
+
+def test_completions_with_dict_and_reasoning_fallback():
+    compare_answers = dspy.MultiChainComparison(BasicQA, M=2)
+    dict_completions = [
+        {"reasoning": "Direct observation", "answer": "blue"},
+        {"rationale": None, "reasoning": "Secondary reflection", "answer": "azure"},
+    ]
+    lm = DummyLM([{"rationale": "synthesized", "answer": "blue"}])
+    with dspy.context(lm=lm):
+        pred = compare_answers(dict_completions, question="Sky?")
+
+    assert pred.answer == "blue"
+    prompt = lm.history[-1]["messages"][-1]["content"]
+    assert "Direct observation" in prompt
+    assert "Secondary reflection" in prompt
