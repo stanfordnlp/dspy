@@ -195,3 +195,75 @@ def test_none_returning_tasks_are_counted_as_complete(num_threads):
 
     assert results == [None] * len(data)
     assert update_progress.call_args == mock.call(mock.ANY, len(data), len(data))
+
+
+@pytest.mark.parametrize("num_threads", [1, 2])
+@pytest.mark.parametrize("fail_first", [False, True])
+def test_tasks_isolate_inherited_usage_tracker(num_threads, fail_first):
+    from dspy.dsp.utils.settings import settings
+    from dspy.utils.usage_tracker import UsageTracker
+
+    parent_tracker = UsageTracker()
+    parent_tracker.add_usage("test-model", {"total_tokens": 5})
+
+    def task(item):
+        settings.usage_tracker.add_usage("test-model", {"total_tokens": 10})
+        if fail_first and item == 0:
+            raise ValueError("failed task")
+        return settings.usage_tracker.get_total_tokens()
+
+    executor = ParallelExecutor(num_threads=num_threads, max_errors=3, disable_progress_bar=True)
+    with settings.context(usage_tracker=parent_tracker):
+        results = executor.execute(task, [0, 1])
+        assert settings.usage_tracker is parent_tracker
+
+    expected = {"test-model": {"total_tokens": 15}}
+    assert results == [None if fail_first else expected, expected]
+    assert parent_tracker.get_total_tokens() == {"test-model": {"total_tokens": 5}}
+
+
+def test_sequential_usage_tracker_restored_after_interrupt():
+    from dspy.dsp.utils.settings import settings
+    from dspy.utils.usage_tracker import UsageTracker
+
+    parent_tracker = UsageTracker()
+
+    def task(_):
+        settings.usage_tracker.add_usage("test-model", {"total_tokens": 10})
+        raise KeyboardInterrupt
+
+    executor = ParallelExecutor(num_threads=1, disable_progress_bar=True)
+    with settings.context(usage_tracker=parent_tracker):
+        with pytest.raises(KeyboardInterrupt):
+            executor.execute(task, [0])
+        assert settings.usage_tracker is parent_tracker
+        assert parent_tracker.get_total_tokens() == {}
+
+
+@pytest.mark.parametrize("max_errors", [1, 3])
+def test_sequential_tracker_copy_failure_respects_error_budget(max_errors):
+    from dspy.dsp.utils.settings import settings, thread_local_overrides
+    from dspy.utils.usage_tracker import UsageTracker
+
+    parent_tracker = UsageTracker()
+    task = mock.Mock(side_effect=lambda item: item)
+    error = RuntimeError("tracker copy failed")
+    executor = ParallelExecutor(num_threads=1, max_errors=max_errors, disable_progress_bar=True)
+
+    with settings.context(usage_tracker=parent_tracker):
+        original_overrides = thread_local_overrides.get()
+        with mock.patch("dspy.utils.parallelizer.copy.deepcopy", side_effect=[error, UsageTracker()]):
+            if max_errors == 1:
+                with pytest.raises(Exception, match="Execution cancelled"):
+                    executor.execute(task, [0, 1])
+                task.assert_not_called()
+            else:
+                assert executor.execute(task, [0, 1]) == [None, 1]
+                task.assert_called_once_with(1)
+        assert thread_local_overrides.get() is original_overrides
+        assert settings.usage_tracker is parent_tracker
+
+    assert executor.failed_indices == [0]
+    assert executor.exceptions_map == {0: error}
+    assert executor.error_count == 1
+    assert parent_tracker.get_total_tokens() == {}
