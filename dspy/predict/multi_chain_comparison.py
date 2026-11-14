@@ -15,9 +15,9 @@ class MultiChainComparison(Module):
 
         for idx in range(M):
             signature = signature.append(
-                f"reasoning_attempt_{idx+1}",
+                f"reasoning_attempt_{idx + 1}",
                 InputField(
-                    prefix=f"Student Attempt #{idx+1}:",
+                    prefix=f"Student Attempt #{idx + 1}:",
                     desc="${reasoning attempt}",
                 ),
             )
@@ -32,23 +32,38 @@ class MultiChainComparison(Module):
 
         self.predict = Predict(signature, temperature=temperature, **config)
 
-    def forward(self, completions, **kwargs):
-        attempts = []
-
-        for c in completions:
-            rationale = str(c.get("rationale", c.get("reasoning")) or "").strip().split("\n")[0].strip()
-            answer = str(c[self.last_key]).strip().split("\n")[0].strip()
-            attempts.append(
-                f"«I'm trying to {rationale} I'm not sure but my prediction is {answer}»"
-                if rationale else f"«My prediction is {answer}»",
+    def _prepare_kwargs(self, completions, kwargs):
+        if len(completions) != self.M:
+            raise ValueError(
+                f"The number of attempts ({len(completions)}) doesn't match the expected number M ({self.M}). "
+                f"Please set the correct value for M when initializing MultiChainComparison."
             )
 
-        assert (
-            len(attempts) == self.M
-        ), f"The number of attempts ({len(attempts)}) doesn't match the expected number M ({self.M}). Please set the correct value for M when initializing MultiChainComparison."
+        attempts = []
+        for c in completions:
+            rationale_val = c.get("rationale") if hasattr(c, "get") else getattr(c, "rationale", None)
+            if rationale_val is None:
+                rationale_val = c.get("reasoning") if hasattr(c, "get") else getattr(c, "reasoning", None)
+            rationale = str(rationale_val or "").strip().split("\n")[0].strip()
 
-        kwargs = {
-            **{f"reasoning_attempt_{idx+1}": attempt for idx, attempt in enumerate(attempts)},
+            ans_val = c.get(self.last_key) if hasattr(c, "get") else getattr(c, self.last_key, None)
+            answer = str(ans_val or "").strip().split("\n")[0].strip()
+
+            attempts.append(
+                f"«I'm trying to {rationale} I'm not sure but my prediction is {answer}»"
+                if rationale
+                else f"«My prediction is {answer}»",
+            )
+
+        return {
+            **{f"reasoning_attempt_{idx + 1}": attempt for idx, attempt in enumerate(attempts)},
             **kwargs,
         }
+
+    def forward(self, completions, **kwargs):
+        kwargs = self._prepare_kwargs(completions, kwargs)
         return self.predict(**kwargs)
+
+    async def aforward(self, completions, **kwargs):
+        kwargs = self._prepare_kwargs(completions, kwargs)
+        return await self.predict.acall(**kwargs)
