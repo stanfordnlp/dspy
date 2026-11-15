@@ -823,20 +823,27 @@ def program_names(namespace: dict[str, Any]) -> dict[str, Any]:
     return names
 
 
-def run_tests(namespace: dict[str, Any], files: dict[str, str], entry: str) -> str:
-    """Import a Flex program's ``entry`` file and run each ``test_*`` function of its ``test_*.py`` files: those that
+def run_tests(namespace: dict[str, Any], files: dict[str, str], entry: str, select: list[str] | None = None) -> str:
+    """Import a Flex program's ``entry`` file and run each ``test_*`` function of its ``test_*.py`` files, or only
+    those ``select`` names, each a file (``test_rules.py``) or one test (``test_rules.py::test_total``): those that
     passed, and what each failure raised and where, by name, as JSON."""
     bind(namespace)
     passed, failed = [], {}
+
+    def selected(path: str, name: str | None = None) -> bool:
+        return select is None or any(s == path or (s == f"{path}::{name}" if name else s.startswith(f"{path}::"))
+                                     for s in select)
+
     with Program(files, program_names(namespace)) as program:
-        for path in [entry, *sorted(path for path in files if path.startswith("test_"))]:
+        for path in [entry, *sorted(path for path in files if path.startswith("test_") and selected(path))]:
             try:
                 module = program.load(path)
             except Exception as e:
                 failed[path] = program.describe(e)
                 continue
             for name, test in vars(module).items():
-                if name.startswith("test_") and inspect.isfunction(test) and test.__module__ == module.__name__:
+                if (name.startswith("test_") and inspect.isfunction(test) and test.__module__ == module.__name__
+                        and selected(path, name)):
                     try:
                         test()
                         passed.append(f"{path}::{name}")

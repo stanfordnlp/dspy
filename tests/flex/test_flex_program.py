@@ -9,6 +9,7 @@ import pytest
 import dspy
 from dspy.predict.flex import program
 from dspy.primitives.code_interpreter import CodeInterpreterError
+from dspy.teleprompt.gepa.gepa_flex_utils import _test_tool
 from dspy.utils.dummies import DummyLM
 from tests.flex._proposer import runs_tests, submits
 
@@ -329,6 +330,13 @@ def test_run_tests_reports_each_failure_with_its_file_and_line() -> None:
     assert failure.startswith("test_wrong.py::test_total_of_nothing_is_one:")
     assert "test_wrong.py, line 9, in test_total_of_nothing_is_one" in failure
     assert "AssertionError" in failure
+
+    run_tests = _test_tool(flex, flex.module_src)
+    assert run_tests(tests=["test_wrong.py::test_passes"]) == "1 passed, 0 failed."
+    assert run_tests(tests=["test_wrong.py"]).startswith("1 passed, 1 failed.")
+    assert run_tests(tests=["test_rules.py", "test_wrong.py::test_passes"]) == "2 passed, 0 failed."
+    assert run_tests(tests=["test_rules.py::test_nothing"]) == "No test matches ['test_rules.py::test_nothing']."
+    assert run_tests().startswith("2 passed, 1 failed.")
 
 
 @pytest.mark.deno

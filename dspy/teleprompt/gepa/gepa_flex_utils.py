@@ -179,13 +179,15 @@ class CodeProposalSignature(dspy.Signature):
 def _test_tool(flex: Flex, source: str) -> dspy.Tool:
     """A tool that runs the tests of the program ``source`` as a revision would make it, in ``flex``'s sandbox."""
 
-    def run_tests(revision: str) -> str:
-        """Run the program's tests as your revision would make it. Pass the files you add or change, each after its
-        line `# === <name>.py ===`, as you would submit them. Returns the tests that pass and each failure with its
-        file and line. A test may not call a predictor or a tool."""
-        report = flex._bridge.test(program.revise(source, revision))
+    def run_tests(revision: str = "", tests: list[str] | None = None) -> str:
+        """Run the program's tests as your revision would make it. `revision`: the files you add or change, each
+        after its line `# === <name>.py ===`, as you would submit them; empty tests the program as it is. `tests`:
+        run only these, each a file (`test_rules.py`) or one test (`test_rules.py::test_total`); leave it out to run
+        them all. Returns the tests that pass and each failure with its file and line. A test may not call a
+        predictor or a tool."""
+        report = flex._bridge.test(program.revise(source, revision), tests)
         if not report["passed"] and not report["failed"]:
-            return "The program has no tests: add test_*.py files."
+            return f"No test matches {tests}." if tests else "The program has no tests: add test_*.py files."
         failed = [f"- {name}: {error}" for name, error in report["failed"].items()]
         return "\n".join([f"{len(report['passed'])} passed, {len(failed)} failed.", *failed])
 
