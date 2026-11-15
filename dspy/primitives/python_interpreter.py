@@ -364,7 +364,8 @@ class PythonInterpreter:
 
         The sandbox gets what they reach and no more: the Python source files of your own code that importing them
         leads to (no data files), and the installed packages those import, as this environment has them where Pyodide
-        can run them, otherwise as Pyodide builds them (see ``dspy.primitives.sandbox_bundle``). Your own files are an
+        can run them, otherwise as Pyodide builds them, with a warning that names each version that differs (see
+        ``dspy.primitives.sandbox_bundle``). Your own files are an
         archive of their own, so editing one rebuilds neither the dspy bundle nor its snapshot. A library with
         compiled code that Pyodide does not ship is refused when the bundle is prepared. Call before the interpreter
         starts. Asking again for modules it already has does nothing.
@@ -384,8 +385,7 @@ class PythonInterpreter:
 
     def provide_dspy(self) -> None:
         """Make ``import dspy`` work in the sandbox, with the host's dspy and its dependencies, as this environment
-        has them where Pyodide can run them, otherwise as Pyodide builds them, with a warning that names each version
-        that differs.
+        has them where Pyodide can run them, otherwise as Pyodide builds them.
 
         The first call for a dspy source tree fetches the dependencies, byte-compiles the bundle, and records the
         memory of a sandbox that has imported it (see ``dspy.primitives.sandbox_bundle``). The sandbox restores that

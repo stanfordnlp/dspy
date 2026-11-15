@@ -10,8 +10,8 @@ that executes no sandboxed code byte-compiles each archive once, so sandboxes st
   this environment has it where it can (``_origin``), otherwise as Pyodide builds it (checked against Pyodide's lock
   file), and the packages of Pyodide's ``PythonInterpreter(sandbox_packages=...)`` asks for, by default Pillow, for
   ``dspy.Image.to_pil``. The libraries a ``dspy.Flex`` module's code may import
-  (``PythonInterpreter.provide_libraries``) add the installed packages they reach. A package whose version there
-  differs from this environment's is named in a warning. There is one per set of sources and packages.
+  (``PythonInterpreter.provide_libraries``) add the installed packages they reach, and a warning names each of those
+  whose version there differs from this environment's. There is one per set of sources and packages.
 - ``dspy-<digest>-<stamp>.snap``: the memory of a sandbox that has installed that bundle and imported dspy, which a
   new one restores instead of doing both. There is one per bundle and standard library archive.
 - ``dspy-libraries-<digest>.libs``: the Python source files of the user's own code that those libraries reach, and
@@ -320,6 +320,7 @@ def _contents(
         _plan.cache_clear()
         lock, needed, files = _plan(deno_dir, packages)
         _planned_at[deno_dir] = _folder_times(files)
+    more: list[str] = []
     if libraries:
         more, added, _ = _library_plan(lock, libraries)
         listed = {arcname for _, arcname in files}
@@ -332,7 +333,7 @@ def _contents(
         if ".dist-info/" in name
     }
     needed = [name for name in needed if name not in copied]
-    _warn_of_versions(lock, needed)
+    _warn_of_versions(lock, [name for name in more if name not in copied])  # what the libraries' code meets
     return [_fetch_wheel(root, lock[name], deno_dir) for name in needed], files
 
 
@@ -341,7 +342,8 @@ _warned: set[str] = set()
 
 
 def _warn_of_versions(lock: dict, needed: list[str]) -> None:
-    """Warn, once per package, of each Pyodide build in a sandbox whose version this environment has another of."""
+    """Warn, once per package, of each Pyodide build the libraries reach whose version this environment has another
+    of."""
     differ = []
     for name in needed:
         try:
@@ -354,10 +356,10 @@ def _warn_of_versions(lock: dict, needed: list[str]) -> None:
             differ.append(f"{name} {there} ({here} here)")
     if differ:
         logger.warning(
-            "The Pyodide sandbox runs other versions of packages than this environment: %s. Pyodide %s has only "
-            "these builds of them, or of a compiled package they need, so code there may behave differently. Install "
-            "these versions here, or use an interpreter that runs this environment's Python, like "
-            "dspy.LocalInterpreter.",
+            "The Pyodide sandbox has other versions than this environment of packages your libraries reach: %s. "
+            "Pyodide %s has only these builds of them, or of a compiled package they need, so code there may behave "
+            "differently. Install these versions here, or use an interpreter that runs this environment's Python, "
+            "like dspy.LocalInterpreter.",
             ", ".join(differ),
             PYODIDE_VERSION,
         )

@@ -2100,9 +2100,15 @@ def test_the_dspy_bundle_has_this_environments_package_where_pyodide_can_run_it(
         # helper's copy still needs the part of the standard library that Pyodide's build of it does.
         assert wheels == ["bare.whl", "core.whl", "fast.whl", "model.whl", "sqlite3.whl"]
         assert sorted(name for _, name in files if name.endswith(".py")) == ["app.py", "helper.py"]
-        assert "core 1 (2 here), model 1 (2 here)" in caplog.text and "fast" not in caplog.text
+        assert caplog.text == ""  # no warning of dspy's own packages
+
+        # Libraries that reach them, and helper, which the bundle has from this environment.
+        reached = ["core", "fast", "helper", "model"]
+        monkeypatch.setattr(sandbox_bundle, "_library_plan", lambda lock, libraries: (reached, [], []))
+        sandbox_bundle._contents(tmp_path, None, (), ("shop",))
+        assert "libraries reach: core 1 (2 here), model 1 (2 here)." in caplog.text
         caplog.clear()
-        sandbox_bundle._contents(tmp_path, None, ())
+        sandbox_bundle._contents(tmp_path, None, (), ("shop",))
         assert caplog.text == ""  # once
     finally:
         sandbox_bundle._plan.cache_clear()
