@@ -719,3 +719,12 @@ def test_react_allows_the_same_tool_twice():
         react = dspy.ReAct("question -> answer", tools=tools)
         assert list(react.tools) == ["search", "submit"]
         assert react.tools["search"].func is search
+
+
+def test_react_rejects_same_function_with_different_tool_settings():
+    def search(query: str) -> str:
+        return "results"
+
+    custom = dspy.Tool(search, args={"query": {"type": "string", "description": "What to look up"}})
+    with pytest.raises(ValueError, match="`search`"):
+        dspy.ReAct("question -> answer", tools=[search, custom])

@@ -74,8 +74,9 @@ class ReAct(Module):
         self.tools = {}
         duplicates = set()
         for tool in user_tools:
-            # Passing the same function twice is harmless, so keep the first copy instead of raising.
-            if tool.name in self.tools and self.tools[tool.name].func != tool.func:
+            # Passing the exact same tool twice is harmless, so keep the first copy instead of raising.
+            # If the settings differ (e.g. custom `args`), keeping one would silently drop the other's settings.
+            if tool.name in self.tools and not _same_tool(self.tools[tool.name], tool):
                 duplicates.add(tool.name)
             self.tools.setdefault(tool.name, tool)
         if duplicates:
@@ -384,6 +385,11 @@ class ReAct(Module):
         raise ValueError(
             f"ReAct failed to produce final outputs after {break_reason}: submit failed.\n{errors}"
         )
+
+
+def _same_tool(a: Tool, b: Tool) -> bool:
+    fields = ("func", "name", "desc", "args", "arg_types", "arg_desc", "has_kwargs")
+    return a is b or all(getattr(a, f) == getattr(b, f) for f in fields)
 
 
 def _json_schema_for_annotation(annotation: Any) -> dict[str, Any]:
