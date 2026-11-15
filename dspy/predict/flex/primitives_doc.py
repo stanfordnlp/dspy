@@ -62,7 +62,18 @@ def line_total(line: str) -> int:
     \"\"\"The cents a line like '2 x 350' costs.\"\"\"
     qty, price = map(int, re.findall(r"\\d+", line)[:2])
     return qty * price
+
+
+# === test_totals.py ===
+from .totals import line_total
+
+
+def test_line_total_multiplies_quantity_by_price():
+    assert line_total("2 x 350") == 700
 ```
+
+Tests live in `test_*.py` files: `test_*` functions that check the deterministic code with
+`assert`, never calling a predictor or a tool. A forward never imports them.
 
 `dspy` is already in scope in every file, and so are the provided tools and the
 signature's custom types. Import the standard library, and the libraries the available

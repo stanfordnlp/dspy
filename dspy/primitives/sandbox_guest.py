@@ -38,6 +38,7 @@ import linecache
 import math
 import secrets
 import sys
+import traceback
 import uuid
 from typing import Any, Callable, ClassVar, Literal, Union
 
@@ -778,6 +779,14 @@ class Program(importlib.abc.MetaPathFinder, importlib.abc.Loader):
     def load(self, path: str) -> Any:
         return importlib.import_module(f"{self.package}.{path.removesuffix('.py')}")
 
+    def describe(self, error: BaseException) -> str:
+        """``error`` and where in the program's files it was raised, innermost last."""
+        inside = f"<{self.package}>/"
+        frames = [frame for frame in traceback.extract_tb(error.__traceback__) if frame.filename.startswith(inside)]
+        lines = [f"  {f.filename}, line {f.lineno}, in {f.name}\n    {(f.line or '').strip()}" for f in frames[-6:]]
+        lines.append("".join(traceback.format_exception_only(type(error), error)).strip())
+        return "\n".join(lines).replace(inside, "")
+
     def find_spec(self, fullname: str, path: Any = None, target: Any = None) -> Any:
         if fullname == self.package:
             return importlib.util.spec_from_loader(fullname, self, is_package=True)
@@ -804,6 +813,28 @@ def program_names(namespace: dict[str, Any]) -> dict[str, Any]:
     names = {"dspy": namespace["dspy"], **TYPING_NAMES, **namespace["__dspy_types"]}
     names.update({name: namespace[name] for name in namespace["__dspy_guest_spec"]["tools"] if name in namespace})
     return names
+
+
+def run_tests(namespace: dict[str, Any], files: dict[str, str], entry: str) -> str:
+    """Import a Flex program's ``entry`` file and run each ``test_*`` function of its ``test_*.py`` files: those that
+    passed, and what each failure raised and where, by name, as JSON."""
+    bind(namespace)
+    passed, failed = [], {}
+    with Program(files, program_names(namespace)) as program:
+        for path in [entry, *sorted(path for path in files if path.startswith("test_"))]:
+            try:
+                module = program.load(path)
+            except Exception as e:
+                failed[path] = program.describe(e)
+                continue
+            for name, test in vars(module).items():
+                if name.startswith("test_") and inspect.isfunction(test) and test.__module__ == module.__name__:
+                    try:
+                        test()
+                        passed.append(f"{path}::{name}")
+                    except Exception as e:
+                        failed[f"{path}::{name}"] = program.describe(e)
+    return json.dumps({"passed": passed, "failed": failed})
 
 
 def run_forward(namespace: dict[str, Any], files: dict[str, str], entry: list[str], inputs: dict[str, Any]) -> Any:

@@ -51,24 +51,36 @@ def revise(text: str, revision: str) -> str:
     return render(files)
 
 
+def _with_forward(tree: ast.Module) -> list[ast.ClassDef]:
+    return [
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and any(isinstance(b, ast.FunctionDef) and b.name == "forward" for b in node.body)
+    ]
+
+
+def _runs(tree: ast.Module, name: str) -> bool:
+    """Whether ``tree`` says which class runs: one named ``name``, or else its only class with ``forward``."""
+    return any(isinstance(n, ast.ClassDef) and n.name == name for n in tree.body) or len(_with_forward(tree)) == 1
+
+
 def entry(files: dict[str, str], name: str) -> str:
-    """The class of ``program.py`` the Flex runs: the one named ``name`` or, in a program written before that rule,
-    the first class with a ``forward``."""
-    classes = [node for node in ast.parse(files.get(ENTRY, "")).body if isinstance(node, ast.ClassDef)]
+    """The class of ``program.py`` the Flex runs: the one named ``name``, or else the first class with a
+    ``forward``, as a program written before that rule has one."""
+    tree = ast.parse(files.get(ENTRY, ""))
+    classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
     if any(node.name == name for node in classes):
         return name
-    with_forward = [
-        node for node in classes if any(isinstance(b, ast.FunctionDef) and b.name == "forward" for b in node.body)
-    ]
-    chosen = with_forward or classes
+    chosen = _with_forward(tree) or classes
     if not chosen:
         raise CodeInterpreterError("module_src must define a dspy.Module subclass with a `forward` method")
     return chosen[0].name
 
 
 def problems(files: dict[str, str], name: str) -> list[str]:
-    """What keeps the program from running, found without running it: a file that does not parse, no class
-    ``name`` in ``program.py``, or an import of a file the program does not have."""
+    """What keeps the program from running, found without running it: a file that does not parse, a
+    ``program.py`` that does not say which class runs, or an import of a file the program does not have."""
     if ENTRY not in files:
         return [f"There is no {ENTRY}."]
     found = []
@@ -78,8 +90,8 @@ def problems(files: dict[str, str], name: str) -> list[str]:
         except SyntaxError as e:
             found.append(f"{path}, line {e.lineno}: {e.msg}")
             continue
-        if path == ENTRY and not any(isinstance(n, ast.ClassDef) and n.name == name for n in tree.body):
-            found.append(f"{ENTRY} does not define {name}, the class the Flex runs.")
+        if path == ENTRY and not _runs(tree, name):
+            found.append(f"{ENTRY} must define {name}, the class the Flex runs, or exactly one class with forward.")
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom) or not node.level:
                 continue

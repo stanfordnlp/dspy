@@ -128,7 +128,11 @@ def test_problems_found_without_running_the_program() -> None:
     files["test_rules.py"] = "from .missing import x\nfrom ..up import y"
     found = program.problems(files, "OtherModule")
     assert "rules.py, line 1: '(' was never closed" in found
-    assert "program.py does not define OtherModule, the class the Flex runs." in found
+    assert not any("program.py must define" in p for p in found)  # its only class with forward runs
+    two = "class A(dspy.Module):\n    def forward(self):\n        pass\n\n\nclass B(A):\n    def forward(self):\n        pass"
+    assert program.problems({"program.py": two}, "OtherModule") == [
+        "program.py must define OtherModule, the class the Flex runs, or exactly one class with forward."
+    ]
     assert any("program.py" in p and "there is no models.py" in p for p in found)
     assert any("test_rules.py, line 1: there is no missing.py" in p for p in found)
     assert any("test_rules.py, line 2" in p and "one dot" in p for p in found)
@@ -247,29 +251,122 @@ def test_a_program_of_several_files_survives_save_and_load(tmp_path) -> None:
 # -- the code proposer -----------------------------------------------------------------------------------------------
 
 
-def _propose(current: str, revised: str) -> str:
+def _propose(current: str, *revisions: str) -> tuple[str, DummyLM]:
+    """What the proposer makes of ``current`` when the reflection LM writes ``revisions`` in turn."""
     from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 
-    student = dspy.Flex(Count)
+    lm = DummyLM([{"revised_source": revision} for revision in revisions])
     adapter = DspyAdapter(
-        student_module=student,
+        student_module=dspy.Flex(Count),
         metric_fn=lambda gold, pred, trace=None, pred_name=None, pred_trace=None: 0.0,
         feedback_map={},
-        reflection_lm=DummyLM([{"revised_source": revised}]),
+        reflection_lm=lm,
     )
     reflective = {"self": [{"Inputs": {"order": "x"}, "Generated Outputs": "wrong", "Feedback": "bad"}]}
-    return adapter.propose_new_texts({"self": current}, reflective, ["self"])["self"]
+    return adapter.propose_new_texts({"self": current}, reflective, ["self"])["self"], lm
 
 
 def test_the_proposer_writes_only_the_files_it_changes() -> None:
-    revised = "# === rules.py ===\ndef total(items):\n    return len(items)\n\n# === models.py ===\n"
-    files = program.parse(_propose(text(ENTRY, MODELS, RULES), revised))
-    assert sorted(files) == ["program.py", "rules.py"]
+    revised = "# === rules.py ===\ndef total(items):\n    return len(items)\n\n# === extra.py ===\n"
+    files = program.parse(_propose(text(ENTRY, MODELS, RULES, ("extra.py", "X = 1")), revised)[0])
+    assert sorted(files) == ["models.py", "program.py", "rules.py"]
     assert files["rules.py"] == "def total(items):\n    return len(items)"
     assert files["program.py"] == program.parse(text(ENTRY))["program.py"]
 
 
 def test_a_proposal_without_header_lines_rewrites_program_py() -> None:
-    files = program.parse(_propose(text(ENTRY, RULES), "```python\nclass CountModule(dspy.Module):\n    pass\n```"))
+    files = program.parse(_propose(text(ENTRY, RULES), "```python\nclass CountModule(dspy.Module):\n    pass\n```")[0])
     assert files["program.py"] == "class CountModule(dspy.Module):\n    pass"
     assert "rules.py" in files
+
+
+# -- tests and checks ------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.deno
+def test_run_tests_reports_each_failure_with_its_file_and_line() -> None:
+    wrong = ("test_wrong.py", """
+        from .rules import total
+
+
+        def test_passes():
+            assert total([]) == 0
+
+
+        def test_total_of_nothing_is_one():
+            assert total([]) == 1
+    """)
+    flex = dspy.Flex(Count)
+    flex._bind_code(text(ENTRY, MODELS, RULES, TESTS, wrong))
+    [failure] = flex.run_tests()
+    assert failure.startswith("test_wrong.py::test_total_of_nothing_is_one:")
+    assert "test_wrong.py, line 9, in test_total_of_nothing_is_one" in failure
+    assert "AssertionError" in failure
+
+
+@pytest.mark.deno
+def test_a_test_may_not_call_the_lm_or_a_tool() -> None:
+    def shout(text: str) -> str:
+        """Uppercase the text."""
+        return text.upper()
+
+    calls = ("test_calls.py", """
+        from .program import CountModule
+
+
+        def test_the_lm():
+            CountModule()(order="an apple")
+
+
+        def test_a_tool():
+            shout(text="hi")
+    """)
+    flex = dspy.Flex(Count, tools=[shout])
+    flex._bind_code(text(ENTRY, MODELS, RULES, calls))
+    with dspy.context(lm=DummyLM([{"names": ["apple"]}])):
+        failures = flex.run_tests()
+    assert len(failures) == 2
+    assert all("may not call" in failure for failure in failures)
+
+
+@pytest.mark.deno
+def test_a_program_that_cannot_be_imported_is_broken() -> None:
+    flex = dspy.Flex(Count)
+    entry = (ENTRY[0], ENTRY[1] + "\n    undefined_name\n")
+    broken, _ = flex._check(text(entry, MODELS, RULES, TESTS))
+    assert len(broken) == 1 and broken[0].startswith("program.py:") and "NameError" in broken[0]
+
+
+def test_checks_without_tests_start_no_interpreter() -> None:
+    def no_interpreter():
+        raise AssertionError("checking a program without tests started an interpreter")
+
+    flex = dspy.Flex(Count, interpreter_factory=no_interpreter)
+    assert flex._check(text(ENTRY, MODELS, RULES)) == ([], [])
+    assert flex._check(text(ENTRY)) == (["program.py, line 1: there is no models.py.",
+                                         "program.py, line 2: there is no rules.py."], [])
+
+
+@pytest.mark.deno
+def test_a_proposal_whose_tests_fail_is_revised_with_the_failures() -> None:
+    failing = "# === test_rules.py ===\nfrom .rules import total\n\n\ndef test_total():\n    assert total([]) == 1"
+    fixed = "# === test_rules.py ===\nfrom .rules import total\n\n\ndef test_total():\n    assert total([]) == 0"
+    proposed, lm = _propose(text(ENTRY, MODELS, RULES), failing, fixed)
+
+    assert program.parse(proposed)["test_rules.py"].endswith("== 0")
+    second_prompt = lm.history[1]["messages"][-1]["content"]
+    assert "These tests fail" in second_prompt
+    assert "test_rules.py::test_total" in second_prompt
+
+
+def test_a_proposal_that_still_cannot_run_keeps_the_original() -> None:
+    unclosed = "class CountModule(dspy.Module):\n    def forward(self, **inputs):\n        return dspy.Prediction(total=0"
+    original = text(ENTRY, MODELS, RULES)
+    assert _propose(original, unclosed, unclosed, unclosed)[0] == original
+
+
+@pytest.mark.deno
+def test_a_proposal_whose_tests_still_fail_is_scored_anyway() -> None:
+    failing = "# === test_rules.py ===\nfrom .rules import total\n\n\ndef test_total():\n    assert total([]) == 1"
+    proposed, _ = _propose(text(ENTRY, MODELS, RULES), failing, failing, failing)
+    assert "test_rules.py" in program.parse(proposed)

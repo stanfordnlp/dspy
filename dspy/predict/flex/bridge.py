@@ -29,6 +29,7 @@ from dspy.adapters.utils import annotation_allows_none
 from dspy.predict.flex import program
 from dspy.primitives.code_interpreter import CodeInterpreterError, _create_interpreter
 from dspy.primitives.facade import SandboxSession, _typed, from_wire
+from dspy.primitives.sandbox_guest import CALL_TOOL
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,13 @@ logger = logging.getLogger(__name__)
 # module uses).
 _INPUTS_VAR = "__dspy_flex_inputs"
 _FILES_VAR = "__dspy_flex_files"
+
+
+def _refuse(what: str) -> Callable[..., Any]:
+    def refuse(*args: Any, **kwargs: Any) -> Any:
+        raise CodeInterpreterError(f"A test may not {what}: test the program's deterministic code.")
+
+    return refuse
 
 
 class _Budget:
@@ -104,6 +112,30 @@ class BridgeRuntime:
             return interp.execute(code, variables=variables)
         finally:
             self._close(session, interp)
+
+    def test(self, module_src: str) -> dict[str, Any]:
+        """Import the program ``module_src`` and run its tests in a fresh interpreter set up as a forward's, where
+        an LM or tool call fails the test that makes it: ``{"passed": [names], "failed": {name: error}}``."""
+        ctx = self._flex._flex_ctx
+        session = SandboxSession(
+            ctx.context_names(),
+            custom_types=ctx.custom_types(),
+            reserve=_refuse("call the LM"),
+            interpreter_factory=self._factory,
+            libraries=ctx.library_modules(),
+        )
+        interp = _create_interpreter(self._factory, ctx.library_modules())
+        try:
+            session.install(interp, import_dspy=True)
+            interp.tools[CALL_TOOL] = _refuse("call a tool")
+            code = (
+                "from dspy.primitives.sandbox_guest import run_tests as __dspy_run_tests\n"
+                f"__dspy_run_tests(globals(), {_FILES_VAR}, {program.ENTRY!r})"
+            )
+            result = interp.execute(code, variables={_FILES_VAR: program.parse(module_src)})
+        finally:
+            self._close(session, interp)
+        return json.loads(result) if isinstance(result, str) else result
 
     @staticmethod
     def _close(session: SandboxSession, interp: Any) -> None:

@@ -35,6 +35,22 @@ The generated code always runs through a `CodeInterpreter` (`interpreter_factory
 
 A broken candidate can't crash the optimization run. If the reflection model emits source that fails to bind, GEPA scores that candidate as a failure and moves on, rather than aborting the optimization.
 
+### Programs of several files, and their tests
+
+The code GEPA writes is a small Python program: `program.py`, whose `dspy.Module` subclass is the class that runs, and as many other files as the code needs (functions, classes, constants), which import each other relatively. `module_src` holds them all, each after a line `# === name.py ===`; a program of one file is just its source. `files` gives them by name:
+
+```python
+for name, source in optimized.files.items():
+    print(name, len(source.splitlines()))
+# program.py 31
+# pricing.py 64
+# test_pricing.py 40
+```
+
+Files named `test_*.py` hold the program's tests: `test_*` functions that check its deterministic code with `assert`. A forward never imports them. The reflection model writes them alongside the code, and before GEPA scores a proposed program, it imports the program and runs its tests in the program's interpreter, where an LM or tool call fails the test. A program that cannot run, or whose tests fail, goes back to the reflection model with the problems (up to twice). One that still cannot run is dropped; one whose tests still fail is scored anyway, since a test can be wrong, and your metric decides. The tests stay with the program, so a rule fixed once keeps a test that later revisions must pass.
+
+`run_tests()` runs them for you, for example after a library the program uses changed (see [What the code was validated against](#what-the-code-was-validated-against)). It returns each failure in words; empty means they all pass.
+
 ## Optimizing with GEPA
 
 You optimize a `Flex` the same way you optimize any DSPy program — hand it to `dspy.GEPA` with a metric and a trainset:
@@ -233,6 +249,8 @@ The saved state also holds the [environment the code was validated against](#wha
             - __call__
             - forward
             - module_src
+            - files
+            - run_tests
             - signature
             - environment
             - pin

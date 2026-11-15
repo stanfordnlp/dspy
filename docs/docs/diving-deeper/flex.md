@@ -8,7 +8,7 @@
 
 ### 1. A Flex is a module whose source code is the optimizable parameter
 
-An ordinary module's tunable surface is its predictors' instructions. A `Flex`'s tunable surface is a whole `dspy.Module` subclass, held as a source string and exposed as `module_src`. That class has the usual two methods: `__init__` constructs whatever predictors it needs, and `forward` calls them and returns a `dspy.Prediction`. Optimizing the module means replacing that source with a better version — different predictors, different control flow, more or less Python. The prompt is no longer the unit of optimization; the program code is.
+An ordinary module's tunable surface is its predictors' instructions. A `Flex`'s tunable surface is a whole program, held as a source string and exposed as `module_src`: `program.py`, whose `dspy.Module` subclass has the usual two methods (`__init__` constructs whatever predictors it needs, and `forward` calls them and returns a `dspy.Prediction`), plus any other files the code is organized into and the program's tests (`test_*.py`). Each file follows a line `# === name.py ===`; a program of one file is just its source, as every program written before files were possible is. Optimizing the module means replacing that source with a better version — different predictors, different control flow, more or less Python. The prompt is no longer the unit of optimization; the program code is.
 
 ### 2. It drops into any signature and starts from a simple baseline
 
@@ -20,7 +20,7 @@ When GEPA compiles a program, it enumerates the `Flex` submodules and splits its
 
 ### 4. The code proposer reflects on whole-program behavior
 
-Instruction optimization in GEPA is per-predictor: it looks at one predictor's inputs, outputs, and feedback. Code optimization can't work that way, because the predictors *are* part of what's being rewritten — they may not exist in the next candidate. So a code component reflects on the whole program's I/O instead: the module's inputs, its final prediction, and the metric's feedback per example. The proposer is given the signature, any available tools, a catalog of allowed primitives, the current source, and a batch of failing examples, and asked to return a full revised module class.
+Instruction optimization in GEPA is per-predictor: it looks at one predictor's inputs, outputs, and feedback. Code optimization can't work that way, because the predictors *are* part of what's being rewritten — they may not exist in the next candidate. So a code component reflects on the whole program's I/O instead: the module's inputs, its final prediction, and the metric's feedback per example. The proposer is given the signature, any available tools, a catalog of allowed primitives, the current source, and a batch of failing examples, and asked to write the files it adds or changes. Before GEPA scores the result, the program is checked: its files must parse, `program.py` must say which class runs, and, if it has tests, it must import and its tests must pass in its interpreter, with LM and tool calls refused. A program with problems goes back to the proposer with them, up to twice; one that still cannot run is dropped for its parent, and one whose tests still fail is scored, since a test can be wrong. The checks inform the proposer; the metric decides.
 
 ### 5. Predictors inside a Flex are owned by its code, not tuned in parallel
 
@@ -55,7 +55,13 @@ Parses the signature and binds the baseline source — a single `dspy.Predict` o
 Runs the currently bound source inside the interpreter, where every LM call goes to the host. Returns a `dspy.Prediction` over the signature's output fields, and accepts keyword inputs only.
 
 **`module_src`**
-A read-only property holding the current implementation as source — one `dspy.Module` subclass. This is the value GEPA reads as the seed and overwrites with each accepted candidate.
+A read-only property holding the current implementation as source: the program's files, each after a line `# === name.py ===`, or `program.py` alone. This is the value GEPA reads as the seed and overwrites with each accepted candidate.
+
+**`files`**
+The same program by file name. A forward imports the files as a package of their own, with `dspy`, the tools and the signature's custom types in scope in each, and runs the class named for the `Flex` in `program.py` (or its only class with `forward`). It never imports the tests.
+
+**`run_tests()`**
+Runs the program's tests (`test_*` functions of `test_*.py` files) in its interpreter, with LM and tool calls refused, and returns each failure in words: the test, the file and line, and the error.
 
 ### Optimizing with GEPA
 
