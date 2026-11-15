@@ -106,6 +106,13 @@ def test_a_revision_replaces_adds_and_removes_files_and_keeps_the_others() -> No
     assert after["program.py"] == program.parse(before)["program.py"]
 
 
+def test_words_before_the_files_of_a_revision_are_not_program_py() -> None:
+    revision = "Here is the fix: the total counts each item.\n\n# === rules.py ===\ndef total(items):\n    return 0"
+    after = program.parse(program.revise(text(ENTRY, RULES), revision))
+    assert after["program.py"] == program.parse(text(ENTRY))["program.py"]
+    assert after["rules.py"] == "def total(items):\n    return 0"
+
+
 def test_a_revision_without_header_lines_rewrites_program_py() -> None:
     after = program.parse(program.revise(text(ENTRY, RULES), "class CountModule(dspy.Module):\n    pass"))
     assert after["program.py"].startswith("class CountModule")
@@ -343,8 +350,13 @@ def test_checks_without_tests_start_no_interpreter() -> None:
 
     flex = dspy.Flex(Count, interpreter_factory=no_interpreter)
     assert flex._check(text(ENTRY, MODELS, RULES)) == ([], [])
-    assert flex._check(text(ENTRY)) == (["program.py, line 1: there is no models.py.",
-                                         "program.py, line 2: there is no rules.py."], [])
+    assert flex._check(text(ENTRY)) == (
+        [
+            "program.py, line 1: there is no models.py (each file follows a line `# === models.py ===`).",
+            "program.py, line 2: there is no rules.py (each file follows a line `# === rules.py ===`).",
+        ],
+        [],
+    )
 
 
 @pytest.mark.deno

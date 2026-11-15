@@ -42,7 +42,9 @@ def render(files: dict[str, str]) -> str:
 def revise(text: str, revision: str) -> str:
     """``text`` with the files ``revision`` writes: each one added or replaced, or removed if written empty. A
     revision without header lines writes ``program.py``."""
-    files = parse(text)
+    files, parts = parse(text), _HEADER.split(revision or "")
+    if len(parts) > 1 and not _parses(_strip_code_fences(parts[0])):  # words before the files, not code
+        revision = revision[_HEADER.search(revision).start() :]
     for name, source in parse(revision).items():
         if source.strip():
             files[name] = source
@@ -63,6 +65,14 @@ def _with_forward(tree: ast.Module) -> list[ast.ClassDef]:
 def _runs(tree: ast.Module, name: str) -> bool:
     """Whether ``tree`` says which class runs: one named ``name``, or else its only class with ``forward``."""
     return any(isinstance(n, ast.ClassDef) and n.name == name for n in tree.body) or len(_with_forward(tree)) == 1
+
+
+def _parses(source: str) -> bool:
+    try:
+        ast.parse(source)
+    except SyntaxError:
+        return False
+    return True
 
 
 def entry(files: dict[str, str], name: str) -> str:
@@ -100,7 +110,7 @@ def problems(files: dict[str, str], name: str) -> list[str]:
                 continue
             imported = [node.module] if node.module else [alias.name for alias in node.names]
             found += [
-                f"{path}, line {node.lineno}: there is no {module}.py."
+                f"{path}, line {node.lineno}: there is no {module}.py (each file follows a line `# === {module}.py ===`)."
                 for module in imported
                 if f"{module}.py" not in files
             ]
