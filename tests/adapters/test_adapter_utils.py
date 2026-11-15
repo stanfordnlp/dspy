@@ -128,6 +128,23 @@ def test_parse_value_union():
     assert isinstance(profile_val, Profile) and profile_val.name == "John" and profile_val.age == 30
     assert parse_value('{"name": "John"}', Profile | str | None) == '{"name": "John"}'
 
+    # Fenced JSON / repaired JSON structured values in unions containing str must parse to structured types,
+    # while fenced non-JSON text/code falls back to the original string intact.
+    assert parse_value('```json\n{"a": 1}\n```', dict[str, int] | str) == {"a": 1}
+    assert parse_value('```json\n{"a": 1,}\n```', dict[str, int] | str | None) == {"a": 1}
+    assert parse_value("```\n[1, 2, 3]\n```", list[int] | str) == [1, 2, 3]
+    fenced_code = "```python\ndef f():\n    return [1]\n```"
+    assert parse_value(fenced_code, list[int] | str) == fenced_code
+
+    import dspy
+
+    class FencedUnionSig(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: dict[str, int] | str = dspy.OutputField()
+
+    parsed = dspy.ChatAdapter().parse(FencedUnionSig, '[[ ## answer ## ]]\n```json\n{"a": 1,}\n```')
+    assert parsed["answer"] == {"a": 1}
+
 
 def test_parse_value_json_repair():
     # Test cases where json_repair is needed

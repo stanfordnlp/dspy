@@ -2,6 +2,7 @@ import ast
 import enum
 import inspect
 import json
+import re
 import types
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Union, get_args, get_origin
@@ -213,24 +214,35 @@ def find_enum_member(enum, identifier):
     raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
 
 
+def _unwrap_markdown_fence(value: str) -> str:
+    stripped = value.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    for pattern in (r"(`{3,})(?:[^\n]*)\n(.*?)\1", r"(`{3,})(.*?)\1"):
+        match = re.fullmatch(pattern, stripped, re.DOTALL)
+        if match:
+            inner = match.group(2)
+            assert isinstance(inner, str)
+            return inner.strip()
+    return stripped
+
+
 def _try_parse_union_with_str(value: str, annotation: Any, non_str_args: tuple[Any, ...]) -> tuple[bool, Any]:
     non_str_annotation = non_str_args[0] if len(non_str_args) == 1 else Union.__getitem__(non_str_args)
+    target = _unwrap_markdown_fence(value)
     has_candidate = False
     candidate: Any = None
 
     try:
-        candidate = json.loads(value)
+        candidate = json.loads(target)
         has_candidate = True
     except (json.JSONDecodeError, ValueError):
         try:
-            candidate = ast.literal_eval(value)
+            candidate = ast.literal_eval(target)
             has_candidate = True
         except (ValueError, SyntaxError):
-            stripped = value.strip()
-            if (stripped.startswith("{") and stripped.endswith("}")) or (
-                stripped.startswith("[") and stripped.endswith("]")
-            ):
-                repaired = json_repair.loads(value)
+            if (target.startswith("{") and target.endswith("}")) or (target.startswith("[") and target.endswith("]")):
+                repaired = json_repair.loads(target)
                 if repaired != "":
                     candidate = repaired
                     has_candidate = True
