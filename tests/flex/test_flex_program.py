@@ -242,3 +242,34 @@ def test_a_program_of_several_files_survives_save_and_load(tmp_path) -> None:
     assert loaded.files == flex.files
     with dspy.context(lm=DummyLM([{"names": ["apple"]}])):
         assert loaded(order="an apple").total == 1
+
+
+# -- the code proposer -----------------------------------------------------------------------------------------------
+
+
+def _propose(current: str, revised: str) -> str:
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+
+    student = dspy.Flex(Count)
+    adapter = DspyAdapter(
+        student_module=student,
+        metric_fn=lambda gold, pred, trace=None, pred_name=None, pred_trace=None: 0.0,
+        feedback_map={},
+        reflection_lm=DummyLM([{"revised_source": revised}]),
+    )
+    reflective = {"self": [{"Inputs": {"order": "x"}, "Generated Outputs": "wrong", "Feedback": "bad"}]}
+    return adapter.propose_new_texts({"self": current}, reflective, ["self"])["self"]
+
+
+def test_the_proposer_writes_only_the_files_it_changes() -> None:
+    revised = "# === rules.py ===\ndef total(items):\n    return len(items)\n\n# === models.py ===\n"
+    files = program.parse(_propose(text(ENTRY, MODELS, RULES), revised))
+    assert sorted(files) == ["program.py", "rules.py"]
+    assert files["rules.py"] == "def total(items):\n    return len(items)"
+    assert files["program.py"] == program.parse(text(ENTRY))["program.py"]
+
+
+def test_a_proposal_without_header_lines_rewrites_program_py() -> None:
+    files = program.parse(_propose(text(ENTRY, RULES), "```python\nclass CountModule(dspy.Module):\n    pass\n```"))
+    assert files["program.py"] == "class CountModule(dspy.Module):\n    pass"
+    assert "rules.py" in files

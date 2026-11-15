@@ -53,8 +53,8 @@ class CodeProposalFn(Protocol):
 
     The code-component counterpart of gepa's ProposalFn: called with the code components to
     update plus the per-component task descriptions (rendered Flex signatures) and context
-    blurbs (available tools and style notes), under the reflection LM's context. Returns a
-    full replacement module source (one dspy.Module subclass) per component.
+    blurbs (available tools and style notes), under the reflection LM's context. Returns the
+    full revised program per component, as ``dspy.Flex.module_src`` holds it.
     """
 
     def __call__(

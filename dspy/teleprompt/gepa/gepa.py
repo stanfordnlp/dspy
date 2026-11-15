@@ -293,8 +293,8 @@ class GEPA(Teleprompter):
             A custom code proposer is called once per reflection round with the code components to
             update, the current candidate, the reflective dataset, and per-component task
             descriptions (the rendered Flex signature) and context blurbs (available tools and
-            style notes). It must return a complete replacement `dspy.Module` subclass source per
-            component. It is invoked inside the reflection_lm context, so predictors it creates
+            style notes). It must return the complete revised program per component, as
+            `dspy.Flex.module_src` holds it (one file's source, or files after `# === name.py ===` lines). It is invoked inside the reflection_lm context, so predictors it creates
             use the reflection LM unless it selects a different one with `dspy.context(lm=...)`.
             Unlike instruction_proposer, it does not satisfy the requirement for a reflection
             provider: GEPA still requires reflection_lm or instruction_proposer to be set.

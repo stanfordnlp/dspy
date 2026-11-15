@@ -7,7 +7,7 @@ from typing import Any
 from gepa import EvaluationBatch
 
 import dspy
-from dspy.predict.flex import Flex
+from dspy.predict.flex import Flex, program
 from dspy.predict.flex.ctx import _strip_code_fences
 from dspy.predict.flex.flex import differences
 from dspy.predict.flex.primitives_doc import PRIMITIVES_CATALOG
@@ -98,24 +98,34 @@ def _format_failures(records: list[dict[str, Any]]) -> str:
 
 
 class CodeProposalSignature(dspy.Signature):
-    """Revise the full source code of a dspy.Flex submodule.
+    """Revise the code of a dspy.Flex submodule: a Python program of one or more files.
 
-    You receive the submodule's task description (its Signature), the available context (any tools
-    and style notes), the catalog of allowed primitives, the module's current source, and a batch
-    of failing examples with feedback. Produce a revised source that fixes the observed failures
-    and follows the catalog.
+    You receive the submodule's task description (its Signature), the available context (any tools,
+    libraries and style notes), the catalog of allowed primitives, the program's current source,
+    and a batch of failing examples with feedback. Produce a revision that fixes the observed
+    failures and follows the catalog.
 
-    The source is ONE ``dspy.Module`` subclass with two coupled methods, and you MUST output the
-    entire, internally-consistent class:
-      1. ``def __init__(self):`` calling ``super().__init__()`` and assigning the predictors it
-         needs. Pick the simplest primitive that fits each step: ``dspy.Predict("...")`` for a
-         direct call (the common default), ``dspy.ChainOfThought("...")`` when explicit reasoning
-         helps, and ``dspy.RLM`` / ``dspy.ReAct`` when the step must call tools or explore a
-         large/structured input. Assign no predictors at all if the task needs no LM.
-      2. ``def forward(self, **inputs):`` that calls those predictors as ``self.<name>`` and
-         returns ``dspy.Prediction(<output fields>=...)``.
-    Because ``forward`` calls predictors by name, never rename a predictor in one place without
-    updating the other.
+    The program is a package of Python files that import each other relatively
+    (``from .pricing import quote``):
+      - ``program.py`` defines the class that runs: the ``dspy.Module`` subclass named as in the
+        current source (keep its name), with two coupled methods:
+          1. ``def __init__(self):`` calling ``super().__init__()`` and assigning the predictors it
+             needs. Pick the simplest primitive that fits each step: ``dspy.Predict("...")`` for a
+             direct call (the common default), ``dspy.ChainOfThought("...")`` when explicit
+             reasoning helps, and ``dspy.RLM`` / ``dspy.ReAct`` when the step must call tools or
+             explore a large/structured input. Assign no predictors at all if the task needs no LM.
+          2. ``def forward(self, **inputs):`` that calls those predictors as ``self.<name>`` and
+             returns ``dspy.Prediction(<output fields>=...)``.
+        Because ``forward`` calls predictors by name, never rename a predictor in one place without
+        updating the other.
+      - Other files hold what it uses: functions, classes, constants and data, organized as a good
+        engineer would, one concern per file once the code grows. A small program can stay in
+        ``program.py``.
+
+    Write each file you add or change in full, after a line ``# === <name>.py ===`` (a Python
+    identifier, no directories). Files you do not write stay as they are; a file written empty is
+    removed. In the current source each file follows such a line; a source without one is
+    ``program.py`` alone.
 
     Tools are OPTIONAL — use them only when a step genuinely needs one; many good modules are just
     a ``dspy.Predict`` or two plus plain Python. When you do use tools, they come from two places.
@@ -124,8 +134,8 @@ class CodeProposalSignature(dspy.Signature):
     (reference them by the exact names; do not import or redefine them). If ``available_context``
     is '(no extra context)', no tools were provided — don't reference any.
     (2) AUTHOR your own: when a sub-step needs a capability the provided tools don't cover, define a
-    documented helper nested inside ``forward`` and call it directly. Authored helpers live in this
-    source, so they are optimized and persisted exactly like the rest of the code. They run in the
+    documented helper function in the program and call it directly. Authored helpers live in the
+    program, so they are optimized and persisted exactly like the rest of the code. They run in the
     sandbox and cannot be handed to a bridged sub-predictor, so only the provided tools may be wired
     into ``dspy.RLM``/``dspy.ReAct`` via ``tools=[...]``.
 
@@ -150,14 +160,15 @@ class CodeProposalSignature(dspy.Signature):
         desc="Catalog of allowed primitives and conventions the revised code must follow."
     )
     current_source: str = dspy.InputField(
-        desc="The module's current full source: one dspy.Module subclass (its __init__ and forward)."
+        desc="The program's current source: its files, each after a line `# === <name>.py ===`, or `program.py` alone."
     )
     failures: str = dspy.InputField(
         desc="A batch of failing examples and feedback. Diagnose them and revise the module to fix them."
     )
     revised_source: str = dspy.OutputField(
-        desc="The full revised module source: one `dspy.Module` subclass with `__init__` (predictors, "
-        'including any refined `dspy.Signature(..., "instructions")`) and `forward`.'
+        desc="The files you add or change, each in full after its line `# === <name>.py ===`; files you leave out stay "
+        "as they are. `program.py` keeps the class that runs, with `__init__` (predictors, including any refined "
+        '`dspy.Signature(..., "instructions")`) and `forward`.'
     )
 
 
@@ -169,7 +180,7 @@ def propose_code(
     context_blurbs: dict[str, str],
     reflection_lm,
 ) -> dict[str, str]:
-    """Propose a revised ``module_src`` for each code component; keep the original on failure."""
+    """Propose a revised program (``module_src``) for each code component; keep the original on failure."""
     results: dict[str, str] = {}
     proposer = dspy.Predict(CodeProposalSignature)
     with dspy.context(lm=reflection_lm):
@@ -182,7 +193,7 @@ def propose_code(
                     current_source=candidate[ckey],
                     failures=_format_failures(reflective_dataset.get(ckey, [])),
                 )
-                results[ckey] = _strip_code_fences(out.revised_source)
+                results[ckey] = program.revise(candidate[ckey], _strip_code_fences(out.revised_source))
             except LMError:
                 raise
             except Exception as e:
