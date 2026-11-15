@@ -44,10 +44,10 @@ class MultiChainComparison(Module):
             rationale_val = c.get("rationale") if hasattr(c, "get") else getattr(c, "rationale", None)
             if rationale_val is None:
                 rationale_val = c.get("reasoning") if hasattr(c, "get") else getattr(c, "reasoning", None)
-            rationale = str(rationale_val or "").strip().split("\n")[0].strip()
+            rationale = str(rationale_val if rationale_val is not None else "").strip().split("\n")[0].strip()
 
             ans_val = c.get(self.last_key) if hasattr(c, "get") else getattr(c, self.last_key, None)
-            answer = str(ans_val or "").strip().split("\n")[0].strip()
+            answer = str(ans_val if ans_val is not None else "").strip().split("\n")[0].strip()
 
             attempts.append(
                 f"«I'm trying to {rationale} I'm not sure but my prediction is {answer}»"

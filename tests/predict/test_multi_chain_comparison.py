@@ -91,3 +91,19 @@ def test_completions_with_dict_and_reasoning_fallback():
     prompt = lm.history[-1]["messages"][-1]["content"]
     assert "Direct observation" in prompt
     assert "Secondary reflection" in prompt
+
+
+def test_completions_preserve_falsey_answers():
+    compare_answers = dspy.MultiChainComparison(BasicQA, M=2)
+    dict_completions = [
+        {"rationale": "Count is zero", "answer": 0},
+        {"rationale": "Condition is false", "answer": False},
+    ]
+    lm = DummyLM([{"rationale": "synthesized", "answer": "0"}])
+    with dspy.context(lm=lm):
+        pred = compare_answers(dict_completions, question="Count?")
+
+    assert pred.answer == "0"
+    prompt = lm.history[-1]["messages"][-1]["content"]
+    assert "my prediction is 0" in prompt
+    assert "my prediction is False" in prompt
