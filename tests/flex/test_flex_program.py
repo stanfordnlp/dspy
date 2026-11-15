@@ -10,6 +10,7 @@ import dspy
 from dspy.predict.flex import program
 from dspy.primitives.code_interpreter import CodeInterpreterError
 from dspy.utils.dummies import DummyLM
+from tests.flex._proposer import runs_tests, submits
 
 
 class Count(dspy.Signature):
@@ -264,11 +265,11 @@ def test_a_program_of_several_files_survives_save_and_load(tmp_path) -> None:
 # -- the code proposer -----------------------------------------------------------------------------------------------
 
 
-def _propose(current: str, *revisions: str) -> tuple[str, DummyLM]:
-    """What the proposer makes of ``current`` when the reflection LM writes ``revisions`` in turn."""
+def _propose(current: str, *turns: dict) -> tuple[str, DummyLM]:
+    """What the proposer makes of ``current`` when the reflection LM takes ``turns``."""
     from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 
-    lm = DummyLM([{"revised_source": revision} for revision in revisions])
+    lm = DummyLM(list(turns))
     adapter = DspyAdapter(
         student_module=dspy.Flex(Count),
         metric_fn=lambda gold, pred, trace=None, pred_name=None, pred_trace=None: 0.0,
@@ -281,16 +282,29 @@ def _propose(current: str, *revisions: str) -> tuple[str, DummyLM]:
 
 def test_the_proposer_writes_only_the_files_it_changes() -> None:
     revised = "# === rules.py ===\ndef total(items):\n    return len(items)\n\n# === extra.py ===\n"
-    files = program.parse(_propose(text(ENTRY, MODELS, RULES, ("extra.py", "X = 1")), revised)[0])
+    files = program.parse(_propose(text(ENTRY, MODELS, RULES, ("extra.py", "X = 1")), submits(revised))[0])
     assert sorted(files) == ["models.py", "program.py", "rules.py"]
     assert files["rules.py"] == "def total(items):\n    return len(items)"
     assert files["program.py"] == program.parse(text(ENTRY))["program.py"]
 
 
 def test_a_proposal_without_header_lines_rewrites_program_py() -> None:
-    files = program.parse(_propose(text(ENTRY, RULES), "```python\nclass CountModule(dspy.Module):\n    pass\n```")[0])
+    rewrite = "```python\nclass CountModule(dspy.Module):\n    pass\n```"
+    files = program.parse(_propose(text(ENTRY, RULES), submits(rewrite))[0])
     assert files["program.py"] == "class CountModule(dspy.Module):\n    pass"
     assert "rules.py" in files
+
+
+@pytest.mark.deno
+def test_the_proposer_runs_the_tests_of_its_revision_before_it_submits() -> None:
+    failing = "# === test_rules.py ===\nfrom .rules import total\n\n\ndef test_total():\n    assert total([]) == 1"
+    fixed = "# === test_rules.py ===\nfrom .rules import total\n\n\ndef test_total():\n    assert total([]) == 0"
+    proposed, lm = _propose(text(ENTRY, MODELS, RULES), runs_tests(failing), runs_tests(fixed), submits(fixed))
+
+    assert program.parse(proposed)["test_rules.py"].endswith("== 0")
+    second, third = (str(call["messages"]) for call in lm.history[1:3])
+    assert "0 passed, 1 failed" in second and "test_rules.py::test_total" in second
+    assert "1 passed, 0 failed" in third
 
 
 # -- tests -----------------------------------------------------------------------------------------------------------

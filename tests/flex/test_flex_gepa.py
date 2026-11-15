@@ -25,6 +25,7 @@ from dspy.teleprompt.gepa.gepa_flex_utils import enumerate_flex_submodules
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM
 from dspy.utils.exceptions import LMRateLimitError
+from tests.flex._proposer import submits
 
 deno_required = pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
 
@@ -358,7 +359,7 @@ def test_an_infrastructure_error_during_build_is_not_scored_as_a_failure(monkeyp
 
 
 def test_propose_new_texts_uses_code_proposer_for_code_keys() -> None:
-    reflection = DummyLM([{"revised_source": SIMPLE_MODULE}])
+    reflection = DummyLM([submits(SIMPLE_MODULE)])
     student = dspy.Flex(Echo)
     adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={}, reflection_lm=reflection)
     ckey = "self"
@@ -612,7 +613,7 @@ def test_gepa_optimized_flex_evaluates_after_save_load(tmp_path) -> None:
     original_source = student.module_src
     trainset = [dspy.Example(q="left", a="left").with_inputs("q")]
     valset = [dspy.Example(q="right", a="right").with_inputs("q")]
-    reflection_lm = DummyLM([{"revised_source": source}])
+    reflection_lm = DummyLM([submits(source)])
 
     with dspy.context(lm=DummyLM([{"a": "wrong"}] * 10)):
         evaluator = dspy.Evaluate(devset=valset, metric=_metric, num_threads=1, display_progress=False)

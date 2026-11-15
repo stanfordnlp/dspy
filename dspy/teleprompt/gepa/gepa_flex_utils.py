@@ -123,7 +123,8 @@ class CodeProposalSignature(dspy.Signature):
       - ``test_*.py`` files hold its tests: functions named ``test_*`` that check the deterministic
         code with ``assert``, without calling a predictor or a tool. Keep the tests that still hold,
         and add one for each rule you implement and each failure you fix, with the expected value
-        worked out from the task's rules or the feedback.
+        worked out from the task's rules or the feedback. Run them with ``run_tests`` before you
+        submit, and fix the code or the test, whichever is wrong.
 
     Write each file you add or change in full, after a line ``# === <name>.py ===`` (a Python
     identifier, no directories). Files you do not write stay as they are; a file written empty is
@@ -175,6 +176,22 @@ class CodeProposalSignature(dspy.Signature):
     )
 
 
+def _test_tool(flex: Flex, source: str) -> dspy.Tool:
+    """A tool that runs the tests of the program ``source`` as a revision would make it, in ``flex``'s sandbox."""
+
+    def run_tests(revision: str) -> str:
+        """Run the program's tests as your revision would make it. Pass the files you add or change, each after its
+        line `# === <name>.py ===`, as you would submit them. Returns the tests that pass and each failure with its
+        file and line. A test may not call a predictor or a tool."""
+        report = flex._bridge.test(program.revise(source, revision))
+        if not report["passed"] and not report["failed"]:
+            return "The program has no tests: add test_*.py files."
+        failed = [f"- {name}: {error}" for name, error in report["failed"].items()]
+        return "\n".join([f"{len(report['passed'])} passed, {len(failed)} failed.", *failed])
+
+    return dspy.Tool(run_tests)
+
+
 def propose_code(
     code_keys: list[str],
     candidate: dict[str, str],
@@ -182,13 +199,17 @@ def propose_code(
     task_descriptions: dict[str, str],
     context_blurbs: dict[str, str],
     reflection_lm,
+    flex_modules: dict[str, Flex],
 ) -> dict[str, str]:
-    """Propose a revised program (``module_src``) for each code component; keep the original on failure."""
+    """Propose a revised program (``module_src``) for each code component; keep the original on failure. The
+    proposer can run the program's tests in the sandbox of the component's Flex (``flex_modules``) as it writes."""
     results: dict[str, str] = {}
-    proposer = dspy.Predict(CodeProposalSignature)
     with dspy.context(lm=reflection_lm):
         for ckey in code_keys:
             try:
+                proposer = dspy.ReAct(
+                    CodeProposalSignature, tools=[_test_tool(flex_modules[ckey], candidate[ckey])], max_iters=5
+                )
                 out = proposer(
                     task_description=task_descriptions.get(ckey, ckey),
                     available_context=context_blurbs.get(ckey, "(no extra context)"),

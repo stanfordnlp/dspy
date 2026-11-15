@@ -22,6 +22,7 @@ from dspy.primitives.facade import SandboxSession
 from dspy.teleprompt.gepa.gepa_flex_utils import flex_task_context, pin_flex_environments
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM
+from tests.flex._proposer import submits
 
 # Run by CI's Deno job (pytest -m deno --deno), which has Deno. Without --deno they are skipped.
 deno_required = pytest.mark.deno
@@ -726,7 +727,7 @@ def test_the_optimizer_is_told_about_the_libraries_as_the_interpreter_has_them(s
 
 
 def test_the_code_proposer_reads_the_library_reference(shop):
-    reflection = DummyLM([{"revised_source": TOTAL}])
+    reflection = DummyLM([submits(TOTAL)])
     student = _total(shop, source=None)
     adapter = DspyAdapter(student_module=student, metric_fn=lambda *a, **k: 0.0, feedback_map={}, reflection_lm=reflection)
     reflective = {"self": [{"Inputs": {"lines": "..."}, "Generated Outputs": "total_cents: 0", "Feedback": "x"}]}
@@ -749,7 +750,7 @@ def test_gepa_writes_the_module_from_the_baseline_and_records_what_it_ran_agains
         for n in range(1, 4)
     ]
     student = _total(shop, source=None)
-    reflection = DummyLM([{"revised_source": TOTAL}] * 10)
+    reflection = DummyLM([submits(TOTAL)] * 10)
 
     with dspy.context(lm=DummyLM([{"total_cents": "0"}] * 20)):  # the baseline's predictor answers
         optimized = dspy.GEPA(metric=metric, reflection_lm=reflection, max_metric_calls=12).compile(
