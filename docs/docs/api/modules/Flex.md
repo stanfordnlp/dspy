@@ -170,7 +170,7 @@ dspy.Flex Checkout: its code was validated against another environment (shopkit/
 evaluation again, then call pin(), or optimize it again.
 ```
 
-`check_environment()` returns the same as a list, which a CI job can assert is empty. When your evaluation still passes, `pin()` records the environment as it is now. When it doesn't, optimizing again starts from the current code, so the optimizer only has to repair it. Call `pin()` as well after editing a saved `module_src` yourself.
+`check_environment()` returns the same as a list, which a CI job can assert is empty. When your evaluation still passes, `pin()` records the environment as it is now. When it doesn't, optimizing again starts from the current code, so the optimizer only has to repair it.
 
 ### Tools for other SDKs
 

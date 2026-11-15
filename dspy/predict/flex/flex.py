@@ -142,8 +142,8 @@ class Flex(Module, Parameter):
     def pin(self) -> dict[str, Any] | None:
         """Record the environment the code runs in now as the one it was validated against, and return it.
 
-        Call it once your evaluation passes: after editing a saved ``module_src`` yourself, or after a change
-        that ``check_environment`` reported turned out to be harmless. With ``libraries``, this asks an interpreter.
+        Call it when your evaluation still passes after a change that ``check_environment`` reported. With
+        ``libraries``, this asks an interpreter.
         """
         self._environment = self._resolve_environment() or None
         return self.environment

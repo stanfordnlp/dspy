@@ -148,16 +148,6 @@ TOTAL = textwrap.dedent(
 )
 LINES = [("pen", 2, 500)]
 
-# A start for code that only uses the libraries, for the optimizer to write.
-STUB = textwrap.dedent(
-    """
-    class TotalModule(dspy.Module):
-        def forward(self, **inputs):
-            raise NotImplementedError("Not written yet: implement forward with the libraries.")
-    """
-)
-
-
 def _write(root, files):
     for name, text in files.items():
         path = root / name
@@ -590,7 +580,7 @@ def test_nothing_is_recorded_until_the_code_is_pinned_and_a_record_is_for_one_so
     assert flex.environment["sources"]  # a copy
     flex._bind_code(TOTAL)
     assert flex.environment is not None  # the same code
-    flex._bind_code(STUB)
+    flex._bind_code(flex._baseline_src())
     assert flex.environment is None  # recorded for other code
 
     plain = dspy.Flex(SIGNATURE)  # no libraries, no tools: nothing to record
@@ -733,9 +723,9 @@ def test_the_optimizer_is_told_about_the_libraries_as_the_interpreter_has_them(s
 
 def test_the_code_proposer_reads_the_library_reference(shop):
     reflection = DummyLM([{"revised_source": TOTAL}])
-    student = _total(shop, source=STUB)
+    student = _total(shop, source=None)
     adapter = DspyAdapter(student_module=student, metric_fn=lambda *a, **k: 0.0, feedback_map={}, reflection_lm=reflection)
-    reflective = {"self": [{"Inputs": {"lines": "..."}, "Generated Outputs": "NotImplementedError", "Feedback": "x"}]}
+    reflective = {"self": [{"Inputs": {"lines": "..."}, "Generated Outputs": "total_cents: 0", "Feedback": "x"}]}
 
     out = adapter.propose_new_texts({"self": student.module_src}, reflective, ["self"])
 
@@ -745,7 +735,7 @@ def test_the_code_proposer_reads_the_library_reference(shop):
     assert "Common patterns" in prompt  # and DSPy's own catalog
 
 
-def test_gepa_writes_the_module_from_an_unimplemented_start_and_records_what_it_ran_against(shop):
+def test_gepa_writes_the_module_from_the_baseline_and_records_what_it_ran_against(shop):
     def metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
         got = getattr(pred, "total_cents", None)
         return dspy.Prediction(score=float(got == gold.total_cents), feedback=f"expected {gold.total_cents}, got {got}")
@@ -754,14 +744,15 @@ def test_gepa_writes_the_module_from_an_unimplemented_start_and_records_what_it_
         dspy.Example(lines=[("pen", n, 100)], country="DE", total_cents=n * 119).with_inputs("lines", "country")
         for n in range(1, 4)
     ]
-    student = _total(shop, source=STUB)
+    student = _total(shop, source=None)
     reflection = DummyLM([{"revised_source": TOTAL}] * 10)
 
-    optimized = dspy.GEPA(metric=metric, reflection_lm=reflection, max_metric_calls=12).compile(
-        student, trainset=examples, valset=examples
-    )
+    with dspy.context(lm=DummyLM([{"total_cents": "0"}] * 20)):  # the baseline's predictor answers
+        optimized = dspy.GEPA(metric=metric, reflection_lm=reflection, max_metric_calls=12).compile(
+            student, trainset=examples, valset=examples
+        )
 
-    assert "NotImplementedError" in str(reflection.history[0]["messages"])  # the stub's failure, as feedback
+    assert "got 0" in str(reflection.history[0]["messages"])  # the baseline's failure, as feedback
     assert optimized(lines=[("ink", 1, 1000)], country="FR").total_cents == 1200
     assert optimized.module_src.strip() == TOTAL.strip()
     assert "flexshop/vat.py" in optimized.environment["sources"]["flexshop"]  # recorded with the code it returned
