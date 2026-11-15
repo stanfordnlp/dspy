@@ -8,10 +8,10 @@ from gepa import EvaluationBatch
 
 import dspy
 from dspy.predict.flex import Flex, program
-from dspy.predict.flex.ctx import _strip_code_fences
 from dspy.predict.flex.flex import differences
 from dspy.predict.flex.primitives_doc import PRIMITIVES_CATALOG
 from dspy.primitives import Prediction
+from dspy.primitives.code_interpreter import CodeInterpreterError
 from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
 from dspy.teleprompt.bootstrap_trace import FailedPrediction
 from dspy.utils.exceptions import LMError
@@ -223,10 +223,14 @@ def propose_code(
                         current_source=source,
                         failures=failures + report,
                     )
-                    source = program.revise(source, _strip_code_fences(out.revised_source))
-                    if ckey not in (flex_modules or {}):
-                        break
-                    broken, failing = flex_modules[ckey]._check(source)
+                    try:
+                        source = program.revise(source, out.revised_source)
+                    except CodeInterpreterError as e:  # files that cannot be read off the revision
+                        broken, failing = [str(e)], []
+                    else:
+                        if ckey not in (flex_modules or {}):
+                            break
+                        broken, failing = flex_modules[ckey]._check(source)
                     logger.info(
                         "Checked the program proposed for %s (revision %d): %d problem(s), %d failing test(s).",
                         ckey, revision, len(broken), len(failing),

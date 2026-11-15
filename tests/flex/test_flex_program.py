@@ -97,6 +97,27 @@ def test_a_comment_that_is_not_a_file_name_stays_in_its_file() -> None:
     assert program.parse(source) == {"program.py": source}
 
 
+@pytest.mark.parametrize(
+    "revision",
+    [
+        "```python\n# === rules.py ===\nX = 1\n```\n\n```python\n# === extra.py ===\nY = 2\n```",
+        "Here is the fix:\n```python\n# === rules.py ===\nX = 1\n\n# === extra.py ===\nY = 2\n```",
+        "## Changes\n\n# === rules.py ===\nX = 1\n# === extra.py ===\nY = 2",
+        "# === rules.py ===\r\nX = 1\r\n# === extra.py ===\r\nY = 2\r\n",
+    ],
+    ids=["a fence per file", "words and a fence", "a markdown heading", "windows line endings"],
+)
+def test_a_revision_is_read_without_its_fences_and_words(revision) -> None:
+    assert program.read(revision) == {"rules.py": "X = 1", "extra.py": "Y = 2"}
+
+
+def test_code_before_the_first_file_of_a_revision_is_program_py_if_it_defines_a_class() -> None:
+    revision = "class CountModule(dspy.Module):\n    pass\n\n# === rules.py ===\nX = 1"
+    assert program.read(revision) == {"program.py": "class CountModule(dspy.Module):\n    pass", "rules.py": "X = 1"}
+    with pytest.raises(CodeInterpreterError, match="twice"):
+        program.read(revision + "\n# === program.py ===\nclass CountModule(dspy.Module):\n    pass")
+
+
 def test_a_revision_replaces_adds_and_removes_files_and_keeps_the_others() -> None:
     before = text(ENTRY, MODELS, RULES)
     revision = "# === rules.py ===\n```python\ndef total(items):\n    return 0\n```\n# === models.py ===\n\n# === extra.py ===\nX = 1"
@@ -122,6 +143,8 @@ def test_a_revision_without_header_lines_rewrites_program_py() -> None:
 def test_a_file_written_twice_is_refused() -> None:
     with pytest.raises(CodeInterpreterError, match=r"rules\.py twice"):
         program.parse("# === rules.py ===\nA = 1\n# === rules.py ===\nA = 2")
+    with pytest.raises(CodeInterpreterError, match=r"rules\.py twice"):
+        program.read("# === rules.py ===\nA = 1\n# === rules.py ===\nA = 2")
 
 
 def test_the_entry_is_the_class_named_for_the_flex() -> None:
@@ -143,6 +166,10 @@ def test_problems_found_without_running_the_program() -> None:
     assert any("program.py" in p and "there is no models.py" in p for p in found)
     assert any("test_rules.py, line 1: there is no missing.py" in p for p in found)
     assert any("test_rules.py, line 2" in p and "one dot" in p for p in found)
+    data = {"program.py": "from .test_data import UNITS\n\n\nclass CountModule:\n    pass", "test_data.py": "UNITS = 1"}
+    assert program.problems(data, "CountModule") == [
+        "program.py, line 1: test_data.py is a test file, which a forward does not have."
+    ]
     assert program.problems(program.parse(text(ENTRY, MODELS, RULES, TESTS)), "CountModule") == []
 
 
@@ -396,3 +423,47 @@ def test_a_forward_that_crashes_says_where_in_the_program() -> None:
     assert message.startswith("ZeroDivisionError:")
     assert "rules.py, line 2, in total" in message
     assert "program.py, line 12, in forward" in message
+
+
+@pytest.mark.deno
+def test_a_program_written_before_files_still_runs() -> None:
+    # As the catalog asked then: helpers nested in forward, whose annotations name each other, and the modules the
+    # interpreter had imported used without an import.
+    flex = dspy.Flex(Count)
+    flex._bind_code(textwrap.dedent("""
+        class CountModule(dspy.Module):
+            def forward(self, **inputs):
+                import pydantic
+
+                class Line(pydantic.BaseModel):
+                    name: str
+                    quantity: int
+
+                class Extract(dspy.Signature):
+                    order: str = dspy.InputField()
+                    lines: list[Line] = dspy.OutputField()
+
+                lines = dspy.Predict(Extract)(order=inputs["order"]).lines
+                return dspy.Prediction(total=sum(line.quantity for line in lines) + len(json.loads("[]")))
+    """))
+    with dspy.context(lm=DummyLM([{"lines": [{"name": "apple", "quantity": 2}]}])):
+        assert flex(order="2 apples").total == 2
+
+
+def test_a_test_in_the_hosts_memory_may_not_call_the_lm() -> None:
+    from tests.flex.test_flex_interpreter import _ExecInterpreter
+
+    calls = ("test_calls.py", """
+        from .program import CountModule
+
+
+        def test_the_lm():
+            CountModule()(order="an apple")
+    """)
+    flex = dspy.Flex(Count, interpreter_factory=_ExecInterpreter)
+    flex._bind_code(text(ENTRY, MODELS, RULES, calls))
+    lm = DummyLM([{"names": ["apple"]}])
+    with dspy.context(lm=lm):
+        [failure] = flex.run_tests()
+    assert "may not call the LM" in failure
+    assert lm.history == []

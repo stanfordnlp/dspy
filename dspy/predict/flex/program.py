@@ -1,17 +1,20 @@
 """The text of a ``dspy.Flex`` program: the source of one file, or of several Python files, each after a line
 ``# === name.py ===``. ``program.py`` holds the class the Flex runs; ``test_*.py`` files hold the program's tests,
-which its forward never imports. A text without such a line is ``program.py``."""
+which its forward never imports. A text without such a line is ``program.py``.
+
+``parse`` and ``render`` read and write that text exactly. ``read`` reads what a reflection model writes, leniently.
+"""
 
 from __future__ import annotations
 
 import ast
 import re
 
-from dspy.predict.flex.ctx import _strip_code_fences
 from dspy.primitives.code_interpreter import CodeInterpreterError
 
 ENTRY = "program.py"
 _HEADER = re.compile(r"^# === ([A-Za-z_]\w*\.py) ===[ \t]*$", re.MULTILINE)
+_FENCE = re.compile(r"^[ \t]*```[\w+-]*[ \t]*$")
 
 
 def is_test(path: str) -> bool:
@@ -19,15 +22,14 @@ def is_test(path: str) -> bool:
 
 
 def parse(text: str) -> dict[str, str]:
-    """The files of a program's ``text``, by name. Text before the first header line is ``program.py``'s, and a file
-    written in a code fence is read without it."""
+    """The files of a program's ``text``, by name."""
     parts = _HEADER.split(text or "")
-    files = {ENTRY: parts[0]} if parts[0].strip() else {}
+    files = {ENTRY: parts[0].strip()} if parts[0].strip() else {}
     for name, source in zip(parts[1::2], parts[2::2], strict=True):
         if name in files:
-            raise CodeInterpreterError(f"The program writes {name} twice.")
-        files[name] = source
-    return {name: _strip_code_fences(source) for name, source in files.items()}
+            raise CodeInterpreterError(f"The program has {name} twice.")
+        files[name] = source.strip()
+    return files
 
 
 def render(files: dict[str, str]) -> str:
@@ -39,18 +41,37 @@ def render(files: dict[str, str]) -> str:
     return "\n\n\n".join(f"# === {name} ===\n{files[name].strip()}" for name in order)
 
 
+def read(revision: str) -> dict[str, str]:
+    """The files a reflection model's ``revision`` writes, by name, an empty one to remove it. Code fences, Windows
+    line endings and words before the first file are dropped. A revision without header lines is ``program.py``; with
+    them, code before the first is ``program.py`` only if it defines a class, as ``program.py`` does."""
+    lines = (revision or "").replace("\r\n", "\n").split("\n")
+    parts = _HEADER.split("\n".join(line for line in lines if not _FENCE.match(line)))
+    head = parts[0].strip()
+    files = {ENTRY: head} if head and (len(parts) == 1 or _defines_a_class(head)) else {}
+    for name, source in zip(parts[1::2], parts[2::2], strict=True):
+        if name in files:
+            raise CodeInterpreterError(f"The revision writes {name} twice: write each file once, after its line.")
+        files[name] = source.strip()
+    return {name: source.expandtabs(4) for name, source in files.items()}
+
+
 def revise(text: str, revision: str) -> str:
-    """``text`` with the files ``revision`` writes: each one added or replaced, or removed if written empty. A
-    revision without header lines writes ``program.py``."""
-    files, parts = parse(text), _HEADER.split(revision or "")
-    if len(parts) > 1 and not _parses(_strip_code_fences(parts[0])):  # words before the files, not code
-        revision = revision[_HEADER.search(revision).start() :]
-    for name, source in parse(revision).items():
-        if source.strip():
+    """``text`` with the files ``revision`` writes (``read``): each one added or replaced, or removed if empty."""
+    files = parse(text)
+    for name, source in read(revision).items():
+        if source:
             files[name] = source
         else:
             files.pop(name, None)
     return render(files)
+
+
+def _defines_a_class(source: str) -> bool:
+    try:
+        return any(isinstance(node, ast.ClassDef) for node in ast.parse(source).body)
+    except SyntaxError:
+        return False
 
 
 def _with_forward(tree: ast.Module) -> list[ast.ClassDef]:
@@ -65,14 +86,6 @@ def _with_forward(tree: ast.Module) -> list[ast.ClassDef]:
 def _runs(tree: ast.Module, name: str) -> bool:
     """Whether ``tree`` says which class runs: one named ``name``, or else its only class with ``forward``."""
     return any(isinstance(n, ast.ClassDef) and n.name == name for n in tree.body) or len(_with_forward(tree)) == 1
-
-
-def _parses(source: str) -> bool:
-    try:
-        ast.parse(source)
-    except SyntaxError:
-        return False
-    return True
 
 
 def entry(files: dict[str, str], name: str) -> str:
@@ -90,7 +103,8 @@ def entry(files: dict[str, str], name: str) -> str:
 
 def problems(files: dict[str, str], name: str) -> list[str]:
     """What keeps the program from running, found without running it: a file that does not parse, a
-    ``program.py`` that does not say which class runs, or an import of a file the program does not have."""
+    ``program.py`` that does not say which class runs, or an import of a file the program does not have, or of a
+    test file from code a forward runs."""
     if ENTRY not in files:
         return [f"There is no {ENTRY}."]
     found = []
@@ -108,10 +122,12 @@ def problems(files: dict[str, str], name: str) -> list[str]:
             if node.level > 1:
                 found.append(f"{path}, line {node.lineno}: the program's files are one package: import with one dot.")
                 continue
-            imported = [node.module] if node.module else [alias.name for alias in node.names]
-            found += [
-                f"{path}, line {node.lineno}: there is no {module}.py (each file follows a line `# === {module}.py ===`)."
-                for module in imported
-                if f"{module}.py" not in files
-            ]
+            for module in [node.module] if node.module else [alias.name for alias in node.names]:
+                where = f"{path}, line {node.lineno}"
+                if f"{module}.py" not in files:
+                    found.append(
+                        f"{where}: there is no {module}.py (each file follows a line `# === {module}.py ===`)."
+                    )
+                elif is_test(f"{module}.py") and not is_test(path):
+                    found.append(f"{where}: {module}.py is a test file, which a forward does not have.")
     return found

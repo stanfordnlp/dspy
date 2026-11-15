@@ -39,6 +39,7 @@ import math
 import secrets
 import sys
 import traceback
+import types
 import uuid
 from typing import Any, Callable, ClassVar, Literal, Union
 
@@ -768,7 +769,7 @@ class Program(importlib.abc.MetaPathFinder, importlib.abc.Loader):
 
     def __exit__(self, *_: Any) -> None:
         sys.meta_path.remove(self)
-        for name in [name for name in sys.modules if name.partition(".")[0] == self.package]:
+        for name in [name for name in list(sys.modules) if name.partition(".")[0] == self.package]:
             del sys.modules[name]
         for path in self._files:
             linecache.cache.pop(self.filename(path), None)
@@ -809,12 +810,15 @@ class Program(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         source, filename = self._files[path], self.filename(path)
         linecache.cache[filename] = (len(source), None, source.splitlines(True), filename)
         vars(module).update(self._names)
-        exec(compile(source, filename, "exec"), vars(module))
+        exec(compile(source, filename, "exec", dont_inherit=True), vars(module))
 
 
 def program_names(namespace: dict[str, Any]) -> dict[str, Any]:
-    """What a Flex program's code has without importing it: dspy, the provided tools, and the custom types."""
-    names = {"dspy": namespace["dspy"], **TYPING_NAMES, **namespace["__dspy_types"]}
+    """What a Flex program's code has without importing it: the modules the interpreter has imported, as code run in
+    its globals had them, dspy, the provided tools, and the custom types."""
+    modules = {name: value for name, value in namespace.items() if isinstance(value, types.ModuleType)}
+    names = {**{k: v for k, v in modules.items() if not k.startswith("_")}, "dspy": namespace["dspy"], **TYPING_NAMES}
+    names.update(namespace["__dspy_types"])
     names.update({name: namespace[name] for name in namespace["__dspy_guest_spec"]["tools"] if name in namespace})
     return names
 

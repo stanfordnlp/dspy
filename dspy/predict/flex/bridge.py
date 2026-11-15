@@ -132,7 +132,8 @@ class BridgeRuntime:
                 "from dspy.primitives.sandbox_guest import run_tests as __dspy_run_tests\n"
                 f"__dspy_run_tests(globals(), {_FILES_VAR}, {program.ENTRY!r})"
             )
-            result = interp.execute(code, variables={_FILES_VAR: program.parse(module_src)})
+            with session.scope():  # code in the host's memory would otherwise reach the host's LM
+                result = interp.execute(code, variables={_FILES_VAR: program.parse(module_src)})
         finally:
             self._close(session, interp)
         return json.loads(result) if isinstance(result, str) else result
