@@ -139,7 +139,7 @@ A library is a module, or a single class or function, to point the optimizer at 
 
 The interpreter makes the libraries importable, and everything else follows from what it has:
 
-- **The optimizer** gets an API reference of each library, read in the interpreter: how to import it, its docstring, and its public functions and classes with their signatures and docstrings. Notes on how a library is meant to be used belong in its module docstring, where they stay with the code. The optimizer writes the imports at the top of the module, and uses your library for what it does and a DSPy module where a language model is needed. To start from code of your own, such as a module that only uses your libraries, pass it as `module_src`.
+- **The optimizer** gets an API reference of each library, read in the interpreter: how to import it, its docstring, and its public functions and classes with their signatures and docstrings. Notes on how a library is meant to be used belong in its module docstring, where they stay with the code. The optimizer writes the imports at the top of the module, and uses your library for what it does and a DSPy module where a language model is needed.
 - **Values** of a library's classes are objects of those classes in the interpreter, so the code can call `cart.add(...)` on a `Cart` you pass in. A value the code returns comes back as plain data, which `Flex` reads as the type your signature declares.
 - **The signature stays the contract**: the outputs are parsed and checked against their declared types, and your metric scores them as usual.
 
@@ -170,7 +170,7 @@ dspy.Flex Checkout: its code was validated against another environment (shopkit/
 evaluation again, then call pin(), or optimize it again.
 ```
 
-`check_environment()` returns the same as a list, which a CI job can assert is empty. When your evaluation still passes, `pin()` records the environment as it is now. When it doesn't, optimizing again starts from the current code, so the optimizer only has to repair it. Call `pin()` as well after writing or editing `module_src` yourself.
+`check_environment()` returns the same as a list, which a CI job can assert is empty. When your evaluation still passes, `pin()` records the environment as it is now. When it doesn't, optimizing again starts from the current code, so the optimizer only has to repair it. Call `pin()` as well after editing a saved `module_src` yourself.
 
 ### Tools for other SDKs
 
@@ -214,7 +214,6 @@ The saved state also holds the [environment the code was validated against](#wha
 | `signature` | `str \| Signature` | required | Declares the module's inputs and outputs (e.g. `"invoice -> total_cents: int"`). |
 | `tools` | `list[Callable \| dspy.Tool]` | `None` | Tools the generated code may call. With tools, the baseline is a `dspy.RLM`; without, a `dspy.Predict`. |
 | `libraries` | `list[module \| class \| function \| str]` | `None` | What the generated code may import besides dspy and the standard library. See [Your Own Libraries](#your-own-libraries). |
-| `module_src` | `str` | `None` | Source to start from instead of the baseline. |
 | `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Zero-arg factory returning a fresh `CodeInterpreter` for each interpreter session; defaults to `dspy.PythonInterpreter` (needs Deno), and `dspy.configure(interpreter_factory=...)` replaces that default. A bare interpreter instance is not accepted. Supported Python, libraries, and security boundaries are interpreter-dependent. |
 | `max_predictor_calls` | `int \| None` | `100` | Maximum number of LM calls the generated code can make in one `forward`, a guard against runaway loops. `None` removes the limit. |
 

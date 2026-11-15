@@ -188,10 +188,12 @@ def warnings_seen(caplog, monkeypatch):
     return caplog
 
 
-def _total(shop, **kwargs):
+def _total(shop, source=TOTAL, **kwargs):
     kwargs.setdefault("interpreter_factory", dspy.LocalInterpreter)
-    kwargs.setdefault("module_src", TOTAL)
-    return dspy.Flex(SIGNATURE, libraries=[shop], **kwargs)
+    flex = dspy.Flex(SIGNATURE, libraries=[shop], **kwargs)
+    if source is not None:
+        flex._bind_code(source)
+    return flex
 
 
 # -- naming libraries ---------------------------------------------------------------------------------------------------
@@ -345,8 +347,8 @@ def test_the_sandbox_gets_what_the_libraries_reach_and_no_more(shop):
                 return dspy.Prediction(found=found, pydantic=importlib.metadata.version("pydantic"))
         """
     )
-    flex = dspy.Flex("names: list[str] -> found: dict[str, bool], pydantic: str", libraries=["flexshop.receipts"],
-                     module_src=source)
+    flex = dspy.Flex("names: list[str] -> found: dict[str, bool], pydantic: str", libraries=["flexshop.receipts"])
+    flex._bind_code(source)
     out = flex(names=["flexshop.cart", "flexshop.receipts", "flexshop.reports"])
     assert out.found == {"flexshop.cart": True, "flexshop.receipts": True, "flexshop.reports": False}
     # The record has the version the sandbox runs, which is Pyodide's build, whatever this environment has.
@@ -521,7 +523,8 @@ def test_a_value_of_a_library_class_is_an_object_of_it_in_the_interpreter(shop, 
                 return dspy.Prediction(receipt=Receipt(total_cents=cart.gross_cents(), note="paid"), kinds=kinds)
         """
     )
-    flex = dspy.Flex(Checkout, libraries=[shop, Receipt], module_src=source, interpreter_factory=factory)
+    flex = dspy.Flex(Checkout, libraries=[shop, Receipt], interpreter_factory=factory)
+    flex._bind_code(source)
 
     out = flex(cart=shop.Cart("DE").add("pen", 2, 500), country=shop.Country.DE)
 
@@ -563,7 +566,8 @@ def test_a_type_the_libraries_do_not_reach_stays_plain_data(shop):
         kind: str = dspy.OutputField()
         total: int = dspy.OutputField()
 
-    flex = dspy.Flex(Probe, libraries=["json"], module_src=source, interpreter_factory=dspy.LocalInterpreter)
+    flex = dspy.Flex(Probe, libraries=["json"], interpreter_factory=dspy.LocalInterpreter)
+    flex._bind_code(source)
     out = flex(receipt=Receipt(total_cents=5))
     assert (out.kind, out.total) == ("dict", 5)
     assert "values of Receipt are plain data" in flex._flex_ctx.render_context_blurb(sandboxed=True)
@@ -606,7 +610,7 @@ def test_a_saved_program_warns_once_when_your_code_changed_under_it(shop, tmp_pa
     flex.pin()
     if save == "json":
         flex.save(tmp_path / "total.json")
-        loaded = _total(shop, module_src=None, interpreter_factory=factory)
+        loaded = _total(shop, source=None, interpreter_factory=factory)
         loaded.load(tmp_path / "total.json")
     else:
         loaded = pickle.loads(cloudpickle.dumps(flex))
@@ -718,9 +722,8 @@ def test_a_library_the_interpreter_cannot_import_fails_when_it_is_asked(shop):
 
 
 def test_the_optimizer_is_told_about_the_libraries_as_the_interpreter_has_them(shop):
-    flex = _total(shop, module_src=None)
+    flex = _total(shop, source=None)
     assert "dspy.Predict" in flex.module_src  # the usual baseline
-    assert _total(shop, module_src=STUB).module_src == STUB  # or code of your own, like a library-only start
 
     listed = flex._flex_ctx.render_context_blurb(sandboxed=True)
     assert "  - import flexshop" in listed and "DSPy's modules for what needs a language model" in listed
@@ -730,7 +733,7 @@ def test_the_optimizer_is_told_about_the_libraries_as_the_interpreter_has_them(s
 
 def test_the_code_proposer_reads_the_library_reference(shop):
     reflection = DummyLM([{"revised_source": TOTAL}])
-    student = _total(shop, module_src=STUB)
+    student = _total(shop, source=STUB)
     adapter = DspyAdapter(student_module=student, metric_fn=lambda *a, **k: 0.0, feedback_map={}, reflection_lm=reflection)
     reflective = {"self": [{"Inputs": {"lines": "..."}, "Generated Outputs": "NotImplementedError", "Feedback": "x"}]}
 
@@ -751,7 +754,7 @@ def test_gepa_writes_the_module_from_an_unimplemented_start_and_records_what_it_
         dspy.Example(lines=[("pen", n, 100)], country="DE", total_cents=n * 119).with_inputs("lines", "country")
         for n in range(1, 4)
     ]
-    student = _total(shop, module_src=STUB)
+    student = _total(shop, source=STUB)
     reflection = DummyLM([{"revised_source": TOTAL}] * 10)
 
     optimized = dspy.GEPA(metric=metric, reflection_lm=reflection, max_metric_calls=12).compile(
@@ -809,8 +812,8 @@ def test_the_tool_calls_of_a_forward_are_on_its_prediction():
                 return dspy.Prediction(reply="done")
         """
     )
-    flex = dspy.Flex("order_id: int -> reply", tools=[lookup, refund], module_src=source,
-                     interpreter_factory=dspy.LocalInterpreter)
+    flex = dspy.Flex("order_id: int -> reply", tools=[lookup, refund], interpreter_factory=dspy.LocalInterpreter)
+    flex._bind_code(source)
 
     prediction = flex(order_id=7)
 
@@ -843,8 +846,8 @@ def test_the_calls_of_an_async_tool_are_recorded_when_they_are_over():
                 return dspy.Prediction(reply=str(order["paid"]))
         """
     )
-    flex = dspy.Flex("order_id: int -> reply", tools=[lookup, refund], module_src=source,
-                     interpreter_factory=dspy.LocalInterpreter)
+    flex = dspy.Flex("order_id: int -> reply", tools=[lookup, refund], interpreter_factory=dspy.LocalInterpreter)
+    flex._bind_code(source)
 
     prediction = flex(order_id=7)
 

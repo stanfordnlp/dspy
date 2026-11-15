@@ -330,9 +330,10 @@ def test_a_flex_with_libraries_tells_its_pool(factory, tmp_path, monkeypatch):
     )
     with dspy.InterpreterPool(factory, size=1) as pool:
         _wait_for(lambda: pool._ready.qsize() == 1)  # started before any module said what it needs
-        flex = dspy.Flex("value: int -> result: int", libraries=["flexpooled"], module_src=source, interpreter_factory=pool)
-        plain = dspy.Flex("value: int -> result: int", interpreter_factory=pool, module_src=source.replace(
-            "from flexpooled import double", "double = lambda value: value * 2"))
+        flex = dspy.Flex("value: int -> result: int", libraries=["flexpooled"], interpreter_factory=pool)
+        flex._bind_code(source)
+        plain = dspy.Flex("value: int -> result: int", interpreter_factory=pool)
+        plain._bind_code(source.replace("from flexpooled import double", "double = lambda value: value * 2"))
 
         assert flex(value=2).result == 4  # no setup of the pool for it
         assert pool._libraries == ("flexpooled",)

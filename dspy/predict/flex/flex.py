@@ -67,7 +67,6 @@ class Flex(Module, Parameter):
             ``"shopkit.cart:Cart"`` for a class), for a library only the interpreter has. A value of a library's
             class is an object of that class in the interpreter. Whatever needs your network, credentials or state
             stays a tool.
-        module_src: Source to start from instead of the baseline, such as code that only uses ``libraries``.
         interpreter_factory: Zero-argument callable returning a fresh ``CodeInterpreter`` for each
             interpreter session. Defaults to ``dspy.PythonInterpreter`` (sandbox, requires Deno).
             ``dspy.configure(interpreter_factory=...)`` replaces the default.
@@ -81,7 +80,6 @@ class Flex(Module, Parameter):
         *,
         tools: list[Any] | None = None,
         libraries: list[Any] | None = None,
-        module_src: str | None = None,
         interpreter_factory: Callable[[], CodeInterpreter] = PythonInterpreter,
         max_predictor_calls: int | None = 100,
     ):
@@ -104,7 +102,7 @@ class Flex(Module, Parameter):
         self._max_predictor_calls = max_predictor_calls
 
         self._rebuild_bridge()
-        self._bind_code(module_src or self._baseline_src())
+        self._bind_code(self._baseline_src())
 
     def _rebuild_bridge(self) -> None:
         self._bridge: BridgeRuntime = BridgeRuntime(self, self._interpreter_factory, self._max_predictor_calls)
@@ -144,7 +142,7 @@ class Flex(Module, Parameter):
     def pin(self) -> dict[str, Any] | None:
         """Record the environment the code runs in now as the one it was validated against, and return it.
 
-        Call it once your evaluation passes: after writing or editing ``module_src`` yourself, or after a change
+        Call it once your evaluation passes: after editing a saved ``module_src`` yourself, or after a change
         that ``check_environment`` reported turned out to be harmless. With ``libraries``, this asks an interpreter.
         """
         self._environment = self._resolve_environment() or None
