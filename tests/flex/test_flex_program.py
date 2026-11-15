@@ -370,3 +370,17 @@ def test_a_proposal_whose_tests_still_fail_is_scored_anyway() -> None:
     failing = "# === test_rules.py ===\nfrom .rules import total\n\n\ndef test_total():\n    assert total([]) == 1"
     proposed, _ = _propose(text(ENTRY, MODELS, RULES), failing, failing, failing)
     assert "test_rules.py" in program.parse(proposed)
+
+
+@pytest.mark.deno
+def test_a_forward_that_crashes_says_where_in_the_program() -> None:
+    from dspy.primitives.code_interpreter import CodeExecutionError
+
+    flex = dspy.Flex(Count)
+    flex._bind_code(text(ENTRY, MODELS, ("rules.py", "def total(items):\n    return len(items) // 0")))
+    with dspy.context(lm=DummyLM([{"names": ["apple"]}])), pytest.raises(CodeExecutionError) as raised:
+        flex(order="an apple")
+    message = str(raised.value)
+    assert message.startswith("ZeroDivisionError:")
+    assert "rules.py, line 2, in total" in message
+    assert "program.py, line 12, in forward" in message

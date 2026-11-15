@@ -779,13 +779,17 @@ class Program(importlib.abc.MetaPathFinder, importlib.abc.Loader):
     def load(self, path: str) -> Any:
         return importlib.import_module(f"{self.package}.{path.removesuffix('.py')}")
 
-    def describe(self, error: BaseException) -> str:
-        """``error`` and where in the program's files it was raised, innermost last."""
+    def where(self, error: BaseException) -> str:
+        """Where in the program's files ``error`` was raised, innermost last; empty if not in them."""
         inside = f"<{self.package}>/"
         frames = [frame for frame in traceback.extract_tb(error.__traceback__) if frame.filename.startswith(inside)]
         lines = [f"  {f.filename}, line {f.lineno}, in {f.name}\n    {(f.line or '').strip()}" for f in frames[-6:]]
-        lines.append("".join(traceback.format_exception_only(type(error), error)).strip())
         return "\n".join(lines).replace(inside, "")
+
+    def describe(self, error: BaseException) -> str:
+        """``error`` and where in the program's files it was raised."""
+        message = "".join(traceback.format_exception_only(type(error), error)).strip()
+        return "\n".join(filter(None, [self.where(error), message.replace(f"<{self.package}>/", "")]))
 
     def find_spec(self, fullname: str, path: Any = None, target: Any = None) -> Any:
         if fullname == self.package:
@@ -844,7 +848,14 @@ def run_forward(namespace: dict[str, Any], files: dict[str, str], entry: list[st
     wire = namespace["__dspy_values"]
     path, class_name = entry
     with Program(files, program_names(namespace)) as program:
-        prediction = getattr(program.load(path), class_name)().forward(**wire.decode(inputs))
+        try:
+            prediction = getattr(program.load(path), class_name)().forward(**wire.decode(inputs))
+        except Exception as e:
+            # An interpreter reports an error as its type and arguments: say where in the program it was raised. In
+            # the host's memory, the error keeps its own traceback.
+            if not isinstance(wire, InMemory) and (where := program.where(e)):
+                e.args = (*e.args, f"Raised in the program at:\n{where}")
+            raise
         fields = {"fields": wire.encode(dict(getattr(prediction, "_store", prediction)))}
     return fields if isinstance(wire, InMemory) else json.dumps(fields)
 
