@@ -171,19 +171,6 @@ class Flex(Module, Parameter):
         there are none. A test may not call the LM or a tool."""
         return [f"{name}: {error}" for name, error in self._bridge.test(self._module_src or "")["failed"].items()]
 
-    def _check(self, module_src: str) -> tuple[list[str], list[str]]:
-        """What keeps the program ``module_src`` from running, and which of its tests fail. Its tests run, and
-        ``program.py`` is imported, only if it has tests."""
-        files = program.parse(module_src)
-        broken = program.problems(files, self._class_name())
-        if broken or not any(program.is_test(path) for path in files):
-            return broken, []
-        failed = [(name, error) for name, error in self._bridge.test(module_src)["failed"].items()]
-        return (
-            [f"{name}: {error}" for name, error in failed if name == program.ENTRY],
-            [f"{name}: {error}" for name, error in failed if name != program.ENTRY],
-        )
-
     def dump_state(self, json_mode: bool = True) -> dict[str, Any]:
         state = {
             "module_src": self._module_src,

@@ -152,27 +152,6 @@ def test_the_entry_is_the_class_named_for_the_flex() -> None:
     assert program.entry({"program.py": source}, "CountModule") == "CountModule"
 
 
-def test_problems_found_without_running_the_program() -> None:
-    files = program.parse(text(ENTRY, RULES))
-    files["rules.py"] = "def total(items:\n    return 0"
-    files["test_rules.py"] = "from .missing import x\nfrom ..up import y"
-    found = program.problems(files, "OtherModule")
-    assert "rules.py, line 1: '(' was never closed" in found
-    assert not any("program.py must define" in p for p in found)  # its only class with forward runs
-    two = "class A(dspy.Module):\n    def forward(self):\n        pass\n\n\nclass B(A):\n    def forward(self):\n        pass"
-    assert program.problems({"program.py": two}, "OtherModule") == [
-        "program.py must define OtherModule, the class the Flex runs, or exactly one class with forward."
-    ]
-    assert any("program.py" in p and "there is no models.py" in p for p in found)
-    assert any("test_rules.py, line 1: there is no missing.py" in p for p in found)
-    assert any("test_rules.py, line 2" in p and "one dot" in p for p in found)
-    data = {"program.py": "from .test_data import UNITS\n\n\nclass CountModule:\n    pass", "test_data.py": "UNITS = 1"}
-    assert program.problems(data, "CountModule") == [
-        "program.py, line 1: test_data.py is a test file, which a forward does not have."
-    ]
-    assert program.problems(program.parse(text(ENTRY, MODELS, RULES, TESTS)), "CountModule") == []
-
-
 def test_flex_files_are_the_program_text_parsed() -> None:
     flex = dspy.Flex(Count)
     flex._bind_code(text(ENTRY, MODELS, RULES, TESTS))
@@ -314,7 +293,7 @@ def test_a_proposal_without_header_lines_rewrites_program_py() -> None:
     assert "rules.py" in files
 
 
-# -- tests and checks ------------------------------------------------------------------------------------------------
+# -- tests -----------------------------------------------------------------------------------------------------------
 
 
 @pytest.mark.deno
@@ -361,54 +340,6 @@ def test_a_test_may_not_call_the_lm_or_a_tool() -> None:
         failures = flex.run_tests()
     assert len(failures) == 2
     assert all("may not call" in failure for failure in failures)
-
-
-@pytest.mark.deno
-def test_a_program_that_cannot_be_imported_is_broken() -> None:
-    flex = dspy.Flex(Count)
-    entry = (ENTRY[0], ENTRY[1] + "\n    undefined_name\n")
-    broken, _ = flex._check(text(entry, MODELS, RULES, TESTS))
-    assert len(broken) == 1 and broken[0].startswith("program.py:") and "NameError" in broken[0]
-
-
-def test_checks_without_tests_start_no_interpreter() -> None:
-    def no_interpreter():
-        raise AssertionError("checking a program without tests started an interpreter")
-
-    flex = dspy.Flex(Count, interpreter_factory=no_interpreter)
-    assert flex._check(text(ENTRY, MODELS, RULES)) == ([], [])
-    assert flex._check(text(ENTRY)) == (
-        [
-            "program.py, line 1: there is no models.py (each file follows a line `# === models.py ===`).",
-            "program.py, line 2: there is no rules.py (each file follows a line `# === rules.py ===`).",
-        ],
-        [],
-    )
-
-
-@pytest.mark.deno
-def test_a_proposal_whose_tests_fail_is_revised_with_the_failures() -> None:
-    failing = "# === test_rules.py ===\nfrom .rules import total\n\n\ndef test_total():\n    assert total([]) == 1"
-    fixed = "# === test_rules.py ===\nfrom .rules import total\n\n\ndef test_total():\n    assert total([]) == 0"
-    proposed, lm = _propose(text(ENTRY, MODELS, RULES), failing, fixed)
-
-    assert program.parse(proposed)["test_rules.py"].endswith("== 0")
-    second_prompt = lm.history[1]["messages"][-1]["content"]
-    assert "These tests fail" in second_prompt
-    assert "test_rules.py::test_total" in second_prompt
-
-
-def test_a_proposal_that_still_cannot_run_keeps_the_original() -> None:
-    unclosed = "class CountModule(dspy.Module):\n    def forward(self, **inputs):\n        return dspy.Prediction(total=0"
-    original = text(ENTRY, MODELS, RULES)
-    assert _propose(original, unclosed, unclosed, unclosed)[0] == original
-
-
-@pytest.mark.deno
-def test_a_proposal_whose_tests_still_fail_is_scored_anyway() -> None:
-    failing = "# === test_rules.py ===\nfrom .rules import total\n\n\ndef test_total():\n    assert total([]) == 1"
-    proposed, _ = _propose(text(ENTRY, MODELS, RULES), failing, failing, failing)
-    assert "test_rules.py" in program.parse(proposed)
 
 
 @pytest.mark.deno

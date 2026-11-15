@@ -11,7 +11,6 @@ from dspy.predict.flex import Flex, program
 from dspy.predict.flex.flex import differences
 from dspy.predict.flex.primitives_doc import PRIMITIVES_CATALOG
 from dspy.primitives import Prediction
-from dspy.primitives.code_interpreter import CodeInterpreterError
 from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
 from dspy.teleprompt.bootstrap_trace import FailedPrediction
 from dspy.utils.exceptions import LMError
@@ -122,10 +121,9 @@ class CodeProposalSignature(dspy.Signature):
         engineer would, one concern per file once the code grows. A small program can stay in
         ``program.py``.
       - ``test_*.py`` files hold its tests: functions named ``test_*`` that check the deterministic
-        code with ``assert``, without calling a predictor or a tool. They run before the program is
-        scored, and failures come back to you. Keep the tests that still hold, and add one for each
-        rule you implement and each failure you fix, with the expected value worked out from the
-        task's rules or the feedback, so that later revisions keep it working.
+        code with ``assert``, without calling a predictor or a tool. Keep the tests that still hold,
+        and add one for each rule you implement and each failure you fix, with the expected value
+        worked out from the task's rules or the feedback.
 
     Write each file you add or change in full, after a line ``# === <name>.py ===`` (a Python
     identifier, no directories). Files you do not write stay as they are; a file written empty is
@@ -177,21 +175,6 @@ class CodeProposalSignature(dspy.Signature):
     )
 
 
-# How many times the proposer revises a program its checks found problems in.
-_REVISIONS = 2
-
-
-def _check_report(broken: list[str], failing: list[str]) -> str:
-    lines = ["", "", "The current source is your last revision, and its checks found problems. Fix them, and keep "
-             "fixing the failing examples above."]
-    if broken:
-        lines += ["It cannot run:", *(f"- {problem}" for problem in broken)]
-    if failing:
-        lines += ["These tests fail. A test can be wrong rather than the code: check its expected value against the "
-                  "task's rules and the feedback, and fix whichever is wrong.", *(f"- {test}" for test in failing)]
-    return "\n".join(lines)
-
-
 def propose_code(
     code_keys: list[str],
     candidate: dict[str, str],
@@ -199,49 +182,21 @@ def propose_code(
     task_descriptions: dict[str, str],
     context_blurbs: dict[str, str],
     reflection_lm,
-    flex_modules: dict[str, Any] | None = None,
 ) -> dict[str, str]:
-    """Propose a revised program (``module_src``) for each code component; keep the original on failure.
-
-    The Flex of each component in ``flex_modules`` checks the program before it is scored (``Flex._check``): one
-    that cannot run, or whose tests fail, goes back to the proposer with the problems, up to ``_REVISIONS`` times.
-    A program that still cannot run is dropped for the original; one whose tests still fail is scored, since a test
-    can be wrong.
-    """
+    """Propose a revised program (``module_src``) for each code component; keep the original on failure."""
     results: dict[str, str] = {}
     proposer = dspy.Predict(CodeProposalSignature)
     with dspy.context(lm=reflection_lm):
         for ckey in code_keys:
             try:
-                failures, source, report = _format_failures(reflective_dataset.get(ckey, [])), candidate[ckey], ""
-                broken: list[str] = []
-                for revision in range(_REVISIONS + 1):
-                    out = proposer(
-                        task_description=task_descriptions.get(ckey, ckey),
-                        available_context=context_blurbs.get(ckey, "(no extra context)"),
-                        primitives_catalog=PRIMITIVES_CATALOG,
-                        current_source=source,
-                        failures=failures + report,
-                    )
-                    try:
-                        source = program.revise(source, out.revised_source)
-                    except CodeInterpreterError as e:  # files that cannot be read off the revision
-                        broken, failing = [str(e)], []
-                    else:
-                        if ckey not in (flex_modules or {}):
-                            break
-                        broken, failing = flex_modules[ckey]._check(source)
-                    logger.info(
-                        "Checked the program proposed for %s (revision %d): %d problem(s), %d failing test(s).",
-                        ckey, revision, len(broken), len(failing),
-                    )
-                    if not broken and not failing:
-                        break
-                    report = _check_report(broken, failing)
-                if broken:
-                    logger.warning("The program proposed for %s cannot run (%s); keeping the original.", ckey, broken[0])
-                    source = candidate[ckey]
-                results[ckey] = source
+                out = proposer(
+                    task_description=task_descriptions.get(ckey, ckey),
+                    available_context=context_blurbs.get(ckey, "(no extra context)"),
+                    primitives_catalog=PRIMITIVES_CATALOG,
+                    current_source=candidate[ckey],
+                    failures=_format_failures(reflective_dataset.get(ckey, [])),
+                )
+                results[ckey] = program.revise(candidate[ckey], out.revised_source)
             except LMError:
                 raise
             except Exception as e:

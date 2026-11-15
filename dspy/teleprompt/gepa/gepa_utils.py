@@ -140,8 +140,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self._warned_custom_proposer_skips_code = False
 
         # dspy.Flex code components are keyed by the submodule's parameter path.
-        self._flex_modules = enumerate_flex_submodules(student_module)
-        self._flex_paths = set(self._flex_modules)
+        self._flex_paths = set(enumerate_flex_submodules(student_module))
         # Task description + available context shown to the dspy.Flex code proposer, per submodule.
         self._flex_task_descriptions, self._flex_context_blurbs = flex_task_context(student_module)
 
@@ -175,7 +174,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     propose_code(
                         code_keys, candidate, reflective_dataset,
                         self._flex_task_descriptions, self._flex_context_blurbs, reflection_lm,
-                        flex_modules=self._flex_modules,
                     )
                 )
         components_to_update = [c for c in components_to_update if c not in self._flex_paths]

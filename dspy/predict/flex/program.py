@@ -83,11 +83,6 @@ def _with_forward(tree: ast.Module) -> list[ast.ClassDef]:
     ]
 
 
-def _runs(tree: ast.Module, name: str) -> bool:
-    """Whether ``tree`` says which class runs: one named ``name``, or else its only class with ``forward``."""
-    return any(isinstance(n, ast.ClassDef) and n.name == name for n in tree.body) or len(_with_forward(tree)) == 1
-
-
 def entry(files: dict[str, str], name: str) -> str:
     """The class of ``program.py`` the Flex runs: the one named ``name``, or else the first class with a
     ``forward``, as a program written before that rule has one."""
@@ -99,35 +94,3 @@ def entry(files: dict[str, str], name: str) -> str:
     if not chosen:
         raise CodeInterpreterError("module_src must define a dspy.Module subclass with a `forward` method")
     return chosen[0].name
-
-
-def problems(files: dict[str, str], name: str) -> list[str]:
-    """What keeps the program from running, found without running it: a file that does not parse, a
-    ``program.py`` that does not say which class runs, or an import of a file the program does not have, or of a
-    test file from code a forward runs."""
-    if ENTRY not in files:
-        return [f"There is no {ENTRY}."]
-    found = []
-    for path, source in files.items():
-        try:
-            tree = ast.parse(source, filename=path)
-        except SyntaxError as e:
-            found.append(f"{path}, line {e.lineno}: {e.msg}")
-            continue
-        if path == ENTRY and not _runs(tree, name):
-            found.append(f"{ENTRY} must define {name}, the class the Flex runs, or exactly one class with forward.")
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.ImportFrom) or not node.level:
-                continue
-            if node.level > 1:
-                found.append(f"{path}, line {node.lineno}: the program's files are one package: import with one dot.")
-                continue
-            for module in [node.module] if node.module else [alias.name for alias in node.names]:
-                where = f"{path}, line {node.lineno}"
-                if f"{module}.py" not in files:
-                    found.append(
-                        f"{where}: there is no {module}.py (each file follows a line `# === {module}.py ===`)."
-                    )
-                elif is_test(f"{module}.py") and not is_test(path):
-                    found.append(f"{where}: {module}.py is a test file, which a forward does not have.")
-    return found

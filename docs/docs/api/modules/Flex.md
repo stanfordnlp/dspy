@@ -47,7 +47,7 @@ for name, source in optimized.files.items():
 # test_pricing.py 40
 ```
 
-Files named `test_*.py` hold the program's tests: `test_*` functions that check its deterministic code with `assert`. A forward never imports them. The reflection model writes them alongside the code, and before GEPA scores a proposed program, it imports the program and runs its tests in the program's interpreter, where an LM or tool call fails the test. A program that cannot run, or whose tests fail, goes back to the reflection model with the problems (up to twice). One that still cannot run is dropped; one whose tests still fail is scored anyway, since a test can be wrong, and your metric decides. The tests stay with the program, so a rule fixed once keeps a test that later revisions must pass.
+Files named `test_*.py` hold the program's tests: `test_*` functions that check its deterministic code with `assert`. A forward never imports them. The reflection model writes them alongside the code; GEPA scores the program with your metric as always.
 
 `run_tests()` runs them for you, for example after a library the program uses changed (see [What the code was validated against](#what-the-code-was-validated-against)). It returns each failure in words; empty means they all pass.
 
