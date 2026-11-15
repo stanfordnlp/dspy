@@ -2062,6 +2062,7 @@ def test_the_dspy_bundle_has_this_environments_package_where_pyodide_can_run_it(
         "helper": (False, []),
         "app": (False, ["helper", "fast"]),  # pure, and Pyodide has no build of it
         "fast": (True, []),  # compiled, and the same version as here
+        "bare": (False, []),  # pure, but without the metadata that would tell the sandbox it is installed
     }
     lock = {name: {"depends": [], "file_name": f"{name}.whl", "version": "1"} for name in ["sqlite3", *here]}
     del lock["app"]
@@ -2086,7 +2087,7 @@ def test_the_dspy_bundle_has_this_environments_package_where_pyodide_can_run_it(
     monkeypatch.setattr(sandbox_bundle, "_fetch_wheel", lambda root, info, deno_dir: info["file_name"])
     monkeypatch.setattr(sandbox_bundle, "_files", lambda dist: [] if here[dist.metadata["Name"]][0] else [
         (tmp_path / "site" / f"{dist.metadata['Name']}.py", f"{dist.metadata['Name']}.py")])
-    monkeypatch.setattr(sandbox_bundle, "_metadata_files", lambda dist: [
+    monkeypatch.setattr(sandbox_bundle, "_metadata_files", lambda dist: [] if dist.metadata["Name"] == "bare" else [
         (tmp_path / "site" / f"{dist.metadata['Name']}.py", f"{dist.metadata['Name']}-2.dist-info/METADATA")])
     monkeypatch.setattr(sandbox_bundle, "_warned", set())
     monkeypatch.setattr(logging.getLogger("dspy"), "propagate", True)
@@ -2097,7 +2098,7 @@ def test_the_dspy_bundle_has_this_environments_package_where_pyodide_can_run_it(
         wheels, files = sandbox_bundle._contents(tmp_path, None, ())
         # helper is this environment's, though Pyodide's model depends on it, and so is app, which needs fast as is.
         # helper's copy still needs the part of the standard library that Pyodide's build of it does.
-        assert wheels == ["core.whl", "fast.whl", "model.whl", "sqlite3.whl"]
+        assert wheels == ["bare.whl", "core.whl", "fast.whl", "model.whl", "sqlite3.whl"]
         assert sorted(name for _, name in files if name.endswith(".py")) == ["app.py", "helper.py"]
         assert "core 1 (2 here), model 1 (2 here)" in caplog.text and "fast" not in caplog.text
         caplog.clear()

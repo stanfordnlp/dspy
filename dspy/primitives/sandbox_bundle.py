@@ -406,8 +406,9 @@ def _stdlib_parts(lock: dict, name: str) -> list[str]:
 
 def _origin(name: str, lock: dict, origins: dict[str, tuple[str | None, bool]]) -> tuple[str | None, bool]:
     """Where a sandbox gets this environment's distribution ``name`` from, and whether it has this environment's
-    version there. It is a copy of this environment's files (``"env"``) if it is pure Python and everything it
-    requires, at any depth, has the same version in the sandbox, so that it runs as it does here. Otherwise it is
+    version there. It is a copy of this environment's files (``"env"``) if it is pure Python, has the metadata that
+    tells the sandbox it is installed, and everything it requires, at any depth, has the same version in the
+    sandbox, so that it runs as it does here. Otherwise it is
     Pyodide's build (``"pyodide"``) if Pyodide ships one, else the copy anyway, or nothing (``None``) for compiled
     code Pyodide does not ship. ``origins`` keeps what is decided, by normalized name."""
     name = _normalize(name)
@@ -418,7 +419,8 @@ def _origin(name: str, lock: dict, origins: dict[str, tuple[str | None, bool]]) 
             return None, True
         origins[name] = ("env", True)  # while what it requires is decided, for a cycle back to it
         pure = bool(_files(dist))
-        if not (pure and all(_origin(required, lock, origins)[1] for required in _requires(dist))):
+        listed = bool(_metadata_files(dist))
+        if not (pure and listed and all(_origin(required, lock, origins)[1] for required in _requires(dist))):
             if name in lock:
                 origins[name] = ("pyodide", lock[name].get("version") == dist.version)
             else:
