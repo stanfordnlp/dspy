@@ -577,3 +577,21 @@ def test_evaluate_raises_on_empty_devset():
     )
     with pytest.raises(ValueError, match="devset"):
         ev(program)
+
+
+def test_evaluate_save_as_csv_writes_utf8(tmp_path):
+    """Results containing non-ASCII text must be written as UTF-8 on every platform."""
+    dspy.settings.configure(lm=DummyLM({"What is 1+1?": {"answer": "中文 🔥"}}))
+    devset = [new_example("What is 1+1?", "中文 🔥")]
+    program = Predict("question -> answer")
+    path = tmp_path / "results.csv"
+
+    evaluator = Evaluate(
+        devset=devset,
+        metric=answer_exact_match,
+        display_progress=False,
+        save_as_csv=str(path),
+    )
+    evaluator(program)
+
+    assert "中文 🔥" in path.read_text(encoding="utf-8")
