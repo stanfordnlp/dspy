@@ -10,6 +10,7 @@ from typing import Any, Callable
 from dspy.adapters.types.tool import Tool
 from dspy.clients.base_lm import BaseLM
 from dspy.dsp.utils.settings import settings
+from dspy.predict.flex import program
 from dspy.predict.flex.bridge import BridgeRuntime
 from dspy.predict.flex.ctx import FlexContext
 from dspy.predict.parameter import Parameter
@@ -118,7 +119,7 @@ class Flex(Module, Parameter):
         self._flex_ctx.__dict__.setdefault("libraries", [])
         self._rebuild_bridge()
         if self._module_src is not None:
-            self._bridge.bind(self._module_src)
+            self._bridge.bind(self._module_src, self._class_name())
 
     @property
     def signature(self) -> type[Signature]:
@@ -126,7 +127,14 @@ class Flex(Module, Parameter):
 
     @property
     def module_src(self) -> str | None:
+        """The program's source: one file's, or several files', each after a line ``# === name.py ===``."""
         return self._module_src
+
+    @property
+    def files(self) -> dict[str, str]:
+        """The program's files by name: ``program.py``, which defines the class that runs, and any modules and tests
+        (``test_*.py``) the optimizer split the code into."""
+        return program.parse(self._module_src or "")
 
     @property
     def environment(self) -> dict[str, Any] | None:
@@ -320,7 +328,7 @@ class Flex(Module, Parameter):
         return f"{base}Module"
 
     def _bind_code(self, module_src: str) -> None:
-        self._bridge.bind(module_src)
+        self._bridge.bind(module_src, self._class_name())
         if module_src != self._module_src:
             self._environment = None  # recorded for other code
         self._module_src = module_src

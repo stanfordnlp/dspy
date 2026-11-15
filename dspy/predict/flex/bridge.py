@@ -7,7 +7,7 @@ every ``forward``:
    ``dspy.settings.interpreter_factory`` when Flex uses its default (``BridgeRuntime.forward``);
 2. imports the real dspy there, wired to the host by a ``SandboxSession`` (``dspy.primitives.facade``) over the
    Flex's tools, custom types and LM-call budget, with the Flex's libraries importable;
-3. executes ``module_src`` and drives its ``forward`` with the call's inputs.
+3. imports the program's files (``module_src``) as a package and drives its ``forward`` with the call's inputs.
 
 User tools passed to ``dspy.Flex(tools=...)`` are bound by name so sandbox code can call them
 directly; the callables themselves stay on the host. The inputs are read as the Flex signature's
@@ -26,26 +26,16 @@ from pydantic import TypeAdapter
 
 import dspy
 from dspy.adapters.utils import annotation_allows_none
+from dspy.predict.flex import program
 from dspy.primitives.code_interpreter import CodeInterpreterError, _create_interpreter
 from dspy.primitives.facade import SandboxSession, _typed, from_wire
 
 logger = logging.getLogger(__name__)
 
-# The per-forward inputs in the sandbox (namespaced to avoid clashing with whatever the module uses).
+# The per-forward inputs and the program's files in the sandbox (namespaced to avoid clashing with whatever the
+# module uses).
 _INPUTS_VAR = "__dspy_flex_inputs"
-
-
-def parse_module_class_name(module_src: str) -> str:
-    """Return the name of the generated ``dspy.Module`` subclass in ``module_src``."""
-    tree = ast.parse(module_src)
-    classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
-    with_forward = [
-        c for c in classes if any(isinstance(b, ast.FunctionDef) and b.name == "forward" for b in c.body)
-    ]
-    chosen = with_forward or classes
-    if not chosen:
-        raise CodeInterpreterError("module_src must define a dspy.Module subclass with a `forward` method")
-    return chosen[0].name
+_FILES_VAR = "__dspy_flex_files"
 
 
 class _Budget:
@@ -81,13 +71,16 @@ class BridgeRuntime:
         self._flex = flex
         self._factory = factory
         self._max_predictor_calls = max_predictor_calls
-        self._module_src: str | None = None
+        self._files: dict[str, str] = {}
         self._class_name: str | None = None
 
-    def bind(self, module_src: str) -> None:
-        """Record new source; it runs at the next ``forward``."""
-        self._module_src = module_src
-        self._class_name = parse_module_class_name(module_src)
+    def bind(self, module_src: str, class_name: str) -> None:
+        """Record a new program, whose ``program.py`` defines ``class_name``; it runs at the next ``forward``."""
+        files = program.parse(module_src)
+        for path, source in files.items():
+            ast.parse(source, filename=path)
+        self._class_name = program.entry(files, class_name)
+        self._files = {path: source for path, source in files.items() if not program.is_test(path)}
 
     def session(self, tool_calls: list[dict[str, Any]] | None = None) -> SandboxSession:
         """A fresh per-forward session over tools, custom types, and the LM-call budget."""
@@ -129,13 +122,12 @@ class BridgeRuntime:
         try:
             session.install(interp, import_dspy=True)
             self._flex._check_environment_once(interp)
-            interp.execute(self._module_src)  # defines the class in the sandbox
             code = (
                 "from dspy.primitives.sandbox_guest import run_forward as __dspy_run_forward\n"
-                f"__dspy_run_forward(globals(), {self._class_name!r}, {_INPUTS_VAR})"
+                f"__dspy_run_forward(globals(), {_FILES_VAR}, {[program.ENTRY, self._class_name]!r}, {_INPUTS_VAR})"
             )
             with session.scope():
-                result = interp.execute(code, variables={_INPUTS_VAR: session.encode(inputs)})
+                result = interp.execute(code, variables={_INPUTS_VAR: session.encode(inputs), _FILES_VAR: self._files})
         except CodeInterpreterError as e:
             if session.lm_error is not None:
                 lm_error, tag = session.lm_error

@@ -298,7 +298,7 @@ def test_save_program_roundtrips_via_cloudpickle(tmp_path) -> None:
     loaded = dspy.load(str(tmp_path), allow_pickle=True)
     assert loaded.flex.module_src == ECHO_MODULE
     assert loaded.flex._bridge._flex is loaded.flex
-    assert loaded.flex._bridge._module_src == ECHO_MODULE
+    assert loaded.flex._bridge._files == {"program.py": ECHO_MODULE}
 
 
 @deno_required

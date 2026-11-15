@@ -30,8 +30,11 @@ import decimal
 import enum
 import functools
 import importlib
+import importlib.abc
+import importlib.util
 import inspect
 import json
+import linecache
 import math
 import secrets
 import sys
@@ -748,12 +751,70 @@ def _wire_call(function: Callable[..., Any], wire: Wire, session: str) -> Callab
     return wire_call
 
 
-def run_forward(namespace: dict[str, Any], class_name: str, inputs: dict[str, Any]) -> Any:
-    """Run one Flex forward in the sandbox; return its output fields as JSON, or as they are in the host's memory."""
+class Program(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    """A Flex program's files, by name, as a package of their own while in use (``with``): each file is a module of
+    it, which imports the others relatively, and starts with ``names`` bound, which the code has without importing
+    them. Errors name the file and line."""
+
+    def __init__(self, files: dict[str, str], names: dict[str, Any]) -> None:
+        self.package = f"__dspy_program_{secrets.token_hex(6)}"
+        self._files = files
+        self._names = names
+
+    def __enter__(self) -> Program:
+        sys.meta_path.insert(0, self)
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        sys.meta_path.remove(self)
+        for name in [name for name in sys.modules if name.partition(".")[0] == self.package]:
+            del sys.modules[name]
+        for path in self._files:
+            linecache.cache.pop(self.filename(path), None)
+
+    def filename(self, path: str) -> str:
+        return f"<{self.package}>/{path}"
+
+    def load(self, path: str) -> Any:
+        return importlib.import_module(f"{self.package}.{path.removesuffix('.py')}")
+
+    def find_spec(self, fullname: str, path: Any = None, target: Any = None) -> Any:
+        if fullname == self.package:
+            return importlib.util.spec_from_loader(fullname, self, is_package=True)
+        package, _, module = fullname.rpartition(".")
+        if package == self.package and f"{module}.py" in self._files:
+            return importlib.util.spec_from_loader(fullname, self)
+        return None
+
+    def create_module(self, spec: Any) -> None:
+        return None
+
+    def exec_module(self, module: Any) -> None:
+        if module.__name__ == self.package:
+            return
+        path = module.__name__.rpartition(".")[2] + ".py"
+        source, filename = self._files[path], self.filename(path)
+        linecache.cache[filename] = (len(source), None, source.splitlines(True), filename)
+        vars(module).update(self._names)
+        exec(compile(source, filename, "exec"), vars(module))
+
+
+def program_names(namespace: dict[str, Any]) -> dict[str, Any]:
+    """What a Flex program's code has without importing it: dspy, the provided tools, and the custom types."""
+    names = {"dspy": namespace["dspy"], **TYPING_NAMES, **namespace["__dspy_types"]}
+    names.update({name: namespace[name] for name in namespace["__dspy_guest_spec"]["tools"] if name in namespace})
+    return names
+
+
+def run_forward(namespace: dict[str, Any], files: dict[str, str], entry: list[str], inputs: dict[str, Any]) -> Any:
+    """Run one Flex forward in the sandbox: the class ``entry`` names, a file and a class in it, of the program
+    ``files``. Return its output fields as JSON, or as they are in the host's memory."""
     bind(namespace)
     wire = namespace["__dspy_values"]
-    prediction = namespace[class_name]().forward(**wire.decode(inputs))
-    fields = {"fields": wire.encode(dict(getattr(prediction, "_store", prediction)))}
+    path, class_name = entry
+    with Program(files, program_names(namespace)) as program:
+        prediction = getattr(program.load(path), class_name)().forward(**wire.decode(inputs))
+        fields = {"fields": wire.encode(dict(getattr(prediction, "_store", prediction)))}
     return fields if isinstance(wire, InMemory) else json.dumps(fields)
 
 
