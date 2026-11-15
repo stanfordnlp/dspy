@@ -11,7 +11,7 @@ from dspy.predict.flex import program
 from dspy.primitives.code_interpreter import CodeInterpreterError
 from dspy.teleprompt.gepa.gepa_flex_utils import _WorkingCopy
 from dspy.utils.dummies import DummyLM
-from tests.flex._proposer import runs_tests, submits
+from tests.flex._proposer import proposes, runs_tests, submits
 
 
 class Count(dspy.Signature):
@@ -281,17 +281,19 @@ def _propose(current: str, *turns: dict) -> tuple[str, DummyLM]:
     return adapter.propose_new_texts({"self": current}, reflective, ["self"])["self"], lm
 
 
+@pytest.mark.deno
 def test_the_proposer_writes_only_the_files_it_changes() -> None:
     revised = "# === rules.py ===\ndef total(items):\n    return len(items)\n\n# === extra.py ===\n"
-    files = program.parse(_propose(text(ENTRY, MODELS, RULES, ("extra.py", "X = 1")), submits(revised))[0])
+    files = program.parse(_propose(text(ENTRY, MODELS, RULES, ("extra.py", "X = 1")), *proposes(revised))[0])
     assert sorted(files) == ["models.py", "program.py", "rules.py"]
     assert files["rules.py"] == "def total(items):\n    return len(items)"
     assert files["program.py"] == program.parse(text(ENTRY))["program.py"]
 
 
+@pytest.mark.deno
 def test_a_proposal_without_header_lines_rewrites_program_py() -> None:
     rewrite = "```python\nclass CountModule(dspy.Module):\n    pass\n```"
-    files = program.parse(_propose(text(ENTRY, RULES), submits(rewrite))[0])
+    files = program.parse(_propose(text(ENTRY, RULES), *proposes(rewrite))[0])
     assert files["program.py"] == "class CountModule(dspy.Module):\n    pass"
     assert "rules.py" in files
 
@@ -300,7 +302,7 @@ def test_a_proposal_without_header_lines_rewrites_program_py() -> None:
 def test_the_proposer_runs_the_tests_of_its_revision_before_it_submits() -> None:
     failing = "# === test_rules.py ===\nfrom .rules import total\n\n\ndef test_total():\n    assert total([]) == 1"
     fixed = "# === test_rules.py ===\nfrom .rules import total\n\n\ndef test_total():\n    assert total([]) == 0"
-    proposed, lm = _propose(text(ENTRY, MODELS, RULES), runs_tests(failing), runs_tests(fixed), submits(fixed))
+    proposed, lm = _propose(text(ENTRY, MODELS, RULES), runs_tests(failing), runs_tests(fixed), submits())
 
     assert program.parse(proposed)["test_rules.py"].endswith("== 0")
     second, third = (str(call["messages"]) for call in lm.history[1:3])
@@ -309,10 +311,10 @@ def test_the_proposer_runs_the_tests_of_its_revision_before_it_submits() -> None
 
 
 @pytest.mark.deno
-def test_each_revision_the_proposer_tests_is_kept_and_an_empty_submission_submits_it() -> None:
+def test_each_revision_the_proposer_tests_is_kept_and_submitted() -> None:
     extra = "# === extra.py ===\nX = 1"
     rules = "# === rules.py ===\ndef total(items):\n    return len(items)"
-    proposed, lm = _propose(text(ENTRY, MODELS, RULES, TESTS), runs_tests(extra), runs_tests(rules), submits(""))
+    proposed, lm = _propose(text(ENTRY, MODELS, RULES, TESTS), runs_tests(extra), runs_tests(rules), submits())
 
     files = program.parse(proposed)
     assert files["extra.py"] == "X = 1" and files["rules.py"].endswith("return len(items)")

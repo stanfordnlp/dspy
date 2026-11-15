@@ -3,14 +3,19 @@
 import dspy
 
 
-def submits(source: str) -> dict:
-    """The turn that submits ``source`` as the revision."""
-    return _calls("submit", revised_source=source)
+def proposes(revision: str) -> list[dict]:
+    """The turns that test ``revision`` and submit the program as tested."""
+    return [runs_tests(revision), submits()]
 
 
 def runs_tests(revision: str) -> dict:
-    """The turn that runs the tests of the program as ``revision`` would make it."""
+    """The turn that applies ``revision`` to the program and runs its tests."""
     return _calls("run_tests", revision=revision)
+
+
+def submits() -> dict:
+    """The turn that submits the program as last tested."""
+    return _calls("submit")
 
 
 def _calls(tool: str, **args) -> dict:
