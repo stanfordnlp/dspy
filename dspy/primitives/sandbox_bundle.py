@@ -6,12 +6,12 @@ that executes no sandboxed code byte-compiles each archive once, so sandboxes st
 - ``stdlib.zip``: Pyodide's standard library, which every ``PythonInterpreter`` starts from. It depends only on the
   Pyodide release.
 - ``dspy-<digest>.zip``, for sandboxes whose code imports dspy (``PythonInterpreter.provide_dspy``), which have no
-  network to install packages with. It holds dspy and every package its installed metadata says it needs: those
-  Pyodide ships as Pyodide builds them (checked against Pyodide's lock file), the others from this environment if
-  they are pure Python, and the packages of Pyodide's ``PythonInterpreter(sandbox_packages=...)`` asks for, by
-  default Pillow, for ``dspy.Image.to_pil``. The libraries a ``dspy.Flex`` module's code may import
-  (``PythonInterpreter.provide_libraries``) add the installed packages they reach. There is one per set of sources
-  and packages.
+  network to install packages with. It holds dspy and every package its installed metadata says it needs, each as
+  this environment has it where it can (``_origin``), otherwise as Pyodide builds it (checked against Pyodide's lock
+  file), and the packages of Pyodide's ``PythonInterpreter(sandbox_packages=...)`` asks for, by default Pillow, for
+  ``dspy.Image.to_pil``. The libraries a ``dspy.Flex`` module's code may import
+  (``PythonInterpreter.provide_libraries``) add the installed packages they reach. A package whose version there
+  differs from this environment's is named in a warning. There is one per set of sources and packages.
 - ``dspy-<digest>-<stamp>.snap``: the memory of a sandbox that has installed that bundle and imported dspy, which a
   new one restores instead of doing both. There is one per bundle and standard library archive.
 - ``dspy-libraries-<digest>.libs``: the Python source files of the user's own code that those libraries reach, and
@@ -325,7 +325,42 @@ def _contents(
         listed = {arcname for _, arcname in files}
         needed = sorted({*needed, *more})
         files = files + [(path, arcname) for path, arcname in added if arcname not in listed]
+    # A package the bundle has from this environment, with its metadata, is installed: not from a wheel as well.
+    copied = {
+        _normalize(name.split("/")[0].removesuffix(".dist-info").rpartition("-")[0])
+        for _, name in files
+        if ".dist-info/" in name
+    }
+    needed = [name for name in needed if name not in copied]
+    _warn_of_versions(lock, needed)
     return [_fetch_wheel(root, lock[name], deno_dir) for name in needed], files
+
+
+# The packages whose other version in the sandbox this process has warned of.
+_warned: set[str] = set()
+
+
+def _warn_of_versions(lock: dict, needed: list[str]) -> None:
+    """Warn, once per package, of each Pyodide build in a sandbox whose version this environment has another of."""
+    differ = []
+    for name in needed:
+        try:
+            here = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            continue
+        there = lock[name].get("version")
+        if here != there and name not in _warned:
+            _warned.add(name)
+            differ.append(f"{name} {there} ({here} here)")
+    if differ:
+        logger.warning(
+            "The Pyodide sandbox runs other versions of packages than this environment: %s. Pyodide %s has only "
+            "these builds of them, or of a compiled package they need, so code there may behave differently. Install "
+            "these versions here, or use an interpreter that runs this environment's Python, like "
+            "dspy.LocalInterpreter.",
+            ", ".join(differ),
+            PYODIDE_VERSION,
+        )
 
 
 # The modification times of the folders each plan's files are in, when it was made.
@@ -350,21 +385,57 @@ def _plan(deno_dir: str | None, packages: tuple[str, ...] = ()) -> tuple[dict, l
     files' folders change (see ``_contents``). The files' sizes and times are read on every call, so an edited file
     still makes a new bundle."""
     lock = _pyodide_lock(deno_dir)
-    shipped, files = [], []
+    origins: dict[str, tuple[str | None, bool]] = {}
+    shipped, files = list(packages), []
     for dist in _distributions():
-        name = _normalize(dist.metadata["Name"])
-        if name in lock:
-            shipped.append(name)
-        else:
-            files += _files(dist)
-    shipped += packages
+        origin, _ = _origin(dist.metadata["Name"], lock, origins)
+        if origin == "pyodide":
+            shipped.append(dist.metadata["Name"])
+        elif origin == "env":
+            files += _files(dist) + _metadata_files(dist)
+            shipped += _stdlib_parts(lock, dist.metadata["Name"])
+    return lock, _with_depends(lock, shipped), files
+
+
+def _stdlib_parts(lock: dict, name: str) -> list[str]:
+    """The parts of the standard library Pyodide ships apart, like sqlite3 and ssl, that its build of ``name``
+    depends on, which a copy of this environment's needs as well."""
+    depends = lock.get(_normalize(name), {}).get("depends", [])
+    return [part for part in depends if lock.get(_normalize(part), {}).get("package_type") == "cpython_module"]
+
+
+def _origin(name: str, lock: dict, origins: dict[str, tuple[str | None, bool]]) -> tuple[str | None, bool]:
+    """Where a sandbox gets this environment's distribution ``name`` from, and whether it has this environment's
+    version there. It is a copy of this environment's files (``"env"``) if it is pure Python and everything it
+    requires, at any depth, has the same version in the sandbox, so that it runs as it does here. Otherwise it is
+    Pyodide's build (``"pyodide"``) if Pyodide ships one, else the copy anyway, or nothing (``None``) for compiled
+    code Pyodide does not ship. ``origins`` keeps what is decided, by normalized name."""
+    name = _normalize(name)
+    if name not in origins:
+        try:
+            dist = metadata.distribution(name)
+        except metadata.PackageNotFoundError:  # not installed here: nothing to differ from
+            return None, True
+        origins[name] = ("env", True)  # while what it requires is decided, for a cycle back to it
+        pure = bool(_files(dist))
+        if not (pure and all(_origin(required, lock, origins)[1] for required in _requires(dist))):
+            if name in lock:
+                origins[name] = ("pyodide", lock[name].get("version") == dist.version)
+            else:
+                origins[name] = ("env", True) if pure else (None, False)
+    return origins[name]
+
+
+def _with_depends(lock: dict, names: list[str]) -> list[str]:
+    """Pyodide's packages ``names`` and what they depend on by Pyodide's lock file."""
     needed: list[str] = []
-    while shipped:  # with what they need, by Pyodide's lock file
-        name = _normalize(shipped.pop())
+    names = list(names)
+    while names:
+        name = _normalize(names.pop())
         if name not in needed:
             needed.append(name)
-            shipped += lock[name]["depends"]
-    return lock, sorted(needed), files
+            names += lock[name]["depends"]
+    return sorted(needed)
 
 
 # What each set of libraries adds to a sandbox, with what it was made from, to tell when to make it again (``_made_from``).
@@ -390,17 +461,21 @@ def _library_plan(
         )
     sources, tops = _libraries.reach(libraries)
     providers = _libraries.providers()
-    own = {_normalize(dist.metadata["Name"]) for dist in _distributions()}
+    own = {_normalize(dist.metadata["Name"]) for dist in _distributions()}  # in the bundle already
+    origins: dict[str, tuple[str | None, bool]] = {}
     shipped: list[str] = []
     files: list[tuple[Path, str]] = []
     left_out: set[str] = set()
     for name, dist in _closure([name for top in tops for name in providers.get(top, ())]).items():
-        if name in lock:
+        origin, _ = _origin(name, lock, origins)
+        if origin == "pyodide":
             shipped.append(name)
-        elif copied := _files(dist):
-            # With its metadata, so that code in the sandbox can read the version it has there.
-            files += ([] if name in own else copied) + _metadata_files(dist)
-        elif name not in own:
+        elif name in own:
+            continue
+        elif origin == "env":
+            files += _files(dist) + _metadata_files(dist)
+            shipped += _stdlib_parts(lock, name)
+        else:
             left_out.add(name)
     declared = {module.split(".")[0] for module in libraries}
     refused = sorted(
@@ -419,13 +494,7 @@ def _library_plan(
             ", ".join(sorted(left_out)),
             ", ".join(libraries),
         )
-    needed: list[str] = []
-    while shipped:  # with what they need, by Pyodide's lock file
-        name = _normalize(shipped.pop())
-        if name not in needed:
-            needed.append(name)
-            shipped += lock[name]["depends"]
-    plan = sorted(needed), files, [(path, key) for key, path in sorted(sources.items())]
+    plan = _with_depends(lock, shipped), files, [(path, key) for key, path in sorted(sources.items())]
     _library_plans[libraries] = _made_from(plan), plan
     return plan
 
@@ -475,9 +544,14 @@ def _closure(todo: list[str]) -> dict[str, metadata.Distribution]:
         except metadata.PackageNotFoundError:  # one this platform does not need
             continue
         found[name] = dist
-        todo += [re.match(r"[\w.-]+", requirement).group(0) for requirement in dist.requires or ()
-                 if "extra ==" not in requirement]
+        todo += _requires(dist)
     return found
+
+
+def _requires(dist: metadata.Distribution) -> list[str]:
+    """The distributions ``dist`` requires, but for its extras', by normalized name."""
+    return [_normalize(re.match(r"[\w.-]+", requirement).group(0)) for requirement in dist.requires or ()
+            if "extra ==" not in requirement]
 
 
 def _top_level(dist: metadata.Distribution) -> set[str]:

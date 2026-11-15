@@ -35,8 +35,10 @@ interpreter, including those Flex and RLM make, with the environment variable `D
 writes nothing to `$DSPY_CACHEDIR/sandbox`, and Pyodide starts from its own standard library. Sandboxes that import
 dspy still need its bundle (below): each process builds its own in a temporary directory, removed when it exits.
 
-`provide_dspy()` lets sandboxed code `import dspy`, with the host's dspy source and Pyodide builds of its
-dependencies. `dspy.Flex` and `dspy.RLM` call it on the interpreters they create. Such an interpreter starts from a
+`provide_dspy()` lets sandboxed code `import dspy`, with the host's dspy source and its dependencies: a pure-Python
+one as your environment has it, unless something it needs has another version in the sandbox, and otherwise
+Pyodide's build. Each package whose version in the sandbox differs from yours is named in a warning, once per
+process. `dspy.Flex` and `dspy.RLM` call it on the interpreters they create. Such an interpreter starts from a
 snapshot of one that has already imported dspy, which DSPy records once per dspy source, so it starts faster than a
 plain one. To start interpreters before they are needed, see [`InterpreterPool`](InterpreterPool.md).
 

@@ -334,14 +334,18 @@ def test_the_sandbox_gets_what_the_libraries_reach_and_no_more(shop):
                 import importlib.util
                 import importlib.metadata
                 found = {name: importlib.util.find_spec(name) is not None for name in inputs["names"]}
-                return dspy.Prediction(found=found, pydantic=importlib.metadata.version("pydantic"))
+                pydantic, extensions = (importlib.metadata.version(name) for name in ("pydantic", "typing_extensions"))
+                return dspy.Prediction(found=found, pydantic=pydantic, extensions=extensions)
         """
     )
-    flex = dspy.Flex("names: list[str] -> found: dict[str, bool], pydantic: str", libraries=["flexshop.receipts"])
+    flex = dspy.Flex("names: list[str] -> found: dict[str, bool], pydantic: str, extensions: str",
+                     libraries=["flexshop.receipts"])
     flex._bind_code(source)
     out = flex(names=["flexshop.cart", "flexshop.receipts", "flexshop.reports"])
     assert out.found == {"flexshop.cart": True, "flexshop.receipts": True, "flexshop.reports": False}
-    # The record has the version the sandbox runs, which is Pyodide's build, whatever this environment has.
+    # A pure-Python package that needs nothing is this environment's copy. The record has the versions the sandbox
+    # runs, which for pydantic is Pyodide's build where its compiled core differs from this environment's.
+    assert out.extensions == importlib.metadata.version("typing_extensions")
     assert f"pydantic=={out.pydantic}" in flex.pin()["requires"]
 
 
