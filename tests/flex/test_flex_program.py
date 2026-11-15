@@ -9,7 +9,7 @@ import pytest
 import dspy
 from dspy.predict.flex import program
 from dspy.primitives.code_interpreter import CodeInterpreterError
-from dspy.teleprompt.gepa.gepa_flex_utils import _test_tool
+from dspy.teleprompt.gepa.gepa_flex_utils import _WorkingCopy
 from dspy.utils.dummies import DummyLM
 from tests.flex._proposer import runs_tests, submits
 
@@ -308,6 +308,17 @@ def test_the_proposer_runs_the_tests_of_its_revision_before_it_submits() -> None
     assert "1 passed, 0 failed" in third
 
 
+@pytest.mark.deno
+def test_each_revision_the_proposer_tests_is_kept_and_an_empty_submission_submits_it() -> None:
+    extra = "# === extra.py ===\nX = 1"
+    rules = "# === rules.py ===\ndef total(items):\n    return len(items)"
+    proposed, lm = _propose(text(ENTRY, MODELS, RULES, TESTS), runs_tests(extra), runs_tests(rules), submits(""))
+
+    files = program.parse(proposed)
+    assert files["extra.py"] == "X = 1" and files["rules.py"].endswith("return len(items)")
+    assert "0 passed, 1 failed" in str(lm.history[2]["messages"])  # the second run tested both revisions
+
+
 # -- tests -----------------------------------------------------------------------------------------------------------
 
 
@@ -331,7 +342,7 @@ def test_run_tests_reports_each_failure_with_its_file_and_line() -> None:
     assert "test_wrong.py, line 9, in test_total_of_nothing_is_one" in failure
     assert "AssertionError" in failure
 
-    run_tests = _test_tool(flex, flex.module_src)
+    run_tests = _WorkingCopy(flex, flex.module_src).run_tests
     assert run_tests(tests=["test_wrong.py::test_passes"]) == "1 passed, 0 failed."
     assert run_tests(tests=["test_wrong.py"]).startswith("1 passed, 1 failed.")
     assert run_tests(tests=["test_rules.py", "test_wrong.py::test_passes"]) == "2 passed, 0 failed."

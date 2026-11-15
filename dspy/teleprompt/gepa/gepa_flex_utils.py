@@ -123,8 +123,9 @@ class CodeProposalSignature(dspy.Signature):
       - ``test_*.py`` files hold its tests: functions named ``test_*`` that check the deterministic
         code with ``assert``, without calling a predictor or a tool. Keep the tests that still hold,
         and add one for each rule you implement and each failure you fix, with the expected value
-        worked out from the task's rules or the feedback. Run them with ``run_tests`` before you
-        submit, and fix the code or the test, whichever is wrong.
+        worked out from the task's rules or the feedback. Run them with ``run_tests``, which applies
+        your revision to the program, and fix the code or the test, whichever is wrong; submit once the
+        program is as you want it.
 
     Write each file you add or change in full, after a line ``# === <name>.py ===`` (a Python
     identifier, no directories). Files you do not write stay as they are; a file written empty is
@@ -171,27 +172,33 @@ class CodeProposalSignature(dspy.Signature):
     )
     revised_source: str = dspy.OutputField(
         desc="The files you add or change, each in full after its line `# === <name>.py ===`; files you leave out stay "
-        "as they are. `program.py` keeps the class that runs, with `__init__` (predictors, including any refined "
+        "as they are. After `run_tests`, only what you change beyond the program as you last tested it: empty submits "
+        "that program. `program.py` keeps the class that runs, with `__init__` (predictors, including any refined "
         '`dspy.Signature(..., "instructions")`) and `forward`.'
     )
 
 
-def _test_tool(flex: Flex, source: str) -> dspy.Tool:
-    """A tool that runs the tests of the program ``source`` as a revision would make it, in ``flex``'s sandbox."""
+class _WorkingCopy:
+    """The program one proposal works on, in ``flex``'s sandbox: each revision it tests becomes the program, which
+    its next test run and its submission build on."""
 
-    def run_tests(revision: str = "", tests: list[str] | None = None) -> str:
-        """Run the program's tests as your revision would make it. `revision`: the files you add or change, each
-        after its line `# === <name>.py ===`, as you would submit them; empty tests the program as it is. `tests`:
-        run only these, each a file (`test_rules.py`) or one test (`test_rules.py::test_total`); leave it out to run
-        them all. Returns the tests that pass and each failure with its file and line. A test may not call a
-        predictor or a tool."""
-        report = flex._bridge.test(program.revise(source, revision), tests)
+    def __init__(self, flex: Flex, source: str) -> None:
+        self.flex = flex
+        self.source = source
+
+    def run_tests(self, revision: str = "", tests: list[str] | None = None) -> str:
+        """Apply your revision to the program and run its tests. `revision`: the files you add or change, each in
+        full after its line `# === <name>.py ===` (a file written empty is removed); empty runs the tests again. The
+        program keeps the revision: your next run and your submission change the program as it is now. `tests`: run
+        only these, each a file (`test_rules.py`) or one test (`test_rules.py::test_total`); leave it out to run them
+        all. Returns the tests that pass and each failure with its file and line. A test may not call a predictor or
+        a tool."""
+        self.source = program.revise(self.source, revision)
+        report = self.flex._bridge.test(self.source, tests)
         if not report["passed"] and not report["failed"]:
             return f"No test matches {tests}." if tests else "The program has no tests: add test_*.py files."
         failed = [f"- {name}: {error}" for name, error in report["failed"].items()]
         return "\n".join([f"{len(report['passed'])} passed, {len(failed)} failed.", *failed])
-
-    return dspy.Tool(run_tests)
 
 
 def propose_code(
@@ -204,14 +211,14 @@ def propose_code(
     flex_modules: dict[str, Flex],
 ) -> dict[str, str]:
     """Propose a revised program (``module_src``) for each code component; keep the original on failure. The
-    proposer can run the program's tests in the sandbox of the component's Flex (``flex_modules``) as it writes."""
+    proposer works on a copy of the program, whose tests it can run in the sandbox of the component's Flex
+    (``flex_modules``) as it changes it, and submits the changes it has not tested yet."""
     results: dict[str, str] = {}
     with dspy.context(lm=reflection_lm):
         for ckey in code_keys:
             try:
-                proposer = dspy.ReAct(
-                    CodeProposalSignature, tools=[_test_tool(flex_modules[ckey], candidate[ckey])], max_iters=5
-                )
+                work = _WorkingCopy(flex_modules[ckey], candidate[ckey])
+                proposer = dspy.ReAct(CodeProposalSignature, tools=[dspy.Tool(work.run_tests)], max_iters=5)
                 out = proposer(
                     task_description=task_descriptions.get(ckey, ckey),
                     available_context=context_blurbs.get(ckey, "(no extra context)"),
@@ -219,7 +226,7 @@ def propose_code(
                     current_source=candidate[ckey],
                     failures=_format_failures(reflective_dataset.get(ckey, [])),
                 )
-                results[ckey] = program.revise(candidate[ckey], out.revised_source)
+                results[ckey] = program.revise(work.source, out.revised_source)
             except LMError:
                 raise
             except Exception as e:
