@@ -1,13 +1,16 @@
+import builtins
 import csv
 import json
 import signal
 import tempfile
 import threading
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 import dspy
+import dspy.evaluate.evaluate as evaluate_module
 from dspy.evaluate.evaluate import Evaluate, EvaluationResult
 from dspy.evaluate.metrics import answer_exact_match
 from dspy.predict import Predict
@@ -579,8 +582,22 @@ def test_evaluate_raises_on_empty_devset():
         ev(program)
 
 
-def test_evaluate_save_as_csv_writes_utf8(tmp_path):
-    """Results containing non-ASCII text must be written as UTF-8 on every platform."""
+def test_evaluate_save_as_csv_writes_utf8(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Results containing non-ASCII text must be written as UTF-8 on every platform.
+
+    CI runs on a UTF-8 host, where the previous code passed as well, so the module's
+    ``open`` is wrapped to default to cp1252. That reproduces the Windows failure and
+    makes the test fail if the explicit ``encoding="utf-8"`` is dropped.
+    """
+    real_open = builtins.open
+
+    def open_with_cp1252_default(*args, **kwargs):
+        mode = kwargs.get("mode", args[1] if len(args) > 1 else "r")
+        if "b" not in mode:
+            kwargs.setdefault("encoding", "cp1252")
+        return real_open(*args, **kwargs)
+
+    monkeypatch.setattr(evaluate_module, "open", open_with_cp1252_default, raising=False)
     dspy.settings.configure(lm=DummyLM({"What is 1+1?": {"answer": "中文 🔥"}}))
     devset = [new_example("What is 1+1?", "中文 🔥")]
     program = Predict("question -> answer")
