@@ -803,3 +803,42 @@ def test_tool_observation_preserves_custom_type():
     ]
     assert len(images) == 2
     assert result.answer == "done"
+
+
+def pack_stationery(lines):
+    """Packs every item in the given order, removing it from the queue as it goes."""
+    pending = lines["items"]
+    packed = []
+    while pending:
+        packed.append(pending.pop(0))
+    return f"Packed {len(packed)} items."
+
+
+def test_tool_calls_keep_the_arguments_the_model_chose():
+    # A queue-style tool eats the list it was handed. The call kept in history (and replayed
+    # to the model on the next turn) has to stay the one the model actually asked for.
+    react = dspy.ReAct("request -> answer", tools=[pack_stationery])
+    call = dspy.ToolCalls.ToolCall(name="pack_stationery", args={"lines": {"items": ["notebooks", "folders"]}})
+
+    results = react._execute_tool_calls(dspy.ToolCalls(tool_calls=[call]))[0]
+
+    assert results.tool_call_results[0].value == "Packed 2 items."
+    assert call.args == {"lines": {"items": ["notebooks", "folders"]}}
+
+
+def test_aexecuted_tool_calls_keep_the_arguments_the_model_chose():
+    async def order(lines):
+        """Async version of the packing tool, same queue behaviour."""
+        pending = lines["items"]
+        packed = []
+        while pending:
+            packed.append(pending.pop(0))
+        return f"Packed {len(packed)} items."
+
+    react = dspy.ReAct("request -> answer", tools=[order])
+    call = dspy.ToolCalls.ToolCall(name="order", args={"lines": {"items": ["notebooks", "folders"]}})
+
+    results = asyncio.run(react._aexecute_tool_calls(dspy.ToolCalls(tool_calls=[call])))[0]
+
+    assert results.tool_call_results[0].value == "Packed 2 items."
+    assert call.args == {"lines": {"items": ["notebooks", "folders"]}}
