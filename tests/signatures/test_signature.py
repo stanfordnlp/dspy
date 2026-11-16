@@ -644,3 +644,62 @@ def test_predict_cloudpickle_roundtrip():
     loaded = pickle.loads(data)
 
     assert list(loaded.signature.fields.keys()) == ["question", "answer"]
+
+
+def test_signature_field_validation_with_raw_pydantic_field():
+    with pytest.raises(TypeError, match="must be declared with InputField or OutputField"):
+        class BadSigNoDoc(Signature):
+            question = pydantic.Field()
+
+    with pytest.raises(TypeError, match="must be declared with InputField or OutputField"):
+        class BadSigTypedNoDoc(Signature):
+            question: str = pydantic.Field()
+
+    with pytest.raises(TypeError, match="must be declared with InputField or OutputField"):
+        class BadSigWithDoc(Signature):
+            """Instructions here."""
+            question: str = pydantic.Field()
+
+
+def test_make_signature_with_raw_pydantic_field_validation():
+    with pytest.raises(TypeError, match="must be declared with InputField or OutputField"):
+        dspy.make_signature({"question": (str, pydantic.Field())})
+
+
+def test_get_dspy_field_type_handles_none_extra():
+    from dspy.signatures.utils import get_dspy_field_type
+
+    raw_field = pydantic.Field()
+    with pytest.raises(ValueError, match="does not have a __dspy_field_type"):
+        get_dspy_field_type(raw_field)
+
+
+def test_signature_insert_field_validation_and_index_bounds():
+    class BaseSig(Signature):
+        question: str = InputField()
+        answer: str = OutputField()
+
+    # Invalid field type raises TypeError
+    with pytest.raises(TypeError, match="must be declared with InputField or OutputField"):
+        BaseSig.insert(0, "context", pydantic.Field())
+
+    # Out of bounds index raises ValueError with accurate range
+    with pytest.raises(ValueError, match=r"Invalid index to insert: 10, index must be in the range of \[-2, 1\] for input"):
+        BaseSig.insert(10, "context", InputField())
+
+    with pytest.raises(ValueError, match=r"Invalid index to insert: -5, index must be in the range of \[-2, 1\] for input"):
+        BaseSig.insert(-5, "context", InputField())
+
+
+def test_signature_dump_state_resilient_missing_prefix_or_desc():
+    class CustomSig(Signature):
+        question: str = InputField()
+        answer: str = OutputField()
+
+    # Intentionally strip prefix / desc to test dump_state resilience
+    CustomSig.fields["question"].json_schema_extra.pop("prefix", None)
+    CustomSig.fields["question"].json_schema_extra.pop("desc", None)
+
+    state = CustomSig.dump_state()
+    assert state["fields"][0]["prefix"] == "Question:"
+    assert state["fields"][0]["description"] == "${question}"
