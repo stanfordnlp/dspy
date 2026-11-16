@@ -683,6 +683,12 @@ def test_signature_insert_field_validation_and_index_bounds():
     with pytest.raises(TypeError, match="must be declared with InputField or OutputField"):
         BaseSig.insert(0, "context", pydantic.Field())
 
+    with pytest.raises(TypeError, match="must be declared with InputField or OutputField"):
+        BaseSig.insert(0, "context", None)
+
+    with pytest.raises(TypeError, match="must be declared with InputField or OutputField"):
+        BaseSig.insert(0, "context", "not a field")
+
     # Out of bounds index raises ValueError with accurate range
     with pytest.raises(ValueError, match=r"Invalid index to insert: 10, index must be in the range of \[-2, 1\] for input"):
         BaseSig.insert(10, "context", InputField())

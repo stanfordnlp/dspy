@@ -487,20 +487,20 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             print(list(NewSig2.fields.keys()))
             ```
         """
-        # It's possible to set the type as annotation=type in pydantic.Field(...)
-        # But this may be annoying for users, so we allow them to pass the type
-        if type_ is None:
-            type_ = field.annotation
-        if type_ is None:
-            type_ = str
-
-        # Validate field type
+        # Validate field type before accessing attributes like field.annotation
         if (
             not isinstance(field, FieldInfo)
             or not isinstance(field.json_schema_extra, dict)
             or field.json_schema_extra.get("__dspy_field_type") not in ("input", "output")
         ):
             raise TypeError(f"Field `{name}` must be declared with InputField or OutputField")
+
+        # It's possible to set the type as annotation=type in pydantic.Field(...)
+        # But this may be annoying for users, so we allow them to pass the type
+        if type_ is None:
+            type_ = field.annotation
+        if type_ is None:
+            type_ = str
 
         field_type = field.json_schema_extra["__dspy_field_type"]
         input_fields = list(cls.input_fields.items())
