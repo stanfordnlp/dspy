@@ -125,14 +125,15 @@ class CodeProposalSignature(dspy.Signature):
         and add one for each rule you implement and each failure you fix, with the expected value
         worked out from the task's rules or the feedback.
 
-    You change the program only with ``run_tests``: it applies your revision to the program and
-    runs the tests. Fix the code or the test, whichever is wrong, and call ``submit`` (it takes
-    nothing) when the program as you last tested it is the one you want: that program is submitted.
+    You work on the program with tools, and every change stays in it: ``write`` writes a whole file
+    (a new one, or one you rewrite), ``edit`` replaces one exact piece of a file, and ``run_tests``
+    runs the tests on the program as it is. Never retype what you don't change: change code with
+    ``edit``. The calls of one turn run in order, so you can edit and run the tests in one turn.
+    Fix the code or the test, whichever is wrong, and call ``submit`` (it takes nothing) to submit
+    the program as it is.
 
-    A revision writes each file it adds or changes in full, after a line ``# === <name>.py ===`` (a
-    Python identifier, no directories). Files it does not write stay as they are; a file written
-    empty is removed. In the current source each file follows such a line; a source without one is
-    ``program.py`` alone.
+    A file's name is a Python identifier with ``.py``, with no directories. In the current source
+    each file follows a line ``# === <name>.py ===``; a source without one is ``program.py`` alone.
 
     Tools are OPTIONAL — use them only when a step genuinely needs one; many good modules are just
     a ``dspy.Predict`` or two plus plain Python. When you do use tools, they come from two places.
@@ -175,21 +176,43 @@ class CodeProposalSignature(dspy.Signature):
 
 
 class _WorkingCopy:
-    """The program one proposal works on, in ``flex``'s sandbox: each revision it tests becomes the program, which
-    its next test run builds on and which it submits."""
+    """The program one proposal works on, as files: each change the proposer makes stays, so it writes only what it
+    changes, and ``submit`` submits the files as they are."""
 
     def __init__(self, flex: Flex, source: str) -> None:
         self.flex = flex
-        self.source = source
+        self.files = program.parse(source)
 
-    def run_tests(self, revision: str = "", tests: list[str] | None = None) -> str:
-        """Apply your revision to the program and run its tests. `revision`: the files you add or change, each in
-        full after its line `# === <name>.py ===` (a file written empty is removed); empty runs the tests again. The
-        program keeps the revision: your next run builds on it, and `submit` submits the program as it is now. `tests`: run
-        only these, each a file (`test_rules.py`) or one test (`test_rules.py::test_total`); leave it out to run them
-        all. Returns the tests that pass and each failure with its file and line. A test may not call a predictor or
-        a tool."""
-        self.source = program.revise(self.source, revision)
+    @property
+    def source(self) -> str:
+        return program.render(self.files)
+
+    def write(self, file: str, source: str) -> str:
+        """Write the whole of `file` (such as `rules.py` or `test_rules.py`): a new file, or one you rewrite. An empty
+        `source` removes the file. To change part of a file, use `edit`."""
+        [(name, text)] = program.read(f"# === {file} ===\n{source}").items() or [(file, "")]
+        if name != file:
+            raise ValueError(f"{file!r} is not a file name: a Python identifier with .py, such as rules.py.")
+        if text:
+            self.files[file] = text
+        else:
+            self.files.pop(file, None)
+        return f"Wrote {file}." if text else f"Removed {file}."
+
+    def edit(self, file: str, old: str, new: str) -> str:
+        """Replace `old`, an exact piece of `file` that appears in it once, with `new`."""
+        if file not in self.files:
+            raise ValueError(f"There is no {file}: the files are {sorted(self.files)}.")
+        found = self.files[file].count(old) if old else 0
+        if found != 1:
+            raise ValueError(f"`old` appears {found} times in {file}: give an exact piece of it that appears once.")
+        self.files[file] = self.files[file].replace(old, new)
+        return f"Edited {file}."
+
+    def run_tests(self, tests: list[str] | None = None) -> str:
+        """Run the program's tests, as the program is now. `tests`: run only these, each a file (`test_rules.py`) or
+        one test (`test_rules.py::test_total`); leave it out to run them all. Returns the tests that pass and each
+        failure with its file and line. A test may not call a predictor or a tool."""
         report = self.flex._bridge.test(self.source, tests)
         if not report["passed"] and not report["failed"]:
             return f"No test matches {tests}." if tests else "The program has no tests: add test_*.py files."
@@ -207,14 +230,15 @@ def propose_code(
     flex_modules: dict[str, Flex],
 ) -> dict[str, str]:
     """Propose a revised program (``module_src``) for each code component; keep the original on failure. The
-    proposer changes a copy of the program only by testing each change in the sandbox of the component's Flex
-    (``flex_modules``), and submits the copy as last tested."""
+    proposer writes and edits a copy of the program, runs its tests in the sandbox of the component's Flex
+    (``flex_modules``), and submits the copy."""
     results: dict[str, str] = {}
     with dspy.context(lm=reflection_lm):
         for ckey in code_keys:
             try:
                 work = _WorkingCopy(flex_modules[ckey], candidate[ckey])
-                proposer = dspy.ReAct(CodeProposalSignature, tools=[dspy.Tool(work.run_tests)], max_iters=5)
+                tools = [dspy.Tool(work.write), dspy.Tool(work.edit), dspy.Tool(work.run_tests)]
+                proposer = dspy.ReAct(CodeProposalSignature, tools=tools, max_iters=10)
                 proposer(
                     task_description=task_descriptions.get(ckey, ckey),
                     available_context=context_blurbs.get(ckey, "(no extra context)"),

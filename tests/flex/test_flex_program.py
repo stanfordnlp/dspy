@@ -11,7 +11,7 @@ from dspy.predict.flex import program
 from dspy.primitives.code_interpreter import CodeInterpreterError
 from dspy.teleprompt.gepa.gepa_flex_utils import _WorkingCopy
 from dspy.utils.dummies import DummyLM
-from tests.flex._proposer import proposes, runs_tests, submits
+from tests.flex._proposer import edits, proposes, runs_tests, submits
 
 
 class Count(dspy.Signature):
@@ -311,7 +311,23 @@ def test_the_proposer_runs_the_tests_of_its_revision_before_it_submits() -> None
 
 
 @pytest.mark.deno
-def test_each_revision_the_proposer_tests_is_kept_and_submitted() -> None:
+def test_the_proposer_edits_a_piece_of_a_file_without_retyping_it() -> None:
+    proposed, lm = _propose(
+        text(ENTRY, MODELS, RULES, TESTS),
+        edits("rules.py", "return sum", "return 1 + sum"),  # appears once
+        edits("rules.py", "nowhere", "x"),
+        submits(),
+    )
+
+    assert program.parse(proposed)["rules.py"] == program.parse(text(RULES))["rules.py"].replace(
+        "return sum", "return 1 + sum"
+    )
+    assert "0 passed, 1 failed" in str(lm.history[1]["messages"])
+    assert "`old` appears 0 times in rules.py" in str(lm.history[2]["messages"])
+
+
+@pytest.mark.deno
+def test_each_change_the_proposer_makes_is_kept_and_submitted() -> None:
     extra = "# === extra.py ===\nX = 1"
     rules = "# === rules.py ===\ndef total(items):\n    return len(items)"
     proposed, lm = _propose(text(ENTRY, MODELS, RULES, TESTS), runs_tests(extra), runs_tests(rules), submits())
