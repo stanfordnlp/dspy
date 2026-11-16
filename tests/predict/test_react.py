@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import replace
+from typing import Any
 
 import pytest
 from jsonschema import ValidationError, validate
@@ -127,6 +128,40 @@ def test_react_text_mock_lm_loop_records_inputs_once():
     assert pred.history.messages[0]["tool_calls"].tool_calls[0].id == "call_0_0"
     assert "tool_call_results" not in pred.history.messages[0]
     assert pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results[0].call_id == "call_0_0"
+
+
+def test_react_tool_mutating_args_does_not_rewrite_history():
+    def pack_order(lines: Any) -> str:
+        items = lines["items"]
+        packed = 0
+        while items:
+            items.pop()
+            packed += 1
+        return f"Packed {packed} items."
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "I should pack this order.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "pack_order", "args": {"lines": {"items": ["notebooks", "folders"]}}}]
+                ),
+            },
+            {
+                "next_thought": "I can answer now.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"answer": "Packed 2 items."}}]
+                ),
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReAct("question -> answer", tools=[pack_order])(question="pack the order")
+
+    assert pred.answer == "Packed 2 items."
+    recorded_args = pred.history.messages[0]["tool_calls"].tool_calls[0].args
+    assert recorded_args == {"lines": {"items": ["notebooks", "folders"]}}
 
 
 @pytest.mark.parametrize("storage", ["object", "dict", "json"])
