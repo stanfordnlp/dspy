@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 # module uses).
 _INPUTS_VAR = "__dspy_flex_inputs"
 _FILES_VAR = "__dspy_flex_files"
-_SELECT_VAR = "__dspy_flex_select"
 
 
 def _refuse(what: str) -> Callable[..., Any]:
@@ -114,10 +113,9 @@ class BridgeRuntime:
         finally:
             self._close(session, interp)
 
-    def test(self, module_src: str, tests: list[str] | None = None) -> dict[str, Any]:
-        """Import the program ``module_src`` and run its tests, or only ``tests`` (each a file, ``test_rules.py``, or
-        one test, ``test_rules.py::test_total``), in a fresh interpreter set up as a forward's, where an LM or tool
-        call fails the test that makes it: ``{"passed": [names], "failed": {name: error}}``."""
+    def test(self, module_src: str) -> dict[str, Any]:
+        """Import the program ``module_src`` and run its tests in a fresh interpreter set up as a forward's, where
+        an LM or tool call fails the test that makes it: ``{"passed": [names], "failed": {name: error}}``."""
         ctx = self._flex._flex_ctx
         session = SandboxSession(
             ctx.context_names(),
@@ -132,10 +130,10 @@ class BridgeRuntime:
             interp.tools[CALL_TOOL] = _refuse("call a tool")
             code = (
                 "from dspy.primitives.sandbox_guest import run_tests as __dspy_run_tests\n"
-                f"__dspy_run_tests(globals(), {_FILES_VAR}, {program.ENTRY!r}, {_SELECT_VAR})"
+                f"__dspy_run_tests(globals(), {_FILES_VAR}, {program.ENTRY!r})"
             )
             with session.scope():  # code in the host's memory would otherwise reach the host's LM
-                result = interp.execute(code, variables={_FILES_VAR: program.parse(module_src), _SELECT_VAR: tests})
+                result = interp.execute(code, variables={_FILES_VAR: program.parse(module_src)})
         finally:
             self._close(session, interp)
         return json.loads(result) if isinstance(result, str) else result

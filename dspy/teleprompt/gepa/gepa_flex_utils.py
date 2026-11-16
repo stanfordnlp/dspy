@@ -125,15 +125,10 @@ class CodeProposalSignature(dspy.Signature):
         and add one for each rule you implement and each failure you fix, with the expected value
         worked out from the task's rules or the feedback.
 
-    You work on the program with tools, and every change stays in it: ``write`` writes a whole file
-    (a new one, or one you rewrite), ``edit`` replaces one exact piece of a file, and ``run_tests``
-    runs the tests on the program as it is. Never retype what you don't change: change code with
-    ``edit``. The calls of one turn run in order, so you can edit and run the tests in one turn.
-    Fix the code or the test, whichever is wrong, and call ``submit`` (it takes nothing) to submit
-    the program as it is.
-
-    A file's name is a Python identifier with ``.py``, with no directories. In the current source
-    each file follows a line ``# === <name>.py ===``; a source without one is ``program.py`` alone.
+    Write each file you add or change in full, after a line ``# === <name>.py ===`` (a Python
+    identifier, no directories). Files you do not write stay as they are; a file written empty is
+    removed. In the current source each file follows such a line; a source without one is
+    ``program.py`` alone.
 
     Tools are OPTIONAL — use them only when a step genuinely needs one; many good modules are just
     a ``dspy.Predict`` or two plus plain Python. When you do use tools, they come from two places.
@@ -173,51 +168,11 @@ class CodeProposalSignature(dspy.Signature):
     failures: str = dspy.InputField(
         desc="A batch of failing examples and feedback. Diagnose them and revise the module to fix them."
     )
-
-
-class _WorkingCopy:
-    """The program one proposal works on, as files: each change the proposer makes stays, so it writes only what it
-    changes, and ``submit`` submits the files as they are."""
-
-    def __init__(self, flex: Flex, source: str) -> None:
-        self.flex = flex
-        self.files = program.parse(source)
-
-    @property
-    def source(self) -> str:
-        return program.render(self.files)
-
-    def write(self, file: str, source: str) -> str:
-        """Write the whole of `file` (such as `rules.py` or `test_rules.py`): a new file, or one you rewrite. An empty
-        `source` removes the file. To change part of a file, use `edit`."""
-        [(name, text)] = program.read(f"# === {file} ===\n{source}").items() or [(file, "")]
-        if name != file:
-            raise ValueError(f"{file!r} is not a file name: a Python identifier with .py, such as rules.py.")
-        if text:
-            self.files[file] = text
-        else:
-            self.files.pop(file, None)
-        return f"Wrote {file}." if text else f"Removed {file}."
-
-    def edit(self, file: str, old: str, new: str) -> str:
-        """Replace `old`, an exact piece of `file` that appears in it once, with `new`."""
-        if file not in self.files:
-            raise ValueError(f"There is no {file}: the files are {sorted(self.files)}.")
-        found = self.files[file].count(old) if old else 0
-        if found != 1:
-            raise ValueError(f"`old` appears {found} times in {file}: give an exact piece of it that appears once.")
-        self.files[file] = self.files[file].replace(old, new)
-        return f"Edited {file}."
-
-    def run_tests(self, tests: list[str] | None = None) -> str:
-        """Run the program's tests, as the program is now. `tests`: run only these, each a file (`test_rules.py`) or
-        one test (`test_rules.py::test_total`); leave it out to run them all. Returns the tests that pass and each
-        failure with its file and line. A test may not call a predictor or a tool."""
-        report = self.flex._bridge.test(self.source, tests)
-        if not report["passed"] and not report["failed"]:
-            return f"No test matches {tests}." if tests else "The program has no tests: add test_*.py files."
-        failed = [f"- {name}: {error}" for name, error in report["failed"].items()]
-        return "\n".join([f"{len(report['passed'])} passed, {len(failed)} failed.", *failed])
+    revised_source: str = dspy.OutputField(
+        desc="The files you add or change, each in full after its line `# === <name>.py ===`; files you leave out stay "
+        "as they are. `program.py` keeps the class that runs, with `__init__` (predictors, including any refined "
+        '`dspy.Signature(..., "instructions")`) and `forward`.'
+    )
 
 
 def propose_code(
@@ -227,26 +182,21 @@ def propose_code(
     task_descriptions: dict[str, str],
     context_blurbs: dict[str, str],
     reflection_lm,
-    flex_modules: dict[str, Flex],
 ) -> dict[str, str]:
-    """Propose a revised program (``module_src``) for each code component; keep the original on failure. The
-    proposer writes and edits a copy of the program, runs its tests in the sandbox of the component's Flex
-    (``flex_modules``), and submits the copy."""
+    """Propose a revised program (``module_src``) for each code component; keep the original on failure."""
     results: dict[str, str] = {}
+    proposer = dspy.Predict(CodeProposalSignature)
     with dspy.context(lm=reflection_lm):
         for ckey in code_keys:
             try:
-                work = _WorkingCopy(flex_modules[ckey], candidate[ckey])
-                tools = [dspy.Tool(work.write), dspy.Tool(work.edit), dspy.Tool(work.run_tests)]
-                proposer = dspy.ReAct(CodeProposalSignature, tools=tools, max_iters=10)
-                proposer(
+                out = proposer(
                     task_description=task_descriptions.get(ckey, ckey),
                     available_context=context_blurbs.get(ckey, "(no extra context)"),
                     primitives_catalog=PRIMITIVES_CATALOG,
                     current_source=candidate[ckey],
                     failures=_format_failures(reflective_dataset.get(ckey, [])),
                 )
-                results[ckey] = work.source
+                results[ckey] = program.revise(candidate[ckey], out.revised_source)
             except LMError:
                 raise
             except Exception as e:

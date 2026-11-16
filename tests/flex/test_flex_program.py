@@ -9,9 +9,7 @@ import pytest
 import dspy
 from dspy.predict.flex import program
 from dspy.primitives.code_interpreter import CodeInterpreterError
-from dspy.teleprompt.gepa.gepa_flex_utils import _WorkingCopy
 from dspy.utils.dummies import DummyLM
-from tests.flex._proposer import edits, proposes, runs_tests, submits
 
 
 class Count(dspy.Signature):
@@ -266,11 +264,11 @@ def test_a_program_of_several_files_survives_save_and_load(tmp_path) -> None:
 # -- the code proposer -----------------------------------------------------------------------------------------------
 
 
-def _propose(current: str, *turns: dict) -> tuple[str, DummyLM]:
-    """What the proposer makes of ``current`` when the reflection LM takes ``turns``."""
+def _propose(current: str, *revisions: str) -> tuple[str, DummyLM]:
+    """What the proposer makes of ``current`` when the reflection LM writes ``revisions`` in turn."""
     from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 
-    lm = DummyLM(list(turns))
+    lm = DummyLM([{"revised_source": revision} for revision in revisions])
     adapter = DspyAdapter(
         student_module=dspy.Flex(Count),
         metric_fn=lambda gold, pred, trace=None, pred_name=None, pred_trace=None: 0.0,
@@ -281,60 +279,18 @@ def _propose(current: str, *turns: dict) -> tuple[str, DummyLM]:
     return adapter.propose_new_texts({"self": current}, reflective, ["self"])["self"], lm
 
 
-@pytest.mark.deno
 def test_the_proposer_writes_only_the_files_it_changes() -> None:
     revised = "# === rules.py ===\ndef total(items):\n    return len(items)\n\n# === extra.py ===\n"
-    files = program.parse(_propose(text(ENTRY, MODELS, RULES, ("extra.py", "X = 1")), *proposes(revised))[0])
+    files = program.parse(_propose(text(ENTRY, MODELS, RULES, ("extra.py", "X = 1")), revised)[0])
     assert sorted(files) == ["models.py", "program.py", "rules.py"]
     assert files["rules.py"] == "def total(items):\n    return len(items)"
     assert files["program.py"] == program.parse(text(ENTRY))["program.py"]
 
 
-@pytest.mark.deno
 def test_a_proposal_without_header_lines_rewrites_program_py() -> None:
-    rewrite = "```python\nclass CountModule(dspy.Module):\n    pass\n```"
-    files = program.parse(_propose(text(ENTRY, RULES), *proposes(rewrite))[0])
+    files = program.parse(_propose(text(ENTRY, RULES), "```python\nclass CountModule(dspy.Module):\n    pass\n```")[0])
     assert files["program.py"] == "class CountModule(dspy.Module):\n    pass"
     assert "rules.py" in files
-
-
-@pytest.mark.deno
-def test_the_proposer_runs_the_tests_of_its_revision_before_it_submits() -> None:
-    failing = "# === test_rules.py ===\nfrom .rules import total\n\n\ndef test_total():\n    assert total([]) == 1"
-    fixed = "# === test_rules.py ===\nfrom .rules import total\n\n\ndef test_total():\n    assert total([]) == 0"
-    proposed, lm = _propose(text(ENTRY, MODELS, RULES), runs_tests(failing), runs_tests(fixed), submits())
-
-    assert program.parse(proposed)["test_rules.py"].endswith("== 0")
-    second, third = (str(call["messages"]) for call in lm.history[1:3])
-    assert "0 passed, 1 failed" in second and "test_rules.py::test_total" in second
-    assert "1 passed, 0 failed" in third
-
-
-@pytest.mark.deno
-def test_the_proposer_edits_a_piece_of_a_file_without_retyping_it() -> None:
-    proposed, lm = _propose(
-        text(ENTRY, MODELS, RULES, TESTS),
-        edits("rules.py", "return sum", "return 1 + sum"),  # appears once
-        edits("rules.py", "nowhere", "x"),
-        submits(),
-    )
-
-    assert program.parse(proposed)["rules.py"] == program.parse(text(RULES))["rules.py"].replace(
-        "return sum", "return 1 + sum"
-    )
-    assert "0 passed, 1 failed" in str(lm.history[1]["messages"])
-    assert "`old` appears 0 times in rules.py" in str(lm.history[2]["messages"])
-
-
-@pytest.mark.deno
-def test_each_change_the_proposer_makes_is_kept_and_submitted() -> None:
-    extra = "# === extra.py ===\nX = 1"
-    rules = "# === rules.py ===\ndef total(items):\n    return len(items)"
-    proposed, lm = _propose(text(ENTRY, MODELS, RULES, TESTS), runs_tests(extra), runs_tests(rules), submits())
-
-    files = program.parse(proposed)
-    assert files["extra.py"] == "X = 1" and files["rules.py"].endswith("return len(items)")
-    assert "0 passed, 1 failed" in str(lm.history[2]["messages"])  # the second run tested both revisions
 
 
 # -- tests -----------------------------------------------------------------------------------------------------------
@@ -359,13 +315,6 @@ def test_run_tests_reports_each_failure_with_its_file_and_line() -> None:
     assert failure.startswith("test_wrong.py::test_total_of_nothing_is_one:")
     assert "test_wrong.py, line 9, in test_total_of_nothing_is_one" in failure
     assert "AssertionError" in failure
-
-    run_tests = _WorkingCopy(flex, flex.module_src).run_tests
-    assert run_tests(tests=["test_wrong.py::test_passes"]) == "1 passed, 0 failed."
-    assert run_tests(tests=["test_wrong.py"]).startswith("1 passed, 1 failed.")
-    assert run_tests(tests=["test_rules.py", "test_wrong.py::test_passes"]) == "2 passed, 0 failed."
-    assert run_tests(tests=["test_rules.py::test_nothing"]) == "No test matches ['test_rules.py::test_nothing']."
-    assert run_tests().startswith("2 passed, 1 failed.")
 
 
 @pytest.mark.deno
