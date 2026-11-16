@@ -42,18 +42,28 @@ def render(files: dict[str, str]) -> str:
 
 
 def read(revision: str) -> dict[str, str]:
-    """The files a reflection model's ``revision`` writes, by name, an empty one to remove it. Code fences, Windows
-    line endings and words before the first file are dropped. A revision without header lines is ``program.py``; with
-    them, code before the first is ``program.py`` only if it defines a class, as ``program.py`` does."""
-    lines = (revision or "").replace("\r\n", "\n").split("\n")
-    parts = _HEADER.split("\n".join(line for line in lines if not _FENCE.match(line)))
-    head = parts[0].strip()
+    """The files a reflection model's ``revision`` writes, by name, an empty one to remove it. Code fences around a
+    file, Windows line endings and words before the first file are dropped; a fence inside the code, as in a string,
+    stays. A revision without header lines is ``program.py``; with them, code before the first is ``program.py`` only
+    if it defines a class, as ``program.py`` does."""
+    parts = _HEADER.split((revision or "").replace("\r\n", "\n"))
+    head = _unfenced(parts[0])
     files = {ENTRY: head} if head and (len(parts) == 1 or _defines_a_class(head)) else {}
     for name, source in zip(parts[1::2], parts[2::2], strict=True):
         if name in files:
             raise CodeInterpreterError(f"The revision writes {name} twice: write each file once, after its line.")
-        files[name] = source.strip()
+        files[name] = _unfenced(source)
     return {name: source.expandtabs(4) for name, source in files.items()}
+
+
+def _unfenced(source: str) -> str:
+    """``source`` without the blank and fence lines at its start and end."""
+    lines = source.split("\n")
+    while lines and (not lines[0].strip() or _FENCE.match(lines[0])):
+        lines.pop(0)
+    while lines and (not lines[-1].strip() or _FENCE.match(lines[-1])):
+        lines.pop()
+    return "\n".join(lines).strip()
 
 
 def revise(text: str, revision: str) -> str:

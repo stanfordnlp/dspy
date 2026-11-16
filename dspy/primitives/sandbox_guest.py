@@ -837,6 +837,9 @@ def run_tests(namespace: dict[str, Any], files: dict[str, str], entry: str) -> s
                 continue
             for name, test in vars(module).items():
                 if name.startswith("test_") and inspect.isfunction(test) and test.__module__ == module.__name__:
+                    if inspect.iscoroutinefunction(test):
+                        failed[f"{path}::{name}"] = "An async test is not run: write it as a plain def."
+                        continue
                     try:
                         test()
                         passed.append(f"{path}::{name}")

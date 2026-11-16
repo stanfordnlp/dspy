@@ -111,6 +111,12 @@ def test_a_revision_is_read_without_its_fences_and_words(revision) -> None:
     assert program.read(revision) == {"rules.py": "X = 1", "extra.py": "Y = 2"}
 
 
+def test_a_fence_inside_the_code_of_a_revision_stays() -> None:
+    source = 'EXAMPLE = """\n```json\n{"total": 1}\n```\n"""'
+    assert program.read(f"```python\n# === prompts.py ===\n{source}\n```") == {"prompts.py": source}
+    assert program.read(f"```python\n{source}\n```") == {"program.py": source}
+
+
 def test_code_before_the_first_file_of_a_revision_is_program_py_if_it_defines_a_class() -> None:
     revision = "class CountModule(dspy.Module):\n    pass\n\n# === rules.py ===\nX = 1"
     assert program.read(revision) == {"program.py": "class CountModule(dspy.Module):\n    pass", "rules.py": "X = 1"}
@@ -315,6 +321,19 @@ def test_run_tests_reports_each_failure_with_its_file_and_line() -> None:
     assert failure.startswith("test_wrong.py::test_total_of_nothing_is_one:")
     assert "test_wrong.py, line 9, in test_total_of_nothing_is_one" in failure
     assert "AssertionError" in failure
+
+
+@pytest.mark.deno
+def test_an_async_test_fails_instead_of_passing_unrun() -> None:
+    async_test = ("test_async.py", """
+        async def test_total_of_nothing_is_one():
+            assert False
+    """)
+    flex = dspy.Flex(Count)
+    flex._bind_code(text(ENTRY, MODELS, RULES, async_test))
+    [failure] = flex.run_tests()
+    assert failure.startswith("test_async.py::test_total_of_nothing_is_one:")
+    assert "async test is not run" in failure
 
 
 @pytest.mark.deno
