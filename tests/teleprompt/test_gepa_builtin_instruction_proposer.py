@@ -14,7 +14,7 @@ from dspy.adapters.types.tool import ToolCallResults, ToolCalls
 from dspy.lm15 import ImagePart, TextPart
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, build_repl_event
 from dspy.teleprompt.gepa import InstructionProposer
-from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, format_history_for_reflection
 from dspy.teleprompt.gepa.instruction_proposal import (
     ProposeInstruction,
     _Skill,
@@ -713,15 +713,23 @@ def test_examples_reach_adapter_as_structured_values():
     assert '"Feedback": "ok"' in text
 
 
-@pytest.mark.parametrize("builtin", [True, False])
-def test_reflective_dataset_preserves_builtin_values_and_custom_string_format(builtin):
+class StructuredProposer:
+    wants_structured_inputs = True
+
+    def __call__(self, **kwargs):
+        return {}
+
+
+class TruthyFlagProposer:
+    wants_structured_inputs = "yes"
+
+    def __call__(self, **kwargs):
+        return {}
+
+
+def reflective_record(student, inputs, output, proposer):
     from gepa import EvaluationBatch
 
-    student = dspy.Predict("payload: dict -> answer: list")
-    payload = {"items": [{"image": dspy.Image(url="https://example.com/image.png"), "count": 3}]}
-    output = dspy.Prediction(answer=["cat", "dog"])
-    example = dspy.Example(payload=payload).with_inputs("payload")
-    proposer = None if builtin else lambda **kwargs: {}
     adapter = DspyAdapter(
         student_module=student,
         metric_fn=lambda *args, **kwargs: 0,
@@ -733,16 +741,51 @@ def test_reflective_dataset_preserves_builtin_values_and_custom_string_format(bu
         scores=[0],
         trajectories=[
             {
-                "trace": [(student, {"payload": payload}, output)],
-                "example": example,
+                "trace": [(student, inputs, output)],
+                "example": dspy.Example(**inputs).with_inputs(*inputs),
                 "prediction": output,
                 "score": 0,
             }
         ],
     )
     [record] = adapter.make_reflective_dataset({"self": student.signature.instructions}, batch, ["self"])["self"]
-    assert record["Inputs"]["payload"] == (payload if builtin else str(payload))
-    assert record["Generated Outputs"]["answer"] == (output.answer if builtin else str(output.answer))
+    return record
+
+
+@pytest.mark.parametrize(
+    ("proposer", "structured"),
+    [
+        (None, True),
+        (StructuredProposer(), True),
+        (lambda **kwargs: {}, False),
+        (TruthyFlagProposer(), False),
+    ],
+    ids=["builtin", "custom-opted-in", "custom-default", "custom-truthy-flag"],
+)
+def test_reflective_dataset_keeps_values_only_for_structured_proposers(proposer, structured):
+    student = dspy.Predict("payload: dict -> answer: list")
+    payload = {"items": [{"image": dspy.Image(url="https://example.com/image.png"), "count": 3}]}
+    output = dspy.Prediction(answer=["cat", "dog"])
+    record = reflective_record(student, {"payload": payload}, output, proposer)
+    assert record["Inputs"]["payload"] == (payload if structured else str(payload))
+    assert record["Generated Outputs"]["answer"] == (output.answer if structured else str(output.answer))
+
+
+@pytest.mark.parametrize(
+    ("proposer", "structured"),
+    [(StructuredProposer(), True), (lambda **kwargs: {}, False)],
+    ids=["custom-opted-in", "custom-default"],
+)
+def test_reflective_dataset_context_is_history_only_for_structured_proposers(proposer, structured):
+    student = dspy.Predict("question: str, history: dspy.History -> answer: str")
+    history = tool_history("short result")
+    output = dspy.Prediction(answer="cat")
+    record = reflective_record(student, {"question": "cats?", "history": history}, output, proposer)
+    assert list(record["Inputs"]) == ["Context", "question"]
+    if structured:
+        assert record["Inputs"]["Context"] is history
+    else:
+        assert record["Inputs"]["Context"] == format_history_for_reflection(history)
 
 
 def test_yaml_description_can_contain_an_indented_separator():

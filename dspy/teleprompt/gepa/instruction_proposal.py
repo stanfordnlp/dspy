@@ -312,6 +312,9 @@ class InstructionProposer(ProposalFn):
         ```
     """
 
+    # Reflective examples arrive with History objects and raw input and output values.
+    wants_structured_inputs = True
+
     def __init__(
         self,
         skills: str | Path | Sequence[str | Path] | None = None,
