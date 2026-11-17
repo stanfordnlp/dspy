@@ -2731,6 +2731,26 @@ def test_chat_adapter_falls_back_when_value_invalid_and_field_missing():
         assert result == [{"color": "red", "answer": "Paris"}]
 
 
+def test_chat_adapter_default_factory_runs_once():
+    calls = 0
+
+    def make_default():
+        nonlocal calls
+        calls += 1
+        return ["default_item"]
+
+    class WithFactory(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        items: list = dspy.OutputField(default_factory=make_default)
+
+    adapter = dspy.ChatAdapter()
+    result = adapter.parse(WithFactory, "[[ ## answer ## ]]\nParis\n[[ ## completed ## ]]")
+    assert result["answer"] == "Paris"
+    assert result["items"] == ["default_item"]
+    assert calls == 1
+
+
 def test_chat_adapter_respects_use_json_adapter_fallback_flag():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.ChatAdapter(use_json_adapter_fallback=False)

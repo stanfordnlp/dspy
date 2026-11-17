@@ -7,6 +7,7 @@ from pydantic.fields import FieldInfo
 from dspy.adapters.base import Adapter, prompt_to_openai_messages
 from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
+    annotation_allows_none,
     apply_output_field_defaults,
     format_field_value,
     get_annotation_name,
@@ -232,14 +233,17 @@ class ChatAdapter(Adapter):
 
         sections = [(k, "\n".join(v).strip()) for k, v in sections]
 
-        raw_fields = {k: None for k, _ in sections if k in signature.output_fields}
-        tentative_fields = apply_output_field_defaults(signature, raw_fields)
-        if tentative_fields.keys() != signature.output_fields.keys():
+        present_fields = {k for k, _ in sections if k in signature.output_fields}
+        missing_required = [
+            k for k, v in signature.output_fields.items()
+            if k not in present_fields and v.is_required() and not annotation_allows_none(v.annotation)
+        ]
+        if missing_required:
             raise AdapterParseError(
                 adapter_name="ChatAdapter",
                 signature=signature,
                 lm_response=completion,
-                parsed_result=tentative_fields,
+                message=f"Missing required output field markers: {missing_required}",
             )
 
         fields = {}

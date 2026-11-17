@@ -322,6 +322,47 @@ def test_xml_adapter_falls_back_when_value_invalid_and_field_missing():
         assert result == [{"color": "red", "answer": "Paris"}]
 
 
+def test_xml_adapter_default_factory_runs_once():
+    calls = 0
+
+    def make_default():
+        nonlocal calls
+        calls += 1
+        return ["default_item"]
+
+    class WithFactory(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        items: list = dspy.OutputField(default_factory=make_default)
+
+    adapter = XMLAdapter()
+    result = adapter.parse(WithFactory, "<answer>Paris</answer>")
+    assert result["answer"] == "Paris"
+    assert result["items"] == ["default_item"]
+    assert calls == 1
+
+
+def test_xml_adapter_union_bad_value_does_not_fallback():
+    class UnionField(dspy.Signature):
+        question: str = dspy.InputField()
+        value: int | list[int] = dspy.OutputField()
+
+    adapter = XMLAdapter(use_json_adapter_fallback=True)
+
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            "<value>not_an_int</value>",
+            model="openai/gpt-4o-mini",
+        )
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__") as mock_json_call:
+            with pytest.raises(dspy.utils.exceptions.AdapterValidationError):
+                adapter(lm, {}, UnionField, [], {"question": "Provide a number"})
+
+        mock_json_call.assert_not_called()
+
+
 def test_xml_adapter_xml_syntax_is_literal_text():
     class Result(dspy.Signature):
         text: str = dspy.OutputField()

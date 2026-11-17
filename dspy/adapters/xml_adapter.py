@@ -13,6 +13,7 @@ from typing_extensions import is_typeddict
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import (
+    annotation_allows_none,
     apply_output_field_defaults,
     format_field_value,
     format_tool_calls,
@@ -157,28 +158,36 @@ class XMLAdapter(ChatAdapter):
             elements = self._group_children(root)
             if "<" in parser.buffer or {child.tag for child in root} - signature.output_fields.keys():
                 raise ET.ParseError("Unexpected output field or closing tag")
-            tentative_elements = apply_output_field_defaults(
-                signature, {k: None for k in elements if k in signature.output_fields}
-            )
-            if tentative_elements.keys() != signature.output_fields.keys():
-                raise ET.ParseError("Missing required output fields in XML response")
+            missing_required = [
+                k for k, v in signature.output_fields.items()
+                if k not in elements and v.is_required() and not annotation_allows_none(v.annotation)
+            ]
+            if missing_required:
+                raise ET.ParseError(f"Missing required output fields in XML response: {missing_required}")
             for name, field in signature.output_fields.items():
                 if name not in elements:
                     continue
                 context = f"Failed to parse field {name}"
                 field_schema = schemas[name]
+                last_error = None
+                validation_error = None
                 for candidate in [field_schema, *field_schema.get("anyOf", [])]:
                     try:
                         value = self._elements_to_value(elements[name], candidate, field_schema.get("$defs", {}))
+                    except ValueError as e:
+                        last_error = e
+                        continue
+                    try:
                         if isinstance(value, (dict, list)):
                             fields[name] = TypeAdapter(field.annotation).validate_python(value, by_name=True, strict=False)
                         else:
                             fields[name] = parse_value(value, field.annotation)
                         break
                     except ValueError as e:
-                        error = e
+                        validation_error = e
+                        last_error = e
                 else:
-                    raise error
+                    raise validation_error or last_error
         except ET.ParseError as e:
             raise AdapterParseError(
                 adapter_name="XMLAdapter",
