@@ -25,19 +25,17 @@ class DummyLM(BaseLM):
 
     Examples:
 
-    ```
+    ```python
+    import dspy
+    from dspy.utils import DummyLM
+
+    predictor = dspy.Predict("question -> answer")
     lm = DummyLM([{"answer": "red"}, {"answer": "blue"}])
     dspy.configure(lm=lm)
-    predictor("What color is the sky?")
-    # Output:
-    # <answer>
+    print(predictor(question="What color is the sky?").answer)
     # red
-    # </answer>
-    predictor("What color is the sky?")
-    # Output:
-    # <answer>
+    print(predictor(question="What color is the sky?").answer)
     # blue
-    # </answer>
     ```
 
     Mode 2: Dictionary of dictionaries
@@ -46,29 +44,24 @@ class DummyLM(BaseLM):
     corresponding to the key which is contained with the final message of the prompt,
     formatted according to the configured adapter's `format_field_with_value` function.
 
-    ```
+    ```python
     lm = DummyLM({"What color is the sky?": {"answer": "blue"}})
     dspy.configure(lm=lm)
-    predictor("What color is the sky?")
-    # Output:
-    # <answer>
+    print(predictor(question="What color is the sky?").answer)
     # blue
-    # </answer>
     ```
 
     Mode 3: Follow examples
 
-    If `follow_examples` is set to True, and the prompt contains an example input exactly equal to the prompt,
-    the dummy model will return the output from that example.
+    If `follow_examples` is set to True, and the prompt contains a demonstration matching the current input,
+    the dummy model will return the output from that demonstration.
 
-    ```
+    ```python
     lm = DummyLM([{"answer": "red"}], follow_examples=True)
     dspy.configure(lm=lm)
-    predictor("What color is the sky?, demos=dspy.Example(input="What color is the sky?", output="blue"))
-    # Output:
-    # <answer>
+    demo = dspy.Example(question="What color is the sky?", answer="blue")
+    print(predictor(question="What color is the sky?", demos=[demo]).answer)
     # blue
-    # </answer>
     ```
 
     """

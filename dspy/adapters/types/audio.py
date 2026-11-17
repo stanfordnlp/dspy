@@ -2,7 +2,6 @@ import base64
 import io
 import mimetypes
 import os
-import warnings
 from typing import Any, Union
 from urllib.parse import urlparse
 
@@ -136,16 +135,6 @@ class Audio(Type):
 
         encoded_data = base64.b64encode(file_data).decode("utf-8")
         return cls(data=encoded_data, audio_format=audio_format)
-
-    @classmethod
-    def from_file(cls, file_path: str) -> "Audio":
-        """Deprecated alias for :meth:`from_path`."""
-        warnings.warn(
-            "Audio.from_file is deprecated and will be removed in 3.4; use Audio.from_path instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return cls.from_path(file_path)
 
     @classmethod
     def from_array(cls, array: Any, sampling_rate: int, format: str = "wav") -> "Audio":

@@ -25,6 +25,21 @@ class _Handler(BaseHTTPRequestHandler):
             if str(status) in content:
                 self._json({"error": {"message": message, "type": "test_error", "code": str(status)}}, status)
                 return
+        if self.path.endswith("/responses"):
+            self._json({
+                "id": "resp_test", "object": "response", "created_at": 0,
+                "model": request["model"], "status": "completed", "error": None, "incomplete_details": None,
+                "output": [{
+                    "id": "msg_test", "type": "message", "role": "assistant", "status": "completed",
+                    "content": [{"type": "output_text", "text": "Hi!", "annotations": []}],
+                }],
+                "usage": {"input_tokens": 10, "output_tokens": 10, "total_tokens": 20},
+                "instructions": None, "metadata": {}, "parallel_tool_calls": True,
+                "temperature": 1.0, "tool_choice": "auto", "tools": [], "top_p": 1.0,
+                "max_output_tokens": 1000, "previous_response_id": None, "reasoning": {},
+                "text": {"format": {"type": "text"}}, "truncation": "disabled", "user": None,
+            })
+            return
         if request.get("stream"):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")

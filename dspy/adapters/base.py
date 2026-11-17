@@ -4,20 +4,21 @@ from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from typing import Any, get_origin
 
-from dspy._vendor.lm15.types import tool_result
+from dspy._vendor.lm15.providers.common import MEDIA_KINDS
+from dspy._vendor.lm15.serde import continuation_to_dict
+from dspy._vendor.lm15.types import Part, ToolResultPart
 from dspy.adapters.types import History, Type
-from dspy.adapters.types.base_type import parts_from_text
+from dspy.adapters.types.base_type import CUSTOM_TYPE_START_IDENTIFIER, parts_from_text
 from dspy.adapters.types.citation import Citations
 from dspy.adapters.types.reasoning import Reasoning
-from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls
+from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.adapters.utils import apply_output_field_defaults, serialize_for_json
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.call_result import response_text
-from dspy.clients.capabilities import with_capability_planning
+from dspy.clients.capabilities import tool_result_media, with_capability_planning
 from dspy.clients.requests import build_request
 from dspy.dsp.utils.settings import settings
-from dspy.lm15 import Message, Request, Response, TextPart, ToolCallPart
-from dspy.signatures.field import InputField
+from dspy.lm15 import Message, Request, Response, TextPart
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.exceptions import AdapterParseError
@@ -25,7 +26,6 @@ from dspy.utils.exceptions import AdapterParseError
 logger = logging.getLogger(__name__)
 
 _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
-_TOOL_CALL_RESULTS_SIGNATURE = Signature({"tool_call_results": (ToolCallResults, InputField())})
 
 
 @dataclass(frozen=True)
@@ -229,7 +229,13 @@ class Adapter:
 
             if tool_calls:
                 value[tool_call_output_field_name] = ToolCalls.from_dict_list(
-                    [{"id": call.id, "name": call.name, "args": call.input} for call in tool_calls]
+                    [
+                        {
+                            "id": call.id, "name": call.name, "args": call.input,
+                            "continuation": [continuation_to_dict(state) for state in call.continuation],
+                        }
+                        for call in tool_calls
+                    ]
                 )
 
             # Custom types that read their value from the response itself.
@@ -281,7 +287,7 @@ class Adapter:
         """
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         prompt = self.format(processed_signature, demos, inputs)
-        request = build_request(lm, prompt, lm_kwargs)
+        request = _place_tool_result_media(build_request(lm, prompt, lm_kwargs), lm, lm_kwargs)
         if settings.send_stream and settings.stream_listeners:
             from dspy.streaming.messages import _StreamSignature, sync_send_to_stream
 
@@ -300,7 +306,7 @@ class Adapter:
     ) -> list[dict[str, Any]]:
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         prompt = self.format(processed_signature, demos, inputs)
-        request = build_request(lm, prompt, lm_kwargs)
+        request = _place_tool_result_media(build_request(lm, prompt, lm_kwargs), lm, lm_kwargs)
         if settings.send_stream and settings.stream_listeners:
             from dspy.streaming.messages import _StreamSignature
 
@@ -361,8 +367,7 @@ class Adapter:
             demos = [remap(demo) for demo in demos]
             for name, field in signature.input_fields.items():
                 if field.annotation is History and name in inputs_copy:
-                    history = inputs_copy[name]
-                    inputs_copy[name] = history.model_copy(update={"messages": [remap(m) for m in history.messages]})
+                    inputs_copy[name] = inputs_copy[name]._remap_fields(fallback_names)
 
         # If the signature and inputs have conversation history, we need to format the conversation history and
         # remove the history field from the signature.
@@ -574,78 +579,11 @@ class Adapter:
         Returns:
             A list of multiturn lm15 messages.
         """
-        conversation_history = inputs[history_field_name].messages if history_field_name in inputs else None
-
-        if conversation_history is None:
+        if history_field_name not in inputs:
             return []
 
-        messages = []
-        for message in conversation_history:
-            tool_call_field_name, tool_calls = _tool_calls_from_message(message)
-            tool_call_results = (
-                ToolCallResults.model_validate(tool_calls.tool_call_results)
-                if tool_calls is not None and tool_calls.tool_call_results is not None
-                else None
-            )
-
-            # Preserve the format reminder from the original request for prompt-cache reuse.
-            # Output-only events must not acquire a synthetic user message containing just the reminder.
-            user_content = self.format_user_message_content(
-                signature, message, main_request=any(name in message for name in signature.input_fields)
-            )
-            if user_content:
-                messages.append(user_message(user_content))
-
-            if self.use_native_function_calling and tool_calls is not None:
-                content_signature = signature
-                for name, field in signature.output_fields.items():
-                    if field.annotation == ToolCalls or message.get(name) is None:
-                        content_signature = content_signature.delete(name)
-
-                content = (
-                    self.format_assistant_message_content(content_signature, message)
-                    if content_signature.output_fields
-                    else ""
-                )
-
-                if tool_call_results is not None:
-                    tool_call_ids = [tool_call.id for tool_call in tool_calls.tool_calls]
-                    result_ids = [result.call_id for result in tool_call_results.tool_call_results]
-                    if tool_call_ids != result_ids or not all(tool_call_ids):
-                        tool_call_results = None
-
-                if content or tool_call_results is not None:
-                    parts = [TextPart(content)] if content else []
-                    if tool_call_results is not None:
-                        parts.extend(
-                            ToolCallPart(id=tool_call.id, name=tool_call.name, input=serialize_for_json(tool_call.args))
-                            for tool_call in tool_calls.tool_calls
-                        )
-                    messages.append(Message.assistant(parts))
-
-                if tool_call_results is not None:
-                    messages.append(Message.tool([
-                        tool_result(result.call_id, _tool_result_content(result.value), name=result.name)
-                        for result in tool_call_results.tool_call_results
-                    ]))
-                continue
-
-            assistant_values = message
-            if tool_call_field_name is not None and tool_call_results is not None:
-                assistant_values = dict(message)
-                assistant_values[tool_call_field_name] = tool_calls.model_copy(update={"tool_call_results": None})
-
-            assistant_content = self.format_assistant_message_content(signature, assistant_values)
-            if assistant_content:
-                messages.append(Message.assistant(assistant_content))
-            if tool_call_results is not None:
-                result_input = {"tool_call_results": tool_call_results}
-                content = self.format_user_message_content(_TOOL_CALL_RESULTS_SIGNATURE, result_input)
-                messages.append(user_message(content))
-
-        # Remove the history field from the inputs
+        messages = inputs[history_field_name].format(self, signature)
         del inputs[history_field_name]
-
         return messages
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
@@ -694,15 +632,50 @@ def _candidate_calls(lm: BaseLM, lm_kwargs: dict[str, Any], request: Request) ->
             yield candidate, {**options, "rollout_id": ("dspy.adapter.candidate", rollout_id, index)}
 
 
-def _tool_calls_from_message(message: dict[str, Any]) -> tuple[str | None, ToolCalls | None]:
-    for name, value in message.items():
-        if isinstance(value, ToolCalls) or (isinstance(value, dict) and "tool_calls" in value):
-            return name, ToolCalls.model_validate(value)
-    return None, None
+def _place_tool_result_media(request: Request, lm: BaseLM, lm_kwargs: dict[str, Any]) -> Request:
+    """Move tool-result media the backend running ``request`` cannot carry into a user message after the results.
+
+    Chat Completions tool rows, for example, take text only. Each moved part leaves a placeholder in its tool
+    result, and the user message labels the parts with their tool call.
+    """
+    tool_results = [part for message in request.messages if message.role == "tool" for part in message.parts]
+    if not any(item.type in MEDIA_KINDS for part in tool_results for item in getattr(part, "content", ())):
+        return request
+    unsupported = MEDIA_KINDS - tool_result_media(lm, lm_kwargs, request)
+    messages = []
+    for message in request.messages:
+        results, attachments = [], []
+        for part in message.parts if message.role == "tool" else ():
+            moved = [item for item in part.content if item.type in unsupported] if isinstance(part, ToolResultPart) else []
+            if not moved:
+                results.append(part)
+                continue
+            content = tuple(
+                TextPart(f"[{item.type} attached in the next message]") if item.type in unsupported else item
+                for item in part.content
+            )
+            results.append(replace(part, content=content))
+            label = f"Attachments from tool call {part.id}" + (f" ({part.name})" if part.name else "") + ":"
+            attachments.extend([TextPart(label), *moved])
+        if attachments:
+            messages.extend([replace(message, parts=tuple(results)), Message.user(tuple(attachments))])
+        else:
+            messages.append(message)
+    return replace(request, messages=tuple(messages)) if len(messages) != len(request.messages) else request
 
 
-def _tool_result_content(value: Any) -> str:
+def _tool_result_content(value: Any) -> str | tuple[Part, ...]:
     if isinstance(value, str):
-        return value
+        content = value
+    else:
+        serialized = serialize_for_json(value)
+        # A bare custom type that formats to text renders as that text, as in `format_field_value`, not as a
+        # JSON string; one that serializes to structured data (e.g. `Score`) is JSON-encoded like any value.
+        is_text = isinstance(value, Type) and isinstance(serialized, str)
+        content = serialized if is_text else json.dumps(serialized, ensure_ascii=False)
 
-    return json.dumps(serialize_for_json(value), ensure_ascii=False)
+    if CUSTOM_TYPE_START_IDENTIFIER not in content:
+        return content
+    # Custom types such as `dspy.Image` serialize to marker-wrapped content parts; send the parts so the
+    # provider receives the image itself rather than its encoding as text.
+    return parts_from_text(content)

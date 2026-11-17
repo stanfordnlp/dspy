@@ -4,12 +4,11 @@ import base64
 import os
 from typing import Any, Callable
 
-import openai
-
 from dspy.clients.cache import request_cache
 from dspy.utils.lazy_import import require
 
 np = require("numpy")
+openai = require("openai", feature="dspy.Embedder with a hosted model")
 
 
 class Embedder:

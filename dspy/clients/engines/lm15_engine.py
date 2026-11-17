@@ -70,7 +70,7 @@ def _model_string(model: str, model_type: str, providers=()) -> str:
     if separator and rest:
         if head in LITELLM_PROVIDER_PREFIXES:
             provider = LITELLM_PROVIDER_PREFIXES[head]
-            if model_type == "responses":
+            if model_type in {"auto", "responses"}:
                 provider = {"openai-chat": "openai", "azure-chat": "azure"}.get(provider, provider)
             return f"{provider}:{rest}"
         spelling = canonical_provider(head)
@@ -82,7 +82,7 @@ def _model_string(model: str, model_type: str, providers=()) -> str:
 
 class _Routing:
     def _init_routing(self, config, model_type):
-        if model_type not in {"chat", "responses"}:
+        if model_type not in {"auto", "chat", "responses"}:
             raise UnsupportedFeatureError("lm15 engines support chat and Responses APIs, not text completions.")
         self.model_type = model_type
         self.config = config if config is not None else RouterConfig()
@@ -96,6 +96,8 @@ class _Routing:
         if self.model_type == "chat":
             return self.router.resolve_openai_chat(routed)
         resolution = self.router.resolve(routed)
+        if self.model_type == "auto":
+            return resolution
         from dspy._vendor.lm15.registry import lookup
 
         declared = {d.id: d for d in self.config.providers}

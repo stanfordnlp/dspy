@@ -254,3 +254,78 @@ def test_native_anthropic_validates_thinking_defaults_against_reasoning_override
         request = build_request(lm, "hello", option)
         assert request.config.reasoning.is_off == off
         assert request.config.extensions["thinking"] == thinking
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("model,shown", [
+    ("anthropic:claude-sonnet-5", True),
+    ("anthropic:claude-haiku-4-5", True),
+    ("deepseek-anthropic:deepseek-v4-flash", False),
+    ("meta-anthropic:muse-spark-1.3", False),
+    ("moonshotai-anthropic:kimi-k3", False),
+])
+async def test_native_summary_display_is_anthropic_only(asynchronous, model, shown, monkeypatch):
+    from dspy import lm15
+    from tests.clients.test_lm_engine_execution import DualResponse, native_transport
+
+    raw = {"id": "r", "type": "message", "role": "assistant", "model": model,
+           "content": [{"type": "text", "text": "hello"}], "stop_reason": "end_turn",
+           "usage": {"input_tokens": 3, "output_tokens": 1}}
+    transport = native_transport(monkeypatch, [DualResponse(200, json.dumps(raw).encode()) for _ in range(2)])
+    lm = dspy.LM(model, engine="lm15", api_key="fake", cache=False, num_retries=0)
+    try:
+        result = await lm.acall("hi", reasoning_effort="high") if asynchronous else lm("hi", reasoning_effort="high")
+        assert result == ["hello"]
+        body = json.loads(transport.requests[0].body)
+        assert body.get("thinking", {}).get("display") == ("summarized" if shown else None)
+        # A canonical caller can deliberately leave summary visibility to the provider.
+        request = lm15.Request(model=model, messages=(lm15.Message.user("hi"),),
+                               config=lm15.Config(reasoning=lm15.Reasoning(effort="high")))
+        result = await lm.acall(request) if asynchronous else lm(request)
+        assert result.text == "hello"
+        assert "display" not in json.loads(transport.requests[1].body).get("thinking", {})
+        assert len(transport.requests) == 2
+    finally:
+        await lm.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_native_claude_summary_reaches_predict(asynchronous, monkeypatch):
+    import dspy.clients.execution as execution
+    from dspy.lm15 import RouterConfig
+    from tests.clients.test_lm_engine_execution import DualResponse
+
+    class Answer(dspy.Signature):
+        question: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    bodies = []
+
+    class Transport:
+        def stream(self, request):
+            body = json.loads(request.body)
+            bodies.append(body)
+            # Simulate the documented server visibility rule, not live Claude accuracy.
+            thinking = "checked" if body.get("thinking", {}).get("display") == "summarized" else ""
+            return DualResponse(200, json.dumps({
+                "id": "r", "type": "message", "role": "assistant", "model": "claude-sonnet-5",
+                "content": [{"type": "thinking", "thinking": thinking, "signature": "sig"},
+                            {"type": "text", "text": "[[ ## answer ## ]]\n42\n\n[[ ## completed ## ]]"}],
+                "stop_reason": "end_turn", "usage": {"input_tokens": 3, "output_tokens": 7},
+            }).encode())
+
+    monkeypatch.setattr(execution, "RouterConfig", lambda **kwargs: RouterConfig(**{**kwargs, "transport": Transport()}))
+    lm = dspy.LM("anthropic:claude-sonnet-5", engine="lm15", api_key="fake", cache=False, num_retries=0)
+    try:
+        with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+            predict = dspy.Predict(Answer)
+            result = await predict.acall(question="6 * 7?") if asynchronous else predict(question="6 * 7?")
+        assert result.answer == "42"
+        assert result.reasoning == dspy.Reasoning(content="checked")
+        assert len(bodies) == 1
+        assert bodies[0]["thinking"] == {"type": "adaptive", "display": "summarized"}
+    finally:
+        await lm.aclose()

@@ -617,7 +617,7 @@ def make_signature(
                 raise ValueError(f"Field values must be tuples, but received: {type_field}.")
             type_, field = type_field
         # It might be better to be explicit about the type, but it currently would break
-        # program of thought and teleprompters, so we just silently default to string.
+        # teleprompters, so we just silently default to string.
         if type_ is None:
             type_ = str
         if not isinstance(

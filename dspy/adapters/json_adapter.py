@@ -13,6 +13,7 @@ from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
     apply_output_field_defaults,
     format_field_value,
+    format_tool_calls,
     get_annotation_name,
     parse_value,
     serialize_for_json,
@@ -186,7 +187,7 @@ class JSONAdapter(ChatAdapter):
             return "\n\n".join(output).strip()
         else:
             d = fields_with_values.items()
-            d = {k.name: v for k, v in d}
+            d = {k.name: format_tool_calls(k.info, v) for k, v in d}
             return json.dumps(serialize_for_json(d), indent=2, ensure_ascii=False)
 
     def format_finetune_data(

@@ -14,7 +14,7 @@ from tests.test_utils.server import read_test_server_request_logs
 @pytest.mark.parametrize("asynchronous", [False, True])
 async def test_server_completion_usage_and_cache(openai_test_server, asynchronous):
     url, log_path = openai_test_server
-    lm = dspy.LM("openai/dspy-test-model", api_base=url, api_key="test", cache=True)
+    lm = dspy.LM("openai/dspy-test-model", model_type="chat", api_base=url, api_key="test", cache=True)
     for _ in range(2):
         result = await lm.acall("hello") if asynchronous else lm("hello")
         assert result == ["Hi!"]
@@ -48,7 +48,7 @@ def test_server_errors_are_logged(openai_test_server, status):
 @pytest.mark.asyncio
 async def test_server_streaming_prediction_and_cache(openai_test_server):
     url, log_path = openai_test_server
-    lm = dspy.LM("openai/dspy-test-model", api_base=url, api_key="test", cache=True)
+    lm = dspy.LM("openai/dspy-test-model", model_type="chat", api_base=url, api_key="test", cache=True)
     program = dspy.streamify(dspy.Predict("input_text -> output_text"))
     with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
         for _ in range(2):

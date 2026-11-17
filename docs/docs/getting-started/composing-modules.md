@@ -2,7 +2,7 @@
 
 Switching to `dspy.ReAct` turned our single-step program into a multi-step agent. It’s a significant change, but `ReAct` itself is simple to understand.
 
-Inside [`dspy.ReAct`](../diving-deeper/react.md), other DSPy modules are composed together. Each step where the model considers its inputs and picks the next tool is a `dspy.Predict` module. A bit of code manages the control flow, looping through `Predict` calls until the model calls `finish` or hits `max_iters`. The synthesis step that follows, where the model assembles the answer from everything it’s learned, is a `ChainOfThought` module.
+Inside [`dspy.ReAct`](../diving-deeper/react.md), a `dspy.Predict` module chooses structured tool calls. Python code manages the control flow, executing those calls sequentially and recording results in `dspy.History`. The model submits the signature's typed outputs through `submit`, without a separate `ChainOfThought` extraction pass. If it reaches `max_iters` without submitting, ReAct makes a final submission attempt and raises if that fails.
 
 Modules are modular. We can compose them together and they just *work*.
 

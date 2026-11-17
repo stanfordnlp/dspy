@@ -44,6 +44,7 @@ _INSTALL_HINTS: dict[str, str] = {
     "weaviate": "weaviate",
     "anthropic": "anthropic",
     "numpy": "numpy",
+    "openai": "openai",
 }
 
 
@@ -163,7 +164,7 @@ def require(module: str, *, extra: str | None = None, feature: str | None = None
             f"{top} is required to use {feat}. "
             f"Install with `pip install {dist}[{ext}]` or `pip install {top}`."
         )
-        parent = inspect.stack()[1]
+        parent = inspect.getframeinfo(sys._getframe(1))
         frame_data = {
             "filename": parent.filename,
             "lineno": parent.lineno,

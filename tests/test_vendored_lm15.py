@@ -17,8 +17,8 @@ def test_public_exports_are_the_vendored_objects():
 
     assert importlib.import_module("dspy.lm15") is dspy.lm15
     assert Request is vendored.Request
-    # Every vendored export is the vendored object; the facade adds only the
-    # process-level provider registry and the compat/definition types it takes.
+    # Every vendored export is the vendored object; the facade also exposes
+    # provider registration, compatibility and pricing types.
     assert lm15.__all__[: len(vendored.__all__)] == vendored.__all__
     for name in vendored.__all__:
         assert getattr(lm15, name) is getattr(vendored, name)
@@ -27,7 +27,8 @@ def test_public_exports_are_the_vendored_objects():
     assert lm15.login_providers.xai.id == "xai"
     assert lm15.providers.XaiLM is lm15.XaiLM
     assert set(lm15.__all__) - set(vendored.__all__) == {
-        "AnthropicCompat", "ModelSupport", "OpenAIChatCompat", "OpenAIResponsesCompat", "ProviderDefinition",
+        "AnthropicCompat", "InferencePricing", "ModelSupport", "OpenAIChatCompat", "OpenAIResponsesCompat",
+        "PricingTier", "ProviderDefinition",
         "RegisteredProvider", "register_provider", "registered_providers", "unregister_provider",
     }
     from dspy._vendor.lm15 import compat, registry
@@ -38,6 +39,17 @@ def test_public_exports_are_the_vendored_objects():
     restored = pickle.loads(pickle.dumps(request))
     assert type(restored) is Request
     assert restored == request
+
+
+def test_public_pricing_tiers_estimate_canonical_usage():
+    from dspy.lm15 import InferencePricing, PricingTier, Usage
+
+    pricing = InferencePricing(tiers=(PricingTier(
+        above_input_tokens=100, input_per_million=2, output_per_million=7,
+        cache_read_per_million=0.5, cache_write_per_million=4,
+    ),))
+    usage = Usage(input_tokens=101, output_tokens=30, cache_read_tokens=40, cache_write_tokens=20, reasoning_tokens=10)
+    assert pricing.estimate(usage) == pytest.approx(392e-6)
 
 
 def test_openai_converters_are_available_without_provider_calls():

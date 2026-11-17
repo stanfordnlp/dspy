@@ -87,7 +87,7 @@ class BaseLM:
     def __init__(
         self,
         model: str,
-        model_type: Literal["chat", "text", "responses"] = "chat",
+        model_type: Literal["auto", "chat", "text", "responses"] = "chat",
         temperature: float | None = None,
         max_tokens: int | None = None,
         cache: bool = True,
@@ -169,6 +169,14 @@ class BaseLM:
     def supported_params(self) -> set[str]:
         """Set of supported OpenAI-style generation option names for the model."""
         return set(getattr(self._capability_engine, "supported_params", ()) or ())
+
+    @property
+    def supported_tool_result_media(self) -> set[str]:
+        """lm15 part types (e.g. ``"image"``) the model's API carries inside a tool result.
+
+        Adapters move other media from tool results into a user message after them.
+        """
+        return set(getattr(self._capability_engine, "supported_tool_result_media", ()) or ())
 
     @with_callbacks
     def __call__(

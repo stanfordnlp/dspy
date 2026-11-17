@@ -545,29 +545,29 @@ def test_load_uses_env_api_key_without_honoring_serialized_endpoint_override(tmp
     monkeypatch.setenv("OPENAI_API_KEY", env_api_key)
 
     reply = HttpResponse(200, "OK", [], orjson.dumps({
-            "id": "test", "model": "gpt-4o-mini",
-            "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+            "id": "test", "model": "gpt-4o-mini", "status": "completed",
+            "output": [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "ok"}]}],
         }))
 
     # Simulates legacy behavior by allowing serialized endpoint overrides.
     opt_in_loaded_predict = dspy.Predict("q->a")
     opt_in_loaded_predict.load(file_path, allow_unsafe_lm_state=True)
     with patch("dspy._vendor.lm15.providers.base.BaseProviderLM._send", return_value=reply) as send:
-        opt_in_loaded_predict.lm("hello", cache=False)
+        assert opt_in_loaded_predict.lm("hello", cache=False) == ["ok"]
 
     request = send.call_args.args[0]
-    assert request.url == override_url + "/chat/completions"
+    assert request.url == override_url + "/responses"
     assert dict(request.headers)["Authorization"] == f"Bearer {env_api_key}"
 
     safe_loaded_predict = dspy.Predict("q->a")
     safe_loaded_predict.load(file_path)
     with patch("dspy._vendor.lm15.providers.base.BaseProviderLM._send", return_value=reply) as send:
-        safe_loaded_predict.lm("hello", cache=False)
+        assert safe_loaded_predict.lm("hello", cache=False) == ["ok"]
 
     # In the safe path, the key still comes from the environment, but the serialized endpoint override does not.
     request = send.call_args.args[0]
     assert dict(request.headers)["Authorization"] == f"Bearer {env_api_key}"
-    assert request.url == "https://api.openai.com/v1/chat/completions"
+    assert request.url == "https://api.openai.com/v1/responses"
 
 
 def test_forward_method():

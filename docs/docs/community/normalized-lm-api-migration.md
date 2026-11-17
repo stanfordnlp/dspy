@@ -1,5 +1,7 @@
 # DSPy 3.5 LM migration
 
+For prompts, agents, dependencies and other upgrade changes, start with [Upgrading from 3.4.1 to 3.5](upgrading-to-3-5.md).
+
 DSPy's LM layer now uses the lm15 objects bundled inside DSPy. Import them from
 `dspy.lm15`; no separate installation is needed. They are the original lm15
 classes, not DSPy wrappers or subclasses.
@@ -124,6 +126,8 @@ Those options are read with lm15's own Chat Completions reader into
 
 Engine selection:
 
+- `model_type="auto"` (default) follows lm15's native API family: OpenAI/Azure use Responses; other providers keep their native dialects.
+- API-family selection is independent of `engine`; use `model_type="chat"` for Chat-only models/proxies/deployments, or explicitly select `"responses"` or `"text"`.
 - `engine="auto"` (default): prefer native lm15 for supported routes and
   representable inputs. Unsupported routes and ordinary provider-specific inputs
   that cannot be represented faithfully may select optional LiteLLM **before
@@ -392,8 +396,9 @@ and any permitted compatibility fallback keeps the declared address and credenti
 [custom-engine tutorial](../tutorials/custom_lm_engines/index.md).
 
 An engine may declare `supports_function_calling`, `supports_reasoning`,
-`supports_response_schema` and `supported_params`; adapters read those to decide
-whether to use native tool calling, native reasoning, or structured outputs.
+`supports_response_schema`, `supported_params` and `supported_tool_result_media`;
+adapters read those to decide whether to use native tool calling, native reasoning,
+or structured outputs, and which media (e.g. `{"image"}`) can stay inside a tool result.
 The sync engine supplies these hints when present; otherwise the async engine
 does. Hints are not combined across engines, so a pair should support the
 features declared by its sync engine. Missing hints mean unsupported.

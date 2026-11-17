@@ -1,9 +1,9 @@
-import asyncio
+import warnings
 
 import pytest
 
 import dspy
-from dspy.utils.exceptions import ContextWindowExceededError
+from dspy.predict.react_v2 import ReActV2
 from tests.test_utils.engines import make_response
 
 
@@ -28,15 +28,11 @@ def test_react_v2_text_mock_lm_loop_records_inputs_once():
         [
             {
                 "next_thought": "I should look this up.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "lookup", "args": {"query": "cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": "cats"}}]),
             },
             {
                 "next_thought": "I can answer now.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "found cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
             },
         ]
     )
@@ -60,15 +56,11 @@ def test_react_v2_continuation_omits_missing_original_inputs():
         [
             {
                 "next_thought": "I should look this up.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "lookup", "args": {"query": "cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": "cats"}}]),
             },
             {
                 "next_thought": "I can answer now.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "found cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
             },
         ]
     )
@@ -96,9 +88,7 @@ def test_react_v2_text_mode_accepts_top_level_tool_arguments():
             },
             {
                 "next_thought": "I can answer now.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "found cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
             },
         ]
     )
@@ -133,15 +123,11 @@ def test_react_v2_unknown_tool_observation_can_continue():
         [
             {
                 "next_thought": "Try a missing tool.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "missing_tool", "args": {"query": "cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "missing_tool", "args": {"query": "cats"}}]),
             },
             {
                 "next_thought": "Recover with a final answer.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "done"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "done"}}]),
             },
         ]
     )
@@ -161,9 +147,7 @@ def test_react_v2_accepts_serialized_history_input():
         [
             {
                 "next_thought": "I can answer.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "done"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "done"}}]),
             }
         ]
     )
@@ -174,6 +158,7 @@ def test_react_v2_accepts_serialized_history_input():
     assert pred.answer == "done"
     assert pred.history.messages[0] == {"question": "old"}
     assert all(event for event in pred.history.messages)
+    assert len(pred.history.messages) == 2
 
 
 def test_react_v2_forced_submit_on_empty_tool_calls():
@@ -182,9 +167,7 @@ def test_react_v2_forced_submit_on_empty_tool_calls():
             {"next_thought": "No action.", "tool_calls": dspy.ToolCalls(tool_calls=[])},
             {
                 "next_thought": "Forced final.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "forced"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "forced"}}]),
             },
         ]
     )
@@ -314,17 +297,12 @@ def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed(adapter)
         "call_provider_2",
     ]
     assert [
-        result.call_id
-        for result in pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results
+        result.call_id for result in pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results
     ] == [
         "call_provider_1",
         "call_provider_2",
     ]
-    assert [
-        message["tool_call_id"]
-        for message in lm.calls[1]["messages"]
-        if message["role"] == "tool"
-    ] == [
+    assert [message["tool_call_id"] for message in lm.calls[1]["messages"] if message["role"] == "tool"] == [
         "call_provider_1",
         "call_provider_2",
     ]
@@ -351,239 +329,34 @@ def _lookup_turn(query):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("use_async", [False, True])
-async def test_react_v2_shows_current_turn_budget_each_call(use_async):
-    def lookup(query: str) -> str:
-        return f"found {query}"
+async def test_react_v2_compatibility_name_warns_and_saved_state_loads_into_react(tmp_path, use_async):
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"dspy\.ReActV2 implementation has now replaced dspy\.ReAct.*migrate directly.*removed in DSPy 3\.6",
+    ) as caught:
+        legacy = ReActV2("question -> answer: int", tools=[], max_iters=0)
+    assert caught[0].filename == __file__
+    assert dspy.ReActV2 is ReActV2
+    assert isinstance(legacy, dspy.ReAct)
 
-    lm = dspy.utils.DummyLM(
-        [
-            _lookup_turn("cats"),
-            _lookup_turn("dogs"),
-            {
-                "next_thought": "Out of turns.",
-                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "pets"}}]),
-            },
-        ]
-    )
-    react = dspy.ReActV2("question -> answer", tools=[lookup], max_iters=20)
+    legacy.react.signature = legacy.react.signature.with_instructions("Submit the integer answer.")
+    path = tmp_path / "agent.json"
+    legacy.save(path)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        canonical = dspy.ReAct("question -> answer: int", tools=[], max_iters=0)
+        canonical.load(path)
+    assert canonical.react.signature.instructions == "Submit the integer answer."
 
-    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
-        if use_async:
-            pred = await react.acall(question="pets", max_iters=2)
-        else:
-            pred = react(question="pets", max_iters=2)
-
-    assert pred.termination_reason == "forced_submit"
-    assert "how many turns remain before you must submit" in lm.history[0]["messages"][0]["content"]
-    expected = [
-        "Turn 1 of 2 (1 more after this one).",
-        "Turn 2 of 2 (this is your last turn).",
-        "No turns remain. Call `submit` now with your final outputs.",
-    ]
-    for call, budget in zip(lm.history, expected, strict=True):
-        assert f"[[ ## turn_budget ## ]]\n{budget}" in call["messages"][-1]["content"]
-    # Each turn's budget is stored with that turn so replay rebuilds the exact request.
-    assert [event["turn_budget"] for event in pred.history.messages] == expected
-
-
-def test_react_v2_native_requests_are_prefixes_for_prompt_caching():
-    def lookup(query: str) -> str:
-        return f"found {query}"
-
-    lm = NativeToolLM()
-    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=True)):
-        pred = dspy.ReActV2("question -> answer", tools=[lookup])(question="cats")
-
-    assert pred.answer == "found cats"
-    first, second = (call["messages"] for call in lm.calls)
-    assert second[: len(first)] == first
-    assert "[[ ## turn_budget ## ]]\nTurn 2 of 20" in second[-1]["content"]
-
-
-def test_react_v2_agent_pickled_before_turn_budget_keeps_old_behavior():
-    lm = dspy.utils.DummyLM(
-        [
+    for agent in (legacy, canonical):
+        lm = dspy.utils.DummyLM([
             {
                 "next_thought": "Done.",
-                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "done"}}]),
-            }
-        ]
-    )
-    react = dspy.ReActV2("question -> answer", tools=[])
-    # An agent pickled before this field existed restores its old inner signature without `__init__`.
-    react.react.signature = react.react.signature.delete("turn_budget")
-
-    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
-        pred = react(question="cats")
-
-    assert pred.answer == "done"
-    assert all("turn_budget" not in message["content"] for message in lm.history[0]["messages"][1:])
-    assert all("turn_budget" not in event for event in pred.history.messages)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("use_async", [False, True])
-@pytest.mark.parametrize("break_reason", ["max_iters", "empty_tool_calls", "parse_error", "context_window_exceeded"])
-@pytest.mark.parametrize("forced_result", ["no_submit", "missing_field", "parse_error", "context_window_exceeded"])
-async def test_react_v2_failed_termination_raises(mocker, break_reason, forced_result, use_async):
-    react = dspy.ReActV2("question -> answer: str, count: int", tools=[], max_iters=1)
-    empty = dspy.Prediction(tool_calls=dspy.ToolCalls(tool_calls=[]))
-    incomplete = dspy.Prediction(
-        tool_calls=dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "partial"}}])
-    )
-    outcomes = {
-        "max_iters": incomplete,
-        "empty_tool_calls": empty,
-        "no_submit": empty,
-        "missing_field": incomplete,
-        "parse_error": ValueError("invalid tool calls"),
-        "context_window_exceeded": ContextWindowExceededError(message="too long"),
-    }
-    mocker.patch.object(
-        react.react,
-        "aforward" if use_async else "forward",
-        side_effect=[outcomes[break_reason], outcomes[forced_result]],
-    )
-
-    history = dspy.History(messages=[])
-    error_type = ContextWindowExceededError if forced_result == "context_window_exceeded" else ValueError
-    with pytest.raises(error_type) as exc:
-        if use_async:
-            await react.acall(question="cats", history=history)
-        else:
-            react(question="cats", history=history)
-
-    if forced_result in {"parse_error", "context_window_exceeded"}:
-        assert exc.value is outcomes[forced_result]
-    else:
-        assert f"failed to produce final outputs after {break_reason}" in str(exc.value)
-    if forced_result == "no_submit":
-        assert "no submit call" in str(exc.value)
-    if forced_result == "missing_field":
-        assert "Missing required final output field(s): count" in str(exc.value)
-        event = history.messages[-1]
-        assert event["tool_calls"].tool_calls[0].args == {"answer": "partial"}
-        assert event["tool_calls"].tool_call_results.tool_call_results[0].is_error is True
-
-
-def test_react_v2_evaluate_reports_submission_failure(caplog):
-    lm = dspy.utils.DummyLM([{"next_thought": "No answer.", "tool_calls": dspy.ToolCalls(tool_calls=[])}] * 2)
-
-    def metric(example, pred, trace=None):
-        pytest.fail("A failed submission must not reach the metric")
-
-    evaluate = dspy.Evaluate(
-        devset=[dspy.Example(question="cats", answer="felines").with_inputs("question")],
-        metric=metric,
-        num_threads=1,
-        max_errors=1,
-        display_progress=False,
-    )
-    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
-        with pytest.raises(Exception, match="Execution cancelled due to errors"):
-            evaluate(dspy.ReActV2("question -> answer", tools=[]))
-    assert "failed to produce final outputs after empty_tool_calls: no submit call" in caplog.text
-
-
-@pytest.mark.asyncio
-async def test_react_v2_async_mixed_tools_run_sequentially_and_recover():
-    executed = []
-
-    async def lookup(query: str) -> str:
-        await asyncio.sleep(0)
-        executed.append(query)
-        return f"found {query}"
-
-    def fail() -> str:
-        executed.append("fail")
-        raise ValueError("lookup unavailable")
-
-    lm = dspy.utils.DummyLM(
-        [
-            {
-                "next_thought": "Look up both.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [
-                        {"name": "lookup", "args": {"query": "cats"}},
-                        {"name": "missing", "args": {}},
-                        {"name": "fail", "args": {}},
-                        {"name": "lookup", "args": {"query": "dogs"}},
-                    ]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": 42}}]),
             },
-            {
-                "next_thought": "Done.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [
-                        {"name": "submit", "args": {"answer": "cats and dogs", "count": 2}},
-                    ]
-                ),
-            },
-        ]
-    )
-    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
-        pred = await dspy.ReActV2("question -> answer: str, count: int", tools=[lookup, fail]).acall(
-            question="pets",
-            history={"messages": [{"question": "old"}]},
-        )
-
-    assert (pred.answer, pred.count, pred.termination_reason) == ("cats and dogs", 2, "submit")
-    assert executed == ["cats", "fail", "dogs"]
-    assert pred.history.messages[0] == {"question": "old"}
-    assert pred.history.messages[1]["question"] == "pets"
-    assert "question" not in pred.history.messages[2]
-    results = pred.history.messages[1]["tool_calls"].tool_call_results.tool_call_results
-    assert [r.call_id for r in results] == ["call_0_0", "call_0_1", "call_0_2", "call_0_3"]
-    assert [r.is_error for r in results] == [False, True, True, False]
-    assert results[0].value == "found cats"
-    assert results[1].value == "Unknown tool: missing"
-    assert "lookup unavailable" in results[2].value
-    assert results[3].value == "found dogs"
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("max_iters", [0, 1])
-async def test_react_v2_async_forced_submit_filters_other_tools(mocker, max_iters):
-    def forbidden() -> str:
-        pytest.fail("Forced submit must not execute other tools")
-
-    react = dspy.ReActV2("question -> answer", tools=[forbidden], max_iters=20)
-    empty = dspy.Prediction(tool_calls=dspy.ToolCalls(tool_calls=[]))
-    final = dspy.Prediction(
-        tool_calls=dspy.ToolCalls.from_dict_list(
-            [
-                {"name": "forbidden", "args": {}},
-                {"name": "submit", "args": {"answer": "forced"}},
-            ]
-        )
-    )
-    predictor = mocker.patch.object(react.react, "aforward", side_effect=[empty] * max_iters + [final])
-
-    pred = await react.acall(question="cats", max_iters=max_iters)
-
-    assert pred.answer == "forced"
-    assert pred.termination_reason == "forced_submit"
-    assert pred.history.messages[0]["question"] == "cats"
-    assert pred.history.messages[0]["tool_calls"].tool_calls[0].id == f"call_{max_iters}_1"
-    assert predictor.call_args.kwargs["config"] == {
-        "tool_choice": {"type": "function", "function": {"name": "submit"}},
-        "reasoning_effort": None,
-    }
-
-
-@pytest.mark.asyncio
-async def test_react_v2_async_tool_cancellation_propagates(mocker):
-    async def cancel() -> str:
-        raise asyncio.CancelledError
-
-    react = dspy.ReActV2("question -> answer", tools=[cancel])
-    predictor = mocker.patch.object(
-        react.react,
-        "aforward",
-        return_value=dspy.Prediction(
-            tool_calls=dspy.ToolCalls.from_dict_list([{"name": "cancel", "args": {}}]),
-        ),
-    )
-    with pytest.raises(asyncio.CancelledError):
-        await react.acall(question="cats")
-    assert predictor.await_count == 1
+        ])
+        with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+            result = await agent.acall(question="6 times 7?") if use_async else agent(question="6 times 7?")
+        assert result.answer == 42
+        assert result.termination_reason == "forced_submit"
+        assert result.history.messages[0]["question"] == "6 times 7?"

@@ -14,7 +14,7 @@ from typing import Any
 from dspy._vendor.lm15.result import StreamAccumulator
 from dspy._vendor.lm15.serde import request_to_dict
 from dspy.clients._http import finite_seconds
-from dspy.clients.backend_selection import select_backend
+from dspy.clients.backend_selection import compatibility_model, select_backend
 from dspy.clients.call_context import stream_emitted
 from dspy.clients.call_result import CACHE_FORMAT, CallResult, combine, usage_dict
 from dspy.clients.engines.base import AsyncEngine, AsyncStreamingEngine, Engine, StreamingEngine, validate_request
@@ -53,6 +53,11 @@ class PreparedCall:
                "request": request_to_dict(self.request),
                "model_type": lm.model_type, "rollout_id": self.rollout_id,
                **{key: value for key, value in {**lm.kwargs, **self.options}.items() if key in CLIENT_KEYS}}
+        if lm.model_type == "auto" and isinstance(lm.engine, str):
+            with error_boundary(lm.model):
+                route = select_backend(lm, self.options, request=self.request).resolution
+            if route is not None:
+                key["route"] = (route.provider, route.model, route.adapter)
         if self.n != 1:
             key["n"] = self.n
         return key
@@ -210,8 +215,8 @@ def _select_engine(lm, call, asynchronous):
         cls = AsyncLiteLLMEngine if asynchronous else LiteLLMEngine
         if binding is not None:
             wire_model, options = _declared_fallback(lm, binding, resolution, clients)
-            return cls(model_type=lm.model_type, wire_model=wire_model, **options), resolution.provider
-        return cls(model_type=lm.model_type, **clients), None
+            return cls(model_type=selection.model_type, wire_model=wire_model, **options), resolution.provider
+        return cls(model_type=selection.model_type, wire_model=compatibility_model(lm, selection), **clients), None
 
     if not selection.native:
         return compatibility_engine()

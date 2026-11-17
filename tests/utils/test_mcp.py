@@ -226,7 +226,7 @@ async def test_convert_mcp_tool():
 
 @pytest.mark.asyncio
 @pytest.mark.extra
-async def test_react_v2_native_mcp_end_to_end():
+async def test_react_native_mcp_end_to_end():
     """Exercise native messages and a real stdio MCP server without an API key."""
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
@@ -238,7 +238,7 @@ async def test_react_v2_native_mcp_end_to_end():
         supports_function_calling = True
 
         def complete(self, request):
-            pytest.fail("ReActV2 must use the async LM path")
+            pytest.fail("ReAct must use the async LM path")
 
     class NativeMCPEngine:
         def __init__(self):
@@ -277,7 +277,7 @@ async def test_react_v2_native_mcp_end_to_end():
             tools = [Tool.from_mcp_tool(session, tool) for tool in response.tools]
             with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=True)):
                 pred = await asyncio.wait_for(
-                    dspy.ReActV2("question -> answer: int", tools=tools).acall(question="What is 25 + 17?"),
+                    dspy.ReAct("question -> answer: int", tools=tools).acall(question="What is 25 + 17?"),
                     timeout=15,
                 )
 

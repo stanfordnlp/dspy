@@ -7,7 +7,8 @@ from dspy._vendor.lm15.serde import response_from_dict, response_to_dict
 from dspy.clients.lm15_boundary import plain
 from dspy.lm15 import DataPart, Response, TextPart, ThinkingPart
 
-CACHE_FORMAT = "dspy-lm15-result-v1"
+# 1.x records use provider-specific counters and cannot be safely read as 2.x Usage.
+CACHE_FORMAT = "dspy-lm15-result-v2"
 
 
 class AttributeDict(dict):
@@ -68,16 +69,10 @@ def convenience_output(response: Response, *, logprobs=False):
 def usage_dict(response: Response, provider=None):
     u = response.usage
     inputs, outputs = u.input_tokens, u.output_tokens
-    # DSPy's public prompt/completion counters include cached Anthropic
-    # input and Gemini thinking output. lm15's counters are provider-verbatim.
-    if provider and "anthropic" in provider and inputs is not None:
-        inputs += (u.cache_read_tokens or 0) + (u.cache_write_tokens or 0)
-    if provider in {"gemini", "vertex", "vertex-express", "xai"} and outputs is not None:
-        outputs += u.reasoning_tokens or 0
+    # lm15 2.x includes cache and reasoning in the canonical totals on every route.
     data = {key: val for key, val in {
         "prompt_tokens": inputs, "completion_tokens": outputs,
-        "total_tokens": (inputs + outputs if provider and "anthropic" in provider and inputs is not None and outputs is not None
-                         else u.total_tokens),
+        "total_tokens": u.total_tokens,
     }.items() if val is not None}
     prompt_details = {key: val for key, val in {
         "cached_tokens": u.cache_read_tokens, "cache_creation_tokens": u.cache_write_tokens,

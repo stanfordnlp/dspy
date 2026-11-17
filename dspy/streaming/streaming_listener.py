@@ -8,6 +8,7 @@ from queue import Queue
 from typing import TYPE_CHECKING, Any
 
 from pydantic import TypeAdapter
+from pydantic_core import from_json
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
@@ -16,9 +17,6 @@ from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.utils import _get_adapter
 from dspy.adapters.xml_adapter import XMLAdapter, _XMLParser, _XMLPrefixParser, _XMLScalarParser
 from dspy.streaming.messages import StreamResponse
-from dspy.utils.lazy_import import require
-
-jiter = require("jiter")
 
 if TYPE_CHECKING:
     from dspy.clients.engines.streaming import EngineChunk
@@ -335,7 +333,7 @@ class StreamListener:
                 # If the parse doesn't raise an error, that means the accumulated tokens is a valid json object. Because
                 # we add an extra "{" to the beginning of the field_accumulated_messages, so we know the streaming is
                 # finished.
-                jiter.from_json(self.json_adapter_state["field_accumulated_messages"].encode("utf-8"))
+                from_json(self.json_adapter_state["field_accumulated_messages"].encode("utf-8"))
                 self.stream_end = True
                 last_token = self.flush()
                 right_curly_bracket_index = last_token.rfind("}")
@@ -349,9 +347,9 @@ class StreamListener:
                 pass
 
         try:
-            parsed = jiter.from_json(
+            parsed = from_json(
                 self.json_adapter_state["field_accumulated_messages"].encode("utf-8"),
-                partial_mode="trailing-strings",
+                allow_partial="trailing-strings",
             )
             if len(parsed) > 1:
                 # If partial json parsing finds a second key, that means the streaming for the field we are listening to

@@ -110,7 +110,7 @@ def test_auto_engine_refuses_unrepresentable_tool_result_images_before_io(monkey
     transport = FakeTransport([])
     router_config = dspy.lm15.RouterConfig
     monkeypatch.setattr(execution, "RouterConfig", lambda **kwargs: router_config(**{**kwargs, "transport": transport}))
-    lm = dspy.LM("openai/gpt-4o", api_key="k", cache=False)
+    lm = dspy.LM("openai/gpt-4o", model_type="chat", api_key="k", cache=False)
     # An image inside a tool result has no slot on the Chat Completions wire:
     # neither native nor compatibility serialization can roundtrip this data.
     png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
@@ -156,7 +156,7 @@ def test_history_entry_records_adaptations(monkeypatch):
     monkeypatch.setattr(execution, "RouterConfig", lambda **kwargs: RouterConfig(
         **{**{k: v for k, v in kwargs.items() if k != "timeouts"}, "api_keys": {"openai-chat": "fake"}, "transport": transport},
     ))
-    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat", cache=False)
     assert lm("hello", top_k=3) == ["hello"]
     entry = lm.history[-1]
     assert [(a.field, a.action, a.asked) for a in entry["adaptations"]] == [("config.top_k", "dropped", 3)]

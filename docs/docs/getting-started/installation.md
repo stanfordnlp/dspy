@@ -8,6 +8,17 @@ If a call selects compatibility without the extra installed, DSPy raises an erro
 with the installation command. Application-owned integrations can also use this
 extra; see the bounded [text-only Bedrock Nova recipe](../api/models/LM.md#application-owned-exception-text-only-bedrock-nova).
 
+The extra excludes LiteLLM 1.106.0–1.106.7 and 1.108.0–1.108.3. Those releases
+import MCP 2-only gateway code during ordinary Responses calls and Chat calls
+with tools, even when no MCP gateway is requested. LiteLLM 1.108.4 fixes that
+unnecessary import ([upstream fix](https://github.com/BerriAI/litellm/pull/45961)).
+Older versions outside this affected interval remain eligible; installing the
+extra does not require MCP or upgrade it to version 2. The exclusion also applies
+when MCP 2 would make an affected release work, because package requirements
+cannot express a constraint conditional on another package's installed version.
+For actual LiteLLM MCP gateway use, install LiteLLM's own `mcp` extra and follow
+its version-specific requirements; DSPy's separate `mcp` extra does not activate it.
+
 ## Connecting to a language model
 
 DSPy connects to language models with the `dspy.LM` class. To set up a language model, we provide a `"provider/model"` format string and an API key:

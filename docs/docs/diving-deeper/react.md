@@ -1,16 +1,16 @@
-# ReAct and ReActV2
+# ReAct
 
 ## Intent
 
 ReAct is DSPy's general-purpose tool-using agent loop: the language model reasons about a task, chooses tools, observes their results, and repeats until it can produce the signature's outputs.
 
-DSPy is transitioning between two implementations. `dspy.ReAct` is the current implementation. `dspy.ReActV2` is its experimental, structured-history replacement and will become the implementation behind the canonical `dspy.ReAct` name in DSPy 3.5. The `dspy.ReActV2` name will remain as a deprecated compatibility alias throughout the 3.5 release line and will be removed in DSPy 3.6.
+In DSPy 3.5, `dspy.ReAct` uses structured `dspy.History`, typed output submission, and synchronous or asynchronous execution. A model turn can request multiple tool calls, which execute sequentially. `dspy.ReActV2` remains a deprecated compatibility subclass that warns on construction and will be removed in DSPy 3.6.
 
-Read this page to prepare for that transition and understand what is changing: how each implementation stores and formats history, calls tools, finishes a run, and interacts with provider prompt caching. For defining tools or importing them from MCP, see [Tools and MCP](tools.md).
+Read this page to understand how ReAct stores and formats history, calls tools, finishes a run, and interacts with provider prompt caching. For changes from DSPy 3.4 and earlier, see [Migration to DSPy 3.5](#migration-to-dspy-35). For defining tools or importing them from MCP, see [Tools and MCP](tools.md).
 
-## The transition from ReAct to ReActV2
+## Getting started
 
-Both modules accept the same task signature, tool list, and iteration limit:
+The constructor accepts a task signature, tool list, and iteration limit:
 
 ```python
 import dspy
@@ -19,71 +19,25 @@ def lookup(query: str) -> str:
     """Look up information relevant to a query."""
     return search_index(query)
 
-agent = dspy.ReActV2("question -> answer", tools=[lookup], max_iters=10)
+agent = dspy.ReAct("question -> answer", tools=[lookup], max_iters=10)
 result = agent(question="What is DSPy?")
 ```
 
-The execution models differ:
+## Three use cases for the new loop
 
-| | `dspy.ReAct` | `dspy.ReActV2` |
+| Use case | ReAct in DSPy 3.4 and earlier | ReAct in DSPy 3.5 |
 | --- | --- | --- |
-| Status | Current implementation through DSPy 3.4; adopts the ReActV2 implementation in 3.5 | Experimental name; becomes a deprecated alias for `dspy.ReAct` throughout 3.5 and is removed in 3.6 |
-| Stored history | Flat `trajectory` dictionary | Structured `dspy.History` events |
-| Model-facing history | Entire trajectory formatted into the current input | Prior user, assistant, and tool messages replayed as separate turns |
-| Tool selection | `next_tool_name` plus `next_tool_args` | `dspy.ToolCalls` |
-| Calls per model turn | One | One or more |
-| Completion | `finish`, then a separate extraction LM call | `submit` carries final typed outputs directly |
-| Returned diagnostics | `prediction.trajectory` | `prediction.history` and `prediction.termination_reason` |
-| Prompt caching | The changing trajectory is resent as one field | Stable prior messages remain a reusable prefix |
+| Return a typed invoice total, such as `invoice -> total: float` | The agent calls `finish`, then a separate extractor produces the final fields. | The agent calls `submit(total=125.50)` directly. Successful submission returns the typed value without another extraction call. |
+| Compare prices from two independent lookup tools | Each turn selects one tool, so two lookups require two model turns. | A capable model can request both lookups in one turn. ReAct runs them sequentially and preserves each result's call ID for the comparison. |
+| Investigate a document over several turns, then ask a follow-up | Prior actions are reformatted into a trajectory input; continuation requires application-specific handling. | Pass `prediction.history` into the next call. Native assistant/tool messages retain their IDs and form reusable request prefixes for provider prompt caching. |
 
-For new agent work, use `dspy.ReActV2` now if you can accept an experimental API; it provides an early path to the execution model that will become `dspy.ReAct` in 3.5. Existing `dspy.ReAct` programs can remain on the current implementation until the upgrade, but should prepare for the history and output changes summarized below. Pin the DSPy version while using the experimental `ReActV2` name.
+These are execution and API differences, not accuracy or latency benchmarks. Multiple calls per turn depend on model support and choices; provider cache hits depend on the provider's caching policy.
 
-## ReAct: trajectory-based execution
+## Structured-history execution
 
 ### How history is stored
 
-ReAct builds one insertion-ordered `trajectory` dictionary. Every iteration appends four keys:
-
-```python
-{
-    "thought_0": "I should look up the release notes.",
-    "tool_name_0": "lookup",
-    "tool_args_0": {"query": "DSPy release notes"},
-    "observation_0": "...",
-}
-```
-
-The dictionary is returned as `prediction.trajectory`. It is execution state for this invocation, not a conversation object intended to be passed into a later invocation.
-
-### How history is formatted for the model
-
-Before every LM call, `ReAct._format_trajectory` creates a temporary signature from the trajectory keys and asks the active adapter to format it. `ChatAdapter` uses field markers, `JSONAdapter` uses JSON, and `XMLAdapter` uses tags. ReAct then supplies that formatted value as the `trajectory` input to its internal predictor.
-
-The trajectory is therefore stored structurally inside the loop but becomes one formatted input value at the model boundary. On every iteration the complete, now-longer trajectory is formatted again and sent with the original task inputs.
-
-If the request exceeds the context window, ReAct drops the oldest complete thought/tool/args/observation group and retries, up to three times. Override `truncate_trajectory` to implement another retention policy.
-
-### How tools are called
-
-The internal `dspy.Predict` produces `next_thought`, a `next_tool_name` constrained to the registered tool names, and a `next_tool_args` dictionary. ReAct executes exactly one selected `dspy.Tool` per iteration with keyword arguments.
-
-Tool exceptions are caught and stored as the next observation, allowing the model to recover on the following iteration. ReAct also registers a no-argument `finish` tool; selecting it ends the loop. `max_iters` provides a hard stop when the model never selects `finish`.
-
-### What happens after the loop
-
-Selecting `finish`, reaching `max_iters`, or encountering an unrecoverable model/context error ends navigation but does not directly produce the declared outputs. ReAct runs a separate `dspy.ChainOfThought` extractor over the original task inputs and formatted trajectory. The extractor synthesizes and types the signature's output fields. The returned prediction combines those fields with `trajectory`.
-
-This means a normal ReAct run has at least one additional LM call after its tool loop.
-
-### Prompt-caching behavior
-
-ReAct resends the growing trajectory as one newly formatted input on each iteration. The instructions and original task inputs may still form a cacheable prefix, but the trajectory-bearing user content changes each turn rather than being represented as appended assistant/tool messages. Providers cannot reuse the changing portion as effectively, and the separate extraction request has a different signature and prompt shape.
-
-## ReActV2: structured-history execution
-
-### How history is stored
-
-ReActV2 owns a `dspy.History`, whose `messages` list contains one structured event per loop turn. An event can contain:
+ReAct owns a `dspy.History`, whose `messages` list contains one structured event per loop turn. An event can contain:
 
 - Original signature inputs, included on the first new turn only.
 - `next_thought`, when the model returns one.
@@ -124,9 +78,9 @@ assistant  next_thought plus native tool_calls
 tool       one result message per call, matched by tool_call_id
 ```
 
-Call IDs are preserved from the provider. ReActV2 generates deterministic IDs when non-native model output does not supply them.
+Call IDs are preserved from the provider. ReAct generates deterministic IDs when non-native model output does not supply them.
 
-With native function calling disabled, history remains structured inside DSPy, but the adapter renders the assistant fields in its normal text/JSON/XML format and renders tool results as a following user message. This lets ReActV2 work with models that do not expose a native tool API while retaining one internal history representation.
+With native function calling disabled, history remains structured inside DSPy, but the adapter renders the assistant fields in its normal text/JSON/XML format and renders tool results as a following user message. This lets ReAct work with models that do not expose a native tool API while retaining one internal history representation.
 
 Native calling is an adapter setting:
 
@@ -144,23 +98,27 @@ Provider support varies. `JSONAdapter` enables native function calling by defaul
 
 ### How tools are called
 
-The internal predictor returns `dspy.ToolCalls`, so one model turn can request multiple tools. ReActV2 preserves each requested call/result pair by ID. The `parallel_tool_calls` adapter option asks a capable provider to generate multiple independent calls in the same turn; ReActV2 currently executes the returned calls one after another in Python.
+The internal predictor returns `dspy.ToolCalls`, so one model turn can request multiple tools. ReAct preserves each requested call/result pair by ID. The `parallel_tool_calls` adapter option asks a capable provider to generate multiple independent calls in the same turn; ReAct executes the returned calls one after another in Python, not concurrently.
 
 Callables supplied to the constructor are converted to `dspy.Tool`. Unknown tool names and execution exceptions become error results in history so the next model turn can respond to them.
 
-ReActV2 reserves `submit` as an internal tool. Its argument schema is generated from the original signature's output fields, so final values travel through the same structured calling path as every other action.
+ReAct reserves `submit` as an internal tool. Its argument schema is generated from the original signature's output fields, so final values travel through the same structured calling path as every other action.
 
 ### What happens after each turn and at termination
 
-After executing all calls in a turn, ReActV2 attaches their results to `ToolCalls`, appends the event to history, and invokes the model again with no duplicate copy of the original inputs. If one of the calls successfully invokes `submit`, ReActV2 returns its typed fields immediately with `termination_reason="submit"`; there is no separate extraction module.
+After executing the calls in a turn, ReAct attaches their results to `ToolCalls` and appends the event to history. If a call successfully invokes `submit`, ReAct returns its typed fields with `termination_reason="submit"`; there is no separate extraction module. Otherwise, it invokes the model again with no duplicate copy of the original inputs.
 
-If the loop reaches `max_iters`, returns no calls, fails to parse, or exceeds the context window, ReActV2 makes one final LM call requesting `submit`. With native function calling enabled, it sets `tool_choice` to `submit`, so the provider enforces that choice. In non-native mode, the adapter removes `tool_choice` and requests `submit` through the formatted prompt instead, so structured submission is not guaranteed. A successful fallback returns `termination_reason="forced_submit"`. If that attempt fails, the prediction still returns its history and a termination reason describing why the normal loop stopped, but it may not contain the declared output fields.
+If the loop reaches `max_iters`, returns no calls, fails to parse, or exceeds the context window, ReAct makes one final LM call requesting `submit`. With native function calling enabled, it sets `tool_choice` to `submit`, so the provider enforces that choice. In non-native mode, the adapter removes `tool_choice` and requests `submit` through the formatted prompt instead. A successful fallback returns `termination_reason="forced_submit"`. If forced submission fails, ReAct raises rather than returning an incomplete prediction without the declared output fields.
 
-Unlike ReAct, ReActV2 does not currently truncate old history events on context overflow.
+ReAct does not automatically truncate old history events on context overflow.
+
+### Async execution
+
+Use `await agent.acall(...)` for asynchronous execution. The async loop awaits tool calls sequentially and supports async tools, including MCP tools; multiple calls in one model turn do not imply concurrent execution.
 
 ### Turn budget
 
-ReActV2 always tells the model how many turns it has. Every LM call contains a `turn_budget` input that details the current turn and how many turns remain before the model must submit. Its value reads, for example, `Turn 3 of 10 (7 more after this one).`. The count follows the effective `max_iters`, including a per-call override. The forced final call shows ``No turns remain. Call `submit` now with your final outputs.``
+ReAct always tells the model how many turns it has. Every LM call contains a `turn_budget` input that details the current turn and how many turns remain before the model must submit. Its value reads, for example, `Turn 3 of 10 (7 more after this one).`. The count follows the effective `max_iters`, including a per-call override. The forced final call shows ``No turns remain. Call `submit` now with your final outputs.``
 
 Showing an agent its remaining budget follows [Budget-Aware Tool-Use Enables Effective Agent Scaling](https://arxiv.org/abs/2511.17006), where a per-step budget status let ReAct agents keep improving with larger tool budgets at lower cost.
 
@@ -180,39 +138,45 @@ with dspy.context(lm=lm):
     result = agent(question="What is DSPy?")
 ```
 
-The history policy asks lm15 to mark the reusable conversation prefix as ReActV2 appends history. It does not enable DSPy's answer cache or guarantee a provider cache hit. Anthropic only caches prefixes that meet the model's minimum token count, and its default ephemeral cache has a limited lifetime. See [Using Provider-Side Prompt Caching](../tutorials/cache/index.md#using-provider-side-prompt-caching) for native configuration and the optional LiteLLM engine's provider-specific injection options.
+The history policy asks lm15 to mark the reusable conversation prefix as ReAct appends history. It does not enable DSPy's answer cache or guarantee a provider cache hit. Anthropic only caches prefixes that meet the model's minimum token count, and its default ephemeral cache has a limited lifetime. See [Using Provider-Side Prompt Caching](../tutorials/cache/index.md#using-provider-side-prompt-caching) for native configuration and the optional LiteLLM engine's provider-specific injection options.
 
 Native tool replay gives the cleanest provider-visible structure, but non-native mode still benefits from stable multi-turn history. Internal testing has seen cost reductions of up to 50% on some tasks. Actual savings depend on the provider's cache policy, model, request shape, and the size of tool results; they are not guaranteed for every workload.
 
-## Replacement and migration plan
+## Migration to DSPy 3.5
 
-ReActV2 is a temporary experimental name, not the start of two permanent ReAct APIs. Its structured-history implementation will replace the current `dspy.ReAct` implementation in DSPy 3.5. The canonical public name will remain `dspy.ReAct`.
+The structured-history implementation previously named `ReActV2` is now canonical `dspy.ReAct`. The constructor remains `dspy.ReAct(signature, tools, max_iters=20)`.
 
-To avoid forcing users of the experimental name to rename immediately, `dspy.ReActV2` will remain available as a deprecated compatibility alias throughout the DSPy 3.5 release line. Using the alias will warn users to migrate to `dspy.ReAct`; the alias will be removed in DSPy 3.6. In other words, code can move from `dspy.ReActV2(...)` to `dspy.ReAct(...)` any time after upgrading to 3.5, and should do so before upgrading to 3.6.
+For users of ReAct in DSPy 3.4 and earlier:
 
-Existing `dspy.ReAct` programs do not need to change before upgrading to DSPy 3.5. Before that upgrade, review code that depends on `prediction.trajectory`, a separate extractor predictor, one tool call per turn, or custom trajectory truncation. Those behaviors are replaced by `prediction.history`, direct `submit` outputs, multiple calls per turn, and structured message replay.
+| Previous behavior | DSPy 3.5 migration |
+| --- | --- |
+| `prediction.trajectory` dictionary | Inspect `prediction.history.messages`; pass `history=` to continue a run. |
+| `next_tool_name` and `next_tool_args`, one call per turn | Structured `dspy.ToolCalls`, potentially multiple sequential calls per turn. Treat `max_iters` as a turn budget, not a tool-call budget. |
+| `finish` followed by the `extract` predictor | Internal typed `submit` tool; no separate extractor or automatic extractor `reasoning` field. Declare any reasoning you need in your output signature. |
+| `truncate_trajectory` overrides | Removed; there is no automatic history truncation on context overflow. Review application-level context management. |
+| Best-effort loop completion | A final forced `submit` is attempted when needed; failure raises instead of returning incomplete outputs. |
+
+The input names `history`, `tools`, and `turn_budget`, the output names `history` and `termination_reason`, and the tool name `submit` are reserved. Rename any conflicting fields or tools before upgrading.
+
+Old optimized state must be **recompiled** for the new predictor schema. Do not load old trajectory/extractor predictor state into the new ReAct and assume it remains compatible; rerun your optimizer against the new module.
+
+For users of the experimental name, replace `dspy.ReActV2(...)` with `dspy.ReAct(...)`. In 3.5, `dspy.ReActV2` is a deprecated compatibility subclass with the same behavior; it warns on construction and will be removed in 3.6.
 
 ## API summary
 
 **`dspy.ReAct(signature, tools, max_iters=20)`**
-Runs the stable trajectory-based loop and a final extraction pass.
+Runs the structured-history loop and reserves `submit` for final typed outputs.
 
 **`ReAct.forward(**inputs)` / `ReAct.aforward(**inputs)`**
-Runs the synchronous or asynchronous loop and returns output fields plus `trajectory`.
-
-**`ReAct.truncate_trajectory(trajectory)`**
-Drops the oldest complete tool-call group after a context-window error. Override to change the policy.
+Accepts optional continuation `history=` and an integer `max_iters=` override alongside the signature inputs. Returns typed outputs, `history`, and `termination_reason` when submission succeeds; raises if forced submission fails. Use `agent(...)` or `await agent.acall(...)` for normal module invocation.
 
 **`dspy.ReActV2(signature, tools, max_iters=20)`**
-Runs the experimental structured-history loop and reserves `submit` for final outputs.
-
-**`ReActV2.forward(history=None, max_iters=None, **inputs)`**
-Accepts optional continuation history and a per-call iteration override. Returns `history` and `termination_reason` alongside outputs when submission succeeds.
+Deprecated compatibility subclass of `ReAct` in 3.5, warning on construction; removed in 3.6.
 
 ## Cross-links
 
 - [Tools and MCP](tools.md) — defining, wrapping, validating, and importing the tools these agents call.
 - [Adapters: how signatures become prompts](adapters.md) — the formatting boundary for `History`, `ToolCalls`, and native function calling.
-- [Modules: composing your own](modules.md) — tracing, state, and composition shared by both implementations.
+- [Modules: composing your own](modules.md) — tracing, state, and composition for DSPy modules.
 - [`dspy.ReAct` API reference](../api/modules/ReAct.md)
 - [`dspy.ReActV2` API reference](../api/modules/ReActV2.md)

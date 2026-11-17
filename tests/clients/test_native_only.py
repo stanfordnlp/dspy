@@ -31,10 +31,11 @@ from dspy.clients.engines import LM15Engine
 from dspy.lm15 import RouterConfig
 import dspy.clients.execution as execution
 
-transport = FakeTransport([FakeResponse(status=200, body=b'{"model":"gpt-4o-mini","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}')])
-execution.RouterConfig = lambda **kw: RouterConfig(**{**kw, "api_keys": {"openai-chat": "fake"}, "transport": transport})
+transport = FakeTransport([FakeResponse(status=200, body=b'{"model":"gpt-4o-mini","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]}')])
+execution.RouterConfig = lambda **kw: RouterConfig(**{**kw, "api_keys": {"openai": "fake"}, "transport": transport})
 assert dspy.LM("openai/gpt-4o-mini", cache=False)("hello") == ["ok"]
 assert len(transport.requests) == 1
+assert transport.requests[0].url.endswith("/responses")
 assert not any(n == "litellm" or n.startswith("litellm.") for n in sys.modules)
 
 find_spec = importlib.util.find_spec
@@ -67,11 +68,14 @@ def test_optional_engine_selection_survives_persistence(entry):
 
 
 @pytest.mark.parametrize("engine", ["auto", "lm15"])
-def test_native_engine_pickle_roundtrip_keeps_selection(engine, monkeypatch):
-    transport = native_transport(monkeypatch, [wire("restored")])
-    lm = pickle.loads(pickle.dumps(dspy.LM("openai/gpt-4o-mini", engine=engine, cache=False)))
+@pytest.mark.parametrize("model_type", ["auto", "chat"])
+def test_native_engine_pickle_roundtrip_keeps_selection(engine, model_type, monkeypatch):
+    transport = native_transport(monkeypatch, [responses_wire() if model_type == "auto" else wire("restored")])
+    lm = pickle.loads(pickle.dumps(dspy.LM("openai/gpt-4o-mini", engine=engine, model_type=model_type,
+                                          api_key="fake", cache=False)))
     assert lm.engine == engine
-    assert lm("hi") == ["restored"]
+    assert lm.model_type == model_type
+    assert lm("hi") == (["OK"] if model_type == "auto" else ["restored"])
     assert len(transport.requests) == 1
     lm.close()
 
@@ -85,10 +89,10 @@ def test_strict_native_text_mode_is_refused_before_io():
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("engine", ["auto", "lm15"])
 async def test_known_native_request_works(engine, asynchronous, monkeypatch):
-    transport = native_transport(monkeypatch, [wire("native")])
-    lm = dspy.LM("openai/gpt-4o-mini", engine=engine, cache=False)
+    transport = native_transport(monkeypatch, [responses_wire()])
+    lm = dspy.LM("openai/gpt-4o-mini", engine=engine, api_key="fake", cache=False)
     try:
-        assert (await lm.acall("hi") if asynchronous else lm("hi")) == ["native"]
+        assert (await lm.acall("hi") if asynchronous else lm("hi")) == ["OK"]
         assert len(transport.requests) == 1
     finally:
         await lm.aclose()

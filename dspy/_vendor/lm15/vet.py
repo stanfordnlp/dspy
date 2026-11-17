@@ -231,8 +231,9 @@ def _response_result(response: Response) -> JsonObject:
 
 def _parse_stream_body(lm: BaseProviderLM, request: Request, body: bytes) -> list[StreamEvent]:
     def raw_events() -> Iterator[StreamEvent]:
+        reader = lm.stream_reader(request)
         for raw in parse_sse(iter(body.splitlines(keepends=True))):
-            for event in lm.parse_stream_events(request, raw):
+            for event in reader.feed(raw):
                 if event is not None:
                     yield event
 
@@ -324,6 +325,14 @@ def op_normalize_error(msg: JsonObject) -> JsonObject:
 def op_serde_roundtrip(msg: JsonObject) -> JsonObject:
     from_dict, to_dict = _serde_for_kind(str(msg["kind"]))
     return {"value": to_dict(from_dict(msg["value"]))}
+
+
+def op_estimate_cost(msg: JsonObject) -> JsonObject:
+    """PROTOCOL.md estimate_cost: ``InferencePricing.estimate`` over a
+    canonical pricing object and a canonical Usage. ``cost`` is null when
+    the estimate is unknown."""
+    pricing = serde.inference_pricing_from_dict(msg["pricing"])
+    return {"cost": pricing.estimate(serde.usage_from_dict(msg["usage"]))}
 
 
 def op_validate(msg: JsonObject) -> JsonObject:
@@ -760,15 +769,22 @@ def _reflect_providers() -> JsonObject:
 
 
 def _reflect_types() -> JsonObject:
-    """Every public dataclass in lm15.types, by reflection."""
+    """Every public dataclass in lm15.types, and the frozen value types of
+    lm15.models (model metadata and pricing, spec/types.md "Model
+    metadata"), by reflection. ModelRegistry is a container, not a value."""
+    from . import models as lm15_models
+
     out: JsonObject = {}
-    for name in sorted(vars(lm15_types)):
-        obj = getattr(lm15_types, name)
-        if name.startswith("_") or not isinstance(obj, type):
-            continue
-        if obj.__module__ != lm15_types.__name__ or not dataclasses.is_dataclass(obj):
-            continue
-        out[obj.__name__] = {"fields": [f.name for f in dataclasses.fields(obj)]}
+    for module in (lm15_types, lm15_models):
+        for name in sorted(vars(module)):
+            obj = getattr(module, name)
+            if name.startswith("_") or not isinstance(obj, type):
+                continue
+            if obj.__module__ != module.__name__ or not dataclasses.is_dataclass(obj):
+                continue
+            if module is lm15_models and not obj.__dataclass_params__.frozen:  # type: ignore[attr-defined]
+                continue
+            out[obj.__name__] = {"fields": [f.name for f in dataclasses.fields(obj)]}
     return out
 
 
@@ -827,6 +843,7 @@ HANDLERS: dict[str, Callable[[JsonObject], JsonObject]] = {
     "replay_stream": op_replay_stream,
     "normalize_error": op_normalize_error,
     "serde_roundtrip": op_serde_roundtrip,
+    "estimate_cost": op_estimate_cost,
     "validate": op_validate,
     "surface_dump": op_surface_dump,
     "explain_auth": op_explain_auth,

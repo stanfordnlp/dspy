@@ -104,7 +104,7 @@ def test_disabled_timeout_refuses_on_strict_native_engine(value):
     with pytest.raises(dspy.LMUnsupportedFeatureError, match="disables") as caught:
         dspy.LM("openai/gpt-4o", api_key="k", cache=False, engine="lm15", timeout=timeout)("hi")
     assert caught.value.feature == "timeout"
-    assert select_backend(dspy.LM("openai/gpt-4o", api_key="k", timeout=httpx.Timeout(60.0))).resolution.provider == "openai-chat"
+    assert select_backend(dspy.LM("openai/gpt-4o", api_key="k", timeout=httpx.Timeout(60.0))).resolution.provider == "openai"
 
 
 # ─── top_k survives the typed native route ─────────────────────────
