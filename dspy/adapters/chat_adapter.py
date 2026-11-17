@@ -18,7 +18,7 @@ from dspy.clients.base_lm import BaseLM
 from dspy.clients.call_context import adapter_fallback_scope
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
-from dspy.utils.exceptions import AdapterParseError
+from dspy.utils.exceptions import AdapterParseError, AdapterValidationError
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
 
@@ -86,6 +86,8 @@ class ChatAdapter(Adapter):
         with adapter_fallback_scope() as progress:
             try:
                 return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+            except AdapterValidationError:
+                raise
             except AdapterParseError:
                 from dspy.adapters.json_adapter import JSONAdapter
 
@@ -104,6 +106,8 @@ class ChatAdapter(Adapter):
         with adapter_fallback_scope() as progress:
             try:
                 return await super().acall(lm, lm_kwargs, signature, demos, inputs)
+            except AdapterValidationError:
+                raise
             except AdapterParseError:
                 from dspy.adapters.json_adapter import JSONAdapter
 
@@ -234,12 +238,13 @@ class ChatAdapter(Adapter):
                 try:
                     fields[k] = parse_value(v, signature.output_fields[k].annotation)
                 except ValueError as e:
-                    raise AdapterParseError(
+                    raise AdapterValidationError(
                         adapter_name="ChatAdapter",
                         signature=signature,
                         lm_response=completion,
                         message=f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}",
-                    )
+                        validation_error=e,
+                    ) from e
         fields = apply_output_field_defaults(signature, fields)
         if fields.keys() != signature.output_fields.keys():
             raise AdapterParseError(

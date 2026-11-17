@@ -249,6 +249,31 @@ def test_xml_adapter_does_not_ignore_incomplete_reasoning_or_unknown_fields(pref
         XMLAdapter().parse(dspy.Signature("question -> answer"), prefix + "<answer>42</answer>")
 
 
+def test_xml_adapter_does_not_fallback_on_validation_error():
+    from typing import Literal
+
+    class Color(dspy.Signature):
+        question: str = dspy.InputField()
+        color: Literal["red", "blue"] = dspy.OutputField()
+
+    adapter = XMLAdapter(use_json_adapter_fallback=True)
+
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response(
+            "<color>\ngreen\n</color>",
+            model="openai/gpt-4o-mini",
+        )
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__") as mock_json_call:
+            with pytest.raises(dspy.utils.exceptions.AdapterValidationError) as exc_info:
+                adapter(lm, {}, Color, [], {"question": "Pick a color"})
+
+        mock_json_call.assert_not_called()
+        assert "green" in str(exc_info.value)
+        assert exc_info.value.validation_error is not None
+
+
 def test_xml_adapter_xml_syntax_is_literal_text():
     class Result(dspy.Signature):
         text: str = dspy.OutputField()

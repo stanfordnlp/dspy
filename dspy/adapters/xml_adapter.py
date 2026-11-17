@@ -21,7 +21,7 @@ from dspy.adapters.utils import (
     translate_field_type,
 )
 from dspy.signatures.signature import Signature
-from dspy.utils.exceptions import AdapterParseError
+from dspy.utils.exceptions import AdapterParseError, AdapterValidationError
 
 # Avoid regex's compile/flag dispatch for every leaf and streaming chunk.
 _compile_xml_pattern = lru_cache(maxsize=128)(regex.compile)
@@ -174,12 +174,20 @@ class XMLAdapter(ChatAdapter):
                         error = e
                 else:
                     raise error
-        except (ET.ParseError, ValueError) as e:
+        except ET.ParseError as e:
             raise AdapterParseError(
                 adapter_name="XMLAdapter",
                 signature=signature,
                 lm_response=completion,
                 message=f"{context}: {e}",
+            ) from e
+        except ValueError as e:
+            raise AdapterValidationError(
+                adapter_name="XMLAdapter",
+                signature=signature,
+                lm_response=completion,
+                message=f"{context}: {e}",
+                validation_error=e,
             ) from e
         fields = apply_output_field_defaults(signature, fields)
         if fields.keys() != signature.output_fields.keys():
