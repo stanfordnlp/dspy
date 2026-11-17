@@ -33,9 +33,11 @@ class MultiChainComparison(Module):
         self.predict = Predict(signature, temperature=temperature, **config)
 
     def _prepare_kwargs(self, completions, kwargs):
-        if len(completions) != self.M:
+        completions = list(completions)
+        completion_count = len(completions)
+        if completion_count != self.M:
             raise ValueError(
-                f"The number of attempts ({len(completions)}) doesn't match the expected number M ({self.M}). "
+                f"The number of attempts ({completion_count}) doesn't match the expected number M ({self.M}). "
                 f"Please set the correct value for M when initializing MultiChainComparison."
             )
 

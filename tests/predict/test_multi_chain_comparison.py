@@ -42,6 +42,17 @@ def test_basic_example():
     assert final_pred.answer == "blue"
 
 
+def test_generator_completions():
+    compare_answers = dspy.MultiChainComparison(BasicQA)
+    lm = DummyLM([{"rationale": "synthesized", "answer": "blue"}])
+    with dspy.context(lm=lm):
+        result = compare_answers(iter(completions), question="Sky color?")
+
+    assert result.answer == "blue"
+    prompt = lm.history[-1]["messages"][-1]["content"]
+    assert "blue" in prompt and "green" in prompt
+
+
 def test_comparing_native_completions_without_summaries():
     class NativeLM(DummyLM):
         @property
