@@ -157,6 +157,11 @@ class XMLAdapter(ChatAdapter):
             elements = self._group_children(root)
             if "<" in parser.buffer or {child.tag for child in root} - signature.output_fields.keys():
                 raise ET.ParseError("Unexpected output field or closing tag")
+            tentative_elements = apply_output_field_defaults(
+                signature, {k: None for k in elements if k in signature.output_fields}
+            )
+            if tentative_elements.keys() != signature.output_fields.keys():
+                raise ET.ParseError("Missing required output fields in XML response")
             for name, field in signature.output_fields.items():
                 if name not in elements:
                     continue
@@ -182,6 +187,17 @@ class XMLAdapter(ChatAdapter):
                 message=f"{context}: {e}",
             ) from e
         except ValueError as e:
+            structural_errors = (
+                "Repeated elements require a list field",
+                "Scalar values cannot contain child fields",
+            )
+            if any(msg in str(e) for msg in structural_errors):
+                raise AdapterParseError(
+                    adapter_name="XMLAdapter",
+                    signature=signature,
+                    lm_response=completion,
+                    message=f"{context}: {e}",
+                ) from e
             raise AdapterValidationError(
                 adapter_name="XMLAdapter",
                 signature=signature,

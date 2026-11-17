@@ -232,6 +232,16 @@ class ChatAdapter(Adapter):
 
         sections = [(k, "\n".join(v).strip()) for k, v in sections]
 
+        raw_fields = {k: None for k, _ in sections if k in signature.output_fields}
+        tentative_fields = apply_output_field_defaults(signature, raw_fields)
+        if tentative_fields.keys() != signature.output_fields.keys():
+            raise AdapterParseError(
+                adapter_name="ChatAdapter",
+                signature=signature,
+                lm_response=completion,
+                parsed_result=tentative_fields,
+            )
+
         fields = {}
         for k, v in sections:
             if (k not in fields) and (k in signature.output_fields):
@@ -245,16 +255,7 @@ class ChatAdapter(Adapter):
                         message=f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}",
                         validation_error=e,
                     ) from e
-        fields = apply_output_field_defaults(signature, fields)
-        if fields.keys() != signature.output_fields.keys():
-            raise AdapterParseError(
-                adapter_name="ChatAdapter",
-                signature=signature,
-                lm_response=completion,
-                parsed_result=fields,
-            )
-
-        return fields
+        return apply_output_field_defaults(signature, fields)
 
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         """

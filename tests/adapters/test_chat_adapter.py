@@ -2705,6 +2705,32 @@ async def test_chat_adapter_async_does_not_fallback_on_validation_error():
         assert exc_info.value.validation_error is not None
 
 
+def test_chat_adapter_falls_back_when_value_invalid_and_field_missing():
+    from typing import Literal
+
+    class MultiField(dspy.Signature):
+        question: str = dspy.InputField()
+        color: Literal["red", "blue"] = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter(use_json_adapter_fallback=True)
+
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        # Invalid color AND missing required field 'answer'
+        mock_completion.return_value = make_response(
+            "[[ ## color ## ]]\ngreen\n[[ ## completed ## ]]",
+            model="openai/gpt-4o-mini",
+        )
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__") as mock_json_call:
+            mock_json_call.return_value = [{"color": "red", "answer": "Paris"}]
+            result = adapter(lm, {}, MultiField, [], {"question": "Pick a color and city"})
+
+        mock_json_call.assert_called_once()
+        assert result == [{"color": "red", "answer": "Paris"}]
+
+
 def test_chat_adapter_respects_use_json_adapter_fallback_flag():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.ChatAdapter(use_json_adapter_fallback=False)
