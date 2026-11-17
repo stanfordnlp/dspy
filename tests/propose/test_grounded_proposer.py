@@ -33,6 +33,19 @@ def test_propose_instructions_for_program(demo_candidates):
         assert pred_instructions == ["instruction"]
 
 
+class TrackingDummyLM(DummyLM):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.last_copy_kwargs = {}
+        self.copies = []
+
+    def copy(self, **kwargs):
+        self.last_copy_kwargs = kwargs
+        copied = super().copy(**kwargs)
+        self.copies.append(copied)
+        return copied
+
+
 @pytest.mark.parametrize(
     "demo_candidates",
     [
@@ -41,11 +54,6 @@ def test_propose_instructions_for_program(demo_candidates):
     ],
 )
 def test_propose_instruction_for_predictor(demo_candidates):
-    class TrackingDummyLM(DummyLM):
-        def copy(self, **kwargs):
-            self.last_copy_kwargs = kwargs
-            return super().copy(**kwargs)
-
     prompt_model = TrackingDummyLM([{"proposed_instruction": "instruction"}] * 10)
     program = Predict("question -> answer")
 
@@ -132,7 +140,7 @@ def test_propose_instructions_multimodal_no_context_blowup():
         answer: str = dspy.OutputField()
 
     program = Predict(VisualQA)
-    prompt_model = DummyLM(
+    prompt_model = TrackingDummyLM(
         [{"proposed_instruction": "Answer questions about images accurately."}] * 20
     )
 
@@ -162,21 +170,23 @@ def test_propose_instructions_multimodal_no_context_blowup():
     assert isinstance(result, dict)
     assert len(result[0]) == 2
 
+    all_lms = [prompt_model] + prompt_model.copies
     found_compact_image_demo = False
-    for call in prompt_model.history:
-        messages = call.get("messages", [])
-        for msg in messages:
-            content = msg.get("content", "")
-            if isinstance(content, str):
-                if "IMAGE_BASE_64_ENCODED(15000)" in content:
-                    found_compact_image_demo = True
-                assert CUSTOM_TYPE_START_IDENTIFIER not in content
-                assert "C" * 100 not in content
+    for lm in all_lms:
+        for call in lm.history:
+            messages = call.get("messages", [])
+            for msg in messages:
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    if "IMAGE_BASE_64_ENCODED(15000)" in content:
+                        found_compact_image_demo = True
+                    assert CUSTOM_TYPE_START_IDENTIFIER not in content
+                    assert "C" * 100 not in content
 
-        if "request" in call and hasattr(call["request"], "messages"):
-            for message in call["request"].messages:
-                for part in getattr(message, "parts", []):
-                    assert getattr(part, "type", "text") == "text"
+            if "request" in call and hasattr(call["request"], "messages"):
+                for message in call["request"].messages:
+                    for part in getattr(message, "parts", []):
+                        assert getattr(part, "type", "text") == "text"
 
     assert found_compact_image_demo, "Compact image demo must reach prompt model"
 
