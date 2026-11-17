@@ -5,7 +5,6 @@ import functools
 import inspect
 import logging
 import threading
-from contextlib import contextmanager
 from typing import Any
 
 import cloudpickle
@@ -287,18 +286,28 @@ class Settings:
             ```python
             import dspy
 
+            qa = dspy.Predict("question -> answer")
+
             with dspy.context(lm=dspy.LM("anthropic/claude-sonnet-4-6")):
                 result = qa(question="What is the capital of France?")
             ```
 
             Async context:
             ```python
+            import dspy
+
+            qa = dspy.Predict("question -> answer")
+
             async with dspy.context(lm=dspy.LM("anthropic/claude-sonnet-4-6")):
                 result = await qa.acall(question="What is the capital of France?")
             ```
 
             Decorator:
             ```python
+            import dspy
+
+            qa = dspy.Predict("question -> answer")
+
             @dspy.context(lm=dspy.LM("anthropic/claude-sonnet-4-6"))
             async def ask(q):
                 return await qa.acall(question=q)
