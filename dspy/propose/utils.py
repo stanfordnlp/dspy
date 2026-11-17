@@ -1,8 +1,14 @@
 import inspect
 import json
 import re
+from typing import Any
 
 import dspy
+from dspy.adapters.types.base_type import (
+    CUSTOM_TYPE_END_IDENTIFIER,
+    CUSTOM_TYPE_START_IDENTIFIER,
+    Type,
+)
 
 try:
     from IPython.core.magics.code import extract_symbols
@@ -126,8 +132,45 @@ def create_predictor_level_history_string(base_program, predictor_i, trial_logs,
 
     return predictor_history_string
 
-def create_example_string(fields, example):
+def format_proposer_field_value(value: Any) -> str:
+    """Format an example field value cleanly for instruction proposal prompts.
 
+    Prevents multimodal payloads (such as base64 data URIs or custom-type serialization
+    markers) from bloating proposer LLM context windows or being converted into active
+    media parts by adapters.
+    """
+    if isinstance(value, Type):
+        return repr(value)
+
+    if isinstance(value, list):
+        formatted_items = [format_proposer_field_value(item) for item in value]
+        return "[" + ", ".join(formatted_items) + "]"
+
+    if isinstance(value, tuple):
+        formatted_items = [format_proposer_field_value(item) for item in value]
+        return "(" + ", ".join(formatted_items) + ")"
+
+    if isinstance(value, dict):
+        formatted_pairs = [
+            f"{repr(k)}: {format_proposer_field_value(v)}" for k, v in value.items()
+        ]
+        return "{" + ", ".join(formatted_pairs) + "}"
+
+    if isinstance(value, str):
+        text = value
+        if CUSTOM_TYPE_START_IDENTIFIER in text:
+            text = text.replace(
+                CUSTOM_TYPE_START_IDENTIFIER, "[CUSTOM-TYPE-START]"
+            ).replace(CUSTOM_TYPE_END_IDENTIFIER, "[CUSTOM-TYPE-END]")
+        if text.startswith("data:") and ";base64," in text:
+            header, _, payload = text.partition(";base64,")
+            return f"{header};base64,<BASE_64_ENCODED({len(payload)})>"
+        return text
+
+    return str(value)
+
+
+def create_example_string(fields, example):
     # Building the output string
     output = []
     for field_name, field_values in fields.items():
@@ -136,8 +179,8 @@ def create_example_string(fields, example):
         # Determine the value from input_data or prediction_data
         value = example.get(field_name)
 
-        # Construct the string for the current field
-        field_str = f"{name} {value}"
+        # Construct the string for the current field with multimodal sanitization
+        field_str = f"{name} {format_proposer_field_value(value)}"
         output.append(field_str)
 
     # Joining all the field strings
