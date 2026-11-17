@@ -132,40 +132,68 @@ def create_predictor_level_history_string(base_program, predictor_i, trial_logs,
 
     return predictor_history_string
 
-def format_proposer_field_value(value: Any) -> str:
+def _sanitize_proposer_text(text: str) -> str:
+    """Neutralize custom-type markers and mask raw base64 data URIs."""
+    if CUSTOM_TYPE_START_IDENTIFIER in text:
+        text = text.replace(
+            CUSTOM_TYPE_START_IDENTIFIER, "[CUSTOM-TYPE-START]"
+        ).replace(CUSTOM_TYPE_END_IDENTIFIER, "[CUSTOM-TYPE-END]")
+    if "data:" in text and ";base64," in text:
+        text = re.sub(
+            r"data:[^;]+;base64,[A-Za-z0-9+/=]{50,}",
+            "data:<BASE64_DATA_OMITTED>",
+            text,
+        )
+    return text
+
+
+def format_proposer_field_value(value: Any, in_container: bool = False) -> str:
     """Format an example field value cleanly for instruction proposal prompts.
 
     Prevents multimodal payloads (such as base64 data URIs or custom-type serialization
     markers) from bloating proposer LLM context windows or being converted into active
-    media parts by adapters.
+    media parts by adapters. Preserves quoting and item boundaries inside containers.
     """
     if isinstance(value, Type):
-        return repr(value)
+        # Document.__str__() gives a compact summary ('Document(<title>: <len> chars)'),
+        # whereas repr(Document) dumps full data/PDF text. For Image/Audio/File, repr()
+        # gives the compact summary (<IMAGE_BASE_64_ENCODED(...)>) whereas str()
+        # calls serialize_model() with markers and raw base64 data.
+        if type(value).__name__ == "Document":
+            raw_text = str(value)
+        elif type(value).__name__ in ("Image", "Audio", "File"):
+            raw_text = repr(value)
+        else:
+            str_repr = str(value)
+            raw_repr = repr(value)
+            raw_text = str_repr if len(str_repr) <= len(raw_repr) else raw_repr
+        return _sanitize_proposer_text(raw_text)
 
     if isinstance(value, list):
-        formatted_items = [format_proposer_field_value(item) for item in value]
+        formatted_items = [
+            format_proposer_field_value(item, in_container=True) for item in value
+        ]
         return "[" + ", ".join(formatted_items) + "]"
 
     if isinstance(value, tuple):
-        formatted_items = [format_proposer_field_value(item) for item in value]
+        formatted_items = [
+            format_proposer_field_value(item, in_container=True) for item in value
+        ]
+        if len(formatted_items) == 1:
+            return "(" + formatted_items[0] + ",)"
         return "(" + ", ".join(formatted_items) + ")"
 
     if isinstance(value, dict):
         formatted_pairs = [
-            f"{repr(k)}: {format_proposer_field_value(v)}" for k, v in value.items()
+            f"{format_proposer_field_value(k, in_container=True)}: "
+            f"{format_proposer_field_value(v, in_container=True)}"
+            for k, v in value.items()
         ]
         return "{" + ", ".join(formatted_pairs) + "}"
 
     if isinstance(value, str):
-        text = value
-        if CUSTOM_TYPE_START_IDENTIFIER in text:
-            text = text.replace(
-                CUSTOM_TYPE_START_IDENTIFIER, "[CUSTOM-TYPE-START]"
-            ).replace(CUSTOM_TYPE_END_IDENTIFIER, "[CUSTOM-TYPE-END]")
-        if text.startswith("data:") and ";base64," in text:
-            header, _, payload = text.partition(";base64,")
-            return f"{header};base64,<BASE_64_ENCODED({len(payload)})>"
-        return text
+        cleaned = _sanitize_proposer_text(value)
+        return repr(cleaned) if in_container else cleaned
 
     return str(value)
 
