@@ -1804,12 +1804,12 @@ def test_json_adapter_parse_unwraps_function_call_envelope():
 
 def test_json_adapter_parse_does_not_unwrap_when_top_level_has_output_fields():
     class ParametersSignature(dspy.Signature):
-        parameters: str = dspy.OutputField()
+        parameters: dict = dspy.OutputField()
         answer: str = dspy.OutputField()
 
     adapter = dspy.JSONAdapter()
     parsed = adapter.parse(
         ParametersSignature,
-        '{"parameters": "the settings", "answer": "42"}',
+        '{"parameters": {"discussion": "not the answer"}, "answer": "42"}',
     )
-    assert parsed == {"parameters": "the settings", "answer": "42"}
+    assert parsed == {"parameters": {"discussion": "not the answer"}, "answer": "42"}
