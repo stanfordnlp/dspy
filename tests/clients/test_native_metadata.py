@@ -136,7 +136,7 @@ def test_pointer_aliases_supply_capabilities_and_prices(monkeypatch, prefix, tar
                  "supports_response_schema": False, "input_cost_per_token": 2e-6,
                  "output_cost_per_token": 7e-6},
         "fallback_generalizations": {"rules": [{
-            "pattern": "gpt-7-test", "model_info": {"supports_reasoning": True,
+            "pattern": "^gpt-7-test$", "model_info": {"supports_reasoning": True,
                                                        "supports_response_schema": True},
         }]},
     }
@@ -145,6 +145,7 @@ def test_pointer_aliases_supply_capabilities_and_prices(monkeypatch, prefix, tar
     assert lm.supports_function_calling
     assert not lm.supports_response_schema
     assert lm.supports_reasoning  # Rules match the target, not the alias spelling.
+    assert metadata.model_info("openai-chat", "gpt-7-test")["supports_reasoning"]
     cost, _ = estimate_cost(answer("test-latest", input_tokens=3, output_tokens=5),
                             provider="openai-chat", requested_model="test-latest")
     assert cost == pytest.approx(41e-6)

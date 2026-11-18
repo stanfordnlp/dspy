@@ -139,7 +139,14 @@ def model_info(provider, model, *, namespaces=None):
         keys.append(model)
     found_key = next((key for key in keys if _entry(data, key) is not None), None)
     found = _entry(data, found_key)
-    rule_model = data[found_key].get("alias_of", model) if found_key is not None else model
+    rule_model = model
+    if found_key is not None and "alias_of" in data[found_key]:
+        rule_model = data[found_key]["alias_of"]
+        # Match the same model spelling as a direct lookup in this namespace.
+        for name in names:
+            if rule_model.startswith(f"{name}/"):
+                rule_model = rule_model[len(name) + 1:]
+                break
     if found is None:
         for key, entry in data.items():
             if key in _RESERVED or entry.get("litellm_provider") not in names:
