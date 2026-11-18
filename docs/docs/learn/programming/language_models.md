@@ -73,13 +73,12 @@ dspy.configure(lm=lm)
         For LiteLLM's Databricks integration and SDK-managed authentication, install `dspy[litellm]` and use `engine="litellm"`; consult its [provider documentation](https://docs.litellm.ai/docs/providers/databricks) for credentials and SDK requirements. For native access to a serving endpoint with a supported HTTP dialect, [register its provider](../../tutorials/custom_lm_engines/index.md#declaring-a-provider-instead-of-writing-an-engine), address and authentication policy. A custom engine is another option for a different protocol or authentication flow.
 
     === "Local LMs on a GPU server"
-          First, install [SGLang](https://docs.sglang.ai/docs/get-started/install) and launch its server with your LM.
+          First, follow the [SGLang installation guide](https://docs.sglang.ai/docs/get-started/install) for your GPU platform and CUDA environment. Use the dependencies selected by that guide rather than installing a FlashInfer wheel built for a different CUDA or PyTorch version.
+
+          Launch the server with a model you have access to:
 
           ```bash
-          > pip install "sglang[all]"
-          > pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/ 
-
-          > CUDA_VISIBLE_DEVICES=0 python -m sglang.launch_server --port 7501 --model-path meta-llama/Meta-Llama-3-8B-Instruct
+          CUDA_VISIBLE_DEVICES=0 sglang serve meta-llama/Meta-Llama-3-8B-Instruct --host 127.0.0.1 --port 7501
           ```
 
           Then, connect to it from your DSPy code as an OpenAI-compatible endpoint.
