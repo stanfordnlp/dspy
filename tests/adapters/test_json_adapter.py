@@ -479,6 +479,7 @@ def test_json_adapter_format_exact_messages_with_nested_pydantic_output():
                  '\\"number\\"}, \\"title\\": \\"Scores\\"}}, \\"required\\": '
                  '[\\"title\\", \\"address\\", \\"scores\\"], \\"title\\": '
                  '\\"JsonNestedSummary\\"}"\n'
+                 '}\n'
                  'In adhering to this structure, your objective is: \n'
                  '        Given the fields `question`, produce the fields `summary`.'},
      {"role": "user",
