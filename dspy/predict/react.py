@@ -506,10 +506,16 @@ def _extract_tool_call_ids(history: dspy.History | None) -> set[str]:
                 for tc in value.tool_calls:
                     if tc.id:
                         found_ids.add(str(tc.id))
-                if value.tool_call_results:
-                    for res in value.tool_call_results.tool_call_results:
-                        if res.call_id:
-                            found_ids.add(str(res.call_id))
+                if value.tool_call_results is not None:
+                    try:
+                        results = ToolCallResults.model_validate(
+                            value.tool_call_results
+                        )
+                        for res in results.tool_call_results:
+                            if res.call_id:
+                                found_ids.add(str(res.call_id))
+                    except Exception:
+                        pass
             elif isinstance(value, dict) and "tool_calls" in value:
                 raw_calls = value.get("tool_calls")
                 if isinstance(raw_calls, list):
@@ -519,16 +525,14 @@ def _extract_tool_call_ids(history: dspy.History | None) -> set[str]:
                         elif hasattr(call, "id") and getattr(call, "id", None):
                             found_ids.add(str(call.id))
                 raw_results = value.get("tool_call_results")
-                if isinstance(raw_results, dict):
-                    raw_res_list = raw_results.get("tool_call_results")
-                    if isinstance(raw_res_list, list):
-                        for res in raw_res_list:
-                            if isinstance(res, dict) and res.get("call_id"):
-                                found_ids.add(str(res["call_id"]))
-                            elif hasattr(res, "call_id") and getattr(
-                                res, "call_id", None
-                            ):
+                if raw_results is not None:
+                    try:
+                        results = ToolCallResults.model_validate(raw_results)
+                        for res in results.tool_call_results:
+                            if res.call_id:
                                 found_ids.add(str(res.call_id))
+                    except Exception:
+                        pass
             elif isinstance(value, list):
                 for item in value:
                     if isinstance(item, dict) and item.get("id"):

@@ -805,7 +805,9 @@ def test_tool_observation_preserves_custom_type():
     assert result.answer == "done"
 
 
-@pytest.mark.parametrize("storage", ["object", "dict", "json"])
+@pytest.mark.parametrize(
+    "storage", ["object", "dict", "json", "restored_tool_calls"]
+)
 def test_react_continuation_preserves_unique_tool_call_ids(storage):
     def lookup(query: str) -> str:
         return f"found {query}"
@@ -846,6 +848,20 @@ def test_react_continuation_preserves_unique_tool_call_ids(storage):
             history = history.model_dump(mode="json")
         elif storage == "json":
             history = dspy.History.model_validate_json(history.model_dump_json())
+        elif storage == "restored_tool_calls":
+            history = dspy.History(
+                messages=[
+                    {
+                        **msg,
+                        "tool_calls": dspy.ToolCalls.model_validate_json(
+                            msg["tool_calls"].model_dump_json()
+                        ),
+                    }
+                    if "tool_calls" in msg
+                    else msg
+                    for msg in history.messages
+                ]
+            )
 
         pred2 = react(question="cats", history=history)
         assert pred2.answer == "found cats"
@@ -866,20 +882,88 @@ def test_react_continuation_preserves_unique_tool_call_ids(storage):
     assert call_ids == ["call_0_0", "call_1_0", "call_2_0", "call_3_0"]
     assert len(call_ids) == len(set(call_ids))
 
-    result_call_ids = [
-        res.call_id
+    result_call_ids = []
+    for msg in pred2.history.messages:
+        if "tool_calls" not in msg:
+            continue
+        tc_val = msg["tool_calls"]
+        if hasattr(tc_val, "tool_call_results") and tc_val.tool_call_results:
+            norm = dspy.ToolCallResults.model_validate(
+                tc_val.tool_call_results
+            )
+            result_call_ids.extend(r.call_id for r in norm.tool_call_results)
+        elif isinstance(tc_val, dict) and "tool_call_results" in tc_val:
+            raw_res = tc_val.get("tool_call_results")
+            if raw_res:
+                norm = dspy.ToolCallResults.model_validate(raw_res)
+                result_call_ids.extend(r.call_id for r in norm.tool_call_results)
+
+    assert result_call_ids == ["call_0_0", "call_1_0", "call_2_0", "call_3_0"]
+
+
+def test_react_continuation_with_restored_tool_calls_object():
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = dspy.utils.DummyLM([
+        {
+            "next_thought": "Lookup dogs.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [{"name": "lookup", "args": {"query": "dogs"}}]
+            ),
+        },
+        {
+            "next_thought": "Submit dogs.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [{"name": "submit", "args": {"answer": "found dogs"}}]
+            ),
+        },
+        {
+            "next_thought": "Lookup cats.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [{"name": "lookup", "args": {"query": "cats"}}]
+            ),
+        },
+        {
+            "next_thought": "Submit cats.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [{"name": "submit", "args": {"answer": "found cats"}}]
+            ),
+        },
+    ])
+
+    react = dspy.ReAct("question -> answer", tools=[lookup])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred1 = react(question="dogs")
+        restored_messages = []
+        for msg in pred1.history.messages:
+            if "tool_calls" in msg:
+                tc = dspy.ToolCalls.model_validate_json(
+                    msg["tool_calls"].model_dump_json()
+                )
+                assert isinstance(tc.tool_call_results, dict)
+                restored_messages.append({**msg, "tool_calls": tc})
+            else:
+                restored_messages.append(dict(msg))
+
+        history = dspy.History(messages=restored_messages)
+        pred2 = react(question="cats", history=history)
+        assert pred2.answer == "found cats"
+
+    call_ids = [
+        tc.id
         for msg in pred2.history.messages
         if "tool_calls" in msg
-        for res in (
-            msg["tool_calls"].tool_call_results.tool_call_results
-            if hasattr(msg["tool_calls"], "tool_call_results")
+        for tc in (
+            msg["tool_calls"].tool_calls
+            if hasattr(msg["tool_calls"], "tool_calls")
             else [
-                dspy.ToolCallResults.ToolCallResult.model_validate(r)
-                for r in msg["tool_calls"]["tool_call_results"]["tool_call_results"]
+                dspy.ToolCalls.ToolCall.model_validate(c)
+                for c in msg["tool_calls"]["tool_calls"]
             ]
         )
     ]
-    assert result_call_ids == ["call_0_0", "call_1_0", "call_2_0", "call_3_0"]
+    assert call_ids == ["call_0_0", "call_1_0", "call_2_0", "call_3_0"]
 
 
 @pytest.mark.asyncio
