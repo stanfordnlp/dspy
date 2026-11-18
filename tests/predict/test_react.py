@@ -803,3 +803,180 @@ def test_tool_observation_preserves_custom_type():
     ]
     assert len(images) == 2
     assert result.answer == "done"
+
+
+@pytest.mark.parametrize("storage", ["object", "dict", "json"])
+def test_react_continuation_preserves_unique_tool_call_ids(storage):
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = dspy.utils.DummyLM([
+        {
+            "next_thought": "Lookup dogs.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [{"name": "lookup", "args": {"query": "dogs"}}]
+            ),
+        },
+        {
+            "next_thought": "Submit dogs.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [{"name": "submit", "args": {"answer": "found dogs"}}]
+            ),
+        },
+        {
+            "next_thought": "Lookup cats.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [{"name": "lookup", "args": {"query": "cats"}}]
+            ),
+        },
+        {
+            "next_thought": "Submit cats.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [{"name": "submit", "args": {"answer": "found cats"}}]
+            ),
+        },
+    ])
+
+    react = dspy.ReAct("question -> answer", tools=[lookup])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred1 = react(question="dogs")
+        assert pred1.answer == "found dogs"
+        history = pred1.history
+        if storage == "dict":
+            history = history.model_dump(mode="json")
+        elif storage == "json":
+            history = dspy.History.model_validate_json(history.model_dump_json())
+
+        pred2 = react(question="cats", history=history)
+        assert pred2.answer == "found cats"
+
+    call_ids = [
+        tc.id
+        for msg in pred2.history.messages
+        if "tool_calls" in msg
+        for tc in (
+            msg["tool_calls"].tool_calls
+            if hasattr(msg["tool_calls"], "tool_calls")
+            else [
+                dspy.ToolCalls.ToolCall.model_validate(c)
+                for c in msg["tool_calls"]["tool_calls"]
+            ]
+        )
+    ]
+    assert call_ids == ["call_0_0", "call_1_0", "call_2_0", "call_3_0"]
+    assert len(call_ids) == len(set(call_ids))
+
+    result_call_ids = [
+        res.call_id
+        for msg in pred2.history.messages
+        if "tool_calls" in msg
+        for res in (
+            msg["tool_calls"].tool_call_results.tool_call_results
+            if hasattr(msg["tool_calls"], "tool_call_results")
+            else [
+                dspy.ToolCallResults.ToolCallResult.model_validate(r)
+                for r in msg["tool_calls"]["tool_call_results"]["tool_call_results"]
+            ]
+        )
+    ]
+    assert result_call_ids == ["call_0_0", "call_1_0", "call_2_0", "call_3_0"]
+
+
+@pytest.mark.asyncio
+async def test_react_async_continuation_preserves_unique_tool_call_ids():
+    async def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = dspy.utils.DummyLM([
+        {
+            "next_thought": "Lookup dogs.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [{"name": "lookup", "args": {"query": "dogs"}}]
+            ),
+        },
+        {
+            "next_thought": "Submit dogs.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [{"name": "submit", "args": {"answer": "found dogs"}}]
+            ),
+        },
+        {
+            "next_thought": "Lookup cats.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [{"name": "lookup", "args": {"query": "cats"}}]
+            ),
+        },
+        {
+            "next_thought": "Submit cats.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [{"name": "submit", "args": {"answer": "found cats"}}]
+            ),
+        },
+    ])
+
+    react = dspy.ReAct("question -> answer", tools=[lookup])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred1 = await react.acall(question="dogs")
+        pred2 = await react.acall(question="cats", history=pred1.history)
+
+    call_ids = [
+        tc.id
+        for msg in pred2.history.messages
+        if "tool_calls" in msg
+        for tc in msg["tool_calls"].tool_calls
+    ]
+    assert call_ids == ["call_0_0", "call_1_0", "call_2_0", "call_3_0"]
+    assert len(call_ids) == len(set(call_ids))
+
+
+def test_react_continuation_collision_avoidance_with_custom_history():
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    history = dspy.History(
+        messages=[
+            {
+                "question": "prior question",
+                "tool_calls": dspy.ToolCalls(
+                    tool_calls=[
+                        dspy.ToolCalls.ToolCall(
+                            id="call_0_0",
+                            name="lookup",
+                            args={"query": "pre"},
+                        )
+                    ],
+                    tool_call_results=dspy.ToolCallResults(
+                        tool_call_results=[
+                            dspy.ToolCallResults.ToolCallResult(
+                                call_id="call_0_0",
+                                name="lookup",
+                                value="pre_found",
+                            )
+                        ]
+                    ),
+                ),
+            }
+        ]
+    )
+
+    lm = dspy.utils.DummyLM([
+        {
+            "next_thought": "Submit answer.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [{"name": "submit", "args": {"answer": "done"}}]
+            ),
+        },
+    ])
+
+    react = dspy.ReAct("question -> answer", tools=[lookup])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = react(question="new question", history=history)
+
+    assert pred.answer == "done"
+    call_ids = [
+        tc.id
+        for msg in pred.history.messages
+        if "tool_calls" in msg
+        for tc in msg["tool_calls"].tool_calls
+    ]
+    assert call_ids == ["call_0_0", "call_1_0"]
