@@ -1,6 +1,8 @@
 import json
 import logging
 from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from typing import Any, get_origin
 
@@ -26,6 +28,20 @@ from dspy.utils.exceptions import AdapterParseError
 logger = logging.getLogger(__name__)
 
 _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
+
+# Whether the request an adapter call is formatting sends native tools. `Adapter.__call__` and `acall` set it
+# once `_call_preprocess` has settled the request options; outside an adapter call no request is sent, so it is
+# False. `History.format` reads it to replay earlier tool turns in the form the request can carry.
+_sends_native_tools: ContextVar[bool] = ContextVar("dspy_adapter_sends_native_tools", default=False)
+
+
+@contextmanager
+def _native_tools_scope(lm_kwargs: dict[str, Any]) -> Iterator[None]:
+    token = _sends_native_tools.set(bool(lm_kwargs.get("tools")))
+    try:
+        yield
+    finally:
+        _sends_native_tools.reset(token)
 
 
 @dataclass(frozen=True)
@@ -286,7 +302,8 @@ class Adapter:
             signature's output field names. For multiple generations (n > 1), returns multiple dictionaries.
         """
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-        prompt = self.format(processed_signature, demos, inputs)
+        with _native_tools_scope(lm_kwargs):
+            prompt = self.format(processed_signature, demos, inputs)
         request = _place_tool_result_media(build_request(lm, prompt, lm_kwargs), lm, lm_kwargs)
         if settings.send_stream and settings.stream_listeners:
             from dspy.streaming.messages import _StreamSignature, sync_send_to_stream
@@ -305,7 +322,8 @@ class Adapter:
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-        prompt = self.format(processed_signature, demos, inputs)
+        with _native_tools_scope(lm_kwargs):
+            prompt = self.format(processed_signature, demos, inputs)
         request = _place_tool_result_media(build_request(lm, prompt, lm_kwargs), lm, lm_kwargs)
         if settings.send_stream and settings.stream_listeners:
             from dspy.streaming.messages import _StreamSignature
