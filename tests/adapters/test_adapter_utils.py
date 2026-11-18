@@ -5,7 +5,7 @@ from typing import Literal, Optional, Union
 import pytest
 from pydantic import BaseModel
 
-from dspy.adapters.utils import get_annotation_name, parse_value
+from dspy.adapters.utils import _get_json_schema, get_annotation_name, parse_value
 
 
 class Profile(BaseModel):
@@ -130,3 +130,58 @@ def test_parse_value_json_repair():
 def test_get_annotation_name_pep604_union_matches_typing_union(pep604_annotation, typing_annotation, expected):
     assert get_annotation_name(typing_annotation) == expected
     assert get_annotation_name(pep604_annotation) == expected
+
+
+def test_get_json_schema_preserves_pydantic_property_order():
+    class Assessment(BaseModel):
+        reasoning: str
+        verdict: str
+        confidence: float
+        notes: str
+
+    schema = _get_json_schema(Assessment)
+    assert list(schema["properties"].keys()) == [
+        "reasoning",
+        "verdict",
+        "confidence",
+        "notes",
+    ]
+    assert schema["required"] == ["reasoning", "verdict", "confidence", "notes"]
+
+
+def test_get_json_schema_field_named_type_not_hoisted_in_properties():
+    class Event(BaseModel):
+        id: str
+        name: str
+        type: str
+        description: str
+
+    schema = _get_json_schema(Event)
+    assert list(schema["properties"].keys()) == ["id", "name", "type", "description"]
+    assert schema["required"] == ["id", "name", "type", "description"]
+
+
+def test_get_json_schema_nested_definitions_preserve_order():
+    class Inner(BaseModel):
+        z: int
+        a: str
+        type: str
+
+    class Outer(BaseModel):
+        b: str
+        inner: Inner
+        a: int
+
+    schema = _get_json_schema(Outer)
+    assert list(schema["properties"].keys()) == ["b", "inner", "a"]
+    assert schema["required"] == ["b", "inner", "a"]
+    assert list(schema["$defs"]["Inner"]["properties"].keys()) == ["z", "a", "type"]
+    assert schema["$defs"]["Inner"]["required"] == ["z", "a", "type"]
+
+    # Verify 'type' keyword is placed at index 0 in schema descriptors
+    assert list(schema.keys())[0] == "type"
+    assert list(schema["$defs"]["Inner"].keys())[0] == "type"
+    assert list(schema["properties"]["b"].keys())[0] == "type"
+    assert list(schema["properties"]["a"].keys())[0] == "type"
+    assert list(schema["$defs"]["Inner"]["properties"]["type"].keys())[0] == "type"
+
