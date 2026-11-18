@@ -58,6 +58,44 @@ def test_input_field_supports_callable_json_schema_extra():
     assert text_prop["desc"] == "Input text"
 
 
+def test_callable_json_schema_extra_mapping_and_updates():
+    def custom_mutator(schema: dict):
+        schema["x-custom-extension"] = "dynamic_value"
+
+    class DynamicSignature(dspy.Signature):
+        text: str = InputField(desc="Input text", json_schema_extra=custom_mutator)
+        summary: str = OutputField(desc="Summary output", prefix="Out:")
+
+    field = DynamicSignature.input_fields["text"]
+    extra = field.json_schema_extra
+
+    # Test Mapping interface (keys, items, values, contains, unpack)
+    assert "desc" in extra
+    assert list(extra.keys()) == ["desc", "__dspy_field_type", "prefix"]
+    assert ("desc", "Input text") in extra.items()
+    assert "Input text" in list(extra.values())
+    unpacked = {**extra, "extra_key": "val"}
+    assert unpacked["desc"] == "Input text"
+    assert unpacked["extra_key"] == "val"
+
+    # Test compatibility with sandbox_guest signature_spec
+    from dspy.primitives.sandbox_guest import signature_spec
+
+    spec = signature_spec(DynamicSignature)
+    assert spec["extra"]["text"]["desc"] == "Input text"
+
+    # Test with_updated_fields preserves callback and applies updates
+    updated_sig = DynamicSignature.with_updated_fields("text", desc="Updated input text", prefix="CustomPrefix:")
+    assert updated_sig.input_fields["text"].json_schema_extra["desc"] == "Updated input text"
+    assert updated_sig.input_fields["text"].json_schema_extra["prefix"] == "CustomPrefix:"
+
+    schema = updated_sig.model_json_schema()
+    text_prop = schema["properties"]["text"]
+    assert text_prop["desc"] == "Updated input text"
+    assert text_prop["prefix"] == "CustomPrefix:"
+    assert text_prop["x-custom-extension"] == "dynamic_value"
+
+
 def test_field_without_json_schema_extra_unchanged():
     class StandardSig(dspy.Signature):
         q: str = InputField(desc="Question", gt=0)

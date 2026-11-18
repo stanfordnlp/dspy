@@ -1,4 +1,7 @@
+import inspect
 import warnings
+from collections.abc import Mapping
+from copy import deepcopy
 
 import pydantic
 
@@ -36,16 +39,37 @@ PYDANTIC_CONSTRAINT_MAP = {
 }
 
 
-class _SchemaExtraCallable:
+class _SchemaExtraCallable(Mapping):
     """Wraps a callable json_schema_extra so Pydantic executes it while DSPy can index metadata."""
 
     def __init__(self, extra_dict: dict, fn):
-        self._extra_dict = extra_dict
+        self._extra_dict = dict(extra_dict)
         self._fn = fn
+        try:
+            self.__signature__ = inspect.signature(fn)
+        except (ValueError, TypeError):
+            pass
 
     def __call__(self, schema: dict, *args, **call_kwargs) -> None:
         schema.update(self._extra_dict)
-        self._fn(schema, *args, **call_kwargs)
+        try:
+            sig = getattr(self, "__signature__", None) or inspect.signature(self._fn)
+            params = list(sig.parameters.values())
+            has_varargs = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params)
+            num_pos = sum(
+                1
+                for p in params
+                if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+            )
+            if has_varargs or (num_pos > 1 and len(args) > 0):
+                self._fn(schema, *args, **call_kwargs)
+            else:
+                self._fn(schema)
+        except (ValueError, TypeError):
+            try:
+                self._fn(schema, *args, **call_kwargs)
+            except TypeError:
+                self._fn(schema)
 
     def __getitem__(self, item):
         return self._extra_dict[item]
@@ -53,11 +77,32 @@ class _SchemaExtraCallable:
     def __setitem__(self, key, value):
         self._extra_dict[key] = value
 
+    def __iter__(self):
+        return iter(self._extra_dict)
+
+    def __len__(self):
+        return len(self._extra_dict)
+
     def __contains__(self, item):
         return item in self._extra_dict
 
     def get(self, key, default=None):
         return self._extra_dict.get(key, default)
+
+    def keys(self):
+        return self._extra_dict.keys()
+
+    def values(self):
+        return self._extra_dict.values()
+
+    def items(self):
+        return self._extra_dict.items()
+
+    def copy(self):
+        return _SchemaExtraCallable(self._extra_dict.copy(), self._fn)
+
+    def __deepcopy__(self, memo):
+        return _SchemaExtraCallable(deepcopy(self._extra_dict, memo), self._fn)
 
     def __eq__(self, other):
         if isinstance(other, _SchemaExtraCallable):
