@@ -106,6 +106,20 @@ def _provider_names(provider):
     }.get(provider, (provider,))
 
 
+def _entry(data, key):
+    entry = data.get(key)
+    if not isinstance(entry, dict) or key in _RESERVED:
+        return None
+    if "alias_of" not in entry:
+        return entry
+    # Upstream pointer rows name one concrete entry, not another alias.
+    target = entry["alias_of"]
+    if len(entry) != 1 or not isinstance(target, str) or target in _RESERVED:
+        return None
+    entry = data.get(target)
+    return entry if isinstance(entry, dict) and "alias_of" not in entry else None
+
+
 def model_info(provider, model, *, namespaces=None):
     """Return a copy of the most specific matching entry, or an empty dict.
 
@@ -120,10 +134,12 @@ def model_info(provider, model, *, namespaces=None):
     if not names:
         return {}
     keys = [f"{name}/{model}" for name in names]
-    bare = data.get(model)
+    bare = _entry(data, model)
     if isinstance(bare, dict) and bare.get("litellm_provider") in names:
         keys.append(model)
-    found = next((data[key] for key in keys if key in data and key not in _RESERVED), None)
+    found_key = next((key for key in keys if _entry(data, key) is not None), None)
+    found = _entry(data, found_key)
+    rule_model = data[found_key].get("alias_of", model) if found_key is not None else model
     if found is None:
         for key, entry in data.items():
             if key in _RESERVED or entry.get("litellm_provider") not in names:
@@ -146,7 +162,7 @@ def model_info(provider, model, *, namespaces=None):
         if found is not None and providers is not None and found.get("litellm_provider") not in providers:
             continue
         try:
-            matches = re.search(rule["pattern"], model) is not None
+            matches = re.search(rule["pattern"], rule_model) is not None
         except re.error:
             continue
         if matches:

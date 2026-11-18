@@ -127,6 +127,51 @@ def test_missing_flags_inherit_but_false_and_prices_do_not(monkeypatch):
     assert metadata.model_info("openai-chat", "test")["supports_reasoning"] is False
 
 
+@pytest.mark.parametrize("prefix,target", [("", "gpt-7-test"), ("openai/", "gpt-7-test"),
+                                          ("openai/", "openai/gpt-7-test")])
+def test_pointer_aliases_supply_capabilities_and_prices(monkeypatch, prefix, target):
+    catalog = {
+        prefix + "test-latest": {"alias_of": target},
+        target: {"litellm_provider": "openai", "supports_function_calling": True,
+                 "supports_response_schema": False, "input_cost_per_token": 2e-6,
+                 "output_cost_per_token": 7e-6},
+        "fallback_generalizations": {"rules": [{
+            "pattern": "gpt-7-test", "model_info": {"supports_reasoning": True,
+                                                       "supports_response_schema": True},
+        }]},
+    }
+    monkeypatch.setattr(metadata, "_data", catalog)
+    lm = dspy.LM("openai:test-latest", engine="lm15")
+    assert lm.supports_function_calling
+    assert not lm.supports_response_schema
+    assert lm.supports_reasoning  # Rules match the target, not the alias spelling.
+    cost, _ = estimate_cost(answer("test-latest", input_tokens=3, output_tokens=5),
+                            provider="openai-chat", requested_model="test-latest")
+    assert cost == pytest.approx(41e-6)
+    assert metadata.model_info("gateway", "test-latest", namespaces=("openai",))["supports_function_calling"]
+    assert metadata.model_info("gateway", "test-latest", namespaces=()) == {}
+    assert metadata.model_info("azure", "test-latest") == {}
+    info = metadata.model_info("openai-chat", "test-latest")
+    info["supports_function_calling"] = False
+    assert metadata.model_info("openai-chat", "test-latest")["supports_function_calling"]
+    assert catalog[prefix + "test-latest"] == {"alias_of": target}
+
+
+@pytest.mark.parametrize("pointer", [
+    {"alias_of": "missing"}, {"alias_of": "openai/test-latest"},
+    {"alias_of": "another-alias"}, {"alias_of": []},
+    {"alias_of": "fallback_generalizations"},
+    {"alias_of": "target", "supports_function_calling": True},
+])
+def test_invalid_pointer_aliases_do_not_supply_metadata(monkeypatch, pointer):
+    monkeypatch.setattr(metadata, "_data", {
+        "openai/test-latest": pointer, "another-alias": {"alias_of": "target"},
+        "target": {"litellm_provider": "openai", "supports_function_calling": True},
+        "fallback_generalizations": {"rules": []},
+    })
+    assert metadata.model_info("openai-chat", "test-latest") == {}
+
+
 def test_remote_first_once_and_fallback(monkeypatch):
     monkeypatch.delenv("LITELLM_LOCAL_MODEL_COST_MAP")
     with patch.object(metadata.urllib.request, "urlopen", side_effect=OSError("secret")) as fetch:
