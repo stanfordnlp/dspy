@@ -39,22 +39,24 @@ question='What is the color of the sky?'
 pred = generate_answer(question=question)
 ```
 
-### dspy.ProgramOfThought
+### dspy.RLM
+
+Use [RLM](api/modules/RLM.md) for sandboxed Python reasoning, with optional tools.
 
 ```python
-pot = dspy.ProgramOfThought(BasicQA)
+rlm = dspy.RLM(BasicQA)
 
 question = 'Sarah has 5 apples. She buys 7 more apples from the store. How many apples does Sarah have now?'
-result = pot(question=question)
+result = rlm(question=question)
 
 print(f"Question: {question}")
-print(f"Final Predicted Answer (after ProgramOfThought process): {result.answer}")
+print(f"Final Predicted Answer (after RLM process): {result.answer}")
 ```
 
 ### dspy.ReAct
 
 ```python
-react_module = dspy.ReAct(BasicQA)
+react_module = dspy.ReAct(BasicQA, tools=[])
 
 question = 'Sarah has 5 apples. She buys 7 more apples from the store. How many apples does Sarah have now?'
 result = react_module(question=question)
@@ -79,22 +81,6 @@ topK_passages = retriever(query).passages
 
 for idx, passage in enumerate(topK_passages):
     print(f'{idx+1}]', passage, '\n')
-```
-
-### dspy.CodeAct
-
-```python
-from dspy import CodeAct
-
-def factorial(n):
-    """Calculate factorial of n"""
-    if n == 1:
-        return 1
-    return n * factorial(n-1)
-
-act = CodeAct("n->factorial", tools=[factorial])
-result = act(n=5)
-result # Returns 120
 ```
 
 ### dspy.Parallel

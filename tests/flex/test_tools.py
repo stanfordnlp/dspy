@@ -22,7 +22,6 @@ import dspy
 from dspy.predict.flex import Flex
 from dspy.predict.flex.primitives_doc import PRIMITIVES_CATALOG
 from dspy.primitives.code_interpreter import CodeInterpreterError
-from dspy.primitives.facade import SHIM_SETUP
 from dspy.teleprompt.gepa.gepa_flex_utils import CodeProposalSignature
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM
@@ -65,10 +64,10 @@ def test_baseline_is_rlm_with_tools() -> None:
 
 
 def test_reserved_bridge_tool_names_are_rejected() -> None:
-    # The sandbox bridge registers its own callbacks (__dspy_construct__, __dspy_call__) alongside
-    # user tools, and the shim owns `dspy`/`_dspy*` in the sandbox namespace; a user tool with a
-    # reserved name would silently replace or be shadowed by them.
-    for reserved in ("__dspy_call__", "_dspy_host", "dspy"):
+    # The sandbox bridge registers its own host tool (__dspy_lm__) alongside user tools, and owns
+    # `dspy`/`_dspy*` in the sandbox namespace; a user tool with a reserved name would silently
+    # replace or be shadowed by them.
+    for reserved in ("__dspy_lm__", "_dspy_host", "dspy"):
         with pytest.raises(ValueError, match="reserved"):
             Flex(Echo, tools=[dspy.Tool(shout, name=reserved)], interpreter_factory=lambda: MockInterpreter())
 
@@ -119,9 +118,8 @@ def test_load_without_tools_cannot_resolve_them(tmp_path) -> None:
         reloaded(q="hi")
 
 
-# The primitives catalog offers the proposer `dspy.Tool(func)`, so the sandbox shim has to define
-# it — a name the catalog advertises but the shim lacks turns into an AttributeError at bind time,
-# scoring an otherwise-fine candidate as a failure.
+# The primitives catalog offers the proposer `dspy.Tool(func)`; wrapping a provided tool again must
+# keep it the host tool.
 WRAPPED_TOOL_MODULE = textwrap.dedent("""
     class EchoModule(dspy.Module):
         def __init__(self):
@@ -137,30 +135,17 @@ WRAPPED_TOOL_MODULE = textwrap.dedent("""
 def test_dspy_tool_wrapper_is_available_in_the_sandbox() -> None:
     program = Flex(Echo, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter())
     program._bind_code(WRAPPED_TOOL_MODULE)
-    # forward re-runs __init__ in the sandbox, so it only succeeds if the shim defines dspy.Tool
-    # and the wrapper resolves to the same host tool a bare reference would (a failed resolution
-    # raises out of the ReAct's construction).
     assert program(q="hi").a == "HI"
 
 
-def test_proposer_prompts_only_advertise_names_the_sandbox_defines() -> None:
-    """Every `dspy.X(...)` the proposer is told to write must exist in the shim.
-
-    The prompts and the shim are the two halves of one contract, edited in different files: a name
-    advertised but not defined becomes an AttributeError at bind time, and GEPA scores the
-    candidate as a failure with nothing pointing at the real cause.
-    """
-    # The shim only registers itself as the importable `dspy` inside the sandbox (where the host
-    # bridge tools are in globals), so running it here just builds the module object to inspect.
-    namespace: dict = {}
-    exec(SHIM_SETUP, namespace)
-    shim = namespace["dspy"]
-
+def test_proposer_prompts_only_advertise_names_dspy_defines() -> None:
+    """Every `dspy.X(...)` the proposer is told to write must exist: the sandbox runs the real dspy, and a
+    name advertised but not defined becomes an AttributeError at bind time, scored as a failed candidate."""
     prompts = PRIMITIVES_CATALOG + (CodeProposalSignature.__doc__ or "")
     advertised = set(re.findall(r"dspy\.([A-Z]\w+)\(", prompts))
     assert advertised, "expected the prompts to name some primitives"
-    missing = sorted(name for name in advertised if not hasattr(shim, name))
-    assert not missing, f"advertised to the proposer but missing from the sandbox shim: {missing}"
+    missing = sorted(name for name in advertised if not hasattr(dspy, name))
+    assert not missing, f"advertised to the proposer but missing from dspy: {missing}"
 
 
 def test_gepa_proposer_is_told_about_tools() -> None:
@@ -174,9 +159,8 @@ def test_gepa_proposer_is_told_about_tools() -> None:
     assert "shout" in adapter._flex_context_blurbs["self"]
 
 
-# A module that AUTHORS its own helper (defined inside forward) and calls it directly — what GEPA is
-# encouraged to do in a sandbox, where an authored function cannot be handed to a bridged
-# sub-predictor. The helper lives in the source, so it persists with the code itself.
+# A module that AUTHORS its own helper (defined inside forward) and calls it directly. The helper
+# lives in the source, so it persists with the code itself.
 SELF_AUTHORED_TOOL_MODULE = textwrap.dedent("""
     class EchoModule(dspy.Module):
         def __init__(self):
@@ -271,9 +255,8 @@ def test_direct_tool_calls_go_through_the_tool_wrapper() -> None:
 
 @deno_required
 def test_direct_tool_calls_receive_restored_custom_type_inputs() -> None:
-    """A custom-type input (dspy.Image) crosses into the sandbox as its serialized string; a
-    direct tool call must hand the tool the original object, exactly as a bridged predictor
-    receives it via ``_Invocation.call``."""
+    """A custom-type input (dspy.Image) crosses into the sandbox as its fields and is an Image there; a
+    direct tool call must hand the host tool the original object."""
     seen: dict = {}
 
     def describe(img) -> str:

@@ -430,17 +430,11 @@ Note that we must call `react.acall` because MCP tools are async by default. Let
 python path_to_your_working_directory/dspy_mcp_agent.py
 ```
 
-You should see output similar to this:
+The returned prediction contains `process_result`, the agent's final answer, plus `history` and `termination_reason`.
+The model finishes by calling `submit` with `process_result`; ReAct does not add a separate `reasoning` output.
+Inspect `result.history.messages` to see the structured tool calls and their results.
 
-```
-Prediction(
-    trajectory={'thought_0': 'I need to fetch flight information for Adam from SFO to JFK on 09/01/2025 to find available flights for booking.', 'tool_name_0': 'fetch_flight_info', 'tool_args_0': {'date': {'year': 2025, 'month': 9, 'day': 1, 'hour': 0}, 'origin': 'SFO', 'destination': 'JFK'}, 'observation_0': ['{"flight_id": "DA123", "date_time": {"year": 2025, "month": 9, "day": 1, "hour": 1}, "origin": "SFO", "destination": "JFK", "duration": 3.0, "price": 200.0}', '{"flight_id": "DA125", "date_time": {"year": 2025, "month": 9, "day": 1, "hour": 7}, "origin": "SFO", "destination": "JFK", "duration": 9.0, "price": 500.0}'], ..., 'tool_name_4': 'finish', 'tool_args_4': {}, 'observation_4': 'Completed.'},
-    reasoning="I successfully booked a flight for Adam from SFO to JFK on 09/01/2025. I found two available flights, selected the more economical option (flight DA123 at 1 AM for $200), retrieved Adam's user profile, and completed the booking process. The confirmation number for the flight is 8h7clk3q.",
-    process_result='Your flight from SFO to JFK on 09/01/2025 has been successfully booked. Your confirmation number is 8h7clk3q.'
-)
-```
-
-The `trajectory` field contains the entire thinking and acting process. If you're curious about what's happening
+The `history` field contains the thinking and acting process. If you're curious about what's happening
 under the hood, check out the [Observability Guide](https://dspy.ai/tutorials/observability/) to set up MLflow,
 which visualizes every step happening inside `dspy.ReAct`!
 

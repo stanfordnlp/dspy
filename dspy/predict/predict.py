@@ -7,10 +7,9 @@ from typing import Any, Literal, Union, get_args, get_origin
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
-from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.decision import resolve_adapter
 from dspy.adapters.decision_state import DecisionState
-from dspy.adapters.utils import annotation_allows_none
+from dspy.adapters.utils import _get_adapter, annotation_allows_none
 from dspy.clients.base_lm import BaseLM
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parameter import Parameter
@@ -173,11 +172,11 @@ class Predict(Module, Parameter):
                 f"LM must be an instance of `dspy.BaseLM`, not a string. Instead of using a string like "
                 f"'dspy.configure(lm=\"{lm}\")', please configure the LM like 'dspy.configure(lm=dspy.LM(\"{lm}\"))'"
             )
-        elif not isinstance(lm, BaseLM) and getattr(lm, "supports_decision_requests", False) is not True:
-            raise ValueError(f"LM must be a dspy.BaseLM or a decision-request client, not {type(lm)}.")
+        elif not isinstance(lm, BaseLM):
+            raise ValueError(f"LM must be a dspy.BaseLM, not {type(lm)}.")
 
         # If temperature is unset or <=0.15, and n > 1, set temperature to 0.7 to keep randomness.
-        defaults = getattr(lm, "kwargs", {})
+        defaults = lm.kwargs
         temperature = config.get("temperature") or defaults.get("temperature")
         num_generations = config.get("n") or defaults.get("n") or defaults.get("num_generations") or 1
 
@@ -263,7 +262,7 @@ class Predict(Module, Parameter):
     def forward(self, **kwargs):
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
-        adapter = resolve_adapter(lm, settings.adapter or ChatAdapter(), signature, self.fields, self.signature)
+        adapter = resolve_adapter(lm, _get_adapter(), signature, self.fields, self.signature)
 
         if self._should_stream():
             with settings.context(caller_predict=self):
@@ -277,7 +276,7 @@ class Predict(Module, Parameter):
     async def aforward(self, **kwargs):
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
-        adapter = resolve_adapter(lm, settings.adapter or ChatAdapter(), signature, self.fields, self.signature)
+        adapter = resolve_adapter(lm, _get_adapter(), signature, self.fields, self.signature)
         if self._should_stream():
             with settings.context(caller_predict=self):
                 completions = await adapter.acall(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)

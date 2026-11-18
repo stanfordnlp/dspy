@@ -6,10 +6,9 @@ from typing import Any, Callable, Literal
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
-from dspy.adapters.xml_adapter import XMLAdapter
+from dspy.adapters.utils import _get_adapter
 from dspy.clients.lm import LM
 from dspy.clients.utils_finetune import GRPOGroup, GRPOStatus, TrainDataFormat
-from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
 from dspy.primitives.module import Module
@@ -464,16 +463,18 @@ class GRPO(FinetuneTeleprompter):
 
                             predictor = trace_instance[0]
                             pred_lm = predictor.lm
-                            adapter = self.adapter[pred_lm] or settings.adapter or XMLAdapter()
+                            adapter = self.adapter[pred_lm] if self.adapter[pred_lm] is not None else _get_adapter()
                             assert isinstance(adapter, ChatAdapter), f"Adapter {adapter} is not a ChatAdapter. GRPO training is not supported for this adapter."
                             # TODO(Lakshya): Currently we exclude demos from the training data
                             # TODO(GRPO Team): Use build_call_data_from_trace (from bootstrap_finetune) instead of
                             # dealing with the message formatting ourselves.
-                            inp_messages = adapter.format(
+                            from dspy.adapters.base import prompt_to_openai_messages
+
+                            inp_messages = prompt_to_openai_messages(adapter.format(
                                 signature=trace_instance[0].signature,
                                 inputs=trace_instance[1],
                                 demos=[] # TODO: Add support for demos
-                            )
+                            ))
 
                             if isinstance(trace_instance[2], FailedPrediction):
                                 score = trace_instance[2].format_reward or self.format_failure_score

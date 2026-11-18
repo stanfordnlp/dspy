@@ -12,10 +12,8 @@ from dspy.primitives.code_interpreter import CodeInterpreter, _validate_interpre
 from dspy.primitives.module import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
-from dspy.utils.annotation import experimental
 
 
-@experimental(version="3.3.0")
 class Flex(Module, Parameter):
     """A module whose implementation is optimizable code, not just a prompt.
 
@@ -29,10 +27,10 @@ class Flex(Module, Parameter):
     runs it in the host Python process. ``interpreter_factory`` defaults to
     ``dspy.PythonInterpreter`` (Deno/Pyodide) and must be a zero-argument callable returning a new
     ``CodeInterpreter``. ``dspy.configure(interpreter_factory=...)`` replaces that default.
-    Flex may validate or lower source and install its guest shim before execution; a custom
-    interpreter therefore defines the Python and standard-library subset available to that source.
-    The optimizer-authored glue runs isolated; only provided-tool calls, predictor construction,
-    and predictor calls bridge back to the host, which makes the real LM calls.
+    The source imports the real dspy in the interpreter; a custom interpreter therefore defines the
+    Python and standard-library subset available to it, and must let it import the host's dspy.
+    The optimizer-authored code runs isolated; only provided-tool calls and LM calls go back to the
+    host, which makes the real LM calls.
 
     Args:
         signature: A ``dspy.Signature`` class or string declaring inputs/outputs.
@@ -40,8 +38,8 @@ class Flex(Module, Parameter):
         interpreter_factory: Zero-argument callable returning a fresh ``CodeInterpreter`` for each
             interpreter session. Defaults to ``dspy.PythonInterpreter`` (sandbox, requires Deno).
             ``dspy.configure(interpreter_factory=...)`` replaces the default.
-        max_predictor_calls: Maximum number of predictor calls the optimizer-authored code can
-            make per ``forward`. ``None`` removes the limit.
+        max_predictor_calls: Maximum number of LM calls the optimizer-authored code can make per
+            ``forward``. ``None`` removes the limit.
     """
 
     def __init__(
@@ -132,16 +130,27 @@ class Flex(Module, Parameter):
         Uses ``dspy.RLM`` when tools are provided; otherwise a single ``dspy.Predict``.
         """
         cls: type[Signature] = self._signature_cls
-        sig_str = self._flex_ctx.render_signature_string()
-        returns = ", ".join(f"{name}=result.{name}" for name in cls.output_fields)
-        instructions = (getattr(cls, "instructions", "") or "").strip()
-        sig_arg = f"dspy.Signature({sig_str!r}, {instructions!r})" if instructions else repr(sig_str)
+        returns = ", ".join(f"{name}=result[{name!r}]" for name in cls.output_fields)
+        preamble = ""
+        if any(self._flex_ctx.field_kwargs().values()):
+            # A class-based signature keeps the field descriptions and constraints that the string form drops.
+            sig_arg = self._class_name().removesuffix("Module")
+            preamble = self._flex_ctx.render_signature_class(sig_arg) + "\n\n\n"
+        else:
+            sig_str = self._flex_ctx.render_signature_string()
+            instructions = (getattr(cls, "instructions", "") or "").strip()
+            if custom := self._flex_ctx.custom_types():
+                # Caller-frame discovery does not find types nested inside list/dict annotations.
+                bindings = ", ".join(f"{name!r}: {name}" for name in custom)
+                sig_arg = f"dspy.Signature({sig_str!r}, {instructions!r}, custom_types={{{bindings}}})"
+            else:
+                sig_arg = f"dspy.Signature({sig_str!r}, {instructions!r})" if instructions else repr(sig_str)
         tool_names = list(self._flex_ctx.context_names())
         if tool_names:
             attr, ctor = "rlm", f"dspy.RLM({sig_arg}, tools=[{', '.join(tool_names)}])"
         else:
             attr, ctor = "predict", f"dspy.Predict({sig_arg})"
-        return (
+        return preamble + (
             f"class {self._class_name()}(dspy.Module):\n"
             "    def __init__(self):\n"
             "        super().__init__()\n"

@@ -226,7 +226,7 @@ from .transports import Timeouts
 from .adaptation import Adaptation, AdaptationPolicy
 
 # ── Judgments (changes/2026-09-17-judgments.md) ─────────────────────
-from .judgments import choice, judgments, score, yes_no
+from .judgments import bounding_box, choice, judgments, score, yes_no
 from .types import data
 
 __all__ = [
@@ -269,7 +269,7 @@ __all__ = [
     "Auth", "AsyncAuth", "BoundClient", "TerminalUI", "login_providers", "connect",
     # providers
     "providers",
-    "choice", "judgments", "score", "yes_no", "data",
+    "bounding_box", "choice", "judgments", "score", "yes_no", "data",
     "OpenAILM", "OpenAIChatLM", "AnthropicLM", "GeminiLM", "ClaudeCodeLM", "OpenAICodexLM", "XaiLM", "TypeSafeLM", "AsyncTypeSafeLM",
     "ProviderLM",
     # the Chat Completions dialect read in: a request body -> Request (MAP-12), a response body -> Response

@@ -2,7 +2,9 @@ from typing import Any, Literal
 
 import pydantic
 
+from dspy._vendor.lm15.types import document
 from dspy.adapters.types.base_type import Type
+from dspy.lm15 import DocumentPart, TextPart
 from dspy.utils.annotation import experimental
 
 
@@ -58,33 +60,25 @@ class Document(Type):
     media_type: Literal["text/plain", "application/pdf"] = "text/plain"
     context: str | None = None
 
-    def format(self) -> list[dict[str, Any]]:
-        """Format document for LM consumption.
+    def format(self) -> list[TextPart | DocumentPart]:
+        """Render the document as lm15 content parts.
 
-        Returns:
-            A list containing the document block in the format expected by citation-enabled language models.
+        Plain-text documents become text the model reads directly, framed by
+        their title and context. PDFs become one document part. Provider-side
+        citation marking is not part of lm15's document part yet, so citations
+        are produced by parsing the model's answer rather than a native API.
         """
-        # PDFs use a base64 source; only text/plain uses a text source.
-        source_type = "base64" if self.media_type == "application/pdf" else "text"
-        document_block = {
-            "type": "document",
-            "source": {
-                "type": source_type,
-                "media_type": self.media_type,
-                "data": self.data
-            },
-            "citations": {"enabled": True}
-        }
-
+        header = []
         if self.title:
-            document_block["title"] = self.title
-
+            header.append(f"Title: {self.title}")
         if self.context:
-            document_block["context"] = self.context
-
-        return [document_block]
-
-
+            header.append(f"Context: {self.context}")
+        parts = [TextPart("\n".join(header) + "\n")] if header else []
+        if self.media_type == "application/pdf":
+            parts.append(document(data=self.data, media_type=self.media_type))
+        else:
+            parts.append(TextPart(self.data))
+        return parts
 
     @classmethod
     def description(cls) -> str:

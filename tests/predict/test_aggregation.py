@@ -41,3 +41,19 @@ def test_majority_with_no_majority():
     completions = [{"answer": "2"}, {"answer": "3"}, {"answer": "4"}]
     result = majority(completions)
     assert result.completions[0]["answer"] == "2"  # The first completion is returned in case of a tie
+
+
+def test_majority_with_non_string_values():
+    completions = [{"answer": 4}, {"answer": 5}, {"answer": 4}]
+    result = majority(completions)
+    assert result.completions[0]["answer"] == 4
+
+    completions = [{"answer": True}, {"answer": False}, {"answer": False}]
+    result = majority(completions)
+    assert result.completions[0]["answer"] is False
+
+
+def test_majority_skips_none_values():
+    completions = [{"answer": None}, {"answer": 7}, {"answer": None}]
+    result = majority(completions)
+    assert result.completions[0]["answer"] == 7

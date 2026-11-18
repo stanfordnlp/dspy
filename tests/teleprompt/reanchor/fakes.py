@@ -1,31 +1,25 @@
 """Stand-in decision clients and generative LMs for the ReAnchor tests."""
 
-import copy
 import re
 import threading
 
+import dspy
 from dspy.clients.engines.dummy_engine import AsyncDummyEngine, DummyEngine
 from dspy.utils.dummies import DummyLM
+from tests.predict.test_decision_parameters import DecisionEngine
 
 
-class FakeClient:
+class FakeClient(dspy.LM):
     """A System One client. Answers each question with `answer(state, name, question)`, and records every request."""
 
-    supports_decision_requests = True
-
-    def __init__(self, answer, cache=True):
+    def __init__(self, answer, cache=False):
+        engine = DecisionEngine(self)
+        super().__init__("typesafe:jev-test", engine=engine, async_engine=AsyncDummyEngine(engine), cache=cache)
         self.answer = answer
-        self.cache = cache
         self.calls = []
-        self.history = []
-        self.callbacks = []
 
-    def __call__(self, state, questions):
-        self.calls.append(copy.deepcopy((state, questions)))
+    def evidence(self, state, questions):
         return {name: self.answer(state, name, q) for name, q in questions.items()}
-
-    async def acall(self, state, questions):
-        return self(state, questions)
 
 
 class _ComputedEngine(DummyEngine):
@@ -61,7 +55,7 @@ def noul(p: float) -> dict:
 
 
 def score(probabilities: dict[int, float], confidence: float = 0.8) -> dict:
-    return {"score": 0.0, "confidence": confidence, "probabilities": probabilities}
+    return {"score": 0.0, "confidence": confidence, "probabilities": {str(k): v for k, v in probabilities.items()}}
 
 
 def choice(probabilities: dict[str, float], confidence: float = 0.7) -> dict:

@@ -1,7 +1,9 @@
 """Tests for restricted pickle deserialization."""
 
+import importlib
 import io
 import pickle
+import sqlite3
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -10,10 +12,14 @@ import diskcache
 import numpy as np
 import pydantic
 import pytest
-from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
-from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse
+from openai.types import Completion as TextCompletionResponse
+from openai.types import CreateEmbeddingResponse as EmbeddingResponse
+from openai.types.chat import ChatCompletion as ModelResponse
+from openai.types.responses import Response as ResponsesAPIResponse
 from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
+from openai.types.responses import ResponseUsage as ResponseAPIUsage
 
+from dspy.clients.cache import Cache
 from dspy.clients.disk_serialization import (
     DeserializationError,
     _restricted_load,
@@ -76,8 +82,11 @@ def _write_tool_call_cache(directory):
     cache["k"] = ModelResponse(
         id="chatcmpl-tool",
         model="dummy",
+        created=0,
+        object="chat.completion",
         choices=[{
             "message": {
+                "role": "assistant",
                 "content": None,
                 "tool_calls": [{
                     "id": "call_1",
@@ -96,8 +105,7 @@ def _write_tool_call_cache(directory):
 def _assert_cached_tool_call_normalizes(directory):
     response = _make_cache(directory, set())["k"]
     tool_call = response.choices[0].message.tool_calls[0]
-    assert type(type(tool_call).__pydantic_serializer__).__name__ == "MockValSer"
-    assert type(type(tool_call.function).__pydantic_serializer__).__name__ == "MockValSer"
+    assert tool_call.function.name == "get_weather"
 
     lm_response = response_value(response, "chat", Request(model="dummy", messages=(Message.user("-"),)))
     part = lm_response.tool_calls[0]
@@ -137,7 +145,9 @@ def _write_responses_function_call_cache(directory):
         status="completed",
         text=None,
         truncation="disabled",
-        usage=ResponseAPIUsage(input_tokens=1, output_tokens=2, total_tokens=3),
+        usage=ResponseAPIUsage(input_tokens=1, output_tokens=2, total_tokens=3,
+                               input_tokens_details={"cached_tokens": 0, "cache_write_tokens": 0},
+                               output_tokens_details={"reasoning_tokens": 0}),
         user=None,
     )
     cache.close()
@@ -146,7 +156,7 @@ def _write_responses_function_call_cache(directory):
 def _assert_cached_responses_function_call_normalizes(directory):
     response = _make_cache(directory, set())["k"]
     function_call = response.output[0]
-    assert type(type(function_call).__pydantic_serializer__).__name__ == "MockValSer"
+    assert function_call.name == "get_weather"
 
     lm_response = response_value(response, "responses", Request(model="dummy", messages=(Message.user("-"),)))
     part = lm_response.tool_calls[0]
@@ -201,11 +211,72 @@ def test_ndarray_roundtrip(tmp_path):
     np.testing.assert_array_equal(result, value)
 
 
-def test_litellm_response_roundtrip(tmp_path):
+def test_file_backed_ndarray_roundtrip(tmp_path):
+    cache = diskcache.Cache(tmp_path / "cache", disk=restricted_disk(set()), disk_min_file_size=1)
+    value = np.arange(1200, dtype=np.float64).reshape(30, 40)
+    cache["array"] = value
+    cache.close()
+
+    reopened = diskcache.Cache(tmp_path / "cache", disk=restricted_disk(set()))
+    np.testing.assert_array_equal(reopened["array"], value)
+
+
+def test_dspy_cache_array_roundtrip_after_reopen(tmp_path):
+    options = {"enable_disk_cache": True, "enable_memory_cache": False, "disk_cache_dir": str(tmp_path)}
+    request = {"model": "test", "prompt": "embedding"}
+    value = np.arange(1200, dtype=np.float32).reshape(30, 40)
+    cache = Cache(**options)
+    cache.put(request, value)
+    cache.disk_cache.close()
+
+    reopened = Cache(**options)
+    np.testing.assert_array_equal(reopened.get(request), value)
+
+
+def test_dspy_cache_nested_arrays_roundtrip_after_reopen(tmp_path):
+    options = {"enable_disk_cache": True, "enable_memory_cache": False, "disk_cache_dir": str(tmp_path)}
+    request = {"model": "test", "prompt": "nested embedding"}
+    cache = Cache(**options)
+    cache.put(request, {"embeddings": [np.array([1, 2], dtype=np.int32), {"second": np.array([3.5])}]})
+    cache.disk_cache.close()
+
+    reopened = Cache(**options)
+    result = reopened.get(request)
+    np.testing.assert_array_equal(result["embeddings"][0], np.array([1, 2], dtype=np.int32))
+    np.testing.assert_array_equal(result["embeddings"][1]["second"], np.array([3.5]))
+
+
+def test_numpy_subclass_is_not_silently_flattened(tmp_path):
+    cache = diskcache.Cache(tmp_path / "cache", disk=restricted_disk(set()))
+    value = np.ma.array([1, 2], mask=[True, False])
+    with pytest.raises(TypeError, match="subclasses cannot be safely serialized"):
+        cache["masked"] = value
+    with pytest.raises(TypeError, match="subclasses cannot be safely serialized"):
+        cache["nested"] = {"masked": value}
+    assert "masked" not in cache
+    assert "nested" not in cache
+
+
+def test_file_backed_value_with_symlinked_cache_root(tmp_path):
+    root = tmp_path / "real"
+    root.mkdir()
+    (tmp_path / "alias").symlink_to(root, target_is_directory=True)
+    cache = diskcache.Cache(tmp_path / "alias", disk=restricted_disk(_allowed_for(AllowedDataclass)), disk_min_file_size=1)
+    cache["key"] = b"data"
+    cache["text"] = "hello\rworld"
+    cache["model"] = AllowedDataclass(name="hello", value=7)
+    assert cache["key"] == b"data"
+    assert cache["text"] == "hello\nworld"
+    assert cache["model"] == AllowedDataclass(name="hello", value=7)
+    cache.delete("key")
+    assert "key" not in cache
+
+
+def test_openai_chat_response_roundtrip(tmp_path):
     cache = _make_cache(str(tmp_path), set())
     response = ModelResponse(
-        id="chatcmpl-test",
-        choices=[{"message": {"content": "Hello"}, "index": 0, "finish_reason": "stop"}],
+        id="chatcmpl-test", model="m", created=0, object="chat.completion",
+        choices=[{"message": {"role": "assistant", "content": "Hello"}, "index": 0, "finish_reason": "stop"}],
     )
     cache["k"] = response
     result = cache["k"]
@@ -216,24 +287,25 @@ def test_litellm_response_roundtrip(tmp_path):
 def test_text_completion_response_roundtrip(tmp_path):
     cache = _make_cache(str(tmp_path), set())
     response = TextCompletionResponse(
-        id="cmpl-test", choices=[{"text": "Hello", "index": 0, "finish_reason": "stop"}], model="m",
+        id="cmpl-test", created=0, object="text_completion",
+        choices=[{"text": "Hello", "index": 0, "finish_reason": "stop", "logprobs": None}], model="m",
     )
     cache["k"] = response
     result = cache["k"]
     assert isinstance(result, TextCompletionResponse)
-    assert result.choices[0]["text"] == "Hello"
+    assert result.choices[0].text == "Hello"
 
 
 def test_embedding_response_roundtrip(tmp_path):
     cache = _make_cache(str(tmp_path), set())
     response = EmbeddingResponse(
         data=[{"embedding": [0.1, 0.2], "index": 0, "object": "embedding"}],
-        model="m", usage={"prompt_tokens": 1, "total_tokens": 1},
+        model="m", object="list", usage={"prompt_tokens": 1, "total_tokens": 1},
     )
     cache["k"] = response
     result = cache["k"]
     assert isinstance(result, EmbeddingResponse)
-    assert result.data[0]["embedding"] == pytest.approx([0.1, 0.2])
+    assert result.data[0].embedding == pytest.approx([0.1, 0.2])
 
 
 def test_responses_api_roundtrip(tmp_path):
@@ -268,7 +340,9 @@ def test_responses_api_roundtrip(tmp_path):
         status="completed",
         text=None,
         truncation="disabled",
-        usage=ResponseAPIUsage(input_tokens=1, output_tokens=1, total_tokens=2),
+        usage=ResponseAPIUsage(input_tokens=1, output_tokens=1, total_tokens=2,
+                               input_tokens_details={"cached_tokens": 0, "cache_write_tokens": 0},
+                               output_tokens_details={"reasoning_tokens": 0}),
         user=None,
     )
     cache["k"] = response
@@ -278,12 +352,13 @@ def test_responses_api_roundtrip(tmp_path):
 
 
 def test_tool_call_response_roundtrip(tmp_path):
-    """ModelResponse with tool calls uses nested litellm types."""
+    """ChatCompletion with tool calls uses nested OpenAI types."""
     cache = _make_cache(str(tmp_path), set())
     response = ModelResponse(
-        id="chatcmpl-tool",
+        id="chatcmpl-tool", model="m", created=0, object="chat.completion",
         choices=[{
             "message": {
+                "role": "assistant",
                 "content": None,
                 "tool_calls": [{
                     "id": "call_1",
@@ -312,6 +387,12 @@ def test_cached_responses_function_call_normalizes_after_fresh_process_roundtrip
 
 
 # -- allowlist enforcement --
+
+def test_direct_callable_value_remains_blocked():
+    payload = b"cbuiltins\neval\n(S'2 + 3'\ntR."
+    with pytest.raises(DeserializationError):
+        _restricted_load(io.BytesIO(payload), set())
+
 
 def test_unlisted_type_blocked_on_read(tmp_path):
     cache = _make_cache(str(tmp_path), set())
@@ -349,6 +430,129 @@ def test_numpy_ctypeslib_blocked():
         _restricted_load(io.BytesIO(payload), set())
 
 
+def test_trusted_module_alias_cannot_resolve_an_untrusted_callable(monkeypatch):
+    module = importlib.import_module("openai.types.chat.chat_completion")
+    monkeypatch.setattr(module, "injected_alias", eval, raising=False)
+    payload = b"copenai.types.chat.chat_completion\ninjected_alias\n."
+
+    with pytest.raises(DeserializationError):
+        _restricted_load(io.BytesIO(payload), set())
+
+
+def test_pickled_keys_use_the_same_allowlist(tmp_path):
+    cache = _make_cache(str(tmp_path), set())
+    cache[_Outer.Inner(value=7)] = "stored"
+
+    with pytest.raises(DeserializationError):
+        list(cache)
+
+    allowed_cache = _make_cache(str(tmp_path), _allowed_for(_Outer.Inner))
+    assert list(allowed_cache) == [_Outer.Inner(value=7)]
+
+
+def test_legacy_pickled_numpy_array_is_a_miss():
+    # Array BUILD state is not validated by pickle's find_class hook.
+    with pytest.raises(DeserializationError):
+        _restricted_load(io.BytesIO(pickle.dumps(np.arange(3))), set())
+
+
+def test_unknown_persistent_id_is_rejected():
+    class UnknownIdPickler(pickle.Pickler):
+        def persistent_id(self, value):
+            return "unknown" if value == "placeholder" else None
+
+    buffer = io.BytesIO()
+    UnknownIdPickler(buffer).dump(["placeholder"])
+    with pytest.raises(DeserializationError, match="Invalid cache array reference"):
+        _restricted_load(io.BytesIO(buffer.getvalue()), set())
+
+
+def test_array_reference_rejects_non_array_data():
+    archive = io.BytesIO()
+    np.savez(archive, values=np.arange(3))
+
+    class ArchivePickler(pickle.Pickler):
+        def persistent_id(self, value):
+            return (b"\x93NUMPY", archive.getvalue()) if value == "placeholder" else None
+
+    buffer = io.BytesIO()
+    ArchivePickler(buffer).dump(["placeholder"])
+    with pytest.raises(DeserializationError, match="Invalid cache array reference"):
+        _restricted_load(io.BytesIO(buffer.getvalue()), set())
+
+
+@pytest.mark.parametrize("cleanup", ["delete", "cull"])
+def test_tampered_filename_cannot_delete_outside_cache(tmp_path, cleanup):
+    cache = diskcache.Cache(tmp_path / "cache", disk=restricted_disk(set()), disk_min_file_size=1)
+    cache.set("old", b"data")
+    outside = tmp_path / "outside"
+    outside.write_bytes(b"keep")
+    with sqlite3.connect(tmp_path / "cache" / "cache.db") as db:
+        db.execute(
+            "UPDATE Cache SET filename = ?, expire_time = ? WHERE key = 'old'",
+            ("../outside", 0 if cleanup == "cull" else None),
+        )
+
+    if cleanup == "delete":
+        with pytest.raises(DeserializationError):
+            cache["old"]
+        cache.delete("old")
+        assert "old" not in cache
+    else:
+        cache.set("new", b"data")
+        assert cache["new"] == b"data"
+
+    assert outside.read_bytes() == b"keep"
+
+
+def test_file_backed_cache_reads_do_not_follow_symlinks(tmp_path):
+    cache = diskcache.Cache(tmp_path / "cache", disk=restricted_disk(set()), disk_min_file_size=1)
+    cache.set("key", b"data")
+    with sqlite3.connect(tmp_path / "cache" / "cache.db") as db:
+        filename = db.execute("SELECT filename FROM Cache WHERE key = 'key'").fetchone()[0]
+    outside = tmp_path / "outside"
+    outside.write_bytes(b"secret")
+    path = tmp_path / "cache" / filename
+    path.unlink()
+    path.symlink_to(outside)
+
+    with pytest.raises(DeserializationError):
+        cache["key"]
+    cache.delete("key")
+    assert outside.read_bytes() == b"secret"
+
+
+def test_file_backed_cache_cleanup_does_not_follow_directory_symlinks(tmp_path):
+    cache = diskcache.Cache(tmp_path / "cache", disk=restricted_disk(set()), disk_min_file_size=1)
+    cache.set("key", b"data")
+    with sqlite3.connect(tmp_path / "cache" / "cache.db") as db:
+        filename = db.execute("SELECT filename FROM Cache WHERE key = 'key'").fetchone()[0]
+    path = tmp_path / "cache" / filename
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / path.name).write_bytes(b"secret")
+    path.unlink()
+    path.parent.rmdir()
+    path.parent.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(DeserializationError):
+        cache["key"]
+    cache.delete("key")
+    assert (outside / path.name).read_bytes() == b"secret"
+
+
+def test_file_backed_cache_writes_do_not_follow_directory_symlinks(tmp_path, monkeypatch):
+    cache = diskcache.Cache(tmp_path / "cache", disk=restricted_disk(set()), disk_min_file_size=1)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (tmp_path / "cache" / "ab").symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr("diskcache.core.os.urandom", lambda size: b"\xab" * size)
+
+    with pytest.raises(OSError):
+        cache["key"] = b"data"
+    assert list(outside.iterdir()) == []
+
+
 # -- _restricted_load unit tests --
 
 def test_restricted_load_rejects_unknown_type():
@@ -375,7 +579,8 @@ def test_nested_class_safe_types(tmp_path):
 
 def test_restricted_load_allows_builtin_types():
     response = ModelResponse(
-        id="t", choices=[{"message": {"content": "hi"}, "index": 0, "finish_reason": "stop"}],
+        id="t", model="m", created=0, object="chat.completion",
+        choices=[{"message": {"role": "assistant", "content": "hi"}, "index": 0, "finish_reason": "stop"}],
     )
     result = _roundtrip(response)
     assert isinstance(result, ModelResponse)
@@ -385,14 +590,16 @@ def test_all_cached_lm_types_roundtrip():
     """Every LM return type that DSPy caches must roundtrip through the restricted unpickler."""
     test_values = [
         ModelResponse(
-            id="t", choices=[{"message": {"content": "hi"}, "index": 0, "finish_reason": "stop"}],
+            id="t", model="m", created=0, object="chat.completion",
+            choices=[{"message": {"role": "assistant", "content": "hi"}, "index": 0, "finish_reason": "stop"}],
         ),
         TextCompletionResponse(
-            id="t", choices=[{"text": "hi", "index": 0, "finish_reason": "stop"}], model="m",
+            id="t", created=0, object="text_completion",
+            choices=[{"text": "hi", "index": 0, "finish_reason": "stop", "logprobs": None}], model="m",
         ),
         EmbeddingResponse(
             data=[{"embedding": [0.1], "index": 0, "object": "embedding"}],
-            model="m", usage={"prompt_tokens": 1, "total_tokens": 1},
+            model="m", object="list", usage={"prompt_tokens": 1, "total_tokens": 1},
         ),
     ]
     for value in test_values:

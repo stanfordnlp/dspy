@@ -47,7 +47,9 @@ config_owner_async_task = None
 # Global lock for settings configuration
 global_lock = threading.Lock()
 
-thread_local_overrides = contextvars.ContextVar("context_overrides", default=dotdict())
+thread_local_overrides: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar(
+    "context_overrides", default=dotdict()
+)
 
 
 class Settings:

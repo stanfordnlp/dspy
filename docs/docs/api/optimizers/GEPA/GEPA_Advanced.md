@@ -50,7 +50,7 @@ Pass an `InstructionProposer(...)` instance to configure the default behavior. `
 | `additional_instructions` | Guidance applied to every proposal, such as "Write instructions in imperative voice." |
 | `base_instructions` | Replaces the prompt text above. The input and output fields stay the same. |
 | `max_chars` | Maximum Unicode characters in each proposed instruction after stripping outer whitespace. Pydantic validates this limit. `None` means no limit. |
-| `truncate_history_outputs` | When `True`, long tool results inside `dspy.History` inputs (for example from `dspy.ReActV2`) and long outputs inside `REPLHistory` inputs are cut to 500 characters before the examples are rendered. Nothing else is shortened. |
+| `truncate_history_outputs` | When `True`, long tool results inside `dspy.History` inputs (for example from `dspy.ReAct`) and long outputs inside `REPLHistory` inputs are cut to 500 characters before the examples are rendered. Nothing else is shortened. |
 | `adapter` | The adapter for the proposer's own LM calls. Defaults to `JSONAdapter()`. |
 
 When a proposal exceeds `max_chars`, the proposer makes one more call asking the reflection LM to shorten the draft. Pydantic validates the result and raises `ValidationError` if it is empty or still too long. The proposer never truncates an instruction. Validation runs after adapter parsing, so the limit is enforced with custom adapters too.
@@ -434,7 +434,8 @@ Consider implementing custom component selection when you need:
 Custom component selectors must implement the [`ReflectionComponentSelector`](https://github.com/gepa-ai/gepa/blob/main/src/gepa/proposer/reflective_mutation/base.py) protocol by defining a callable class or function. GEPA will call your selector during optimization:
 
 ```python
-from dspy.teleprompt.gepa.gepa_utils import GEPAState, Trajectory
+from gepa.core.adapter import Trajectory
+from gepa.core.state import GEPAState
 
 class CustomComponentSelector:
     def __call__(

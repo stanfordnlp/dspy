@@ -17,6 +17,7 @@ RELEASE_VERSION = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?$")
 STABLE_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 DEFAULT_BRANCH = "versioned-docs"
 LEGACY_REDIRECTS_MANIFEST = ".dspy-legacy-redirects.json"
+VERSION_PATH = "/:version(\\d+\\.\\d+(?:\\.\\d+(?:(?:a|b|rc)\\d+)?)?)"
 HOST_CONFIG = (
     json.dumps(
         {
@@ -24,8 +25,10 @@ HOST_CONFIG = (
             "buildCommand": "true",
             "outputDirectory": ".",
             "redirects": [
+                # Serve the root redirect from the host so crawlers without JavaScript reach Current.
+                {"source": "/", "destination": "/current/", "permanent": True},
                 {
-                    "source": "/:version(\\d+\\.\\d+(?:\\.\\d+(?:(?:a|b|rc)\\d+)?)?)",
+                    "source": VERSION_PATH,
                     "destination": "/:version/",
                     "permanent": True,
                 },
@@ -39,13 +42,20 @@ HOST_CONFIG = (
                 {
                     "source": "/(.*).md",
                     "headers": [{"key": "Content-Type", "value": "text/markdown; charset=utf-8"}],
-                }
+                },
+                # Keep release snapshots out of search indexes so they do not compete with Current.
+                {
+                    "source": VERSION_PATH + "/(.*)",
+                    "headers": [{"key": "X-Robots-Tag", "value": "noindex"}],
+                },
             ],
         },
         indent=2,
     )
     + "\n"
 )
+ROBOTS_TXT = "User-agent: *\nAllow: /\n\nSitemap: https://dspy.ai/current/sitemap.xml\n"
+HOST_FILES = {"vercel.json": HOST_CONFIG, "robots.txt": ROBOTS_TXT}
 
 
 def version_tuple(version: str) -> tuple[int, int, int, int, int]:
@@ -231,9 +241,11 @@ def publish_site(
             )
         if current:
             write_legacy_redirects(repository, branch, site, identifier)
-        if branch_file(repository, branch, "vercel.json") != HOST_CONFIG:
+        changed = {path: data for path, data in HOST_FILES.items() if branch_file(repository, branch, path) != data}
+        if changed:
             with git_utils.Commit(branch, "Configure static documentation hosting") as commit:
-                commit.add_file(git_utils.FileInfo("vercel.json", HOST_CONFIG))
+                for path, data in changed.items():
+                    commit.add_file(git_utils.FileInfo(path, data))
     return True
 
 

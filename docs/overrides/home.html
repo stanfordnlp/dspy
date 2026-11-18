@@ -3,6 +3,27 @@
 {# Hide the site-wide announcement banner on the landing page only #}
 {% block announce %}{% endblock %}
 
+{% block extrahead %}
+  {{ super() }}
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareSourceCode",
+      "name": "DSPy",
+      "description": "The framework for programming—rather than prompting—language models.",
+      "url": "https://dspy.ai/current/",
+      "codeRepository": "https://github.com/stanfordnlp/dspy",
+      "programmingLanguage": "Python",
+      "license": "https://opensource.org/licenses/MIT",
+      "sameAs": [
+        "https://github.com/stanfordnlp/dspy",
+        "https://pypi.org/project/dspy/",
+        "https://arxiv.org/abs/2310.03714"
+      ]
+    }
+  </script>
+{% endblock %}
+
 {% block styles %}
   {{ super() }}
   <link rel="stylesheet" href="{{ 'stylesheets/home.css' | url }}">

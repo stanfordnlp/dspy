@@ -11,6 +11,7 @@ import queue
 import sys
 import tempfile
 import threading
+import types
 from typing import Any
 
 _protocol_output = os.fdopen(os.dup(sys.__stdout__.fileno()), "w", encoding="utf-8")
@@ -106,7 +107,11 @@ class Session:
     def __init__(self, protocol: Protocol) -> None:
         self.protocol = protocol
         self.worker_threads = set(threading.enumerate())
-        self.namespace: dict[str, Any] = {"__builtins__": vars(builtins).copy()}
+        # A registered module's namespace, so classes defined here resolve forward references like module classes.
+        module = types.ModuleType("__interpreter__")
+        sys.modules[module.__name__] = module
+        self.namespace: dict[str, Any] = module.__dict__
+        self.namespace["__builtins__"] = vars(builtins).copy()
         self.tool_names: set[str] = set()
         self.output_fields: list[dict[str, Any]] | None = None
 
@@ -159,9 +164,12 @@ class Session:
             try:
                 tree = ast.parse(code, mode="exec")
                 last = tree.body.pop() if tree.body and isinstance(tree.body[-1], ast.Expr) else None
-                exec(compile(tree, "<interpreter>", "exec"), self.namespace)
+                # dont_inherit: submitted code gets default semantics, not this module's __future__ imports.
+                exec(compile(tree, "<interpreter>", "exec", dont_inherit=True), self.namespace)
                 value = (
-                    eval(compile(ast.Expression(last.value), "<interpreter>", "eval"), self.namespace) if last else None
+                    eval(compile(ast.Expression(last.value), "<interpreter>", "eval", dont_inherit=True), self.namespace)
+                    if last
+                    else None
                 )
                 outcome = {"type": "result", "value": jsonable(value)}
             except Submission as submission:

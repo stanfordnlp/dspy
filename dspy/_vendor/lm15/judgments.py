@@ -3,11 +3,16 @@
 changes/2026-09-17-judgments.md.  A judgment is a top-level property of a
 ``json_schema`` ``response_format`` that declares its answer set: a
 boolean, a string ``enum``/``anyOf``-of-``const``, or an ordered integer
-``enum``/``anyOf``-of-``const`` ``0..n-1``.  This module reads that
-convention off a schema (§1), rewrites judgment properties for the two
-wires that need it (§2), folds a model's JSON text into a ``DataPart``
-(§3), and offers the sugar that EMITS the convention (``choice``,
-``yes_no``, ``score``, ``judgments``) so it need not be written by hand.  Nothing here touches the network.
+``enum``/``anyOf``-of-``const`` ``0..n-1`` — or, since
+changes/2026-10-15-bounding-box.md, a **bounding box**: an object of the
+four numbers ``top``, ``bottom``, ``left``, ``right`` (fractions of the
+image's height and width).  A box declares no keys, so it is answered,
+never scored.  This module reads that convention off a schema (§1),
+rewrites judgment properties for the two wires that need it (§2), folds a
+model's JSON text into a ``DataPart`` (§3), and offers the sugar that
+EMITS the convention (``choice``, ``yes_no``, ``score``,
+``bounding_box``, ``judgments``) so it need not be written by hand.
+Nothing here touches the network.
 """
 from __future__ import annotations
 
@@ -21,10 +26,22 @@ from .adaptation import adapt
 from .errors import UnsupportedFeatureError
 from .types import DataPart, JsonObject, JsonValue, Request, TextPart
 
-JudgmentKind = Literal["boolean", "choice", "ordered"]
+JudgmentKind = Literal["boolean", "choice", "ordered", "box"]
 
 MAX_ORDERED_LEVELS = 10  # Jev's Score ceiling (docs.typesafe.ai/primitives/score)
 MAX_CHOICE_KEYS = 255  # Jev's Choice ceiling (docs.typesafe.ai/primitives/choice)
+
+# changes/2026-10-15-bounding-box.md D1: a box is these four numbers, each a
+# fraction of the image measured from its top-left corner — ``top`` and
+# ``bottom`` of its height, ``left`` and ``right`` of its width (Jev's Box,
+# docs.typesafe.ai/primitives/box).  The order is Jev's.
+BOX_EDGES: tuple[str, ...] = ("top", "bottom", "left", "right")
+BOX_EDGE_DESCRIPTIONS: dict[str, str] = {
+    "top": "Top edge, as a fraction of the image's height from the top, from 0 to 1",
+    "bottom": "Bottom edge, as a fraction of the image's height from the top, from 0 to 1",
+    "left": "Left edge, as a fraction of the image's width from the left, from 0 to 1",
+    "right": "Right edge, as a fraction of the image's width from the left, from 0 to 1",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +59,12 @@ class Judgment:
     def ordered(self) -> bool:
         return self.kind == "ordered"
 
+    @property
+    def measurable(self) -> bool:
+        """Whether a distribution over declared keys exists to measure.  A
+        box declares no keys: it is answered, never scored (MAP-14 §1)."""
+        return self.kind != "box"
+
 
 # ─── §1 reading the convention ────────────────────────────────────────
 
@@ -55,10 +78,25 @@ def _const_branches(prop: Mapping[str, Any]) -> list[Mapping[str, Any]] | None:
     return branches
 
 
+def _is_box(prop: Mapping[str, Any]) -> bool:
+    """An object whose properties are exactly the four edges, each a
+    ``number`` (changes/2026-10-15-bounding-box.md D1).  Other keywords
+    (descriptions, ``required``, ``additionalProperties``) are the caller's
+    and travel verbatim."""
+    if prop.get("type", "object") != "object":
+        return False
+    props = prop.get("properties")
+    if not isinstance(props, dict) or set(props) != set(BOX_EDGES):
+        return False
+    return all(isinstance(edge, dict) and edge.get("type") == "number" for edge in props.values())
+
+
 def _judgment_of(name: str, prop: Any) -> Judgment | None:
     if not isinstance(prop, dict):
         return None
     instruction = prop.get("description") if isinstance(prop.get("description"), str) and prop.get("description") else None
+    if _is_box(prop):
+        return Judgment(name, "box", (), instruction, {}, {})
     if prop.get("type") == "boolean":
         return Judgment(name, "boolean", ("true", "false"), instruction, {"true": None, "false": None}, {})
     enum = prop.get("enum")
@@ -118,6 +156,16 @@ def request_judgments(request: Request) -> dict[str, Judgment]:
     return judgments_in_schema(fmt.get("schema"))
 
 
+def measurable_judgments(found: Mapping[str, Judgment]) -> dict[str, Judgment]:
+    """The judgments with declared keys — the ones a distribution can be
+    measured for.  Boxes are left out: they are answered, never scored."""
+    return {name: j for name, j in found.items() if j.measurable}
+
+
+def request_measurable_judgments(request: Request) -> dict[str, Judgment]:
+    return measurable_judgments(request_judgments(request))
+
+
 def non_judgment_properties(schema: Any, found: Mapping[str, Judgment]) -> tuple[str, ...]:
     props = schema.get("properties") if isinstance(schema, dict) else None
     if not isinstance(props, dict):
@@ -130,9 +178,11 @@ def non_judgment_properties(schema: Any, found: Mapping[str, Judgment]) -> tuple
 
 def note_unmeasurable_probabilities(request: Request, provider: str) -> None:
     """MAP-14 §3 on a wire with no distribution: ``if_available`` records
-    ``dropped``; ``required`` refuses before the wire (MAP-13 b)."""
+    ``dropped``; ``required`` refuses before the wire (MAP-13 b).  A request
+    whose judgments are all boxes asked for nothing measurable: nothing is
+    recorded and nothing refused."""
     policy = request.config.probabilities
-    if policy in (None, "off") or not request_judgments(request):
+    if policy in (None, "off") or not request_measurable_judgments(request):
         return
     if policy == "required":
         raise UnsupportedFeatureError(
@@ -179,7 +229,7 @@ def gemini_schema(schema: JsonObject, found: Mapping[str, Judgment]) -> JsonObje
     out = copy.deepcopy(schema)
     for name, j in found.items():
         prop = out["properties"][name]
-        if j.kind == "boolean" or "anyOf" not in prop:
+        if j.kind in ("boolean", "box") or "anyOf" not in prop:
             continue
         prop.pop("anyOf")
         prop["type"] = "integer" if j.ordered else "string"
@@ -290,6 +340,31 @@ def score(instruction: str, levels: Mapping[str, str] | Sequence[str]) -> JsonOb
     return {"type": "integer", "description": instruction, "anyOf": branches}
 
 
+def bounding_box(instruction: str) -> JsonObject:
+    """A bounding-box judgment: where in the request's image is what
+    ``instruction`` describes (changes/2026-10-15-bounding-box.md).
+
+    The answer is ``{"top", "bottom", "left", "right"}``, each a fraction
+    from 0 to 1 of the image's height (``top``, ``bottom``) or width
+    (``left``, ``right``), measured from the top-left corner; multiply by
+    the image's size in pixels to draw or crop.  There is no "not found"
+    answer: ask a ``yes_no`` beside it.  On ``typesafe`` this is Jev's Box
+    question and needs Jev 1.14 (``model="jev-preview"`` or
+    ``"jev-1.14.0"``); elsewhere it is ordinary structured output.
+
+    The edges carry no ``minimum``/``maximum``: Anthropic refuses both on a
+    number (HTTP 400, receipted 2026-10-15); the range is in each edge's
+    description, which every wire passes to the model.
+    """
+    return {
+        "type": "object",
+        "description": instruction,
+        "properties": {edge: {"type": "number", "description": BOX_EDGE_DESCRIPTIONS[edge]} for edge in BOX_EDGES},
+        "required": list(BOX_EDGES),
+        "additionalProperties": False,
+    }
+
+
 def judgments(*, name: str = "judgments", strict: bool = True, **properties: JsonObject) -> JsonObject:
     """A ``response_format`` declaring the given judgment properties."""
     if not properties:
@@ -304,8 +379,9 @@ def judgments(*, name: str = "judgments", strict: bool = True, **properties: Jso
 
 
 __all__ = [
-    "Judgment", "judgments_in_schema", "request_judgments", "non_judgment_properties",
+    "Judgment", "BOX_EDGES", "judgments_in_schema", "request_judgments", "measurable_judgments",
+    "request_measurable_judgments", "non_judgment_properties",
     "note_unmeasurable_probabilities", "anthropic_schema", "gemini_schema",
     "data_part_from_text", "replace_text_with_data", "normalize_logprobs", "expected_level",
-    "choice", "yes_no", "score", "judgments",
+    "choice", "yes_no", "score", "bounding_box", "judgments",
 ]

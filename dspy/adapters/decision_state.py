@@ -8,6 +8,7 @@ from typing import get_args
 
 from pydantic import JsonValue, TypeAdapter
 
+from dspy.adapters.types.bounding_box import BoundingBox
 from dspy.adapters.types.decision import Choice, Noul, Score, decision_type
 
 _JSON_ADAPTER = TypeAdapter(JsonValue)
@@ -27,6 +28,9 @@ class DecisionState:
         self.types = {}
         self.fields = {}
         for name, field in signature.output_fields.items():
+            # Native boxes carry geometry, not calibratable decision values.
+            if system_one and field.annotation is BoundingBox:
+                continue
             if not system_one and name not in fields and not any(
                 isinstance(annotation, type) and issubclass(annotation, (Noul, Score, Choice))
                 for annotation in (field.annotation, *field.metadata)

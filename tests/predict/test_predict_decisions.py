@@ -6,8 +6,9 @@ from typing import Annotated, Literal
 import pytest
 
 import dspy
-from dspy.experimental import Choice, Noul, Score, TypeSafe
+from dspy.experimental import Choice, Noul, Score
 from dspy.utils.dummies import DummyLM
+from tests.predict.test_decision_parameters import FakeClient
 
 Rating = Score["bad", "fair", "great"]
 Label = Choice[(2, "primary"), ("other", "secondary")]
@@ -29,17 +30,9 @@ EVIDENCE = {
 }
 
 
-class FakeTypeSafe(TypeSafe):
+class FakeTypeSafe(FakeClient):
     def __init__(self):
-        super().__init__("jev-test")
-        self.calls = []
-
-    def __call__(self, state, questions):
-        self.calls.append(copy.deepcopy({"state": state, "questions": questions}))
-        return copy.deepcopy(EVIDENCE)
-
-    async def acall(self, **kwargs):
-        return self(**kwargs)
+        super().__init__(answers=EVIDENCE)
 
 
 def configured_predict(lm):
@@ -72,7 +65,7 @@ def test_backend_equivalence(adapter):
     prompt = json.dumps(lm.lm.history[-1]["messages"])
     assert "relevance" in prompt and "examples" in prompt
     system = lm.lm.history[-1]["messages"][0]["content"]
-    for name, question in jev.lm.calls[-1]["questions"].items():
+    for name, question in jev.lm.calls[-1][1].items():
         # Decision descriptions are real multiline JSON in both adapter prompts.
         description = system.split(f"`{name}` (", 1)[1].split("): \n", 1)[1]
         assert description.startswith('{\n  "instructions": ')
@@ -98,25 +91,25 @@ async def test_demos_overrides_trace_and_save_load(tmp_path):
         assert dspy.settings.trace[0][0] is module
         assert dspy.settings.trace[0][1] == {"text": "new"}
         assert dspy.settings.trace[0][2].flag == result.flag
-    request = client.calls[-1]
-    assert request["state"]["instructions"] == "Override instructions."
-    assert request["state"]["inputs"] == {"text": "new"}
-    assert request["state"]["demos"] == [{"text": "override", "flag": False}]
+    state, questions = client.calls[-1]
+    assert state["instructions"] == "Override instructions."
+    assert state["inputs"] == {"text": "new"}
+    assert state["demos"] == [{"text": "override", "flag": False}]
     assert override == snapshot
     assert module.demos[0].text == "saved"
     assert module.signature is Assess
     # Save a reconstructible provider, never a fixture class or credentials.
-    module.lm = TypeSafe("jev-test", api_key="do-not-save")
+    module.lm = dspy.LM("typesafe:jev-test", engine="lm15", api_key="do-not-save", cache=False)
     path = tmp_path / "predict.json"
     module.save(path)
     restored = dspy.Predict(Assess)
     restored.load(path)
     assert restored.fields == module.fields
     assert restored.demos == [{"text": "saved", "flag": True, "rating": 1.0, "label": 2}]
-    assert isinstance(restored.lm, TypeSafe)
+    assert isinstance(restored.lm, dspy.LM)
     assert "api_key" not in path.read_text()
     restored(text="new", lm=client)
-    assert client.calls[-1]["state"]["demos"] == restored.demos
+    assert client.calls[-1][0]["demos"] == restored.demos
     copied = restored.deepcopy()
     copied.fields["flag"]["threshold"] = 0.9
     assert restored.fields["flag"]["threshold"] == 0.7
@@ -171,7 +164,10 @@ async def test_native_decision_state_does_not_depend_on_client_binding(binding):
             assert result.flag is True
             assert result.label == 2 and type(result.label) is int
         assert module.fields == {}
+        bound_lm = module.lm
+        module.lm = None  # Scripted custom engines deliberately have no persistence protocol.
         assert "fields" not in module.dump_state()
+        module.lm = bound_lm
 
     # A previous decision-client call must not silently opt native LM outputs into evidence schemas.
     lm = DummyLM([{"flag": False, "label": "other"}] * 2)
@@ -181,7 +177,7 @@ async def test_native_decision_state_does_not_depend_on_client_binding(binding):
 
 
 def test_invalid_criteria_load_does_not_mutate_predict():
-    module = configured_predict(TypeSafe("jev-test"))
+    module = configured_predict(dspy.LM("typesafe:jev-test", engine="lm15", cache=False))
     before = module.dump_state()
     invalid = copy.deepcopy(before)
     invalid["fields"]["rating"]["criteria"] = {"wrong": "shape"}
@@ -199,7 +195,7 @@ def test_rich_demos_remain_json_serializable_after_reload(tmp_path):
     module.load(path)
     client = FakeTypeSafe()
     module(text="x", lm=client)
-    assert client.calls[-1]["state"]["demos"] == [
+    assert client.calls[-1][0]["demos"] == [
         {"text": "rich label", "flag": {"value": False, "probability": 0.2, "confidence": 0.6}}
     ]
     assert flag.probability == 0.2
@@ -225,8 +221,8 @@ def test_native_literal_not_supported_by_jev_still_works_with_llm():
 
 def test_choice_uses_distribution_not_provider_choice_or_key_order():
     class Fixed(FakeTypeSafe):
-        def __call__(self, **kwargs):
-            result = super().__call__(**kwargs)
+        def evidence(self, state, questions):
+            result = super().evidence(state, questions)
             result["label"] = {"choice": "other", "probabilities": {"other": 0.5, "2": 0.5}, "confidence": 0.4}
             return result
 
@@ -283,16 +279,11 @@ def test_unsupported_options_and_streaming_fail_explicitly():
 
 @pytest.mark.asyncio
 async def test_decision_capability_dispatches_before_chat_checks():
-    class DecisionClient:
-        supports_decision_requests = True
-
-        def __call__(self, state, questions):
+    class DecisionClient(FakeTypeSafe):
+        def evidence(self, state, questions):
             assert state["inputs"] == {"text": "document"}
             assert questions["rating"]["type"] == "score"
             return copy.deepcopy(EVIDENCE)
-
-        async def acall(self, **kwargs):
-            return self(**kwargs)
 
     class ForbiddenAdapter(dspy.ChatAdapter):
         def __call__(self, *args, **kwargs):
@@ -308,9 +299,6 @@ async def test_decision_capability_dispatches_before_chat_checks():
         assert (await module.acall(text="document")).toDict() == result.toDict()
         assert result.flag.value is True
         assert result.rating.value == pytest.approx(1.5)
-        client.supports_decision_requests = False
-        with pytest.raises(ValueError, match="decision-request client"):
-            module(text="document")
 
 
 @pytest.mark.parametrize("desc", [None, "", "  "])
