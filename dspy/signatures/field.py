@@ -36,6 +36,38 @@ PYDANTIC_CONSTRAINT_MAP = {
 }
 
 
+class _SchemaExtraCallable:
+    """Wraps a callable json_schema_extra so Pydantic executes it while DSPy can index metadata."""
+
+    def __init__(self, extra_dict: dict, fn):
+        self._extra_dict = extra_dict
+        self._fn = fn
+
+    def __call__(self, schema: dict, *args, **call_kwargs) -> None:
+        schema.update(self._extra_dict)
+        self._fn(schema, *args, **call_kwargs)
+
+    def __getitem__(self, item):
+        return self._extra_dict[item]
+
+    def __setitem__(self, key, value):
+        self._extra_dict[key] = value
+
+    def __contains__(self, item):
+        return item in self._extra_dict
+
+    def get(self, key, default=None):
+        return self._extra_dict.get(key, default)
+
+    def __eq__(self, other):
+        if isinstance(other, _SchemaExtraCallable):
+            return self._extra_dict == other._extra_dict and self._fn == other._fn
+        return self._extra_dict == other
+
+    def __repr__(self):
+        return repr(self._extra_dict)
+
+
 def move_kwargs(**kwargs):
     # Pydantic doesn't allow arbitrary arguments to be given to fields,
     # but asks that
@@ -43,7 +75,12 @@ def move_kwargs(**kwargs):
     # > as a dictionary to the json_schema_extra keyword argument.
     # See: https://docs.pydantic.dev/2.6/migration/#changes-to-pydanticfield
     pydantic_kwargs = {}
-    json_schema_extra = {}
+    user_schema_extra = kwargs.pop("json_schema_extra", None)
+    if isinstance(user_schema_extra, dict):
+        json_schema_extra = dict(user_schema_extra)
+    else:
+        json_schema_extra = {}
+
     for k, v in kwargs.items():
         if k in DSPY_FIELD_ARG_NAMES:
             json_schema_extra[k] = v
@@ -55,7 +92,12 @@ def move_kwargs(**kwargs):
     constraints = _translate_pydantic_field_constraints(**kwargs)
     if constraints:
         json_schema_extra["constraints"] = constraints
-    pydantic_kwargs["json_schema_extra"] = json_schema_extra
+
+    if callable(user_schema_extra):
+        pydantic_kwargs["json_schema_extra"] = _SchemaExtraCallable(json_schema_extra, user_schema_extra)
+    else:
+        pydantic_kwargs["json_schema_extra"] = json_schema_extra
+
     return pydantic_kwargs
 
 
@@ -76,12 +118,12 @@ def _warn_deprecated_field_args(**kwargs):
             warnings.warn(message, DeprecationWarning, stacklevel=3)
 
 
-def InputField(**kwargs): # noqa: N802
+def InputField(**kwargs):  # noqa: N802
     _warn_deprecated_field_args(**kwargs)
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="input"))
 
 
-def OutputField(**kwargs): # noqa: N802
+def OutputField(**kwargs):  # noqa: N802
     _warn_deprecated_field_args(**kwargs)
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="output"))
 
