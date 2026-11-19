@@ -221,7 +221,7 @@ class Evaluate:
                     save_as_json,
                     "w",
             ) as f:
-                json.dump(data, f)
+                json.dump(data, f, default=_json_default)
 
         return EvaluationResult(
             score=round(100 * ncorrect / ntotal, 2),
@@ -328,6 +328,13 @@ def merge_dicts(d1, d2) -> dict:
             merged[k] = v
 
     return merged
+
+
+def _json_default(obj):
+    # Metrics may return dspy.Prediction(score=..., feedback=...), which json cannot encode as-is.
+    if hasattr(obj, "toDict"):
+        return obj.toDict()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
 def truncate_cell(content) -> str:
