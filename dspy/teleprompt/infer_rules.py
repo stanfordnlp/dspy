@@ -67,7 +67,7 @@ class InferRules(BootstrapFewShot):
                 return self.rules_induction_program(examples_text)
             except Exception as e:
                 assert (
-                    isinstance(e, ValueError)
+                    isinstance(e, (ValueError, dspy.ContextWindowExceededError))
                     or e.__class__.__name__ == "BadRequestError"
                     or "ContextWindowExceededError" in str(e)
                 )
