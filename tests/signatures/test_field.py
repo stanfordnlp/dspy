@@ -125,6 +125,21 @@ def test_callable_json_schema_extra_does_not_retry_callback_errors():
     assert schema["x-custom-extension"] == "dynamic_value"
 
 
+def test_callable_json_schema_extra_preserves_callback_arity():
+    calls = []
+
+    def custom_mutator(schema: dict):
+        calls.append(schema)
+        schema["x-custom-extension"] = "dynamic_value"
+
+    class DynamicSignature(dspy.Signature):
+        text: str = InputField(desc="Input text", json_schema_extra=custom_mutator)
+
+    schema = DynamicSignature.model_json_schema()
+    assert schema["properties"]["text"]["x-custom-extension"] == "dynamic_value"
+    assert len(calls) == 1
+
+
 def test_field_without_json_schema_extra_unchanged():
     class StandardSig(dspy.Signature):
         q: str = InputField(desc="Question", gt=0)
