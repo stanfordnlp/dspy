@@ -6,19 +6,20 @@ from typing import Any, get_origin
 
 from dspy._vendor.lm15.providers.common import MEDIA_KINDS
 from dspy._vendor.lm15.serde import continuation_to_dict
-from dspy._vendor.lm15.types import Part, ToolResultPart
+from dspy._vendor.lm15.types import Part, ToolResultPart, continuation_data
 from dspy.adapters.types import History, Type
 from dspy.adapters.types.base_type import CUSTOM_TYPE_START_IDENTIFIER, parts_from_text
 from dspy.adapters.types.citation import Citations
+from dspy.adapters.types.history import CONTINUATION_KEY
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.adapters.utils import apply_output_field_defaults, serialize_for_json
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.call_result import response_text
-from dspy.clients.capabilities import tool_result_media, with_capability_planning
+from dspy.clients.capabilities import assistant_replay_policy, tool_result_media, with_capability_planning
 from dspy.clients.requests import build_request
 from dspy.dsp.utils.settings import settings
-from dspy.lm15 import Message, Request, Response, TextPart
+from dspy.lm15 import Message, Request, Response, TextPart, ThinkingPart
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.exceptions import AdapterParseError
@@ -155,13 +156,22 @@ class Adapter:
                     lm_kwargs.pop(key, None)
 
         # Custom types that use native LM features, e.g., reasoning, citations.
+        native_reasoning_fields = []
         for name, field in signature.output_fields.items():
             if (
                 isinstance(field.annotation, type)
                 and field.annotation in self.native_response_types
                 and issubclass(field.annotation, Type)
             ):
-                signature = field.annotation.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
+                adapted = field.annotation.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
+                if field.annotation is Reasoning and name not in adapted.output_fields:
+                    native_reasoning_fields.append(name)
+                signature = adapted
+
+        if native_reasoning_fields and (history_field_name := self._get_history_field_name(signature)):
+            signature = signature.with_updated_fields(
+                history_field_name, __dspy_native_reasoning_fields=tuple(native_reasoning_fields)
+            )
 
         # Only surviving default reasoning fields need the explicit plan fallback.
         for name in signature.output_fields:
@@ -209,6 +219,8 @@ class Adapter:
                     value = self.parse(processed_signature, text) if text and processed_signature.output_fields else {}
                 except AdapterParseError:
                     value = {}
+            elif not processed_signature.output_fields and Reasoning.parse_lm_response(response) is not None:
+                value = {}
             else:
                 raise AdapterParseError(
                     adapter_name=type(self).__name__,
@@ -238,6 +250,7 @@ class Adapter:
                     ]
                 )
 
+            native_reasoning_captured = False
             # Custom types that read their value from the response itself.
             for name, field in original_signature.output_fields.items():
                 if (
@@ -249,9 +262,40 @@ class Adapter:
                         and Reasoning._fallback_field_name(original_signature, name) in processed_signature.output_fields
                     )
                 ):
+                    if field.annotation is Reasoning:
+                        native_reasoning_captured = True
                     parsed_value = field.annotation.parse_lm_response(response)
                     if parsed_value is not None:
                         value[name] = parsed_value
+
+            text_continuation = [
+                continuation_to_dict(state)
+                for part in response.message.parts
+                if part.type in ("text", "data")
+                for state in part.continuation
+            ]
+            message_continuation = [continuation_to_dict(state) for state in response.message.continuation]
+            uncaptured_thinking = (
+                [
+                    {
+                        "text": part.text,
+                        "continuation": [continuation_to_dict(state) for state in part.continuation],
+                    }
+                    for part in response.message.parts_of(ThinkingPart)
+                    if part.continuation
+                ]
+                if not native_reasoning_captured
+                else []
+            )
+            if text_continuation or message_continuation or uncaptured_thinking:
+                continuation_meta: dict[str, Any] = {}
+                if uncaptured_thinking:
+                    continuation_meta["thinking_parts"] = uncaptured_thinking
+                if text_continuation:
+                    continuation_meta["text_continuation"] = text_continuation
+                if message_continuation:
+                    continuation_meta["message_continuation"] = message_continuation
+                value[CONTINUATION_KEY] = continuation_meta
 
             if response.logprobs is not None:
                 value["logprobs"] = response.logprobs
@@ -287,7 +331,9 @@ class Adapter:
         """
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         prompt = self.format(processed_signature, demos, inputs)
-        request = _place_tool_result_media(build_request(lm, prompt, lm_kwargs), lm, lm_kwargs)
+        request = _adapt_assistant_continuations(
+            _place_tool_result_media(build_request(lm, prompt, lm_kwargs), lm, lm_kwargs), lm, lm_kwargs
+        )
         if settings.send_stream and settings.stream_listeners:
             from dspy.streaming.messages import _StreamSignature, sync_send_to_stream
 
@@ -306,7 +352,9 @@ class Adapter:
     ) -> list[dict[str, Any]]:
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         prompt = self.format(processed_signature, demos, inputs)
-        request = _place_tool_result_media(build_request(lm, prompt, lm_kwargs), lm, lm_kwargs)
+        request = _adapt_assistant_continuations(
+            _place_tool_result_media(build_request(lm, prompt, lm_kwargs), lm, lm_kwargs), lm, lm_kwargs
+        )
         if settings.send_stream and settings.stream_listeners:
             from dspy.streaming.messages import _StreamSignature
 
@@ -355,6 +403,10 @@ class Adapter:
             The rendered `Prompt`.
         """
         inputs_copy = dict(inputs)
+        for name, field in signature.input_fields.items():
+            if field.annotation is History and isinstance(inputs_copy.get(name), dict):
+                inputs_copy[name] = History.model_validate(inputs_copy[name])
+
         fallback_names = {
             field.json_schema_extra["__dspy_reasoning_field"]: name
             for name, field in signature.output_fields.items()
@@ -373,8 +425,13 @@ class Adapter:
         # remove the history field from the signature.
         history_field_name = self._get_history_field_name(signature)
         if history_field_name:
+            native_reasoning_fields = signature.input_fields[history_field_name].json_schema_extra.get(
+                "__dspy_native_reasoning_fields", ()
+            )
             # In order to format the conversation history, we need to remove the history field from the signature.
             signature_without_history = signature.delete(history_field_name)
+            if native_reasoning_fields:
+                signature_without_history._native_reasoning_fields = native_reasoning_fields
             conversation_history = self.format_conversation_history(
                 signature_without_history,
                 history_field_name,
@@ -662,6 +719,107 @@ def _place_tool_result_media(request: Request, lm: BaseLM, lm_kwargs: dict[str, 
         else:
             messages.append(message)
     return replace(request, messages=tuple(messages)) if len(messages) != len(request.messages) else request
+
+
+def _adapt_assistant_continuations(request: Request, lm: BaseLM, lm_kwargs: dict[str, Any]) -> Request:
+    """Keep only assistant thinking parts and continuation state that the target backend replays natively."""
+    if not any(
+        message.continuation or any(part.type == "thinking" or part.continuation for part in message.parts)
+        for message in request.messages
+        if message.role == "assistant"
+    ):
+        return request
+
+    policy = assistant_replay_policy(lm, lm_kwargs, request)
+    if policy.provider is None and policy.thinking == "all":
+        return request
+
+    def filter_continuations(states):
+        if not states or policy.provider == "":
+            return ()
+        if policy.provider is None:
+            return states
+        filtered = []
+        for state in states:
+            if state.provider != policy.provider:
+                continue
+            if (
+                state.provider == "openai"
+                and state.kind == "reasoning_item"
+                and not policy.allow_encrypted_openai
+                and "encrypted_content" in state.data
+            ):
+                state = replace(state, data={k: v for k, v in state.data.items() if k != "encrypted_content"})
+                if not state.data:
+                    continue
+            filtered.append(state)
+        return tuple(filtered)
+
+    def adapt_thinking_part(part: ThinkingPart) -> ThinkingPart | None:
+        if policy.thinking == "omit":
+            return None
+        if policy.thinking == "all":
+            cont = filter_continuations(part.continuation)
+            return part if cont == part.continuation else replace(part, continuation=cont)
+        if policy.thinking == "openai_reasoning_item":
+            cont = filter_continuations(part.continuation)
+            probe = part if cont == part.continuation else replace(part, continuation=cont)
+            return probe if continuation_data(probe, "openai", "reasoning_item") else None
+        if policy.thinking == "signed_anthropic":
+            cont = filter_continuations(part.continuation)
+            probe = part if cont == part.continuation else replace(part, continuation=cont)
+            if continuation_data(probe, "anthropic", "redacted_thinking") is not None:
+                return probe
+            sig = continuation_data(probe, "anthropic", "thinking_signature")
+            return probe if sig and sig.get("signature") else None
+        if policy.thinking == "unsigned_anthropic":
+            return ThinkingPart(text=part.text) if part.text else None
+        if policy.thinking == "gemini_thought":
+            cont = filter_continuations(part.continuation)
+            probe = part if cont == part.continuation else replace(part, continuation=cont)
+            thought = continuation_data(probe, "gemini", "thought_signature")
+            return probe if thought and thought.get("value") else None
+        if policy.thinking in ("native_chat", "include_empty_chat"):
+            if part.text or policy.thinking == "include_empty_chat":
+                return ThinkingPart(text=part.text) if part.continuation else part
+            return None
+        return None
+
+    messages = []
+    changed = False
+    for message in request.messages:
+        if message.role != "assistant":
+            messages.append(message)
+            continue
+        msg_cont = filter_continuations(message.continuation)
+        parts = []
+        parts_changed = msg_cont != message.continuation
+        for part in message.parts:
+            if isinstance(part, ThinkingPart):
+                adapted = adapt_thinking_part(part)
+                if adapted is None:
+                    parts_changed = True
+                    continue
+                if adapted != part:
+                    parts_changed = True
+                parts.append(adapted)
+            elif part.continuation:
+                part_cont = filter_continuations(part.continuation)
+                if part_cont != part.continuation:
+                    part = replace(part, continuation=part_cont)
+                    parts_changed = True
+                parts.append(part)
+            else:
+                parts.append(part)
+        if not parts:
+            parts = [TextPart("")]
+            parts_changed = True
+        if parts_changed:
+            changed = True
+            messages.append(replace(message, parts=tuple(parts), continuation=msg_cont))
+        else:
+            messages.append(message)
+    return replace(request, messages=tuple(messages)) if changed else request
 
 
 def _tool_result_content(value: Any) -> str | tuple[Part, ...]:

@@ -290,6 +290,10 @@ class ReAct(Module):
             if tool_call_results.tool_call_results:
                 tool_calls = tool_calls.model_copy(update={"tool_call_results": tool_call_results})
             event["tool_calls"] = tool_calls
+        from dspy.adapters.types.history import CONTINUATION_KEY
+
+        if CONTINUATION_KEY in pred:
+            event[CONTINUATION_KEY] = pred[CONTINUATION_KEY]
         return event
 
     def _forced_submit(

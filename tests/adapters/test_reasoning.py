@@ -179,3 +179,385 @@ def test_native_reasoning_default_survives_provider_omission():
 
     assert value["answer"] == "42"
     assert value["reasoning"] == dspy.Reasoning(content="(omitted)")
+
+
+def _round_trip_history(history: dspy.History, storage: str) -> dspy.History | dict:
+    if storage == "object":
+        return history
+    if storage == "python_dump":
+        return dspy.History.model_validate(history.model_dump())
+    if storage == "json_dict":
+        return history.model_dump(mode="json")
+    if storage == "json":
+        return dspy.History.model_validate_json(history.model_dump_json())
+    raise ValueError(f"Unknown storage mode: {storage}")
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("storage", ["object", "python_dump", "json_dict", "json"])
+@pytest.mark.parametrize("adapter_type,reply", [
+    (dspy.ChatAdapter, "[[ ## answer ## ]]\n42\n\n[[ ## completed ## ]]"),
+    (dspy.JSONAdapter, '{"answer": "42"}'),
+    (dspy.XMLAdapter, "<answer>42</answer>"),
+])
+def test_exposed_thinking_replays_through_history_across_adapters(asynchronous, storage, adapter_type, reply):
+    import asyncio
+
+    from dspy.lm15 import TextPart, ThinkingPart
+    from tests.test_utils.engines import make_response, recording_lm
+
+    class ConvSig(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    lm = recording_lm([
+        make_response(reply, thinking="Step 1: 19 + 23 = 42"),
+        make_response(reply, thinking="Step 2: verified"),
+    ])
+    predict = dspy.Predict(ConvSig)
+    with dspy.context(lm=lm, adapter=adapter_type()):
+        first = (
+            asyncio.run(predict.acall(question="First", history=dspy.History(messages=[])))
+            if asynchronous
+            else predict(question="First", history=dspy.History(messages=[]))
+        )
+        assert first.reasoning == "Step 1: 19 + 23 = 42"
+        history = _round_trip_history(dspy.History(messages=[{"question": "First", **first}]), storage)
+        second = (
+            asyncio.run(predict.acall(question="Continue", history=history))
+            if asynchronous
+            else predict(question="Continue", history=history)
+        )
+
+    assert second.answer == "42"
+    assistant_msgs = [m for m in lm.engine.requests[1].messages if m.role == "assistant"]
+    assert len(assistant_msgs) == 1
+    assert [p.text for p in assistant_msgs[0].parts_of(ThinkingPart)] == ["Step 1: 19 + 23 = 42"]
+    text_parts = assistant_msgs[0].parts_of(TextPart)
+    assert len(text_parts) == 1 and "42" in text_parts[0].text
+    assert "Step 1" not in text_parts[0].text
+
+
+@pytest.mark.parametrize("adapter_type,reply", [
+    (dspy.ChatAdapter, "[[ ## answer ## ]]\n42\n\n[[ ## completed ## ]]"),
+    (dspy.JSONAdapter, '{"answer": "42"}'),
+    (dspy.XMLAdapter, "<answer>42</answer>"),
+])
+@pytest.mark.parametrize("model,expects_reasoning_content", [
+    ("deepseek/deepseek-reasoner", True),
+    ("openai/o3", False),
+])
+def test_exposed_thinking_chat_wire_respects_provider_replay_policy(
+    monkeypatch, adapter_type, reply, model, expects_reasoning_content
+):
+    import json
+
+    from tests.clients.test_lm_engine_execution import DualResponse, native_transport
+
+    class ConvSig(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    def chat_body(content, reasoning_content=None):
+        msg = {"role": "assistant", "content": content}
+        if reasoning_content is not None:
+            msg["reasoning_content"] = reasoning_content
+        return DualResponse(status=200, body=json.dumps({
+            "id": "c1", "model": model.split("/", 1)[1],
+            "choices": [{"index": 0, "message": msg, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 4, "total_tokens": 9},
+        }).encode())
+
+    transport = native_transport(monkeypatch, [
+        chat_body(reply, reasoning_content="Exposed chain of thought"),
+        chat_body(reply),
+    ])
+    lm = dspy.LM(model, model_type="chat", engine="lm15", api_key="fake", cache=False, num_retries=0)
+    predict = dspy.Predict(ConvSig)
+    with dspy.context(lm=lm, adapter=adapter_type()):
+        first = predict(question="First", history=dspy.History(messages=[]))
+        history = dspy.History(messages=[{"question": "First", **first}])
+        predict(question="Continue", history=history)
+
+    wire_messages = json.loads(transport.requests[1].body)["messages"]
+    assistant_row = next(m for m in wire_messages if m["role"] == "assistant")
+    assert "Exposed chain of thought" not in (assistant_row.get("content") or "")
+    if expects_reasoning_content:
+        assert assistant_row["reasoning_content"] == "Exposed chain of thought"
+    else:
+        assert "reasoning_content" not in assistant_row
+
+
+@pytest.mark.parametrize("summary", [[], [{"type": "summary_text", "text": "Readable summary"}]])
+@pytest.mark.parametrize("storage", ["object", "json"])
+@pytest.mark.parametrize("with_reasoning_field", [True, False])
+def test_openai_responses_reasoning_item_replays_through_history_and_cache(
+    monkeypatch, summary, storage, with_reasoning_field
+):
+    import json
+
+    from tests.clients.test_lm_engine_execution import DualResponse, native_transport
+
+    class WithReasoning(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    class WithoutReasoning(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    turn1 = DualResponse(status=200, body=json.dumps({
+        "id": "resp_1", "model": "gpt-5", "status": "completed",
+        "output": [
+            {"type": "reasoning", "id": "rs_item_1", "encrypted_content": "enc_payload_1", "summary": summary},
+            {"type": "message", "role": "assistant", "content": [
+                {"type": "output_text", "text": "[[ ## answer ## ]]\n42\n\n[[ ## completed ## ]]"},
+            ]},
+        ],
+        "usage": {"input_tokens": 8, "output_tokens": 5, "total_tokens": 13},
+    }).encode())
+    turn2 = DualResponse(status=200, body=json.dumps({
+        "id": "resp_2", "model": "gpt-5", "status": "completed",
+        "output": [{"type": "message", "role": "assistant", "content": [
+            {"type": "output_text", "text": "[[ ## answer ## ]]\nConfirmed\n\n[[ ## completed ## ]]"},
+        ]}],
+        "usage": {"input_tokens": 16, "output_tokens": 5, "total_tokens": 21},
+    }).encode())
+
+    transport = native_transport(monkeypatch, [turn1, turn2, turn2])
+    lm = dspy.LM("openai/gpt-5", model_type="responses", engine="lm15", api_key="fake", cache=True, num_retries=0)
+    predict = dspy.Predict(WithReasoning if with_reasoning_field else WithoutReasoning)
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        first = predict(question="First-10675", history=dspy.History(messages=[]))
+        cached_first = predict(question="First-10675", history=dspy.History(messages=[]))
+        assert len(transport.requests) == 1
+        if with_reasoning_field:
+            expected_text = "Readable summary" if summary else ""
+            assert first.reasoning == expected_text
+            assert cached_first.reasoning == expected_text
+        history = _round_trip_history(dspy.History(messages=[{"question": "First-10675", **cached_first}]), storage)
+        second = predict(question="Continue-10675", history=history, config={"cache": False})
+
+    assert second.answer == "Confirmed"
+    wire2 = json.loads(transport.requests[1].body)
+    reasoning_items = [item for item in wire2["input"] if item.get("type") == "reasoning"]
+    assert reasoning_items == [{
+        "type": "reasoning",
+        "id": "rs_item_1",
+        "encrypted_content": "enc_payload_1",
+        "summary": summary,
+    }]
+
+
+@pytest.mark.parametrize("blocks,expected_text", [
+    (
+        [
+            {"type": "thinking", "thinking": "Signed block one. ", "signature": "sig_1"},
+            {"type": "redacted_thinking", "data": "opaque_redacted_1"},
+            {"type": "thinking", "thinking": "Signed block two.", "signature": "sig_2"},
+        ],
+        "Signed block one. Signed block two.",
+    ),
+    (
+        [{"type": "redacted_thinking", "data": "opaque_redacted_only"}],
+        "",
+    ),
+])
+@pytest.mark.parametrize("storage", ["object", "json"])
+def test_anthropic_signed_and_redacted_thinking_replays_through_history(
+    monkeypatch, blocks, expected_text, storage
+):
+    import json
+
+    from tests.clients.test_lm_engine_execution import DualResponse, native_transport
+
+    class ConvSig(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    turn1 = DualResponse(status=200, body=json.dumps({
+        "id": "msg_1", "type": "message", "role": "assistant", "model": "claude-sonnet-4-5",
+        "content": [*blocks, {"type": "text", "text": "[[ ## answer ## ]]\n42\n\n[[ ## completed ## ]]"}],
+        "stop_reason": "end_turn", "usage": {"input_tokens": 10, "output_tokens": 6},
+    }).encode())
+    turn2 = DualResponse(status=200, body=json.dumps({
+        "id": "msg_2", "type": "message", "role": "assistant", "model": "claude-sonnet-4-5",
+        "content": [{"type": "text", "text": "[[ ## answer ## ]]\nConfirmed\n\n[[ ## completed ## ]]"}],
+        "stop_reason": "end_turn", "usage": {"input_tokens": 18, "output_tokens": 5},
+    }).encode())
+
+    transport = native_transport(monkeypatch, [turn1, turn2])
+    lm = dspy.LM("anthropic/claude-sonnet-4-5", engine="lm15", api_key="fake", cache=False, num_retries=0)
+    predict = dspy.Predict(ConvSig)
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        first = predict(question="First", history=dspy.History(messages=[]))
+        assert first.reasoning == expected_text
+        history = _round_trip_history(dspy.History(messages=[{"question": "First", **first}]), storage)
+        second = predict(question="Continue", history=history)
+
+    assert second.answer == "Confirmed"
+    wire2 = json.loads(transport.requests[1].body)
+    assistant_content = wire2["messages"][1]["content"]
+    assert assistant_content[: len(blocks)] == blocks
+    assert assistant_content[len(blocks)]["type"] == "text"
+
+
+@pytest.mark.parametrize("storage", ["object", "json"])
+@pytest.mark.parametrize("thought_text", ["", "Gemini thought step"])
+def test_gemini_signatures_replay_on_thinking_text_and_tool_call_parts(monkeypatch, storage, thought_text):
+    import json
+
+    from tests.clients.test_lm_engine_execution import DualResponse, native_transport
+
+    def lookup(query: str) -> str:
+        return f"result:{query}"
+
+    class ToolConvSig(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        note: str | None = dspy.OutputField(default=None)
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    turn1 = DualResponse(status=200, body=json.dumps({
+        "candidates": [{
+            "content": {
+                "role": "model",
+                "parts": [
+                    {"thought": True, "text": thought_text, "thoughtSignature": "sig_thought_1"},
+                    {"text": "[[ ## note ## ]]\nchecking\n\n[[ ## completed ## ]]", "thoughtSignature": "sig_text_1"},
+                    {"functionCall": {"id": "call_1", "name": "lookup", "args": {"query": "dspy"}},
+                     "thoughtSignature": "sig_tool_1"},
+                ],
+            },
+            "finishReason": "STOP",
+        }],
+        "usageMetadata": {"promptTokenCount": 8, "candidatesTokenCount": 6, "totalTokenCount": 14},
+    }).encode())
+    turn2 = DualResponse(status=200, body=json.dumps({
+        "candidates": [{
+            "content": {
+                "role": "model",
+                "parts": [
+                    {"text": "[[ ## note ## ]]\ndone\n\n[[ ## completed ## ]]", "thoughtSignature": "sig_text_2"},
+                    {"functionCall": {"id": "call_2", "name": "lookup", "args": {"query": "done"}}},
+                ],
+            },
+            "finishReason": "STOP",
+        }],
+        "usageMetadata": {"promptTokenCount": 18, "candidatesTokenCount": 5, "totalTokenCount": 23},
+    }).encode())
+
+    transport = native_transport(monkeypatch, [turn1, turn2])
+    lm = dspy.LM("gemini/gemini-2.5-pro", engine="lm15", api_key="fake", cache=False, num_retries=0)
+    predict = dspy.Predict(ToolConvSig)
+    tools = [dspy.Tool(lookup)]
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=True)):
+        first = predict(question="First", history=dspy.History(messages=[]), tools=tools)
+        assert first.reasoning == thought_text
+        results = dspy.ToolCallResults.from_tool_calls_and_values(first.tool_calls, ["result:dspy"])
+        recorded = {
+            "question": "First",
+            **first,
+            "tool_calls": first.tool_calls.model_copy(update={"tool_call_results": results}),
+        }
+        history = _round_trip_history(dspy.History(messages=[recorded]), storage)
+        predict(question="Continue", history=history, tools=tools)
+
+    wire2 = json.loads(transport.requests[1].body)
+    model_parts = wire2["contents"][1]["parts"]
+    assert model_parts == [
+        {"text": thought_text, "thought": True, "thoughtSignature": "sig_thought_1"},
+        {"text": "[[ ## note ## ]]\nchecking\n\n[[ ## completed ## ]]\n", "thoughtSignature": "sig_text_1"},
+        {"functionCall": {"name": "lookup", "args": {"query": "dspy"}, "id": "call_1"},
+         "thoughtSignature": "sig_tool_1"},
+    ]
+
+
+@pytest.mark.parametrize("target_provider", ["anthropic", "gemini", "deepseek", "textual_fallback"])
+def test_incompatible_provider_or_textual_fallback_drops_foreign_opaque_state_safely(monkeypatch, target_provider):
+    import json
+
+    from dspy.lm15 import ThinkingPart
+    from tests.clients.test_lm_engine_execution import DualResponse, native_transport
+    from tests.test_utils.engines import make_response, recording_lm
+
+    turn1_openai = DualResponse(status=200, body=json.dumps({
+        "id": "resp_1", "model": "gpt-5", "status": "completed",
+        "output": [
+            {"type": "reasoning", "id": "rs_foreign", "encrypted_content": "enc_secret", "summary": []},
+            {"type": "message", "role": "assistant", "content": [
+                {"type": "output_text", "text": "<answer>42</answer>"},
+            ]},
+        ],
+        "usage": {"input_tokens": 8, "output_tokens": 4, "total_tokens": 12},
+    }).encode())
+
+    cot = dspy.ChainOfThought("question, history: dspy.History -> answer")
+    transport1 = native_transport(monkeypatch, [turn1_openai])
+    openai_lm = dspy.LM("openai/gpt-5", model_type="responses", engine="lm15", api_key="fake", cache=False, num_retries=0)
+    with dspy.context(lm=openai_lm, adapter=dspy.XMLAdapter(use_json_adapter_fallback=False)):
+        first = cot(question="First", history=dspy.History(messages=[]))
+    assert len(transport1.requests) == 1
+    assert first.reasoning == ""
+    history = dspy.History.model_validate_json(
+        dspy.History(messages=[{"question": "First", **first}]).model_dump_json()
+    )
+
+    if target_provider == "textual_fallback":
+        fallback_lm = recording_lm([make_response("<plan>explicit plan</plan><answer>84</answer>")])
+        with dspy.context(lm=fallback_lm, adapter=dspy.XMLAdapter(use_json_adapter_fallback=False)):
+            second = cot(question="Continue", history=history, config={"reasoning_effort": "none"})
+        assert second.answer == "84" and second.reasoning == "explicit plan"
+        req = fallback_lm.engine.requests[0]
+        assistant_msg = next(m for m in req.messages if m.role == "assistant")
+        assert assistant_msg.parts_of(ThinkingPart) == []
+        assert "<plan>\n\n</plan>" in assistant_msg.text
+        assert "enc_secret" not in str(req) and "__dspy_reasoning__" not in str(req)
+        return
+
+    replies = {
+        "anthropic": ("anthropic/claude-sonnet-4-5", {
+            "id": "m2", "type": "message", "role": "assistant", "model": "claude-sonnet-4-5",
+            "content": [{"type": "text", "text": "<answer>84</answer>"}],
+            "stop_reason": "end_turn", "usage": {"input_tokens": 10, "output_tokens": 4},
+        }),
+        "gemini": ("gemini/gemini-2.5-pro", {
+            "candidates": [{"content": {"role": "model", "parts": [{"text": "<answer>84</answer>"}]},
+                            "finishReason": "STOP"}],
+            "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 4, "totalTokenCount": 14},
+        }),
+        "deepseek": ("deepseek/deepseek-reasoner", {
+            "id": "c2", "model": "deepseek-reasoner",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "<answer>84</answer>"},
+                         "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14},
+        }),
+    }
+    model, body = replies[target_provider]
+    transport2 = native_transport(monkeypatch, [DualResponse(status=200, body=json.dumps(body).encode())])
+    target_lm = dspy.LM(model, engine="lm15", api_key="fake", cache=False, num_retries=0)
+    with dspy.context(lm=target_lm, adapter=dspy.XMLAdapter(use_json_adapter_fallback=False)):
+        second = cot(question="Continue", history=history)
+    assert second.answer == "84"
+    raw_wire = transport2.requests[0].body.decode("utf-8")
+    assert "enc_secret" not in raw_wire and "rs_foreign" not in raw_wire
+    wire2 = json.loads(raw_wire)
+    if target_provider == "anthropic":
+        assert wire2["messages"][1]["content"] == [{"type": "text", "text": "<answer>\n42\n</answer>"}]
+    elif target_provider == "gemini":
+        assert wire2["contents"][1]["parts"] == [{"text": "<answer>\n42\n</answer>"}]
+    else:
+        assistant_row = next(m for m in wire2["messages"] if m["role"] == "assistant")
+        assert assistant_row == {"role": "assistant", "content": "<answer>\n42\n</answer>", "reasoning_content": ""}
+

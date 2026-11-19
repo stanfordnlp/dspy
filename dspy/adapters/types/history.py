@@ -12,6 +12,9 @@ if TYPE_CHECKING:
     from dspy.signatures.signature import Signature
 
 
+CONTINUATION_KEY = "__dspy_continuation__"
+
+
 class History(pydantic.BaseModel):
     """Class representing the conversation history.
 
@@ -76,14 +79,30 @@ class History(pydantic.BaseModel):
         extra="forbid",
     )
 
-    @pydantic.field_serializer("messages", mode="wrap", when_used="json")
-    def _serialize_messages(self, messages: list[dict[str, Any]], handler: pydantic.SerializerFunctionWrapHandler):
+    @pydantic.field_serializer("messages", mode="wrap", when_used="always")
+    def _serialize_messages(
+        self,
+        messages: list[dict[str, Any]],
+        handler: pydantic.SerializerFunctionWrapHandler,
+        info: pydantic.SerializationInfo,
+    ):
         """Keep normal serialization; unsupported values use the adapter's text fallback, without mutating History."""
+        from dspy.adapters.types.reasoning import Reasoning
         from dspy.adapters.utils import serialize_for_json
 
+        if any(isinstance(value, Reasoning) for message in messages for value in message.values()):
+            messages = [
+                {
+                    key: value.to_history_value() if isinstance(value, Reasoning) else value
+                    for key, value in message.items()
+                }
+                for message in messages
+            ]
         try:
             return handler(messages)
         except PydanticSerializationError:
+            if info.mode != "json":
+                raise
             return handler(serialize_for_json(messages))
 
     def _remap_fields(self, names: dict[str, str]) -> History:
@@ -122,6 +141,8 @@ class History(pydantic.BaseModel):
                 if tool_calls is not None and tool_calls.tool_call_results is not None
                 else None
             )
+            thinking_parts, text_continuation, message_continuation = _continuation_from_message(message, signature)
+            assistant_values = _normalize_assistant_values(message)
 
             # Retain the original reminder for cache-prefix reuse, but not on output-only events.
             user_content = adapter.format_user_message_content(
@@ -133,11 +154,11 @@ class History(pydantic.BaseModel):
             if adapter.use_native_function_calling and tool_calls is not None:
                 content_signature = signature
                 for name, field in signature.output_fields.items():
-                    if field.annotation == ToolCalls or message.get(name) is None:
+                    if field.annotation == ToolCalls or assistant_values.get(name) is None:
                         content_signature = content_signature.delete(name)
 
                 content = (
-                    adapter.format_assistant_message_content(content_signature, message)
+                    adapter.format_assistant_message_content(content_signature, assistant_values)
                     if content_signature.output_fields
                     else ""
                 )
@@ -148,8 +169,10 @@ class History(pydantic.BaseModel):
                     if tool_call_ids != result_ids or not all(tool_call_ids):
                         tool_call_results = None
 
-                if content or tool_call_results is not None:
-                    parts = [TextPart(content)] if content else []
+                if thinking_parts or content or tool_call_results is not None:
+                    parts: list[Any] = list(thinking_parts)
+                    if content:
+                        parts.append(TextPart(content, continuation=text_continuation))
                     if tool_call_results is not None:
                         parts.extend(
                             ToolCallPart(
@@ -158,7 +181,7 @@ class History(pydantic.BaseModel):
                             )
                             for tool_call in tool_calls.tool_calls
                         )
-                    messages.append(Message.assistant(parts))
+                    messages.append(Message(role="assistant", parts=tuple(parts), continuation=message_continuation))
 
                 if tool_call_results is not None:
                     messages.append(Message.tool([
@@ -169,20 +192,79 @@ class History(pydantic.BaseModel):
                     ]))
                 continue
 
-            assistant_values = message
             if tool_call_field_name is not None and tool_call_results is not None:
-                assistant_values = dict(message)
+                assistant_values = dict(assistant_values)
                 assistant_values[tool_call_field_name] = tool_calls.model_copy(update={"tool_call_results": None})
 
-            assistant_content = adapter.format_assistant_message_content(signature, assistant_values)
-            if assistant_content:
-                messages.append(Message.assistant(assistant_content))
+            assistant_content = (
+                adapter.format_assistant_message_content(signature, assistant_values)
+                if signature.output_fields
+                else ""
+            )
+            if thinking_parts or assistant_content:
+                parts = list(thinking_parts)
+                if assistant_content:
+                    parts.append(TextPart(assistant_content, continuation=text_continuation))
+                messages.append(Message(role="assistant", parts=tuple(parts), continuation=message_continuation))
             if tool_call_results is not None:
                 content = adapter.format_user_message_content(
                     results_signature, {"tool_call_results": tool_call_results}
                 )
                 messages.append(user_message(content))
         return messages
+
+
+def _thinking_parts_from_value(value: Any):
+    from dspy.adapters.types.reasoning import REASONING_TYPE_KEY, Reasoning
+    from dspy.lm15 import ThinkingPart
+
+    if isinstance(value, Reasoning):
+        return value.to_thinking_parts()
+    if isinstance(value, dict) and value.get(REASONING_TYPE_KEY) is True:
+        return Reasoning.model_validate(value).to_thinking_parts()
+    if isinstance(value, str) and value:
+        return (ThinkingPart(text=value),)
+    return ()
+
+
+def _normalize_assistant_values(message: dict[str, Any]) -> dict[str, Any]:
+    from dspy.adapters.types.reasoning import REASONING_TYPE_KEY, Reasoning
+
+    if not any(isinstance(value, dict) and value.get(REASONING_TYPE_KEY) is True for value in message.values()):
+        return message
+    return {
+        key: Reasoning.model_validate(value)
+        if isinstance(value, dict) and value.get(REASONING_TYPE_KEY) is True
+        else value
+        for key, value in message.items()
+    }
+
+
+def _continuation_from_message(message: dict[str, Any], signature: type[Signature]):
+    from dspy._vendor.lm15.serde import continuation_from_dict
+    from dspy.adapters.types.reasoning import Reasoning
+    from dspy.lm15 import ThinkingPart
+
+    thinking_parts = []
+    for field_name in getattr(signature, "_native_reasoning_fields", ()):
+        thinking_parts.extend(_thinking_parts_from_value(message.get(field_name)))
+
+    raw = message.get(CONTINUATION_KEY)
+    text_continuation = ()
+    message_continuation = ()
+    if isinstance(raw, dict):
+        if not thinking_parts and not any(field.annotation is Reasoning for field in signature.output_fields.values()):
+            for item in raw.get("thinking_parts", ()):
+                if isinstance(item, dict):
+                    thinking_parts.append(
+                        ThinkingPart(
+                            text=item.get("text", ""),
+                            continuation=tuple(continuation_from_dict(state) for state in item.get("continuation", ())),
+                        )
+                    )
+        text_continuation = tuple(continuation_from_dict(state) for state in raw.get("text_continuation", ()))
+        message_continuation = tuple(continuation_from_dict(state) for state in raw.get("message_continuation", ()))
+    return tuple(thinking_parts), text_continuation, message_continuation
 
 
 def _tool_calls_from_message(message: dict[str, Any]) -> tuple[str | None, ToolCalls | None]:
