@@ -104,7 +104,7 @@ class Audio(Type):
             raise ValueError(f"Audio.from_url requires an HTTP(S) URL, received: {url}")
         response = requests.get(url, verify=verify, timeout=timeout)
         response.raise_for_status()
-        mime_type = response.headers.get("Content-Type", "audio/wav")
+        mime_type = response.headers.get("Content-Type", "audio/wav").split(";", 1)[0].strip().lower()
         if not mime_type.startswith("audio/"):
             raise ValueError(f"Unsupported MIME type for audio: {mime_type}")
         audio_format = mime_type.split("/")[1]

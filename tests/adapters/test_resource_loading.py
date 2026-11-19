@@ -2,10 +2,13 @@ import base64
 import json
 
 import pytest
+import requests
 from pydantic import TypeAdapter, ValidationError
 
 import dspy
 from dspy.adapters.utils import parse_value
+from dspy.clients.lm15_boundary import request_kwargs
+from dspy.lm15 import Message, Request
 
 
 def _forbid_host_io(monkeypatch):
@@ -225,3 +228,24 @@ def test_from_url_passes_verify(monkeypatch, factory, module, mime_type, verify)
     assert captured["verify"] is verify
     encoded = resource.url.split(",", 1)[1] if isinstance(resource, dspy.Image) else resource.data
     assert base64.b64decode(encoded) == b"remote bytes"
+
+
+@pytest.mark.parametrize("content_type", ["audio/wav", "audio/wav; codecs=1", "Audio/X-Wav"])
+def test_audio_from_url_normalizes_http_media_type(monkeypatch, content_type):
+    response = requests.Response()
+    response.status_code = 200
+    response.headers["Content-Type"] = content_type
+    response._content = b"audio bytes"
+
+    def send(session, request, **kwargs):
+        response.request = request
+        return response
+
+    monkeypatch.setattr(requests.Session, "send", send)
+    resource = dspy.Audio.from_url("https://example.com/sample.wav")
+
+    assert resource.audio_format == "wav"
+    request = Request(model="openai/test", messages=(Message.user(tuple(resource.format())),))
+    wire = request_kwargs(request, "chat")
+    assert wire["messages"][0]["content"][0]["input_audio"] == {"data": resource.data, "format": "wav"}
+    assert base64.b64decode(resource.data) == b"audio bytes"
