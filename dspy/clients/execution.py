@@ -246,7 +246,7 @@ def _select_engine(lm, call, asynchronous):
         try:
             backend.plan(call.request)
         except UnsupportedFeatureError:
-            if binding is not None:
+            if binding is not None or resolution.provider == "openai-decisions":
                 raise
             return compatibility_engine()
     return backend, resolution.provider

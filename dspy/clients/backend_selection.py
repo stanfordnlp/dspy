@@ -51,6 +51,12 @@ def select_backend(lm, options=None, request=None):
     spec = lm.engine
     if not isinstance(spec, str):
         raise TypeError("Custom engines supply their own capability contract")
+    prefix = lm.model.split("/", 1)[0].split(":", 1)[0].replace("_", "-")
+    if prefix == "openai-decisions" and (spec == "litellm" or lm.model_type not in {"auto", "chat"}):
+        raise UnsupportedFeatureError(
+            "OpenAI Decisions has no LiteLLM or chat fallback; use engine='auto' or 'lm15' "
+            "and model_type='auto'."
+        )
     clients = {key: val for key, val in lm.kwargs.items() if key in CLIENT_KEYS}
     clients.update({key: val for key, val in (options or {}).items() if key in CLIENT_KEYS})
     native = spec != "litellm" and lm.model_type != "text"
@@ -78,8 +84,8 @@ def select_backend(lm, options=None, request=None):
         from dspy.clients.requests import passthrough_keys
 
         extra = passthrough_keys(request)
-        if resolution.provider == "typesafe":
-            # System One natively accepts structured instructions and criteria.
+        if resolution.provider in {"typesafe", "openai-decisions"}:
+            # Native decision backends accept structured instructions and criteria.
             extra -= {"questions"}
         if resolution.provider == "openrouter":
             # Preserve the native cross-model fallback policy.
@@ -122,6 +128,11 @@ def select_backend(lm, options=None, request=None):
             native = False
     if spec == "litellm" and lm.model_type != "auto" and resolution is not None and not resolution.declared:
         resolution = None  # as before: the compatibility engine reads the model string itself
+    if resolution is not None and resolution.provider == "openai-decisions" and not native:
+        raise UnsupportedFeatureError(
+            "OpenAI Decisions requires the native engine and native client settings; "
+            "it has no LiteLLM or chat fallback."
+        )
     if spec == "lm15" and not native:
         unsupported = sorted(key for key, value in clients.items() if key not in NATIVE_CLIENT_KEYS and value is not None)
         raise UnsupportedFeatureError(

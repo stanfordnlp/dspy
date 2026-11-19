@@ -73,7 +73,7 @@ def test_vendored_lm15_carries_provenance_and_license():
     pkg = Path(lm15.__file__).parent
     assert (pkg / "py.typed").is_file()
     marker = dict(line.split("=", 1) for line in (pkg.parent / "lm15-provenance.txt").read_text().splitlines())
-    assert marker["source"] == "https://github.com/cmpnd-ai/lm15-python.git"
+    assert marker["source"] == "https://github.com/anandpant/lm15-python.git"
     assert marker["version"] == lm15.__version__ != "0.0.0"
     for key in ("commit", "contract", "split"):
         assert len(marker[key]) == 40
