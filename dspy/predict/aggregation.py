@@ -2,6 +2,25 @@ from dspy.evaluate import normalize_text
 from dspy.primitives.prediction import Completions, Prediction
 
 
+def _values_equal(left, right):
+    """Compare vote values, including array-like equality results."""
+    if left is None or right is None:
+        return left is right
+
+    left_shape = getattr(left, "shape", None)
+    right_shape = getattr(right, "shape", None)
+    if left_shape is not None and right_shape is not None and left_shape != right_shape:
+        return False
+
+    try:
+        equal = left == right
+        if not isinstance(equal, bool) and hasattr(equal, "all"):
+            equal = equal.all()
+        return bool(equal)
+    except (TypeError, ValueError):
+        return False
+
+
 def default_normalize(s):
     # Text normalization only applies to strings; vote on other values (ints, bools, enums) as-is.
     if not isinstance(s, str):
@@ -43,14 +62,32 @@ def majority(prediction_or_completions, normalize=default_normalize, field=None)
 
     # Count
     value_counts = {}
+    use_dict = True
     for value in normalized_values_ or normalized_values:
-        value_counts[value] = value_counts.get(value, 0) + 1
+        try:
+            value_counts[value] = value_counts.get(value, 0) + 1
+        except TypeError:
+            use_dict = False
+            break
 
-    majority_value = max(value_counts, key=value_counts.get)
+    if use_dict:
+        majority_value = max(value_counts, key=value_counts.get)
+    else:
+        counted_values = []
+        counts = []
+        for value in normalized_values_ or normalized_values:
+            for i, counted in enumerate(counted_values):
+                if _values_equal(counted, value):
+                    counts[i] += 1
+                    break
+            else:
+                counted_values.append(value)
+                counts.append(1)
+        majority_value = counted_values[max(range(len(counts)), key=lambda i: counts[i])]
 
     # Return the first completion with the majority value in the field
     for completion in completions:
-        if normalize(completion[field]) == majority_value:
+        if _values_equal(normalize(completion[field]), majority_value):
             break
 
     # if input_type == Prediction:
