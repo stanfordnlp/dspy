@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 from typing import TYPE_CHECKING, Any, Callable, get_args
 
@@ -242,7 +243,7 @@ class ReAct(Module):
                 continue
 
             try:
-                value = self.tools[tool_call.name](**(tool_call.args or {}))
+                value = self.tools[tool_call.name](**(copy.deepcopy(tool_call.args) or {}))
                 values.append(value)
                 is_errors.append(False)
                 if tool_call.name == "submit" and isinstance(value, dict):
@@ -265,7 +266,7 @@ class ReAct(Module):
                 continue
 
             try:
-                value = await self.tools[tool_call.name].acall(**(tool_call.args or {}))
+                value = await self.tools[tool_call.name].acall(**(copy.deepcopy(tool_call.args) or {}))
                 values.append(value)
                 is_errors.append(False)
                 if tool_call.name == "submit" and isinstance(value, dict):
