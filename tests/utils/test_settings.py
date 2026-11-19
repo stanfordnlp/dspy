@@ -268,3 +268,87 @@ def callback(x):
         # Only need to clean up sys.path
         if str(tmp_path) in sys.path:
             sys.path.remove(str(tmp_path))
+
+
+@pytest.mark.asyncio
+async def test_async_context_manager_basic():
+    with dspy.context(lm=dspy.LM("openai/gpt-4o"), callbacks=[lambda x: x]):
+        assert dspy.settings.lm.model == "openai/gpt-4o"
+
+        async with dspy.context(lm=dspy.LM("openai/gpt-4o-mini"), callbacks=[]):
+            assert dspy.settings.lm.model == "openai/gpt-4o-mini"
+            assert len(dspy.settings.callbacks) == 0
+
+        assert dspy.settings.lm.model == "openai/gpt-4o"
+        assert len(dspy.settings.callbacks) == 1
+
+
+@pytest.mark.asyncio
+async def test_acontext_alias():
+    with dspy.context(lm=dspy.LM("openai/gpt-4o")):
+        async with dspy.acontext(lm=dspy.LM("openai/gpt-4o-mini")):
+            assert dspy.settings.lm.model == "openai/gpt-4o-mini"
+        assert dspy.settings.lm.model == "openai/gpt-4o"
+
+
+@pytest.mark.asyncio
+async def test_async_context_concurrency_isolation():
+    with dspy.context(lm=dspy.LM("openai/gpt-4o")):
+        async def task(name, expected_model):
+            async with dspy.context(lm=dspy.LM(expected_model), trace=[name]):
+                await asyncio.sleep(0.05)
+                assert dspy.settings.lm.model == expected_model
+                assert dspy.settings.trace == [name]
+
+        await asyncio.gather(
+            task("task1", "openai/gpt-4o-mini"),
+            task("task2", "anthropic/claude-sonnet-4-6"),
+            task("task3", "google/gemini-2.0-flash"),
+        )
+
+        assert dspy.settings.lm.model == "openai/gpt-4o"
+
+
+@pytest.mark.asyncio
+async def test_async_context_nested():
+    with dspy.context(lm=dspy.LM("openai/gpt-4o")):
+        async with dspy.context(lm=dspy.LM("openai/gpt-4o-mini")):
+            assert dspy.settings.lm.model == "openai/gpt-4o-mini"
+            async with dspy.context(lm=dspy.LM("anthropic/claude-sonnet-4-6")):
+                assert dspy.settings.lm.model == "anthropic/claude-sonnet-4-6"
+            assert dspy.settings.lm.model == "openai/gpt-4o-mini"
+
+        assert dspy.settings.lm.model == "openai/gpt-4o"
+
+
+def test_context_decorator_sync():
+    with dspy.context(lm=dspy.LM("openai/gpt-4o")):
+        @dspy.context(lm=dspy.LM("openai/gpt-4o-mini"))
+        def sync_fn():
+            return dspy.settings.lm.model
+
+        assert sync_fn() == "openai/gpt-4o-mini"
+        assert dspy.settings.lm.model == "openai/gpt-4o"
+
+
+@pytest.mark.asyncio
+async def test_context_decorator_async():
+    with dspy.context(lm=dspy.LM("openai/gpt-4o")):
+        @dspy.context(lm=dspy.LM("openai/gpt-4o-mini"))
+        async def async_fn():
+            await asyncio.sleep(0.01)
+            return dspy.settings.lm.model
+
+        assert await async_fn() == "openai/gpt-4o-mini"
+        assert dspy.settings.lm.model == "openai/gpt-4o"
+
+
+@pytest.mark.asyncio
+async def test_async_context_exception_safety():
+    with dspy.context(lm=dspy.LM("openai/gpt-4o")):
+        with pytest.raises(ValueError, match="boom"):
+            async with dspy.context(lm=dspy.LM("openai/gpt-4o-mini")):
+                assert dspy.settings.lm.model == "openai/gpt-4o-mini"
+                raise ValueError("boom")
+
+        assert dspy.settings.lm.model == "openai/gpt-4o"

@@ -1,9 +1,10 @@
 import asyncio
 import contextvars
 import copy
+import functools
+import inspect
 import logging
 import threading
-from contextlib import contextmanager
 from typing import Any
 
 import cloudpickle
@@ -50,6 +51,53 @@ global_lock = threading.Lock()
 thread_local_overrides: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar(
     "context_overrides", default=dotdict()
 )
+
+
+class SettingsContext:
+    """Context manager and decorator for temporary DSPy settings.
+
+    Supports synchronous `with`, asynchronous `async with`, and can be used
+    as a decorator on both sync and async functions.
+    """
+
+    def __init__(self, settings_instance: Any = None, **kwargs: Any):
+        self.settings = settings_instance
+        self.kwargs = kwargs
+        self.tokens: list[contextvars.Token] = []
+
+    def __enter__(self):
+        original_overrides = thread_local_overrides.get().copy()
+        new_overrides = dotdict({**main_thread_config, **original_overrides, **self.kwargs})
+        token = thread_local_overrides.set(new_overrides)
+        self.tokens.append(token)
+        return self.settings
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.tokens:
+            token = self.tokens.pop()
+            thread_local_overrides.reset(token)
+
+    async def __aenter__(self):
+        return self.__enter__()
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        return self.__exit__(exc_type, exc_val, exc_tb)
+
+    def __call__(self, func):
+        if inspect.iscoroutinefunction(func):
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                async with SettingsContext(self.settings, **self.kwargs):
+                    return await func(*args, **kwargs)
+
+            return async_wrapper
+        else:
+            @functools.wraps(func)
+            def sync_wrapper(*args, **kwargs):
+                with SettingsContext(self.settings, **self.kwargs):
+                    return func(*args, **kwargs)
+
+            return sync_wrapper
 
 
 class Settings:
@@ -216,14 +264,15 @@ class Settings:
         for k, v in kwargs.items():
             main_thread_config[k] = v
 
-    @contextmanager
-    def context(self, **kwargs):
-        """Override DSPy settings for one `with` block.
+    def context(self, **kwargs) -> SettingsContext:
+        """Override DSPy settings for one `with` or `async with` block.
 
         Use `dspy.context(...)` when you need temporary settings—a different
         LM, adapter, or flag—without changing the process-wide defaults from
         `dspy.configure(...)`. The block inherits every current setting,
         overrides only the keys you pass, and restores the originals on exit.
+
+        Supports synchronous `with`, asynchronous `async with`, and function decoration.
 
         Unlike `dspy.configure(...)`, you can call `dspy.context(...)` from
         any thread or async task.
@@ -233,17 +282,35 @@ class Settings:
                 `track_usage`, or `allow_tool_async_sync_conversion`.
 
         Examples:
-            Use a different LM for one call:
+            Sync context:
             ```python
             import dspy
 
-            dspy.configure(lm=dspy.LM("openai/gpt-5-mini"))
             qa = dspy.Predict("question -> answer")
 
             with dspy.context(lm=dspy.LM("anthropic/claude-sonnet-4-6")):
                 result = qa(question="What is the capital of France?")
-                # uses claude-sonnet-4-6 inside this block
-            # back to gpt-5-mini here
+            ```
+
+            Async context:
+            ```python
+            import dspy
+
+            qa = dspy.Predict("question -> answer")
+
+            async with dspy.context(lm=dspy.LM("anthropic/claude-sonnet-4-6")):
+                result = await qa.acall(question="What is the capital of France?")
+            ```
+
+            Decorator:
+            ```python
+            import dspy
+
+            qa = dspy.Predict("question -> answer")
+
+            @dspy.context(lm=dspy.LM("anthropic/claude-sonnet-4-6"))
+            async def ask(q):
+                return await qa.acall(question=q)
             ```
 
         See Also:
@@ -251,14 +318,11 @@ class Settings:
         """
         # `dspy.context` is documented manually in docs/docs/api/utils/context.md
         # changes here should be reflected there as well.
-        original_overrides = thread_local_overrides.get().copy()
-        new_overrides = dotdict({**main_thread_config, **original_overrides, **kwargs})
-        token = thread_local_overrides.set(new_overrides)
+        return SettingsContext(self, **kwargs)
 
-        try:
-            yield
-        finally:
-            thread_local_overrides.reset(token)
+    def acontext(self, **kwargs) -> SettingsContext:
+        """Asynchronous alias for `context`."""
+        return self.context(**kwargs)
 
     def __repr__(self):
         overrides = thread_local_overrides.get()
