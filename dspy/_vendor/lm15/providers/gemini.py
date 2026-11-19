@@ -707,8 +707,11 @@ class GeminiLM(BaseProviderLM):
         inlineData/fileData in the caller's order; the name resolved from the
         transcript's matching functionCall when the caller gave none (rule 6).
         Every model takes the shape; Gemini 2.5 answers HTTP 400 itself."""
-        text_parts = tuple(p for p in part.content if p.type not in MEDIA_KINDS)
         media_parts = [p for p in part.content if p.type in MEDIA_KINDS]
+        # MAP-24: beside media, an empty text part writes nothing (the media
+        # is the result); alone, it is the empty output and is written.
+        text_parts = tuple(p for p in part.content if p.type not in MEDIA_KINDS
+                           and not (media_parts and isinstance(p, TextPart) and p.text == ""))
         for p in media_parts:
             if p.type not in ("image", "document"):
                 raise UnsupportedFeatureError(
@@ -775,11 +778,34 @@ class GeminiLM(BaseProviderLM):
             return out
         return {"text": getattr(part, "text", "") or ""}
 
-    def _message(self, msg: Message, names: dict[str, str] | None = None) -> dict[str, Any]:
+    @staticmethod
+    def _writes_nothing(wire_part: dict[str, Any]) -> bool:
+        """MAP-24 on this wire: a part that is only ``{"text": ""}``.  One
+        that also carries a ``thoughtSignature`` is state this dialect
+        consumes and goes back as the model sent it."""
+        return wire_part.get("text") == "" and "thoughtSignature" not in wire_part and set(wire_part) <= {"text", "thought"}
+
+    def _message(self, msg: Message, names: dict[str, str] | None = None) -> dict[str, Any] | None:
+        """One content, or None when it has nothing to write (MAP-24): a
+        content with no parts is refused ("must include at least one parts
+        field", live 2026-11-11), so a message whose parts all write
+        nothing is not written."""
         role = "model" if msg.role == "assistant" else "user"
         if msg.role == "developer":
-            return {"role": "user", "parts": [{"text": f"[developer]\n{parts_to_text(msg.parts, provider=self.provider, where='a developer turn')}"}]}
-        return {"role": role, "parts": [self._part(part, names) for part in msg.parts]}
+            text = parts_to_text(msg.parts, provider=self.provider, where="a developer turn")
+            return {"role": "user", "parts": [{"text": f"[developer]\n{text}"}]} if text else None
+        parts = [wire for wire in (self._part(part, names) for part in msg.parts) if not self._writes_nothing(wire)]
+        return {"role": role, "parts": parts} if parts else None
+
+    def _contents(self, messages, names: dict[str, str] | None = None) -> list[dict[str, Any]]:
+        """The messages that have something to write, in order (MAP-24)."""
+        return [wire for wire in (self._message(m, names) for m in messages) if wire is not None]
+
+    @staticmethod
+    def _system_instruction(system) -> dict[str, Any] | None:
+        """``systemInstruction``, or None for a system prompt with no characters (MAP-24)."""
+        text = system if isinstance(system, str) else parts_to_text(system)
+        return {"parts": [{"text": text}]} if text else None
 
     @staticmethod
     def _call_names(messages) -> dict[str, str]:
@@ -857,12 +883,13 @@ class GeminiLM(BaseProviderLM):
             raise ValueError("gemini: a request against a stored cache needs at least one message after the prefix")
 
         names = self._call_names(request.messages)
-        payload: dict[str, Any] = {"contents": [self._message(m, names) for m in wire_messages]}
+        payload: dict[str, Any] = {"contents": self._contents(wire_messages, names)}
         if resource is not None:
             payload["cachedContent"] = self._cache_resource(resource)
         if request.system and resource is None:
-            text = request.system if isinstance(request.system, str) else parts_to_text(request.system)
-            payload["systemInstruction"] = {"parts": [{"text": text}]}
+            instruction = self._system_instruction(request.system)
+            if instruction is not None:
+                payload["systemInstruction"] = instruction
 
         generation_config: dict[str, Any] = {}
         if request.config.temperature is not None:
@@ -1326,7 +1353,7 @@ class GeminiLM(BaseProviderLM):
         if len(request.messages) == 1 and request.messages[0].role == "user" and all(isinstance(p, TextPart) for p in request.messages[0].parts):
             return [{"realtimeInput": {"text": parts_to_text(request.messages[0].parts)}}]
         names = self._call_names(request.messages)
-        return [{"clientContent": {"turns": [self._message(m, names) for m in request.messages], "turnComplete": True}}]
+        return [{"clientContent": {"turns": self._contents(request.messages, names), "turnComplete": True}}]
 
     def _build_realtime_input_payloads(self, request: Request) -> list[dict[str, Any]]:
         text_payloads: list[dict[str, Any]] = []
@@ -1483,7 +1510,9 @@ class GeminiLM(BaseProviderLM):
     def _live_setup_payload(self, config: LiveConfig) -> dict[str, Any]:
         setup: dict[str, Any] = {"model": self._model_path(config.model)}
         if config.system:
-            setup["systemInstruction"] = {"parts": [{"text": config.system if isinstance(config.system, str) else parts_to_text(config.system)}]}
+            instruction = self._system_instruction(config.system)
+            if instruction is not None:
+                setup["systemInstruction"] = instruction
         function_tools = [
             _gemini_function_declaration(t)
             for t in config.tools
@@ -1750,11 +1779,12 @@ class GeminiLM(BaseProviderLM):
     def _cache_create_request(self, prefix: Request, ttl_seconds: int | None, label: str | None) -> TransportRequest:
         body: dict[str, Any] = {
             "model": self._model_path(prefix.model),
-            "contents": [self._message(m, self._call_names(prefix.messages)) for m in prefix.messages],
+            "contents": self._contents(prefix.messages, self._call_names(prefix.messages)),
         }
         if prefix.system:
-            text = prefix.system if isinstance(prefix.system, str) else parts_to_text(prefix.system)
-            body["systemInstruction"] = {"parts": [{"text": text}]}
+            instruction = self._system_instruction(prefix.system)
+            if instruction is not None:
+                body["systemInstruction"] = instruction
         if prefix.tools:
             declarations = [
                 _gemini_function_declaration(t)

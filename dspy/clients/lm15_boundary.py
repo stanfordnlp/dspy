@@ -43,10 +43,12 @@ class _SDKChatLM(OpenAIChatLM):
             media = message.role == "user" and any(part.type in {"audio", "document"} for part in message.parts)
             # Delegate every other message shape, including multi-row tool
             # results and system-prefix caching, to the bundled writer.
+            # For SDK media, the empty message writes no row; keep only the
+            # system prefix here and append the SDK content below.
             rendered = super()._build_messages(
                 replace(request, messages=(Message.user("") if media else message,),
                         system=request.system if index == 0 else None),
-                compat, breakpoint_index=0 if index == breakpoint_index else None,
+                compat, breakpoint_index=0 if not media and index == breakpoint_index else None,
             )
             if media:
                 content = []
@@ -71,7 +73,7 @@ class _SDKChatLM(OpenAIChatLM):
                     if not content or content[-1]["type"] != "text":
                         raise UnsupportedFeatureError("A Chat cache breakpoint requires a final text content block")
                     content[-1]["prompt_cache_breakpoint"] = {"mode": "explicit"}
-                rendered[-1]["content"] = content
+                rendered.append({"role": "user", "content": content})
             rows.extend(rendered)
         return rows
 

@@ -344,11 +344,12 @@ def _chat_bound(
     access: AccessPolicy,
     *,
     compat: str | None = None,
+    aliases: tuple[str, ...] = (),
     placeholder_key: str | None = None,
     console_url: str | None = None,
     note: str = "",
 ) -> ProviderDefinition:
-    return ProviderDefinition.chat(access, compat=compat or access.provider, placeholder_key=placeholder_key,
+    return ProviderDefinition.chat(access, compat=compat or access.provider, aliases=aliases, placeholder_key=placeholder_key,
                                    console_url=console_url, note=note)
 
 
@@ -492,6 +493,24 @@ _DEFINITIONS: tuple[ProviderDefinition, ...] = (
         _access.PARASAIL,
         console_url="https://www.saas.parasail.io/keys",
         note="Parasail open-model inference (Chat Completions dialect; serverless models)",
+    ),
+    _chat_bound(
+        _access.TINKER,
+        # models.dev's id for the service; one spelling, one door: the Chat
+        # Completions door, the one with a catalog and every reasoning switch.
+        aliases=("thinkingmachines",),
+        console_url="https://tinker.thinkingmachines.ai/keys",
+        note="Tinker (Thinking Machines): base models and your own checkpoints (tinker://…, routed whole) over the "
+             "Chat Completions wire (beta); reasoning_effort per base family; RouterConfig(base_models=...) names a "
+             "checkpoint's base; no response_format; GET /models lists your sampler checkpoints with their base model",
+    ),
+    _anthropic_bound(
+        _access.TINKER_ANTHROPIC,
+        compat="tinker",
+        console_url="https://tinker.thinkingmachines.ai/keys",
+        note="Tinker over the Anthropic Messages wire (same TINKER_API_KEY, x-api-key; beta): output_config.effort; "
+             "the Qwen, Kimi K2.6 and Nemotron families can neither turn reasoning off nor take an effort word here "
+             "(use `tinker`); no output_config.format; no /models",
     ),
     _responses_bound(
         _access.META,

@@ -183,6 +183,16 @@ def openai_file_readiness(status: object) -> FileReadiness:
 MEDIA_KINDS: frozenset[str] = frozenset({"image", "audio", "video", "document", "binary"})
 
 
+def is_empty_text_block(block: Any) -> bool:
+    """MAP-24: a wire block that is text with no characters, in the three
+    typed spellings (Messages and Chat Completions ``text``, Responses
+    ``input_text`` / ``output_text``).  No wire is sent one: a part whose
+    block is this writes nothing, and a message left with nothing is not
+    written.  (A Gemini part has no ``type``; its builder decides.)"""
+    return (isinstance(block, dict) and block.get("type") in ("text", "input_text", "output_text")
+            and block.get("text") == "")
+
+
 def parts_to_text(parts: tuple[Part, ...], *, provider: str | None = None,
                   where: str = "a text-only wire field") -> str:
     """Text rendering for wire fields that take text only.
@@ -205,7 +215,10 @@ def parts_to_text(parts: tuple[Part, ...], *, provider: str | None = None,
                 provider=provider, feature=f"messages[*].parts[{part.type}]",
             )
         if isinstance(part, TextPart):
-            out.append(part.text)
+            # MAP-24: an empty text part writes nothing, a joining newline
+            # included.
+            if part.text:
+                out.append(part.text)
         elif isinstance(part, DataPart):
             out.append(data_part_text(part))
         elif isinstance(part, ThinkingPart) and part.text:
@@ -411,7 +424,9 @@ def model_infos_from_entries(
 
     ``id`` is the usable Request.model string (``id_of`` extracts it); the
     verbatim wire entry is preserved under ``origin.provider_data`` (opaque,
-    never cleaned).  Entries without a usable id are skipped.
+    never cleaned).  Entries without a usable id are skipped.  An entry with
+    a non-empty string ``base_model`` other than its own id is
+    ``origin.type="fine-tune"`` with that ``base_model`` (MAP-23).
     """
     if not isinstance(entries, list):
         return ()
@@ -422,14 +437,13 @@ def model_infos_from_entries(
         model_id = id_of(entry)
         if not isinstance(model_id, str) or not model_id:
             continue
-        out.append(
-            ModelInfo(
-                id=model_id,
-                provider=provider,
-                api_family=api_family,
-                origin=ModelOrigin(type="provider", provider_data=entry),
-            )
-        )
+        # MAP-23: an entry that names the model it was trained from (Tinker's
+        # checkpoints: "base_model": "Qwen/Qwen3.5-4B") is a fine-tune.
+        base = entry.get("base_model")
+        origin = (ModelOrigin(type="fine-tune", base_model=base, provider_data=entry)
+                  if isinstance(base, str) and base and base != model_id
+                  else ModelOrigin(type="provider", provider_data=entry))
+        out.append(ModelInfo(id=model_id, provider=provider, api_family=api_family, origin=origin))
     return tuple(out)
 
 
@@ -501,6 +515,8 @@ def tool_result_output_openai(provider: str, part: ToolResultPart, policy: str) 
     blocks: list[dict[str, Any]] = []
     for p in part.content:
         block = part_to_openai_input(p, provider=provider)
+        if is_empty_text_block(block):
+            continue  # MAP-24: the result is written, its empty text block is not
         blocks.append(block)
     if part.is_error:
         first = next((b for b in blocks if b.get("type") == "input_text"), None)

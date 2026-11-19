@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator, Iterator
 from dataclasses import replace
 
 from dspy._vendor.lm15.registry import canonical_provider
-from dspy._vendor.lm15.router import LITELLM_PROVIDER_PREFIXES
+from dspy._vendor.lm15.router import LITELLM_PROVIDER_PREFIXES, REGISTRY_ALIASES
 from dspy._vendor.lm15.types import StreamEvent
 from dspy.clients.engines.base import validate_request
 from dspy.clients.engines.lifecycle import aclosing_stream, closing_stream
@@ -74,6 +74,8 @@ def _model_string(model: str, model_type: str, providers=()) -> str:
                 provider = {"openai-chat": "openai", "azure-chat": "azure"}.get(provider, provider)
             return f"{provider}:{rest}"
         spelling = canonical_provider(head)
+        if spelling in REGISTRY_ALIASES:
+            return f"{REGISTRY_ALIASES[spelling]}:{rest}"
         for definition in providers:
             if spelling in definition.spellings:
                 return f"{definition.id}:{rest}"

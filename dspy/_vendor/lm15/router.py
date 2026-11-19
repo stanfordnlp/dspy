@@ -38,6 +38,12 @@ id and falls through to the catalog and rule rungs.  Consequence: a
 fine-tune id like ``ft:gpt-4.1:org`` needs the explicit form
 ``openai:ft:gpt-4.1:org``.
 
+A URI is one name (2026-11-09): a string whose first ``:`` is followed by
+``//`` (``tinker://<run>:train:0/sampler_weights/<name>``) is never read
+as ``provider:model``, whatever its scheme; it falls through to the catalog
+and rule rungs whole, and a rule routes it by its scheme (``tinker://``).
+The explicit form still works: ``tinker:tinker://…`` sends ``tinker://…``.
+
 Credentials
 -----------
 ``resolve()`` touches no network and invokes no credential provider.
@@ -143,6 +149,7 @@ DEFAULT_RULES: tuple[RouteRule, ...] = (
     RouteRule("veo-", "gemini", note="Google Veo video generation"),
     RouteRule("chat-latest", "openai", note="OpenAI rolling chat alias (live /models listing 2026-09-01)"),
     RouteRule("jev-", "typesafe", note="TypeSafe Jev (live /v1/models listing 2026-09-17: jev-latest, jev-preview; versioned ids jev-1.13.0 accepted)"),
+    RouteRule("tinker://", "tinker", note="a Tinker sampler checkpoint path (live /models listing 2026-11-09); a URI is one name, never provider:model"),
 )
 
 
@@ -290,9 +297,18 @@ def _routable(provider: str, adapters: Mapping[str, type]) -> bool:
     return provider in adapters or _bound(provider, adapters) is not None
 
 
+# Input spellings of the registry's own entries (ProviderDefinition.aliases;
+# 2026-11-09, the first: `thinkingmachines`, models.dev's id for Tinker).
+REGISTRY_ALIASES: Mapping[str, str] = MappingProxyType(
+    {alias: d.id for d in PROVIDERS.values() for alias in d.aliases}
+)
+
+
 def _provider_id(name: str, adapters: Mapping[str, type]) -> str:
-    """A canonical input spelling → the provider it names: a declared
-    alias resolves to its provider; anything else is itself."""
+    """A canonical input spelling → the provider it names: a registry or
+    declared alias resolves to its provider; anything else is itself."""
+    if name in REGISTRY_ALIASES:
+        return REGISTRY_ALIASES[name]
     if isinstance(adapters, _Table):
         return adapters.alias(name) or name
     return name
@@ -492,6 +508,16 @@ class RouterConfig:
     An id or alias that a registry entry or litellm prefix already spells
     is refused: one string, one door.
 
+    ``base_models`` maps a fine-tuned model's id (the string sent as the
+    model, e.g. a Tinker checkpoint ``tinker://<run>/sampler_weights/<n>``)
+    to the model it was trained from (``Qwen/Qwen3.5-4B``).  A provider's
+    per-model rules (a compat preset's ``model_overrides``) are chosen by the
+    model's own name first, then by its base model's: a fine-tune speaks its
+    base model's dialect (Tinker answers ``reasoning_effort`` per base
+    family).  It is never sent and never discovered: lm15 asks no server
+    behind your back.  The provider's catalog states it
+    (``router.models("tinker")`` → ``ModelInfo.origin.base_model``).
+
     ``timeouts`` (:class:`lm15.Timeouts`) and ``max_connections`` shape the
     one transport the router builds and shares across its LMs; defaults
     are the provider SDKs' (connect 10 s, read/write/pool 600 s, 100
@@ -523,6 +549,8 @@ class RouterConfig:
     # wire).  Applied to every LM the router builds.
     adaptations: AdaptationPolicy = field(default="note", kw_only=True)
     providers: tuple[ProviderDefinition, ...] = field(default=(), kw_only=True)
+    # A fine-tune's base model, by model id (see the class docstring).
+    base_models: Mapping[str, str] | None = field(default=None, kw_only=True)
     # Managed authentication (spec/auth.md AUTH-15 mode B, ratified
     # 2026-09-22): a ``lm15.login.Auth`` whose saved connections supply the
     # credential when no explicit ``api_keys``/``credentials`` entry does.
@@ -536,6 +564,11 @@ class RouterConfig:
     def __post_init__(self) -> None:
         check_policy(self.adaptations)
         _check_declared(self.providers)
+        if self.base_models is not None:
+            if not isinstance(self.base_models, Mapping) or not all(
+                isinstance(k, str) and k and isinstance(v, str) and v for k, v in self.base_models.items()
+            ):
+                raise TypeError("RouterConfig(base_models=...) maps a model id to its base model id, both non-empty strings")
         if self.auth is not None:
             from .login.manager import Auth
 
@@ -601,7 +634,8 @@ def _check_declared(providers: object) -> None:
                 "declare one with ProviderDefinition.chat(access, compat=...)"
             )
         for spelling in definition.spellings:
-            built_in = PROVIDERS[spelling].id if spelling in PROVIDERS else _LITELLM_CANONICAL.get(spelling)
+            built_in = (PROVIDERS[spelling].id if spelling in PROVIDERS else REGISTRY_ALIASES.get(spelling)
+                        or _LITELLM_CANONICAL.get(spelling))
             if built_in is not None:
                 raise NotConfiguredError(
                     f"RouterConfig(providers=...): {spelling!r} already names lm15's {built_in!r} door; "
@@ -642,6 +676,12 @@ def _resolution(
     )
 
 
+def _is_uri(model: str) -> bool:
+    """A model string whose first ``:`` is followed by ``//``: a URI, one name."""
+    head, sep, rest = model.partition(":")
+    return bool(sep and head and rest.startswith("//"))
+
+
 def _resolve(model: str, config: RouterConfig, adapters: Mapping[str, type]) -> Resolution:
     if not isinstance(model, str) or not model:
         raise UnknownModelError(
@@ -671,8 +711,9 @@ def _resolve(model: str, config: RouterConfig, adapters: Mapping[str, type]) -> 
             adapters=adapters,
         )
 
-    # Rung 1: explicit provider prefix (split on FIRST colon).
-    if ":" in model:
+    # Rung 1: explicit provider prefix (split on FIRST colon).  A URI
+    # (``scheme://…``) is one name and never a prefix.
+    if ":" in model and not _is_uri(model):
         raw_head, rest = model.split(":", 1)
         head = _provider_id(_canonical_provider(raw_head), adapters)
         if _routable(head, adapters) and rest:
@@ -764,7 +805,7 @@ def _resolve(model: str, config: RouterConfig, adapters: Mapping[str, type]) -> 
             )
 
     hints = []
-    if ":" in model:
+    if ":" in model and not _is_uri(model):
         import difflib
 
         head = _canonical_provider(model.split(":", 1)[0])
@@ -953,6 +994,13 @@ def _backend_settings(config: RouterConfig, provider: str, cls: type,
     return resolve_backend_settings(policy, given, env, sources=sources)
 
 
+def _pass_base_models(config: RouterConfig, cls: type, extra: dict) -> None:
+    """RouterConfig(base_models=...) reaches every adapter whose per-model
+    rules can use it (the Chat Completions dialect's model_overrides)."""
+    if config.base_models and "base_models" in getattr(cls, "__dataclass_fields__", {}):
+        extra["base_models"] = dict(config.base_models)
+
+
 def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[str, type], transport: object | None = None):
     cls = _adapter_for(resolution.provider, adapters)
     definition = _bound(resolution.provider, adapters)
@@ -963,6 +1011,7 @@ def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[st
         extra["transport"] = config.transport
     if config.adaptations != "note":
         extra["adaptations"] = config.adaptations
+    _pass_base_models(config, cls, extra)
     hosted = definition is not None and definition.hosted
     base_url = _hosted_endpoint(config, resolution.provider, definition) if hosted else _base_url_entry(config, resolution.provider)
     if base_url is not None:
@@ -1202,6 +1251,7 @@ def _build_planning_lm(resolution: Resolution, config: RouterConfig, adapters: M
     cls = _adapter_for(resolution.provider, adapters)
     definition = _bound(resolution.provider, adapters)
     extra: dict = {"api_key": PLANNING_KEY, "adaptations": config.adaptations}
+    _pass_base_models(config, cls, extra)
     if transport is not None:
         extra["transport"] = transport
     elif config.transport is not None:
@@ -1319,12 +1369,14 @@ def openai_chat_model_string(model: str, *, providers: tuple[ProviderDefinition,
         provider = LITELLM_PROVIDER_PREFIXES.get(head)
         if provider is None:
             canonical = _canonical_provider(head)
+            provider = REGISTRY_ALIASES.get(canonical)
+        if provider is None:
             for definition in providers:
                 if canonical in definition.spellings:
                     provider = definition.id
                     break
         if provider is None:
-            known = sorted({*LITELLM_PROVIDER_PREFIXES, *(s for d in providers for s in d.spellings)})
+            known = sorted({*LITELLM_PROVIDER_PREFIXES, *REGISTRY_ALIASES, *(s for d in providers for s in d.spellings)})
             raise UnknownModelError(
                 f"could not read {model!r} as a litellm model string: {head!r} is not a provider prefix lm15 "
                 f"has a door for (known: {', '.join(known)}); write it as lm15's "

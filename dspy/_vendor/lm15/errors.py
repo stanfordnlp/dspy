@@ -30,7 +30,7 @@ Hierarchy:
 from __future__ import annotations
 
 import builtins
-from typing import TYPE_CHECKING, Mapping, Sequence
+from typing import TYPE_CHECKING, Mapping, Sequence, TypedDict
 
 from .rate_limits import diagnostics_text, freeze_rate_limits
 
@@ -635,7 +635,20 @@ def with_credential_hint(error: ProviderError, hint: str) -> ProviderError:
 # MAP-15: the pinned forms of a provider's "no such model" answer that carry no
 # model-specific code and no not-found class (lm15-contract
 # spec/model-not-found.json, carried verbatim; each form has a live receipt).
-MODEL_NOT_FOUND_FORMS: tuple[dict[str, str], ...] = (
+class _FormCode(TypedDict):
+    code: str | None
+
+
+class _ModelNotFoundForm(_FormCode, total=False):
+    """One pinned MAP-15 form: the provider code (None: the error carries
+    none) and the text tests the message must pass."""
+
+    prefix: str
+    contains: str
+    suffix: str
+
+
+MODEL_NOT_FOUND_FORMS: tuple[_ModelNotFoundForm, ...] = (
     {"code": "not_found_error", "prefix": "model: "},  # Anthropic, Claude Code
     {"code": "invalid_request_error", "contains": "The supported API model names are "},  # DeepSeek
     {"code": "1211"},  # Z.AI: Unknown Model
@@ -644,6 +657,15 @@ MODEL_NOT_FOUND_FORMS: tuple[dict[str, str], ...] = (
     {"code": "invalid-argument", "prefix": "Model not found: "},  # xAI (2026-09-01)
     {"code": "validation_error", "contains": "The provided model identifier is invalid"},  # Bedrock Chat
     {"code": "invalid_request_error", "prefix": "Deployment ", "suffix": " doesn't exist or isn't accessible."},  # Parasail
+    # Tinker (2026-11-09): a name it does not serve to this account, on both
+    # doors; a checkpoint path that does not exist (deleted, or a training
+    # checkpoint, not a sampler one); a path that is not a checkpoint path.
+    # The chat door's bodies are FastAPI's {"detail": ...} with no code
+    # (MAP-21): code None matches an error that carries none.
+    {"code": None, "prefix": "Sampling is not supported for "},
+    {"code": "invalid_request_error", "prefix": "Sampling is not supported for "},
+    {"code": None, "prefix": "Weights not found for model_path "},
+    {"code": None, "prefix": "model_path '", "contains": "' is not a valid tinker path."},
 )
 
 
@@ -651,11 +673,11 @@ def is_pinned_model_not_found(provider_code: str | None, message: str | None) ->
     """True when the error is one of the pinned MAP-15 forms: the provider
     code matches exactly and the message passes every text test the form
     gives.  Never widened beyond the captured answers."""
-    if not provider_code:
-        return False
     text = message or ""
     for form in MODEL_NOT_FOUND_FORMS:
-        if form["code"] != provider_code:
+        # A form whose code is None matches an error with no provider code
+        # at all (an empty code is none); otherwise the codes are equal.
+        if form["code"] != (provider_code or None):
             continue
         if "prefix" in form and not text.startswith(form["prefix"]):
             continue
@@ -665,6 +687,38 @@ def is_pinned_model_not_found(provider_code: str | None, message: str | None) ->
             continue
         return True
     return False
+
+
+def detail_message(data: object) -> str | None:
+    """MAP-21: the message of an error body in FastAPI's shape, which has no
+    ``error`` envelope: ``{"detail": "<text>"}``, optionally with
+    ``"errors": [{"loc", "msg"}]`` (Tinker's validation errors), or
+    ``{"detail": [{"loc", "msg"}]}`` (FastAPI's default validation error).
+    Each validation entry reads ``<loc>: <msg>``, a list ``loc`` joined with
+    `` -> ``; entries are joined with ``; `` and follow the text after
+    ``: ``.  None when the body is not that shape."""
+    if not isinstance(data, dict) or "error" in data:
+        return None
+    detail = data.get("detail")
+
+    def entries(items: object) -> list[str]:
+        out: list[str] = []
+        for item in items if isinstance(items, list) else ():
+            if not isinstance(item, dict) or not isinstance(item.get("msg"), str):
+                continue
+            loc = item.get("loc")
+            if isinstance(loc, list):
+                loc = " -> ".join(str(x) for x in loc)
+            out.append(f"{loc}: {item['msg']}" if isinstance(loc, str) and loc else item["msg"])
+        return out
+
+    if isinstance(detail, str) and detail.strip():
+        found = entries(data.get("errors"))
+        return detail.strip() + (": " + "; ".join(found) if found else "")
+    if isinstance(detail, list):
+        found = entries(detail)
+        return "; ".join(found) if found else None
+    return None
 
 
 # MAP-18: the pinned forms of a provider's "this key is not valid" answer that
