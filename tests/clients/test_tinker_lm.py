@@ -5,12 +5,14 @@ import json
 import pickle
 import re
 import sys
+import threading
 import types
 from dataclasses import dataclass, field
 
 import pytest
 
 import dspy
+from dspy.clients import tinker as tinker_client
 from dspy.clients.tinker import AsyncTinkerEngine, TinkerEngine
 from dspy.lm15 import (
     BuiltinTool,
@@ -155,6 +157,9 @@ class SamplingClient:
     def get_tokenizer(self):
         return "tokenizer"
 
+    def get_sampler_handle(self):
+        return "handle-1"
+
 
 def _fake_errors(module):
     class TinkerError(Exception):
@@ -200,7 +205,7 @@ def sdk(monkeypatch):
     tinker.SamplingParams = SamplingParams
     _fake_errors(tinker)
     state = types.SimpleNamespace(
-        client=SamplingClient(), renderer=Renderer(), services=[], renderers=[], tinker=tinker
+        client=SamplingClient(), renderer=Renderer(), services=[], renderers=[], handles=[], tinker=tinker
     )
 
     class ServiceClient:
@@ -212,7 +217,12 @@ def sdk(monkeypatch):
             self.target = (model_path, base_model)
             return Future(state.client)
 
+    def from_sampler_handle(handle, api_key=None):
+        state.handles.append((handle, api_key))
+        return state.client
+
     tinker.ServiceClient = ServiceClient
+    tinker.SamplingClient = types.SimpleNamespace(from_sampler_handle=from_sampler_handle)
     cookbook = types.ModuleType("tinker_cookbook")
     cookbook.__version__ = "0.7.0"
     renderers = types.ModuleType("tinker_cookbook.renderers")
@@ -389,6 +399,21 @@ async def test_sampling_client_is_created_once_from_the_checkpoint(sdk, asynchro
 
 
 @pytest.mark.asyncio
+async def test_first_async_call_loads_the_sdk_off_the_event_loop(sdk, monkeypatch):
+    sdk.client.reply("a")
+    loaded_on = []
+    load = tinker_client._sdk
+
+    def spy():
+        loaded_on.append(threading.get_ident())
+        return load()
+
+    monkeypatch.setattr(tinker_client, "_sdk", spy)
+    assert await dspy.TinkerLM("Qwen/Qwen3-8B", cache=False).acall("hi") == ["a"]
+    assert loaded_on[0] != threading.get_ident()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
 async def test_predict_with_chat_adapter(sdk, asynchronous):
     sdk.client.reply("[[ ## answer ## ]]\nParis\n\n[[ ## completed ## ]]")
@@ -487,6 +512,30 @@ def test_copied_programs_share_the_engine_and_pickles_drop_the_key(sdk, caplog):
     assert restored.dump_state() == program.lm.engine.dump_state()
     # The SDK pickles a sampling client with its API key, so the created one is dropped.
     assert (restored._api_key, restored._client, restored._renderer) == (None, None, None)
+
+
+def test_pickled_sampling_client_is_a_credential_free_handle(sdk):
+    sdk.client.api_key = "tml-secret"
+    sdk.client.reply("ok")
+    lm = dspy.TinkerLM("Qwen/Qwen3-8B", cache=False, sampling_client=sdk.client)
+    blob = pickle.dumps(lm)
+    assert b"tml-secret" not in blob
+    restored = pickle.loads(blob)
+    assert restored("hi") == ["ok"]
+    assert sdk.handles == [("handle-1", None)]
+    assert not sdk.services
+    assert pickle.loads(pickle.dumps(restored)).engine._sampler_handle == "handle-1"
+
+
+def test_copy_cannot_point_the_engines_at_another_model(sdk):
+    lm = dspy.TinkerLM("Qwen/Qwen3-8B", cache=False)
+    with pytest.raises(ValueError, match="TinkerLM"):
+        lm.copy(model="tinker/other")
+    with pytest.raises(ValueError, match="TinkerLM"):
+        lm.copy(model_path="tinker://run-2/sampler_weights/final")
+    copied = lm.copy(model=lm.model, temperature=1.0, rollout_id=1)
+    assert copied.engine is lm.engine
+    assert (copied.model, copied.kwargs["temperature"]) == (lm.model, 1.0)
 
 
 def test_engine_pair_saves_through_dspy_lm(sdk):

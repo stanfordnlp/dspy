@@ -239,6 +239,8 @@ class TinkerEngine:
             api_key: A Tinker API key. Defaults to the SDK's own lookup
                 (`TINKER_API_KEY`, then a stored login). Never saved.
             sampling_client: An existing `tinker.SamplingClient` to sample with.
+                A pickled engine keeps its credential-free sampler handle, and
+                the loaded engine reconnects with its own credentials.
         """
         if model is None and model_path is None and sampling_client is None:
             raise ValueError("TinkerEngine needs a base model, a tinker:// model_path, or a sampling_client")
@@ -248,6 +250,7 @@ class TinkerEngine:
         self._api_key = api_key
         self._sampling_client = sampling_client
         self._client = sampling_client
+        self._sampler_handle = None
         self._renderer = None
         self._lock = threading.Lock()
 
@@ -257,7 +260,11 @@ class TinkerEngine:
             if self._renderer is None:
                 tinker, renderers, model_info = _sdk()
                 with _sdk_errors(tinker):
-                    if self._client is None:
+                    if self._client is None and self._sampler_handle is not None:
+                        self._client = tinker.SamplingClient.from_sampler_handle(
+                            self._sampler_handle, api_key=self._api_key
+                        )
+                    elif self._client is None:
                         service = tinker.ServiceClient(api_key=self._api_key)
                         self._client = service.create_sampling_client(
                             model_path=self.model_path,
@@ -375,8 +382,13 @@ class TinkerEngine:
         return self
 
     def __getstate__(self) -> dict[str, Any]:
-        # A client created here carries the API key in its own pickle, so only a passed-in one is kept.
-        state = dict(self.__dict__, _api_key=None, _client=self._sampling_client, _renderer=None)
+        # The SDK pickles a sampling client with its API key; its sampler handle carries none.
+        handle = self._sampler_handle
+        if self._sampling_client is not None:
+            handle = self._sampling_client.get_sampler_handle()
+        state = dict(
+            self.__dict__, _api_key=None, _sampling_client=None, _client=None, _sampler_handle=handle, _renderer=None
+        )
         del state["_lock"]
         return state
 
@@ -400,9 +412,12 @@ class AsyncTinkerEngine:
 
     async def complete(self, request: Request) -> Response:
         engine = self.engine
+        first_call = engine._renderer is None
+        if first_call:
+            # The first call imports the SDK, creates the client and loads the tokenizer, all blocking.
+            await asyncio.to_thread(_sdk)
         translated = engine._translate(request)
-        if engine._renderer is None:
-            # The first call creates the client and loads the tokenizer, both blocking.
+        if first_call:
             await asyncio.to_thread(engine._session)
         client, renderer = engine._session()
         prompt, params = engine._prepare(request, translated, renderer)
@@ -455,7 +470,9 @@ class TinkerLM(BaseLM):
                 stored `tinker auth login`. Never saved.
             sampling_client: An existing `tinker.SamplingClient` to sample with.
                 Without `model_path`, `cache` defaults to `False`, because the
-                cache key would name only the base model.
+                cache key would name only the base model. A saved LM keeps the
+                client's credential-free sampler handle and reconnects with the
+                loading process's own credentials.
             **kwargs: `BaseLM` options: `temperature`, `max_tokens`, `cache`,
                 `num_retries`, `callbacks`, and the generation defaults
                 `top_p`, `top_k`, `stop` and `seed`.
@@ -470,6 +487,14 @@ class TinkerLM(BaseLM):
         # The response cache keys on this string, so it names the weights and any renderer override.
         label = f"tinker/{model_path or model}" + (f"?renderer={renderer}" if renderer else "")
         super().__init__(model=label, engine=engine, async_engine=AsyncTinkerEngine(engine), **kwargs)
+
+    def copy(self, **kwargs: Any) -> "TinkerLM":
+        if kwargs.get("model", self.model) != self.model or kwargs.get("model_path") is not None:
+            raise ValueError(
+                "TinkerLM.copy cannot change the model or checkpoint, because the copy would keep sampling the "
+                "engine's own; create a new TinkerLM instead"
+            )
+        return super().copy(**kwargs)
 
     def dump_state(self) -> dict[str, Any]:
         """Return the LM options and the engine's model, model_path and renderer, for `TinkerLM(**state)`."""
