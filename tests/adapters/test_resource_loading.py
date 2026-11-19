@@ -2,10 +2,13 @@ import base64
 import json
 
 import pytest
+import requests
 from pydantic import TypeAdapter, ValidationError
 
 import dspy
 from dspy.adapters.utils import parse_value
+from dspy.clients.lm15_boundary import request_kwargs
+from dspy.lm15 import GeminiLM, Message, Request
 
 
 def _forbid_host_io(monkeypatch):
@@ -225,3 +228,53 @@ def test_from_url_passes_verify(monkeypatch, factory, module, mime_type, verify)
     assert captured["verify"] is verify
     encoded = resource.url.split(",", 1)[1] if isinstance(resource, dspy.Image) else resource.data
     assert base64.b64decode(encoded) == b"remote bytes"
+
+
+@pytest.mark.parametrize(
+    ("content_type", "expected_format"),
+    [
+        ("audio/wav", "wav"),
+        ("audio/wav; codecs=1", "wav; codecs=1"),
+        ("Audio/X-Wav", "wav"),
+        ("Audio/X-Wav; profile=CaseSensitive", "wav; profile=CaseSensitive"),
+    ],
+)
+def test_audio_from_url_normalizes_http_media_type(monkeypatch, content_type, expected_format):
+    response = requests.Response()
+    response.status_code = 200
+    response.headers["Content-Type"] = content_type
+    response._content = b"audio bytes"
+
+    def send(session, request, **kwargs):
+        response.request = request
+        return response
+
+    monkeypatch.setattr(requests.Session, "send", send)
+    resource = dspy.Audio.from_url("https://example.com/sample.wav")
+
+    assert resource.audio_format == expected_format
+    request = Request(model="openai/test", messages=(Message.user(tuple(resource.format())),))
+    wire = request_kwargs(request, "chat")
+    assert wire["messages"][0]["content"][0]["input_audio"] == {"data": resource.data, "format": "wav"}
+    assert base64.b64decode(resource.data) == b"audio bytes"
+
+
+def test_downloaded_pcm_keeps_rate_in_gemini_request(monkeypatch, tmp_path):
+    response = requests.Response()
+    response.status_code = 200
+    response.headers["Content-Type"] = "audio/pcm;rate=24000"
+    response._content = b"\0\0" * 24
+
+    def send(session, request, **kwargs):
+        response.request = request
+        return response
+
+    monkeypatch.setattr(requests.Session, "send", send)
+    resource = dspy.Audio.from_url("https://example.com/sample.pcm")
+    request = Request(model="gemini/gemini-3-flash", messages=(Message.user(tuple(resource.format())),))
+    provider = GeminiLM(api_key="test-key", credentials_path=tmp_path / "credentials.json", settings={})
+    payload = json.loads(provider.build_request(request, stream=False).body)
+
+    inline = payload["contents"][0]["parts"][0]["inlineData"]
+    assert inline["mimeType"] == "audio/pcm;rate=24000"
+    assert base64.b64decode(inline["data"]) == response.content

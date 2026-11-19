@@ -21,8 +21,9 @@ except ImportError:
 
 
 def _normalize_audio_format(audio_format: str) -> str:
-    """Removes 'x-' prefixes from audio format strings."""
-    return audio_format.removeprefix("x-")
+    """Normalize the subtype and x- alias while preserving media parameters."""
+    subtype, separator, parameters = audio_format.partition(";")
+    return subtype.strip().lower().removeprefix("x-") + separator + parameters
 
 
 class Audio(Type):
@@ -104,10 +105,10 @@ class Audio(Type):
             raise ValueError(f"Audio.from_url requires an HTTP(S) URL, received: {url}")
         response = requests.get(url, verify=verify, timeout=timeout)
         response.raise_for_status()
-        mime_type = response.headers.get("Content-Type", "audio/wav")
-        if not mime_type.startswith("audio/"):
+        mime_type = response.headers.get("Content-Type", "audio/wav").strip()
+        if not mime_type.lower().startswith("audio/"):
             raise ValueError(f"Unsupported MIME type for audio: {mime_type}")
-        audio_format = mime_type.split("/")[1]
+        audio_format = mime_type.split("/", 1)[1]
 
         audio_format = _normalize_audio_format(audio_format)
 
