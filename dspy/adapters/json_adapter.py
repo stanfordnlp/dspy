@@ -144,6 +144,12 @@ class JSONAdapter(ChatAdapter):
                 message="LM response cannot be serialized to a JSON object.",
             )
 
+        # Some providers return the fields wrapped in a function call envelope,
+        # e.g. {"type": "function", "name": "json_tool_call", "parameters": {...}}.
+        # Unwrap it when the top level holds no output fields of its own.
+        if isinstance(fields.get("parameters"), dict) and not any(k in signature.output_fields for k in fields):
+            fields = fields["parameters"]
+
         fields = {k: v for k, v in fields.items() if k in signature.output_fields}
 
         # Attempt to cast each value to type signature.output_fields[k].annotation.
