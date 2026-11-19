@@ -611,9 +611,7 @@ async def test_react_failed_termination_raises(mocker, break_reason, forced_resu
         assert "no submit call" in str(exc.value)
     if forced_result == "missing_field":
         assert "Missing required final output field(s): count" in str(exc.value)
-        event = history.messages[-1]
-        assert event["tool_calls"].tool_calls[0].args == {"answer": "partial"}
-        assert event["tool_calls"].tool_call_results.tool_call_results[0].is_error is True
+    assert history.messages == []
 
 
 def test_react_evaluate_reports_submission_failure(caplog):
@@ -803,3 +801,97 @@ def test_tool_observation_preserves_custom_type():
     ]
     assert len(images) == 2
     assert result.answer == "done"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_async", [False, True])
+@pytest.mark.parametrize("serialized", [False, True])
+async def test_react_continuation_preserves_caller_history_and_branches(use_async, serialized):
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    def call(name, **args):
+        return dspy.ToolCalls.from_dict_list([{"name": name, "args": args}])
+
+    lm = dspy.utils.DummyLM([
+        {"next_thought": "look", "tool_calls": call("lookup", query="cats")},
+        {"next_thought": "done", "tool_calls": call("submit", answer="cats are mammals")},
+        {"next_thought": "A", "tool_calls": call("submit", answer="A-answer")},
+        {"next_thought": "B", "tool_calls": call("submit", answer="B-answer")},
+    ])
+    agent = dspy.ReAct("question -> answer", tools=[lookup])
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        first = await agent.acall(question="What are cats?") if use_async else agent(question="What are cats?")
+        initial_messages_len = len(first.history.messages)
+        assert initial_messages_len == 2
+
+        history_input = first.history.model_dump() if serialized else first.history
+
+        # Continuation A
+        a = (
+            await agent.acall(question="Follow-up A?", history=history_input)
+            if use_async
+            else agent(question="Follow-up A?", history=history_input)
+        )
+        assert len(first.history.messages) == initial_messages_len
+        assert a.history is not first.history
+        assert len(a.history.messages) == initial_messages_len + 1
+        assert a.answer == "A-answer"
+
+        # Continuation B from the same starting history
+        b = (
+            await agent.acall(question="Follow-up B?", history=history_input)
+            if use_async
+            else agent(question="Follow-up B?", history=history_input)
+        )
+        assert len(first.history.messages) == initial_messages_len
+        assert b.history is not first.history
+        assert b.history is not a.history
+        assert len(b.history.messages) == initial_messages_len + 1
+        assert b.answer == "B-answer"
+
+        # The prompt for B must not leak the branch A question or answer
+        b_prompt = str(lm.history[-1]["messages"])
+        assert "Follow-up A?" not in b_prompt
+        assert "A-answer" not in b_prompt
+
+        # Nested history event isolation
+        a.history.messages[0]["mutated_flag"] = True
+        assert "mutated_flag" not in first.history.messages[0]
+        assert "mutated_flag" not in b.history.messages[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_async", [False, True])
+@pytest.mark.parametrize("succeeds", [True, False])
+async def test_react_forced_submit_history_ownership(use_async, succeeds):
+    if succeeds:
+        lm = ReasoningDummyLM([
+            {"next_thought": "No action.", "tool_calls": dspy.ToolCalls(tool_calls=[])},
+            {"next_thought": "Forced final.", "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "forced"}}])},
+        ])
+        agent = dspy.ReAct("question -> answer", tools=[])
+        history = dspy.History(messages=[{"question": "prior", "answer": "prior_ans"}])
+        with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+            res = await agent.acall(question="cats", history=history) if use_async else agent(question="cats", history=history)
+        assert res.answer == "forced"
+        assert res.termination_reason == "forced_submit"
+        assert len(res.history.messages) == 2
+        assert len(history.messages) == 1
+        assert history.messages[0] == {"question": "prior", "answer": "prior_ans"}
+    else:
+        lm = ReasoningDummyLM([
+            {"next_thought": "No action.", "tool_calls": dspy.ToolCalls(tool_calls=[])},
+            {"next_thought": "Missing count.", "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "partial"}}])},
+        ])
+        agent = dspy.ReAct("question -> answer: str, count: int", tools=[])
+        history = dspy.History(messages=[{"question": "prior", "answer": "prior_ans", "count": 1}])
+        with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+            with pytest.raises(ValueError, match="Missing required final output field\\(s\\): count"):
+                if use_async:
+                    await agent.acall(question="cats", history=history)
+                else:
+                    agent(question="cats", history=history)
+        assert len(history.messages) == 1
+        assert history.messages[0] == {"question": "prior", "answer": "prior_ans", "count": 1}

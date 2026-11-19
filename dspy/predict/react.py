@@ -138,7 +138,9 @@ class ReAct(Module):
 
     def forward(self, **input_args):
         max_iters = input_args.pop("max_iters", self.max_iters)
-        history = _coerce_history(input_args.pop("history", None))
+        # The caller's history is input only; ReAct appends iteration events to a private copy that is returned
+        # as `result.history`.
+        history = _coerce_history(input_args.pop("history", None)).model_copy(deep=True)
         pending_inputs = {name: input_args[name] for name in self.signature.input_fields if name in input_args}
 
         break_reason = "max_iters"
@@ -179,7 +181,9 @@ class ReAct(Module):
 
     async def aforward(self, **input_args):
         max_iters = input_args.pop("max_iters", self.max_iters)
-        history = _coerce_history(input_args.pop("history", None))
+        # The caller's history is input only; ReAct appends iteration events to a private copy that is returned
+        # as `result.history`.
+        history = _coerce_history(input_args.pop("history", None)).model_copy(deep=True)
         pending_inputs = {name: input_args[name] for name in self.signature.input_fields if name in input_args}
 
         break_reason = "max_iters"
