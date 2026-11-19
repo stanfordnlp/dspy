@@ -74,3 +74,34 @@ def test_restrict_as_single_use_iterator_still_matches_a_valid_seed():
     # -3 (zero-shot) is a valid seed; a plain iterator is single-use.
     result = optimizer.compile(student, teacher=teacher, trainset=trainset, restrict=iter([-3]))
     assert result is not None
+
+
+def test_zero_bootstrapped_demos_compiles_labels_only_candidates():
+    """`max_bootstrapped_demos=0` must compile instead of crashing on `randint(1, 0)` for seed >= 0."""
+    student = SimpleModule("input -> output")
+    teacher = SimpleModule("input -> output")
+
+    lm = DummyLM(["Initial thoughts", "Finish[blue]"])
+    dspy.configure(lm=lm)
+
+    optimizer = BootstrapFewShotWithRandomSearch(
+        metric=simple_metric,
+        max_bootstrapped_demos=0,
+        max_labeled_demos=1,
+        num_candidate_programs=2,
+    )
+    trainset = [
+        Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
+        Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs("input"),
+    ]
+
+    result = optimizer.compile(student, teacher=teacher, trainset=trainset)
+    assert result is not None
+    # Candidate programs were collected from every seed, including the sampled-demos seeds.
+    assert len(result.candidate_programs) == 5
+
+
+def test_negative_bootstrapped_demos_raises_clear_error():
+    """A negative `max_bootstrapped_demos` is rejected with an actionable message."""
+    with pytest.raises(ValueError, match="max_bootstrapped_demos"):
+        BootstrapFewShotWithRandomSearch(metric=simple_metric, max_bootstrapped_demos=-1)
