@@ -61,17 +61,12 @@ class _SchemaExtraCallable(Mapping):
             self._fn(schema)
             return
 
-        params = list(sig.parameters.values())
-        has_varargs = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params)
-        num_pos = sum(
-            1
-            for p in params
-            if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
-        )
-        if has_varargs or (num_pos > 1 and len(args) > 0):
-            self._fn(schema, *args, **call_kwargs)
-        else:
+        try:
+            sig.bind(schema, *args, **call_kwargs)
+        except TypeError:
             self._fn(schema)
+        else:
+            self._fn(schema, *args, **call_kwargs)
 
     def __getitem__(self, item):
         return self._extra_dict[item]

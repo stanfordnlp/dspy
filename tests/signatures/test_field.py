@@ -109,9 +109,20 @@ def test_callable_json_schema_extra_does_not_retry_callback_errors():
     extra = _SchemaExtraCallable({}, failing_mutator)
 
     with pytest.raises(TypeError, match="callback failure"):
-        extra({})
+        extra({}, {"type": "model-field"})
 
     assert calls == 1
+
+    received = {}
+
+    def two_arg_mutator(schema, core_schema):
+        received["type"] = core_schema["type"]
+        schema["x-custom-extension"] = "dynamic_value"
+
+    schema = {}
+    _SchemaExtraCallable({}, two_arg_mutator)(schema, {"type": "model-field"})
+    assert received["type"] == "model-field"
+    assert schema["x-custom-extension"] == "dynamic_value"
 
 
 def test_field_without_json_schema_extra_unchanged():
