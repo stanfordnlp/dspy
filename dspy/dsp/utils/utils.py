@@ -9,34 +9,35 @@ import tqdm
 
 def print_message(*s, condition=True, pad=False, sep=None):
     """Print a timestamped message to stdout.
-    
+
     Args:
         *s: Values to print.
         condition: If False, don't print (default: True).
         pad: If True, add newlines around the message (default: False).
         sep: Separator between values (default: None, uses space).
-    
+
     Returns:
         The printed message string.
     """
-    s = " ".join([str(x) for x in s])
-    msg = "[{}] {}".format(datetime.datetime.now().strftime("%b %d, %H:%M:%S"), s)
+    sep_str = " " if sep is None else sep
+    joined_s = sep_str.join([str(x) for x in s])
+    msg = "[{}] {}".format(datetime.datetime.now().strftime("%b %d, %H:%M:%S"), joined_s)
 
     if condition:
         msg = msg if not pad else f"\n{msg}\n"
-        print(msg, flush=True, sep=sep)
+        print(msg, flush=True)
 
     return msg
 
 
 def timestamp(daydir=False):
     """Generate a timestamp string for file/directory naming.
-    
+
     Args:
         daydir: If True, use '/' as separator and include date as directory
                (e.g., "2026/03/03_10.30.00"). If False, use '-' and '_'
                (e.g., "2026-03-03_10.30.00").
-    
+
     Returns:
         Formatted timestamp string.
     """
@@ -71,25 +72,29 @@ def create_directory(path):
 
 def deduplicate(seq: list[str]) -> list[str]:
     """
-        From Raymond Hettinger
-        https://twitter.com/raymondh/status/944125570534621185
-        Since Python 3.6 Dict are ordered
-        Benchmark: https://gist.github.com/peterbe/67b9e40af60a1d5bcb1cfb4b2937b088
+    From Raymond Hettinger
+    https://twitter.com/raymondh/status/944125570534621185
+    Since Python 3.6 Dict are ordered
+    Benchmark: https://gist.github.com/peterbe/67b9e40af60a1d5bcb1cfb4b2937b088
     """
     return list(dict.fromkeys(seq))
 
+
 def batch(group, bsize, provide_offset=False):
     """Split a list into batches of specified size.
-    
+
     Args:
         group: List to batch.
         bsize: Maximum size of each batch.
         provide_offset: If True, yield (offset, batch) tuples. If False,
                       yield just the batch (default: False).
-    
+
     Yields:
         Batches of the input list, each up to bsize elements.
     """
+    if bsize <= 0:
+        raise ValueError(f"bsize must be a positive integer, got {bsize}")
+
     offset = 0
     while offset < len(group):
         batch_data = group[offset : offset + bsize]
@@ -101,7 +106,10 @@ def batch(group, bsize, provide_offset=False):
 class dotdict(dict):  # noqa: N801
     def __getattr__(self, key):
         if key.startswith("__") and key.endswith("__"):
-            return super().__getattr__(key)
+            try:
+                return super().__getattribute__(key)
+            except AttributeError:
+                pass
         try:
             return self[key]
         except KeyError:
@@ -115,9 +123,15 @@ class dotdict(dict):  # noqa: N801
 
     def __delattr__(self, key):
         if key.startswith("__") and key.endswith("__"):
-            super().__delattr__(key)
-        else:
+            try:
+                super().__delattr__(key)
+                return
+            except AttributeError:
+                pass
+        try:
             del self[key]
+        except KeyError:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
 
     def __deepcopy__(self, memo):
         # Use the default dict copying method to avoid infinite recursion.
