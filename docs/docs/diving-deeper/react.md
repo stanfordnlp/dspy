@@ -43,7 +43,7 @@ ReAct owns a `dspy.History`, whose `messages` list contains one structured event
 - `next_thought`, when the model returns one.
 - A `dspy.ToolCalls` object containing every requested call and its call ID.
 - Attached `ToolCallResults`, pairing each ID with the tool name, value, and error status.
-- The signature's final output fields when the turn successfully calls `submit`.
+- The signature's final output fields when the turn successfully calls `submit`. If an output shares a name with a predictor field such as `tool_calls`, the event keeps the predictor field for replay. Read the submitted value from the returned prediction or the recorded `submit` result.
 
 Conceptually, a turn looks like:
 
