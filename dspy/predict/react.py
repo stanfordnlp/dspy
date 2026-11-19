@@ -292,7 +292,7 @@ class ReAct(Module):
             event["tool_calls"] = tool_calls
         from dspy.adapters.types.history import CONTINUATION_KEY
 
-        if CONTINUATION_KEY in pred:
+        if pred.get(CONTINUATION_KEY) is not None:
             event[CONTINUATION_KEY] = pred[CONTINUATION_KEY]
         return event
 

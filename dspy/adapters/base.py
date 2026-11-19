@@ -19,7 +19,7 @@ from dspy.clients.call_result import response_text
 from dspy.clients.capabilities import assistant_replay_policy, tool_result_media, with_capability_planning
 from dspy.clients.requests import build_request
 from dspy.dsp.utils.settings import settings
-from dspy.lm15 import Message, Request, Response, TextPart, ThinkingPart
+from dspy.lm15 import DataPart, Message, Request, Response, TextPart, ThinkingPart
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.exceptions import AdapterParseError
@@ -268,12 +268,22 @@ class Adapter:
                     if parsed_value is not None:
                         value[name] = parsed_value
 
-            text_continuation = [
-                continuation_to_dict(state)
-                for part in response.message.parts
-                if part.type in ("text", "data")
-                for state in part.continuation
-            ]
+            raw_text_parts = [part for part in response.message.parts if isinstance(part, (TextPart, DataPart))]
+            text_parts = (
+                [
+                    {
+                        "text": part.text if isinstance(part, TextPart) else json.dumps(part.value, ensure_ascii=False),
+                        **(
+                            {"continuation": [continuation_to_dict(state) for state in part.continuation]}
+                            if part.continuation
+                            else {}
+                        ),
+                    }
+                    for part in raw_text_parts
+                ]
+                if any(part.continuation for part in raw_text_parts)
+                else []
+            )
             message_continuation = [continuation_to_dict(state) for state in response.message.continuation]
             uncaptured_thinking = (
                 [
@@ -287,12 +297,22 @@ class Adapter:
                 if not native_reasoning_captured
                 else []
             )
-            if text_continuation or message_continuation or uncaptured_thinking:
+            if text_parts or message_continuation or uncaptured_thinking:
                 continuation_meta: dict[str, Any] = {}
                 if uncaptured_thinking:
                     continuation_meta["thinking_parts"] = uncaptured_thinking
-                if text_continuation:
-                    continuation_meta["text_continuation"] = text_continuation
+                if text_parts:
+                    render_sig = processed_signature
+                    if self.use_native_function_calling and any(isinstance(v, ToolCalls) for v in value.values()):
+                        for name in list(render_sig.output_fields):
+                            if value.get(name) is None:
+                                render_sig = render_sig.delete(name)
+                    continuation_meta["text_parts"] = text_parts
+                    continuation_meta["formatted_text"] = (
+                        self.format_assistant_message_content(render_sig, value)
+                        if render_sig.output_fields
+                        else ""
+                    )
                 if message_continuation:
                     continuation_meta["message_continuation"] = message_continuation
                 value[CONTINUATION_KEY] = continuation_meta
@@ -301,6 +321,10 @@ class Adapter:
                 value["logprobs"] = response.logprobs
 
             values.append(value)
+
+        if any(CONTINUATION_KEY in v for v in values):
+            for v in values:
+                v.setdefault(CONTINUATION_KEY, None)
 
         return values
 
@@ -806,6 +830,9 @@ def _adapt_assistant_continuations(request: Request, lm: BaseLM, lm_kwargs: dict
             elif part.continuation:
                 part_cont = filter_continuations(part.continuation)
                 if part_cont != part.continuation:
+                    if isinstance(part, TextPart) and not part.text and not part_cont:
+                        parts_changed = True
+                        continue
                     part = replace(part, continuation=part_cont)
                     parts_changed = True
                 parts.append(part)

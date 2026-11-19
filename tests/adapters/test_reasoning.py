@@ -561,3 +561,145 @@ def test_incompatible_provider_or_textual_fallback_drops_foreign_opaque_state_sa
         assistant_row = next(m for m in wire2["messages"] if m["role"] == "assistant")
         assert assistant_row == {"role": "assistant", "content": "<answer>\n42\n</answer>", "reasoning_content": ""}
 
+
+@pytest.mark.parametrize("storage", ["object", "json"])
+def test_gemini_multi_part_text_signatures_replay_in_order(monkeypatch, storage):
+    import json
+
+    from tests.clients.test_lm_engine_execution import DualResponse, native_transport
+
+    class ConvSig(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    turn1 = DualResponse(status=200, body=json.dumps({
+        "candidates": [{
+            "content": {
+                "role": "model",
+                "parts": [
+                    {"thought": True, "text": "plan", "thoughtSignature": "sig_thought_1"},
+                    {"text": "[[ ## answer ## ]]\nFirst ", "thoughtSignature": "sig_part_1"},
+                    {"text": "second\n\n[[ ## completed ## ]]", "thoughtSignature": "sig_part_2"},
+                ],
+            },
+            "finishReason": "STOP",
+        }],
+        "usageMetadata": {"promptTokenCount": 8, "candidatesTokenCount": 6, "totalTokenCount": 14},
+    }).encode())
+    turn2 = DualResponse(status=200, body=json.dumps({
+        "candidates": [{
+            "content": {"role": "model", "parts": [{"text": "[[ ## answer ## ]]\nDone\n\n[[ ## completed ## ]]"}]},
+            "finishReason": "STOP",
+        }],
+        "usageMetadata": {"promptTokenCount": 16, "candidatesTokenCount": 4, "totalTokenCount": 20},
+    }).encode())
+    turn3 = DualResponse(status=200, body=json.dumps({
+        "candidates": [{
+            "content": {"role": "model", "parts": [{"text": "[[ ## answer ## ]]\nEditedAck\n\n[[ ## completed ## ]]"}]},
+            "finishReason": "STOP",
+        }],
+        "usageMetadata": {"promptTokenCount": 16, "candidatesTokenCount": 4, "totalTokenCount": 20},
+    }).encode())
+
+    transport = native_transport(monkeypatch, [turn1, turn2, turn3])
+    lm = dspy.LM("gemini/gemini-2.5-pro", engine="lm15", api_key="fake", cache=False, num_retries=0)
+    predict = dspy.Predict(ConvSig)
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        first = predict(question="First", history=dspy.History(messages=[]))
+        assert first.answer == "First second"
+
+        history = _round_trip_history(dspy.History(messages=[{"question": "First", **first}]), storage)
+        second = predict(question="Continue", history=history)
+        assert second.answer == "Done"
+
+        edited_history = _round_trip_history(
+            dspy.History(messages=[{"question": "First", **first, "answer": "Manually edited"}]),
+            storage,
+        )
+        third = predict(question="Verify edit", history=edited_history)
+        assert third.answer == "EditedAck"
+
+    wire2 = json.loads(transport.requests[1].body)
+    assert wire2["contents"][1]["parts"] == [
+        {"text": "plan", "thought": True, "thoughtSignature": "sig_thought_1"},
+        {"text": "[[ ## answer ## ]]\nFirst ", "thoughtSignature": "sig_part_1"},
+        {"text": "second\n\n[[ ## completed ## ]]", "thoughtSignature": "sig_part_2"},
+    ]
+
+    wire3 = json.loads(transport.requests[2].body)
+    assert wire3["contents"][1]["parts"] == [
+        {"text": "plan", "thought": True, "thoughtSignature": "sig_thought_1"},
+        {"text": "[[ ## answer ## ]]\nManually edited\n\n[[ ## completed ## ]]\n", "thoughtSignature": "sig_part_1"},
+    ]
+
+
+def test_mixed_continuation_across_multiple_candidates_succeeds(monkeypatch):
+    import json
+
+    from tests.clients.test_lm_engine_execution import DualResponse, native_transport
+
+    class ConvSig(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    cand_a = DualResponse(status=200, body=json.dumps({
+        "candidates": [{
+            "content": {
+                "role": "model",
+                "parts": [{"text": "[[ ## answer ## ]]\nCand A\n\n[[ ## completed ## ]]", "thoughtSignature": "sig_cand_0"}],
+            },
+            "finishReason": "STOP",
+        }],
+        "usageMetadata": {"promptTokenCount": 8, "candidatesTokenCount": 4, "totalTokenCount": 12},
+    }).encode())
+    cand_b = DualResponse(status=200, body=json.dumps({
+        "candidates": [{
+            "content": {
+                "role": "model",
+                "parts": [{"text": "[[ ## answer ## ]]\nCand B\n\n[[ ## completed ## ]]"}],
+            },
+            "finishReason": "STOP",
+        }],
+        "usageMetadata": {"promptTokenCount": 8, "candidatesTokenCount": 4, "totalTokenCount": 12},
+    }).encode())
+    followup_a = DualResponse(status=200, body=json.dumps({
+        "candidates": [{
+            "content": {"role": "model", "parts": [{"text": "[[ ## answer ## ]]\nFollowup A\n\n[[ ## completed ## ]]"}]},
+            "finishReason": "STOP",
+        }],
+        "usageMetadata": {"promptTokenCount": 14, "candidatesTokenCount": 4, "totalTokenCount": 18},
+    }).encode())
+    followup_b = DualResponse(status=200, body=json.dumps({
+        "candidates": [{
+            "content": {"role": "model", "parts": [{"text": "[[ ## answer ## ]]\nFollowup B\n\n[[ ## completed ## ]]"}]},
+            "finishReason": "STOP",
+        }],
+        "usageMetadata": {"promptTokenCount": 14, "candidatesTokenCount": 4, "totalTokenCount": 18},
+    }).encode())
+
+    transport = native_transport(monkeypatch, [cand_a, cand_b, followup_a, followup_b])
+    lm = dspy.LM("gemini/gemini-2.5-pro", engine="lm15", api_key="fake", cache=False, num_retries=0)
+    predict = dspy.Predict(ConvSig)
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = predict(question="Pick", history=dspy.History(messages=[]), config={"n": 2})
+        assert len(pred.completions) == 2
+        assert [c.answer for c in pred.completions] == ["Cand A", "Cand B"]
+
+        hist_a = dspy.History(messages=[{"question": "Pick", **pred.completions[0]}])
+        predict(question="Next A", history=hist_a)
+
+        hist_b = dspy.History(messages=[{"question": "Pick", **pred.completions[1]}])
+        predict(question="Next B", history=hist_b)
+
+    wire_a = json.loads(transport.requests[2].body)
+    assert wire_a["contents"][1]["parts"] == [
+        {"text": "[[ ## answer ## ]]\nCand A\n\n[[ ## completed ## ]]\n", "thoughtSignature": "sig_cand_0"},
+    ]
+    wire_b = json.loads(transport.requests[3].body)
+    assert wire_b["contents"][1]["parts"] == [
+        {"text": "[[ ## answer ## ]]\nCand B\n\n[[ ## completed ## ]]\n"},
+    ]
+
