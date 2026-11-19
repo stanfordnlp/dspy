@@ -93,6 +93,11 @@ can use optional LiteLLM compatibility where supported, or a custom engine.
 Compatibility support does not establish native parity. Embeddings have a separate
 [OpenAI SDK or callable interface](../api/models/Embedder.md), with no LiteLLM fallback.
 
+Base models and LoRA checkpoints hosted on Tinker use
+[`dspy.TinkerLM`](../api/models/TinkerLM.md), installed with
+`pip install "dspy[tinker]"` on Python 3.11 or later. That extra pulls in PyTorch
+and Transformers.
+
 ---
 
 **Next:** [Your first program →](first-program.md)
