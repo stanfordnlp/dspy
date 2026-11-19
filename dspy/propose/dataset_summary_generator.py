@@ -1,6 +1,10 @@
 import re
 
 import dspy
+from dspy.adapters.types.base_type import (
+    CUSTOM_TYPE_END_IDENTIFIER,
+    CUSTOM_TYPE_START_IDENTIFIER,
+)
 from dspy.propose.utils import strip_prefix
 
 
@@ -27,6 +31,19 @@ class DatasetDescriptorWithPriorObservations(dspy.Signature):
     prior_observations = dspy.InputField(desc="Some prior observations I made about the data")
     observations = dspy.OutputField(desc="Somethings that holds true for most or all of the data you observed or COMPLETE if you have nothing to add")
 
+def sanitize_dataset_examples_repr(examples_repr: str) -> str:
+    """Sanitize examples representation for dataset summary generation."""
+    if CUSTOM_TYPE_START_IDENTIFIER in examples_repr:
+        examples_repr = examples_repr.replace(
+            CUSTOM_TYPE_START_IDENTIFIER, "[CUSTOM-TYPE-START]"
+        ).replace(CUSTOM_TYPE_END_IDENTIFIER, "[CUSTOM-TYPE-END]")
+    return re.sub(
+        r"data:[^;]+;base64,[A-Za-z0-9+/=]{100,}",
+        "data:<BASE64_DATA_OMITTED>",
+        examples_repr,
+    )
+
+
 def order_input_keys_in_string(unordered_repr):
     # Regex pattern to match the input keys structure
     pattern = r"input_keys=\{([^\}]+)\}"
@@ -51,7 +68,11 @@ def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_fil
     upper_lim = min(len(trainset), view_data_batch_size)
     prompt_model = prompt_model if prompt_model else dspy.settings.lm
     with dspy.context(lm=prompt_model):
-        observation = dspy.Predict(DatasetDescriptor, n=1, temperature=1.0)(examples=order_input_keys_in_string(trainset[0:upper_lim].__repr__()))
+        observation = dspy.Predict(DatasetDescriptor, n=1, temperature=1.0)(
+            examples=sanitize_dataset_examples_repr(
+                order_input_keys_in_string(trainset[0:upper_lim].__repr__())
+            )
+        )
     observations = observation["observations"]
 
     if log_file:
@@ -69,7 +90,15 @@ def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_fil
                 print(f"b: {b}")
             upper_lim = min(len(trainset), b+view_data_batch_size)
             with dspy.context(lm=prompt_model):
-                output = dspy.Predict(DatasetDescriptorWithPriorObservations, n=1, temperature=1.0)(prior_observations=observations, examples=order_input_keys_in_string(trainset[b:upper_lim].__repr__()))
+                descriptor = dspy.Predict(
+                    DatasetDescriptorWithPriorObservations, n=1, temperature=1.0
+                )
+                output = descriptor(
+                    prior_observations=observations,
+                    examples=sanitize_dataset_examples_repr(
+                        order_input_keys_in_string(trainset[b:upper_lim].__repr__())
+                    ),
+                )
             if len(output["observations"]) >= 8 and output["observations"][:8].upper() == "COMPLETE":
                 skips += 1
                 if skips >= 5:
