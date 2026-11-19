@@ -108,8 +108,9 @@ class Example:
         self._demos = []
         self._input_keys = None
 
-        # Initialize from a base Example if provided
-        if isinstance(base, type(self)):
+        # Initialize from a base Example if provided. Accept any Example, not only
+        # instances of type(self), so e.g. Prediction(base=example) keeps the fields.
+        if isinstance(base, Example):
             self._store = base._store.copy()
             # Preserve the input/label split so copy()/without()/Example(base=...)
             # don't silently break .inputs()/.labels() on the new instance.
