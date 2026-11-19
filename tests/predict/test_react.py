@@ -6,7 +6,7 @@ from jsonschema import ValidationError, validate
 from pydantic import BaseModel
 
 import dspy
-from dspy.lm15 import ContinuationState, ToolCallPart
+from dspy.lm15 import ContinuationState, ToolCallPart, ToolResultPart
 from dspy.utils.exceptions import ContextWindowExceededError
 from tests.test_utils.engines import make_response, recording_lm
 
@@ -477,6 +477,32 @@ def test_react_native_parallel_tool_calls_are_requested_and_replayed(adapter):
     ] == [
         "call_provider_1",
         "call_provider_2",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_async", [False, True])
+@pytest.mark.parametrize("max_iters", [0, 1], ids=["forced-submit", "normal-submit"])
+async def test_react_replays_submit_when_output_is_named_tool_calls(use_async, max_iters):
+    lm = recording_lm([
+        make_response(tool_calls=[("plan", "submit", {"tool_calls": ["lookup"]})]),
+        make_response(tool_calls=[("revision", "submit", {"tool_calls": ["search"]})]),
+    ])
+    agent = dspy.ReAct("question -> tool_calls: list[str]", tools=[], max_iters=max_iters)
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=True)):
+        if use_async:
+            plan = await agent.acall(question="Plan the lookup.")
+            await agent.acall(question="Revise the plan.", history=plan.history)
+        else:
+            plan = agent(question="Plan the lookup.")
+            agent(question="Revise the plan.", history=plan.history)
+
+    assert plan.tool_calls == ["lookup"]
+    parts = [part for message in lm.engine.requests[1].messages for part in message.parts]
+    assert [(part.type, part.id) for part in parts if isinstance(part, (ToolCallPart, ToolResultPart))] == [
+        ("tool_call", "plan"),
+        ("tool_result", "plan"),
     ]
 
 
