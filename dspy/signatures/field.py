@@ -54,22 +54,24 @@ class _SchemaExtraCallable(Mapping):
         schema.update(self._extra_dict)
         try:
             sig = getattr(self, "__signature__", None) or inspect.signature(self._fn)
-            params = list(sig.parameters.values())
-            has_varargs = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params)
-            num_pos = sum(
-                1
-                for p in params
-                if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
-            )
-            if has_varargs or (num_pos > 1 and len(args) > 0):
-                self._fn(schema, *args, **call_kwargs)
-            else:
-                self._fn(schema)
         except (ValueError, TypeError):
-            try:
-                self._fn(schema, *args, **call_kwargs)
-            except TypeError:
-                self._fn(schema)
+            # Pydantic's documented callback accepts one argument. If the
+            # callable cannot be inspected, use that contract rather than
+            # retrying it after a callback error.
+            self._fn(schema)
+            return
+
+        params = list(sig.parameters.values())
+        has_varargs = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params)
+        num_pos = sum(
+            1
+            for p in params
+            if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        )
+        if has_varargs or (num_pos > 1 and len(args) > 0):
+            self._fn(schema, *args, **call_kwargs)
+        else:
+            self._fn(schema)
 
     def __getitem__(self, item):
         return self._extra_dict[item]

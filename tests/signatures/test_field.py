@@ -1,5 +1,7 @@
+import pytest
+
 import dspy
-from dspy.signatures.field import InputField, OutputField
+from dspy.signatures.field import InputField, OutputField, _SchemaExtraCallable
 
 
 def test_input_field_preserves_dict_json_schema_extra():
@@ -94,6 +96,22 @@ def test_callable_json_schema_extra_mapping_and_updates():
     assert text_prop["desc"] == "Updated input text"
     assert text_prop["prefix"] == "CustomPrefix:"
     assert text_prop["x-custom-extension"] == "dynamic_value"
+
+
+def test_callable_json_schema_extra_does_not_retry_callback_errors():
+    calls = 0
+
+    def failing_mutator(schema: dict):
+        nonlocal calls
+        calls += 1
+        raise TypeError("callback failure")
+
+    extra = _SchemaExtraCallable({}, failing_mutator)
+
+    with pytest.raises(TypeError, match="callback failure"):
+        extra({})
+
+    assert calls == 1
 
 
 def test_field_without_json_schema_extra_unchanged():
