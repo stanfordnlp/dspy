@@ -287,6 +287,10 @@ class Evaluate:
         display_dataframe(df_to_display)
 
         if truncated_rows > 0:
+            if not is_in_ipython_notebook_environment():
+                print(f"... {truncated_rows} more rows not displayed ...")
+                return
+
             # Simplified message about the truncated rows
             message = f"""
             <div style='
