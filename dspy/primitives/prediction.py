@@ -3,14 +3,14 @@ from dspy.primitives.example import Example
 
 class Prediction(Example):
     """A prediction object that contains the output of a DSPy module.
-    
+
     Prediction inherits from Example.
-    
+
     To allow feedback-augmented scores, Prediction supports comparison operations
     (<, >, <=, >=) for Predictions with a `score` field. The comparison operations
     compare the 'score' values as floats. For equality comparison, Predictions are equal
     if their underlying data stores are equal (inherited from Example).
-    
+
     Arithmetic operations (+, /, etc.) are also supported for Predictions with a 'score'
     field, operating on the score value.
     """
@@ -21,8 +21,9 @@ class Prediction(Example):
         del self._demos
         del self._input_keys
 
-        self._completions = None
-        self._lm_usage = None
+        base = kwargs.get("base") if "base" in kwargs else (args[0] if args else None)
+        self._completions = getattr(base, "_completions", None)
+        self._lm_usage = getattr(base, "_lm_usage", None)
 
     def get_lm_usage(self):
         return self._lm_usage

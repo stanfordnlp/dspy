@@ -109,7 +109,7 @@ class Example:
         self._input_keys = None
 
         # Initialize from a base Example if provided
-        if isinstance(base, type(self)):
+        if isinstance(base, Example):
             self._store = base._store.copy()
             # Preserve the input/label split so copy()/without()/Example(base=...)
             # don't silently break .inputs()/.labels() on the new instance.
@@ -346,6 +346,8 @@ class Example:
                 return value.model_dump()
             elif isinstance(value, list):
                 return [convert_to_serializable(item) for item in value]
+            elif isinstance(value, tuple):
+                return tuple(convert_to_serializable(item) for item in value)
             elif isinstance(value, dict):
                 return {k: convert_to_serializable(v) for k, v in value.items()}
             else:

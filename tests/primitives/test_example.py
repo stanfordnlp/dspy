@@ -215,3 +215,53 @@ def test_example_to_dict_with_history():
     json_str = json.dumps(result)
     restored = json.loads(json_str)
     assert restored["history"]["messages"] == result["history"]["messages"]
+
+
+def test_prediction_initialization_from_example_base():
+    import dspy
+
+    ex = Example(question="q", answer="a")
+    pred1 = dspy.Prediction(base=ex)
+    assert pred1.question == "q"
+    assert pred1.answer == "a"
+    assert pred1.toDict() == {"question": "q", "answer": "a"}
+
+    pred2 = dspy.Prediction(ex, extra=1)
+    assert pred2.question == "q"
+    assert pred2.answer == "a"
+    assert pred2.extra == 1
+
+
+def test_example_initialization_from_prediction_base():
+    import dspy
+
+    pred = dspy.Prediction(answer="a", score=0.95)
+    ex = Example(base=pred)
+    assert ex.answer == "a"
+    assert ex.score == 0.95
+    assert ex.toDict() == {"answer": "a", "score": 0.95}
+
+
+def test_prediction_copy_preserves_completions_and_lm_usage():
+    import dspy
+
+    pred = dspy.Prediction.from_completions({"answer": ["first", "second"]})
+    pred.set_lm_usage({"prompt_tokens": 10, "completion_tokens": 5})
+
+    copied = pred.copy(score=1.0)
+    assert copied.score == 1.0
+    assert copied.answer == "first"
+    assert copied.completions is not None
+    assert len(copied.completions) == 2
+    assert copied.completions.answer == ["first", "second"]
+    assert copied.get_lm_usage() == {"prompt_tokens": 10, "completion_tokens": 5}
+
+
+def test_example_to_dict_nested_tuples():
+    import json
+
+    ex = Example(items=(Example(k=1), Example(k=2)), coords=(10, 20))
+    d = ex.toDict()
+    assert d == {"items": ({"k": 1}, {"k": 2}), "coords": (10, 20)}
+    json_str = json.dumps(d)
+    assert json.loads(json_str) == {"items": [{"k": 1}, {"k": 2}], "coords": [10, 20]}
