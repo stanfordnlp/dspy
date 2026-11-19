@@ -13,6 +13,7 @@ from typing_extensions import is_typeddict
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import (
+    annotation_allows_none,
     apply_output_field_defaults,
     format_field_value,
     format_tool_calls,
@@ -21,7 +22,7 @@ from dspy.adapters.utils import (
     translate_field_type,
 )
 from dspy.signatures.signature import Signature
-from dspy.utils.exceptions import AdapterParseError
+from dspy.utils.exceptions import AdapterParseError, AdapterValidationError
 
 # Avoid regex's compile/flag dispatch for every leaf and streaming chunk.
 _compile_xml_pattern = lru_cache(maxsize=128)(regex.compile)
@@ -157,29 +158,61 @@ class XMLAdapter(ChatAdapter):
             elements = self._group_children(root)
             if "<" in parser.buffer or {child.tag for child in root} - signature.output_fields.keys():
                 raise ET.ParseError("Unexpected output field or closing tag")
+            missing_required = [
+                k for k, v in signature.output_fields.items()
+                if k not in elements and v.is_required() and not annotation_allows_none(v.annotation)
+            ]
+            if missing_required:
+                raise ET.ParseError(f"Missing required output fields in XML response: {missing_required}")
             for name, field in signature.output_fields.items():
                 if name not in elements:
                     continue
                 context = f"Failed to parse field {name}"
                 field_schema = schemas[name]
+                last_error = None
+                validation_error = None
                 for candidate in [field_schema, *field_schema.get("anyOf", [])]:
                     try:
                         value = self._elements_to_value(elements[name], candidate, field_schema.get("$defs", {}))
+                    except ValueError as e:
+                        last_error = e
+                        continue
+                    try:
                         if isinstance(value, (dict, list)):
                             fields[name] = TypeAdapter(field.annotation).validate_python(value, by_name=True, strict=False)
                         else:
                             fields[name] = parse_value(value, field.annotation)
                         break
                     except ValueError as e:
-                        error = e
+                        validation_error = e
+                        last_error = e
                 else:
-                    raise error
-        except (ET.ParseError, ValueError) as e:
+                    raise validation_error or last_error
+        except ET.ParseError as e:
             raise AdapterParseError(
                 adapter_name="XMLAdapter",
                 signature=signature,
                 lm_response=completion,
                 message=f"{context}: {e}",
+            ) from e
+        except ValueError as e:
+            structural_errors = (
+                "Repeated elements require a list field",
+                "Scalar values cannot contain child fields",
+            )
+            if any(msg in str(e) for msg in structural_errors):
+                raise AdapterParseError(
+                    adapter_name="XMLAdapter",
+                    signature=signature,
+                    lm_response=completion,
+                    message=f"{context}: {e}",
+                ) from e
+            raise AdapterValidationError(
+                adapter_name="XMLAdapter",
+                signature=signature,
+                lm_response=completion,
+                message=f"{context}: {e}",
+                validation_error=e,
             ) from e
         fields = apply_output_field_defaults(signature, fields)
         if fields.keys() != signature.output_fields.keys():

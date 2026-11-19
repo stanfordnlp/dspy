@@ -7,6 +7,7 @@ from pydantic.fields import FieldInfo
 from dspy.adapters.base import Adapter, prompt_to_openai_messages
 from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
+    annotation_allows_none,
     apply_output_field_defaults,
     format_field_value,
     get_annotation_name,
@@ -18,7 +19,7 @@ from dspy.clients.base_lm import BaseLM
 from dspy.clients.call_context import adapter_fallback_scope
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
-from dspy.utils.exceptions import AdapterParseError
+from dspy.utils.exceptions import AdapterParseError, AdapterValidationError
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
 
@@ -86,6 +87,8 @@ class ChatAdapter(Adapter):
         with adapter_fallback_scope() as progress:
             try:
                 return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+            except AdapterValidationError:
+                raise
             except AdapterParseError:
                 from dspy.adapters.json_adapter import JSONAdapter
 
@@ -104,6 +107,8 @@ class ChatAdapter(Adapter):
         with adapter_fallback_scope() as progress:
             try:
                 return await super().acall(lm, lm_kwargs, signature, demos, inputs)
+            except AdapterValidationError:
+                raise
             except AdapterParseError:
                 from dspy.adapters.json_adapter import JSONAdapter
 
@@ -228,28 +233,33 @@ class ChatAdapter(Adapter):
 
         sections = [(k, "\n".join(v).strip()) for k, v in sections]
 
+        present_fields = {k for k, _ in sections if k in signature.output_fields}
+        missing_required = [
+            k for k, v in signature.output_fields.items()
+            if k not in present_fields and v.is_required() and not annotation_allows_none(v.annotation)
+        ]
+        if missing_required:
+            raise AdapterParseError(
+                adapter_name="ChatAdapter",
+                signature=signature,
+                lm_response=completion,
+                message=f"Missing required output field markers: {missing_required}",
+            )
+
         fields = {}
         for k, v in sections:
             if (k not in fields) and (k in signature.output_fields):
                 try:
                     fields[k] = parse_value(v, signature.output_fields[k].annotation)
                 except ValueError as e:
-                    raise AdapterParseError(
+                    raise AdapterValidationError(
                         adapter_name="ChatAdapter",
                         signature=signature,
                         lm_response=completion,
                         message=f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}",
-                    )
-        fields = apply_output_field_defaults(signature, fields)
-        if fields.keys() != signature.output_fields.keys():
-            raise AdapterParseError(
-                adapter_name="ChatAdapter",
-                signature=signature,
-                lm_response=completion,
-                parsed_result=fields,
-            )
-
-        return fields
+                        validation_error=e,
+                    ) from e
+        return apply_output_field_defaults(signature, fields)
 
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         """

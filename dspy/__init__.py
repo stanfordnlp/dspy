@@ -14,6 +14,7 @@ from dspy.adapters import Adapter, ChatAdapter, JSONAdapter, XMLAdapter, TwoStep
 from dspy.primitives.sandbox_serializable import SandboxSerializable  # isort: skip
 from dspy.utils.exceptions import (
     AdapterParseError,
+    AdapterValidationError,
     ContextWindowExceededError,
     DSPyError,
     LMAuthError,

@@ -308,6 +308,7 @@ class AdapterParseError(DSPyError):
         lm_response: Raw LM response text or representation being parsed.
         message: Optional additional context about the parse failure.
         parsed_result: Partial parsed result, if any.
+        validation_error: Optional underlying exception when field value validation failed.
     """
 
     default_code = "adapter_parse_error"
@@ -319,11 +320,13 @@ class AdapterParseError(DSPyError):
         lm_response: str,
         message: str | None = None,
         parsed_result: str | None = None,
+        validation_error: Exception | None = None,
     ):
         self.adapter_name = adapter_name
         self.signature = signature
         self.lm_response = lm_response
         self.parsed_result = parsed_result
+        self.validation_error = validation_error
 
         message = f"{message}\n\n" if message else ""
         message = (
@@ -337,3 +340,16 @@ class AdapterParseError(DSPyError):
             message += f"Actual output fields parsed from the LM response: [{', '.join(parsed_result.keys())}] \n\n"
 
         super().__init__(message)
+
+
+class AdapterValidationError(AdapterParseError):
+    """Raised when an adapter parses field markers successfully, but a field value fails validation.
+
+    Unlike structural parse errors (where the model failed to produce field delimiters),
+    validation errors indicate the model followed the format but produced a value that
+    violated schema constraints (such as Pydantic validators, Enum, or Literal types).
+    These should not trigger format fallbacks (e.g. ChatAdapter -> JSONAdapter).
+    """
+
+    default_code = "adapter_validation_error"
+
