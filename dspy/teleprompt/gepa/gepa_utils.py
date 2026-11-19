@@ -134,6 +134,10 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             custom_instruction_proposer = InstructionProposer()
         self.custom_instruction_proposer = custom_instruction_proposer
         self._builtin_instruction_proposer = isinstance(custom_instruction_proposer, InstructionProposer)
+        # Proposers opt in to raw reflective values by setting `wants_structured_inputs = True`.
+        self._structured_reflective_inputs = (
+            getattr(custom_instruction_proposer, "wants_structured_inputs", False) is True
+        )
         self.custom_code_proposer = custom_code_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.reflection_minibatch_size = reflection_minibatch_size
@@ -403,19 +407,18 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                         assert history_key_name is None
                         history_key_name = input_key
 
-                # The built-in proposer receives history objects for optional output truncation
-                # and adapter rendering. Custom proposers receive the same strings as before.
+                # Structured proposers receive the History object. Other proposers receive its string rendering.
                 if contains_history:
                     history = inputs[history_key_name]
                     new_inputs["Context"] = (
-                        history if self._builtin_instruction_proposer else format_history_for_reflection(history)
+                        history if self._structured_reflective_inputs else format_history_for_reflection(history)
                     )
 
                 for input_key, input_val in inputs.items():
                     if contains_history and input_key == history_key_name:
                         continue
 
-                    if self._builtin_instruction_proposer or isinstance(input_val, Type):
+                    if self._structured_reflective_inputs or isinstance(input_val, Type):
                         # Keep original object - will be properly formatted when sent to reflection LM
                         new_inputs[input_key] = input_val
                     else:
@@ -429,7 +432,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     new_outputs = s
                 else:
                     for output_key, output_val in outputs.items():
-                        new_outputs[output_key] = output_val if self._builtin_instruction_proposer else str(output_val)
+                        new_outputs[output_key] = output_val if self._structured_reflective_inputs else str(output_val)
 
                 d = {"Inputs": new_inputs, "Generated Outputs": new_outputs}
                 if isinstance(outputs, FailedPrediction):
