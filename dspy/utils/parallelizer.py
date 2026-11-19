@@ -95,8 +95,22 @@ class ParallelExecutor:
 
     def _execute_sequential(self, function: Callable[[T], R], data: Collection[T]) -> list[R | None]:
         """Execute items sequentially on the main thread."""
-        safe_function = self._wrap_function(function)
         results: list[R | _ResultState | None] = [_UNSET] * len(data)
+        parent_overrides = thread_local_overrides.get().copy()
+
+        def isolated_function(item: T) -> R:
+            # Match worker isolation without leaving the main thread.
+            new_overrides = parent_overrides.copy()
+            if new_overrides.get("usage_tracker"):
+                new_overrides["usage_tracker"] = copy.deepcopy(new_overrides["usage_tracker"])
+            token = thread_local_overrides.set(new_overrides)
+            try:
+                return function(item)
+            finally:
+                thread_local_overrides.reset(token)
+
+        # Initialization failures are task failures too: apply the same error budget.
+        safe_function = self._wrap_function(isolated_function)
 
         pbar = tqdm.tqdm(
             total=len(data),
