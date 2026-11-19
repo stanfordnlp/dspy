@@ -115,6 +115,9 @@ class Dataset:
         train_seeds = train_seeds or [1, 2, 3, 4, 5]
         data_args = dotdict(train_size=train_size, eval_seed=eval_seed, dev_size=dev_size, test_size=0, **kwargs)
         dataset = cls(**data_args)
+        # `kwargs` are constructor options for the dataset class (e.g. `input_keys`, or a subclass's
+        # own options); `reset_seeds` only takes the seed/size settings it declares.
+        reset_args = {"train_size": train_size, "eval_seed": eval_seed, "dev_size": dev_size, "test_size": 0}
 
         eval_set = dataset.dev
         eval_sets: list[list[Example]] = []
@@ -124,8 +127,7 @@ class Dataset:
         eval_offset = 0
 
         for train_seed in train_seeds:
-            data_args.train_seed = train_seed
-            dataset.reset_seeds(**data_args)
+            dataset.reset_seeds(train_seed=train_seed, **reset_args)
 
             eval_sets.append(eval_set[eval_offset : eval_offset + examples_per_seed])
             train_sets.append(dataset.train)
