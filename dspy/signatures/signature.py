@@ -28,7 +28,7 @@ from typing import Any, Iterator
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
-from dspy.signatures.field import InputField, OutputField
+from dspy.signatures.field import InputField, OutputField, _SchemaExtraCallable
 from dspy.utils.constants import IS_TYPE_UNDEFINED
 
 
@@ -350,10 +350,17 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         fields_copy = deepcopy(cls.fields)
         # Update `fields_copy[name].json_schema_extra` with the new kwargs, on conflicts
         # we use the new value in kwargs.
-        fields_copy[name].json_schema_extra = {
-            **fields_copy[name].json_schema_extra,
-            **kwargs,
-        }
+        current_extra = fields_copy[name].json_schema_extra
+        if isinstance(current_extra, _SchemaExtraCallable):
+            fields_copy[name].json_schema_extra = _SchemaExtraCallable(
+                {**current_extra, **kwargs},
+                current_extra._fn,
+            )
+        else:
+            fields_copy[name].json_schema_extra = {
+                **(current_extra or {}),
+                **kwargs,
+            }
         if type_ is not None:
             fields_copy[name].annotation = type_
         return Signature(fields_copy, cls.instructions)
