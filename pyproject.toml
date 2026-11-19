@@ -53,6 +53,11 @@ litellm = [
     "litellm>=1.65.8,!=1.106.0,!=1.106.1,!=1.106.2,!=1.106.3,!=1.106.4,!=1.106.5,!=1.106.6,!=1.106.7,!=1.108.0,!=1.108.1,!=1.108.2,!=1.108.3",
     "tenacity>=8.2.3",  # LiteLLM's retry helpers use this undeclared dependency.
 ]
+tinker = [
+    # The Tinker SDK and its cookbook require Python 3.11 or later.
+    "tinker>=0.39.1; python_version >= '3.11'",
+    "tinker-cookbook>=0.7.0; python_version >= '3.11'",
+]
 dev = [
     "pytest>=6.2.5",
     "pytest-mock>=3.12.0",

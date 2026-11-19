@@ -7,6 +7,9 @@ This section covers essential DSPy features and best practices for professional 
 ### [Custom LM Engines](../custom_lm_engines/index.md)
 Connect a custom backend through the lm15 request/response contract. The worked example runs the Pi CLI and its tools from a DSPy program.
 
+### [Tinker Models](../tinker/index.md)
+Run DSPy programs, including tool-using agents, on Tinker base models and the LoRA checkpoints you train on them.
+
 ### [Use MCP in DSPy](../mcp/index.md)
 Learn to integrate Model Context Protocol (MCP) with DSPy applications. This tutorial shows how to leverage MCP for enhanced context management and more sophisticated AI interactions.
 

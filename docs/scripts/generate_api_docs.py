@@ -11,6 +11,7 @@ API_MAPPING = {
     "models": [
         dspy.LM,
         dspy.Embedder,
+        dspy.TinkerLM,
     ],
     "primitives": [
         dspy.Audio,
