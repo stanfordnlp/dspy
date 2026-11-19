@@ -503,6 +503,13 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             )
         lst.insert(index, (name, (type_, field)))
 
+        # Merging the two sections back into one dict would silently drop a
+        # field whose name already exists in the other section. Reject the
+        # collision the same way the string-signature parser does.
+        other_section = output_fields if lst is input_fields else input_fields
+        if any(other_name == name for other_name, _ in other_section):
+            raise ValueError(f"Input and output fields must have distinct names, but found duplicates: '{name}'.")
+
         new_fields = dict(input_fields + output_fields)
         return Signature(new_fields, cls.instructions)
 
