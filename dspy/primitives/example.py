@@ -133,7 +133,21 @@ class Example:
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
 
     def __setattr__(self, key, value):
-        if key.startswith("_") or key in dir(self.__class__):
+        store = self.__dict__.get("_store")
+        in_class = key in dir(self.__class__)
+        if (
+            in_class
+            and not key.startswith("_")
+            and store is not None
+            and key in store
+            and not isinstance(getattr(type(self), key, None), property)
+        ):
+            # The name is already a stored field and shadows a plain class method
+            # (e.g. `items`, `keys`, `values`, `get`). Write to the field so that
+            # attribute and item access cannot diverge; creating an instance
+            # attribute here would leave `example[key]` stale.
+            store[key] = value
+        elif key.startswith("_") or in_class:
             super().__setattr__(key, value)
         else:
             self._store[key] = value
