@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import pydantic
 
+from dspy._vendor.lm15.serde import continuation_from_dict, continuation_to_dict
 from dspy.adapters.types.base_type import Type
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.requests import generation_options
@@ -9,6 +10,8 @@ from dspy.lm15 import Response, ThinkingPart
 
 if TYPE_CHECKING:
     from dspy.signatures.signature import Signature
+
+REASONING_TYPE_KEY = "__dspy_reasoning__"
 
 
 class Reasoning(Type):
@@ -22,9 +25,41 @@ class Reasoning(Type):
     """
 
     content: str
+    thinking_parts: list[dict[str, Any]] = pydantic.Field(default_factory=list)
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema: Any, handler: Any) -> dict[str, Any]:
+        schema = super().__get_pydantic_json_schema__(core_schema, handler)
+        schema = handler.resolve_ref_schema(schema)
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            properties.pop("thinking_parts", None)
+        required = schema.get("required")
+        if isinstance(required, list):
+            schema["required"] = [field for field in required if field != "thinking_parts"]
+        return schema
 
     def format(self):
         return f"{self.content}"
+
+    def to_thinking_parts(self) -> tuple[ThinkingPart, ...]:
+        if self.thinking_parts:
+            return tuple(
+                ThinkingPart(
+                    text=item.get("text", ""),
+                    continuation=tuple(continuation_from_dict(state) for state in item.get("continuation", ())),
+                )
+                for item in self.thinking_parts
+            )
+        return (ThinkingPart(text=self.content),) if self.content else ()
+
+    def to_history_value(self) -> str | dict[str, Any]:
+        if self.thinking_parts or not self.content:
+            saved: dict[str, Any] = {REASONING_TYPE_KEY: True, "content": self.content}
+            if self.thinking_parts:
+                saved["thinking_parts"] = self.thinking_parts
+            return saved
+        return self.content
 
     @staticmethod
     def _fallback_field_name(signature: type["Signature"], field_name: str) -> str:
@@ -54,7 +89,10 @@ class Reasoning(Type):
                 raise ValueError("`content` field is required for `dspy.Reasoning`")
             if not isinstance(data["content"], str):
                 raise ValueError(f"`content` field must be a string, but received type: {type(data['content'])}")
-            return {"content": data["content"]}
+            thinking_parts = data.get("thinking_parts") or []
+            if not isinstance(thinking_parts, list):
+                raise ValueError("`thinking_parts` field must be a list when provided")
+            return {"content": data["content"], "thinking_parts": thinking_parts}
 
         raise ValueError(f"Received invalid value for `dspy.Reasoning`: {data}")
 
@@ -105,8 +143,26 @@ class Reasoning(Type):
     @classmethod
     def parse_lm_response(cls, response: Response) -> Optional["Reasoning"]:
         """Read the model's native thinking parts into a Reasoning object."""
-        thinking = "".join(part.text for part in response.message.parts_of(ThinkingPart))
-        return Reasoning(content=thinking) if thinking else None
+        parts = [part for part in response.message.parts_of(ThinkingPart) if part.text or part.continuation]
+        if not parts:
+            return None
+        thinking = "".join(part.text for part in parts)
+        thinking_parts = (
+            [
+                {
+                    "text": part.text,
+                    **(
+                        {"continuation": [continuation_to_dict(state) for state in part.continuation]}
+                        if part.continuation
+                        else {}
+                    ),
+                }
+                for part in parts
+            ]
+            if len(parts) > 1 or any(part.continuation for part in parts)
+            else []
+        )
+        return cls(content=thinking, thinking_parts=thinking_parts)
 
     @classmethod
     def parse_stream_chunk(cls, chunk) -> str | None:

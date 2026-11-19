@@ -132,6 +132,121 @@ def tool_result_media(lm, options, request) -> set[str]:
     return carried
 
 
+@dataclass(frozen=True)
+class AssistantReplayPolicy:
+    provider: str | None = None
+    thinking: str = "all"
+    allow_encrypted_openai: bool = True
+
+
+def assistant_replay_policy(lm, options, request) -> AssistantReplayPolicy:
+    """How the backend running ``request`` accepts assistant thinking and continuation state."""
+    ext_thinking = (request.config.extensions or {}).get("thinking")
+    reasoning_disabled = (
+        (request.config.reasoning is not None and request.config.reasoning.is_off)
+        or (isinstance(ext_thinking, dict) and ext_thinking.get("type") == "disabled")
+    )
+    reasoning_active = bool(getattr(lm, "supports_reasoning", False)) and not reasoning_disabled
+    spec = getattr(lm, "_engine_spec", None)
+    if not isinstance(spec, str):
+        return AssistantReplayPolicy(provider=None, thinking="all" if reasoning_active else "omit")
+
+    from dspy.lm15 import UnknownModelError
+
+    try:
+        selection = select_backend(lm, options, request)
+    except (UnknownModelError, UnsupportedFeatureError):
+        return AssistantReplayPolicy(provider="", thinking="omit")
+
+    native = selection.native and selection.resolution is not None
+    if native and spec == "auto" and request.config.cache is None:
+        from dspy.clients.engines.lm15_engine import LM15Engine
+        from dspy.lm15 import RouterConfig, _definitions
+
+        engine = LM15Engine(RouterConfig(env={}, providers=_definitions(getattr(lm, "_providers", ()))),
+                            model_type=lm.model_type)
+        try:
+            engine.plan(request)
+        except UnsupportedFeatureError:
+            native = False
+        finally:
+            engine.close()
+
+    if not native:
+        if selection.model_type == "responses":
+            return AssistantReplayPolicy(
+                provider="openai",
+                thinking="openai_reasoning_item" if reasoning_active else "omit",
+            )
+        return AssistantReplayPolicy(provider="", thinking="omit")
+
+    from dspy._vendor.lm15.compat import (
+        AnthropicCompat,
+        OpenAIChatCompat,
+        OpenAIResponsesCompat,
+        resolve_anthropic_compat,
+        resolve_openai_chat_compat,
+        resolve_openai_responses_compat,
+    )
+    from dspy._vendor.lm15.registry import lookup
+    from dspy.lm15 import _binding_for
+
+    route = selection.resolution
+    binding = _binding_for(getattr(lm, "_providers", ()), route.provider) if route.declared else None
+    definition = binding.definition if binding is not None else lookup(route.provider)
+    if definition is None:
+        return AssistantReplayPolicy(provider="", thinking="omit")
+
+    if definition.dialect == "openai-responses":
+        compat = (
+            resolve_openai_responses_compat(definition.compat)
+            if isinstance(definition.compat, OpenAIResponsesCompat)
+            else resolve_openai_responses_compat(OpenAIResponsesCompat.preset(definition.compat or "openai"))
+        )
+        if compat.reasoning_format != "responses_reasoning":
+            return AssistantReplayPolicy(provider="", thinking="omit")
+        return AssistantReplayPolicy(
+            provider="openai",
+            thinking="openai_reasoning_item" if reasoning_active else "omit",
+            allow_encrypted_openai=route.provider in {"openai", "openai-codex", "azure"},
+        )
+
+    if definition.dialect == "anthropic":
+        if not reasoning_active:
+            return AssistantReplayPolicy(provider="", thinking="omit")
+        compat = (
+            resolve_anthropic_compat(definition.compat)
+            if isinstance(definition.compat, AnthropicCompat)
+            else resolve_anthropic_compat(AnthropicCompat.preset(definition.compat or "anthropic"))
+        )
+        if compat.thinking_replay == "unsigned":
+            return AssistantReplayPolicy(provider="", thinking="unsigned_anthropic")
+        return AssistantReplayPolicy(
+            provider="anthropic" if compat.thinking_format == "anthropic" else "",
+            thinking="signed_anthropic",
+        )
+
+    if definition.dialect == "gemini":
+        return AssistantReplayPolicy(
+            provider="gemini",
+            thinking="gemini_thought" if getattr(lm, "supports_reasoning", False) else "omit",
+        )
+
+    if definition.dialect == "openai-chat":
+        partial = (
+            definition.compat
+            if isinstance(definition.compat, OpenAIChatCompat)
+            else OpenAIChatCompat.preset(definition.compat or ("xai" if route.provider == "xai" else "openai"))
+        )
+        compat = resolve_openai_chat_compat(partial.for_model(route.model))
+        if not reasoning_active or compat.thinking_replay != "native":
+            return AssistantReplayPolicy(provider="", thinking="omit")
+        thinking = "include_empty_chat" if compat.assistant_reasoning_content == "include_empty" else "native_chat"
+        return AssistantReplayPolicy(provider="", thinking=thinking)
+
+    return AssistantReplayPolicy(provider="", thinking="omit")
+
+
 def _litellm_capabilities(lm, selection):
     from dspy.clients._litellm import get_litellm
 
