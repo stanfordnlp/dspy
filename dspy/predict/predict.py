@@ -154,7 +154,12 @@ class Predict(Module, Parameter):
         assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
         signature = ensure_signature(kwargs.pop("signature", self.signature))
         demos = kwargs.pop("demos", self.demos)
-        config = {**self.config, **kwargs.pop("config", {})}
+        call_config = kwargs.pop("config", {})
+        config = {**self.config, **call_config}
+        reasoning_config = copy.deepcopy({
+            key: value for key, value in call_config.items()
+            if key in ("reasoning", "reasoning_effort", "thinking")
+        })
 
         # Get the right LM to use.
         lm = kwargs.pop("lm", self.lm) or settings.lm
@@ -240,11 +245,13 @@ class Predict(Module, Parameter):
                 present,
                 missing,
             )
-        return lm, config, signature, demos, kwargs
+        return lm, config, signature, demos, kwargs, reasoning_config
 
-    def _forward_postprocess(self, completions, signature, **kwargs):
+    def _forward_postprocess(self, completions, signature, call_config=None, /, **kwargs):
         pred = Prediction.from_completions(completions, signature=signature)
         if kwargs.pop("_trace", True) and settings.trace is not None and settings.max_trace_size > 0:
+            # Keep call-specific reasoning controls out of public outputs and trace inputs.
+            pred._reasoning_config = call_config or {}
             trace = settings.trace
             if len(trace) >= settings.max_trace_size:
                 trace.pop(0)
@@ -260,7 +267,7 @@ class Predict(Module, Parameter):
         return should_stream
 
     def forward(self, **kwargs):
-        lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
+        lm, config, signature, demos, kwargs, call_config = self._forward_preprocess(**kwargs)
 
         adapter = resolve_adapter(lm, _get_adapter(), signature, self.fields, self.signature)
 
@@ -271,10 +278,10 @@ class Predict(Module, Parameter):
             with settings.context(send_stream=None):
                 completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
 
-        return self._forward_postprocess(completions, signature, **kwargs)
+        return self._forward_postprocess(completions, signature, call_config, **kwargs)
 
     async def aforward(self, **kwargs):
-        lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
+        lm, config, signature, demos, kwargs, call_config = self._forward_preprocess(**kwargs)
 
         adapter = resolve_adapter(lm, _get_adapter(), signature, self.fields, self.signature)
         if self._should_stream():
@@ -284,7 +291,7 @@ class Predict(Module, Parameter):
             with settings.context(send_stream=None):
                 completions = await adapter.acall(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
 
-        return self._forward_postprocess(completions, signature, **kwargs)
+        return self._forward_postprocess(completions, signature, call_config, **kwargs)
 
     def get_criteria(self, field):
         """Return copied effective criteria for an experimental decision output."""
