@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from dataclasses import replace
 
 import pytest
@@ -15,6 +16,50 @@ class ReasoningDummyLM(dspy.utils.DummyLM):
     @property
     def supports_reasoning(self):
         return True
+
+
+@pytest.mark.parametrize("max_iters", [0, 1])
+def test_bootstrap_demo_history_excludes_its_own_answer(max_iters):
+    lm = dspy.utils.DummyLM([{
+        "next_thought": "Done.",
+        "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "private-label-73"}}]),
+    }])
+    agent = dspy.ReAct("question -> answer", tools=[], max_iters=max_iters)
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=False)):
+        compiled = dspy.BootstrapFewShot(max_bootstrapped_demos=1, max_labeled_demos=0).compile(
+            agent, trainset=[dspy.Example(question="Find the label.").with_inputs("question")]
+        )
+    demo, = compiled.react.demos
+    assert demo.history.messages == []
+    assert demo.tool_calls.tool_calls[0].args == {"answer": "private-label-73"}
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("max_iters", [1, 2])
+def test_multiturn_trace_preserves_history_snapshots(asynchronous, max_iters):
+    evidence = {"evidence": "prior-evidence-29", "resource": threading.Lock()}
+
+    def lookup():
+        # Tool result leaves need not support deepcopy.
+        return evidence
+
+    lm = dspy.utils.DummyLM([
+        {"next_thought": "Look it up.", "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {}}])},
+        {"next_thought": "Done.", "tool_calls": dspy.ToolCalls.from_dict_list([
+            {"name": "submit", "args": {"answer": "private-label-73"}},
+        ])},
+    ])
+    agent = dspy.ReAct("question -> answer", tools=[lookup], max_iters=max_iters)
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=False), trace=[]):
+        result = asyncio.run(agent.acall(question="Find the label.")) if asynchronous else agent(question="Find the label.")
+        histories = [inputs["history"] for _, inputs, _ in dspy.settings.trace]
+    assert result.answer == "private-label-73"
+    assert len(result.history.messages) == 2
+    assert [len(history.messages) for history in histories] == [0, 1]
+    assert histories[1].messages[0]["tool_calls"].tool_call_results.tool_call_results[0].value is evidence
+    assert all("private-label-73" not in str(history.messages) for history in histories)
+    result.history.messages[0]["answer"] = "mutation"
+    assert "answer" not in histories[1].messages[0]
 
 
 def test_react_submit_tool_returns_original_output_fields():

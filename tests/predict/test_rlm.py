@@ -11,6 +11,7 @@ import io
 import json
 import logging
 import sys
+import threading
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from typing import Any
@@ -49,6 +50,57 @@ from tests.mock_interpreter import MockInterpreter, MockInterpreterFactory
 # ============================================================================
 # Test Helpers and Factories
 # ============================================================================
+
+
+@pytest.mark.parametrize("processor", [None, lambda history: history])
+def test_bootstrap_demo_history_excludes_future_answer(processor):
+    agent = dspy.RLM(
+        "question -> answer", max_iters=2, interpreter_factory=dspy.LocalInterpreter, history_processor=processor
+    )
+    lm = DummyLM([
+        {"plan": "Inspect.", "code": "print('prior-evidence-29')"},
+        {"plan": "Done.", "code": "SUBMIT(answer='private-label-73')"},
+    ])
+    with dspy.context(lm=lm):
+        compiled = dspy.BootstrapFewShot(
+            metric=lambda example, prediction, trace: prediction.answer == "private-label-73",
+            max_bootstrapped_demos=1, max_labeled_demos=0,
+        ).compile(agent, trainset=[dspy.Example(question="Find the label.").with_inputs("question")])
+    demo, = compiled.generate_action.demos
+    assert "private-label-73" not in demo.history.model_dump_json()
+    if demo.code.startswith("SUBMIT"):
+        assert len(demo.history.messages) == 1
+        assert "prior-evidence-29" in demo.history.model_dump_json()
+    else:
+        assert demo.code == "print('prior-evidence-29')"
+        assert demo.history.messages == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_multiturn_trace_preserves_history_snapshots(asynchronous):
+    class Task(dspy.Signature):
+        numbers: _Numbers = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    numbers = _Numbers([29])
+    numbers.resource = threading.Lock()  # Sandbox serialization works without deepcopy support.
+    agent = dspy.RLM(Task, max_iters=2, interpreter_factory=dspy.LocalInterpreter)
+    lm = DummyLM([
+        {"plan": "Inspect.", "code": "print('prior-evidence-' + str(sum(numbers)))"},
+        {"plan": "Done.", "code": "SUBMIT(answer='private-label-73')"},
+    ])
+    with dspy.context(lm=lm, trace=[]):
+        result = await agent.acall(numbers=numbers) if asynchronous else agent(numbers=numbers)
+        histories = [inputs["history"] for _, inputs, _ in dspy.settings.trace]
+    assert result.answer == "private-label-73"
+    assert len(result.history.messages) == 2
+    assert [len(history.messages) for history in histories] == [0, 1]
+    assert histories[1].messages[0]["numbers"] is numbers
+    assert "prior-evidence-29" in histories[1].model_dump_json()
+    assert all("private-label-73" not in history.model_dump_json() for history in histories)
+    result.history.messages[0]["answer"] = "later-mutation"
+    assert "answer" not in histories[1].messages[0]
 
 
 def make_mock_predictor(responses: list[dict], async_mode: bool = False):

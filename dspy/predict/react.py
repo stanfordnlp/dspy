@@ -145,8 +145,9 @@ class ReAct(Module):
         for turn_index in range(max_iters):
             turn_inputs = {**pending_inputs, **self._turn_budget_inputs(turn_index, max_iters)}
             try:
+                # Freeze event membership/fields for traces; arbitrary tool-result leaves stay shared.
                 pred = self.react(
-                    history=history,
+                    history=history.model_copy(update={"messages": [dict(event) for event in history.messages]}),
                     tools=list(self.tools.values()),
                     **turn_inputs,
                 )
@@ -187,7 +188,7 @@ class ReAct(Module):
             turn_inputs = {**pending_inputs, **self._turn_budget_inputs(turn_index, max_iters)}
             try:
                 pred = await self.react.acall(
-                    history=history,
+                    history=history.model_copy(update={"messages": [dict(event) for event in history.messages]}),
                     tools=list(self.tools.values()),
                     **turn_inputs,
                 )
@@ -302,7 +303,7 @@ class ReAct(Module):
         turn_inputs = {**pending_inputs, **self._turn_budget_inputs(None, None)}
         try:
             pred = self.react(
-                history=history,
+                history=history.model_copy(update={"messages": [dict(event) for event in history.messages]}),
                 tools=list(self.tools.values()),
                 config={
                     "tool_choice": {"type": "function", "function": {"name": "submit"}},
@@ -343,7 +344,7 @@ class ReAct(Module):
         turn_inputs = {**pending_inputs, **self._turn_budget_inputs(None, None)}
         try:
             pred = await self.react.acall(
-                history=history,
+                history=history.model_copy(update={"messages": [dict(event) for event in history.messages]}),
                 tools=list(self.tools.values()),
                 config={
                     "tool_choice": {"type": "function", "function": {"name": "submit"}},
