@@ -6,6 +6,8 @@ from concurrent.futures import Future
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 import dspy.utils.unbatchify as unbatchify_module
 from dspy.utils.unbatchify import Unbatchify
 
@@ -113,3 +115,31 @@ def test_unbatchify_honors_max_wait_time_under_trickling_input(monkeypatch):
     # The arrival at 16 belongs to the next window. Re-arming the full timeout
     # would instead include it in the first batch and flush that batch at 16.
     assert batches == [([1, 2], 10.0), ([3], 20.0)]
+
+
+def test_unbatchify_rejects_calls_after_close():
+    """A closed batcher has no worker left to drain the queue, so it must refuse instead of blocking."""
+    unbatcher = Unbatchify(batch_fn=simple_batch_processor, max_batch_size=1, max_wait_time=0.05)
+    unbatcher.close()
+
+    with pytest.raises(RuntimeError, match="Unbatchify is closed"):
+        unbatcher(1)
+
+
+def test_unbatchify_fails_a_batch_that_returns_missing_outputs():
+    """Every submitted item needs an output; a short batch must not leave a caller waiting forever."""
+    unbatcher = Unbatchify(batch_fn=lambda batch: [], max_batch_size=1, max_wait_time=0.05)
+    try:
+        with pytest.raises(ValueError, match="batch_fn returned 0 outputs for a batch of 1 inputs"):
+            unbatcher(1)
+    finally:
+        unbatcher.close()
+
+
+def test_unbatchify_accepts_a_generator_batch_output():
+    """A batch function may stream its outputs; each item still receives its own result."""
+    unbatcher = Unbatchify(batch_fn=lambda batch: (item + 1 for item in batch), max_batch_size=2, max_wait_time=0.05)
+    try:
+        assert [unbatcher(item) for item in (1, 2)] == [2, 3]
+    finally:
+        unbatcher.close()

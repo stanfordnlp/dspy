@@ -40,6 +40,9 @@ class Unbatchify:
         Returns:
             The output corresponding to the input_item after processing through batch_fn.
         """
+        if self.stop_event.is_set():
+            # No worker is left to drain the queue, so a submitted item would wait forever.
+            raise RuntimeError("Unbatchify is closed")
         future = Future()
         self.input_queue.put((input_item, future))
         try:
@@ -67,8 +70,13 @@ class Unbatchify:
 
             if batch:
                 try:
-                    outputs = self.batch_fn(batch)
-                    for output, future in zip(outputs, futures, strict=False):
+                    outputs = list(self.batch_fn(batch))
+                    if len(outputs) != len(futures):
+                        raise ValueError(
+                            f"batch_fn returned {len(outputs)} outputs for a batch of {len(futures)} inputs; "
+                            "every input needs one output."
+                        )
+                    for output, future in zip(outputs, futures, strict=True):
                         future.set_result(output)
                 except Exception as e:
                     for future in futures:
