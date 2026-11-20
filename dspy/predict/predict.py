@@ -196,8 +196,12 @@ class Predict(Module, Parameter):
 
         # Populate default values for missing input fields.
         for k, v in signature.input_fields.items():
-            if k not in kwargs and v.default is not PydanticUndefined:
+            if k in kwargs:
+                continue
+            if v.default is not PydanticUndefined:
                 kwargs[k] = v.default
+            elif v.default_factory is not None:
+                kwargs[k] = v.default_factory()
 
         # Check and warn for extra fields not in signature
         extra_fields = [k for k in kwargs if k not in signature.input_fields]
