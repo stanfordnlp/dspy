@@ -28,7 +28,12 @@ class Retrieve(Parameter):
     def reset(self):
         pass
 
-    def dump_state(self):
+    def dump_state(self, json_mode=True):
+        # `json_mode` is part of the Parameter.dump_state contract:
+        # BaseModule.dump_state forwards it to every named parameter, so a
+        # module that holds a Retrieve could not be dumped or saved without it
+        # (#10454). Retrieve's state is a plain int `k`, identical in JSON and
+        # pickle form, so the flag is accepted and needs no branch.
         state_keys = ["k"]
         return {k: getattr(self, k) for k in state_keys}
 
