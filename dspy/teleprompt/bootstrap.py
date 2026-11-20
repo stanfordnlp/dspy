@@ -226,7 +226,12 @@ class BootstrapFewShot(Teleprompter):
         if success:
             for step in trace:
                 predictor, inputs, outputs = step
-                demo = dspy.Example(augmented=True, **inputs, **outputs)
+                # Merge before splatting: a key can appear in both `inputs` and
+                # `outputs` (e.g., an output field listed in the example's
+                # `with_inputs()`), which would otherwise raise
+                # "got multiple values for keyword argument". The predicted
+                # value wins for shared keys.
+                demo = dspy.Example(augmented=True, **{**inputs, **outputs})
 
                 try:
                     predictor_name = self.predictor2name[id(predictor)]

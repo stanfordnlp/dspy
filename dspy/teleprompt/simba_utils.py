@@ -90,7 +90,12 @@ def append_a_demo(demo_input_field_maxlen):
                 if demo_input_field_maxlen and len(str(v)) > demo_input_field_maxlen:
                     _inputs[k] = f"{str(v)[:demo_input_field_maxlen]}\n\t\t... <TRUNCATED FOR BREVITY>"
 
-            demo = dspy.Example(augmented=True, **_inputs, **_outputs)
+            # Merge before splatting: a key can appear in both `_inputs` and
+            # `_outputs` (e.g., an output field listed in the example's
+            # `with_inputs()`), which would otherwise raise
+            # "got multiple values for keyword argument". The predicted value
+            # wins for shared keys.
+            demo = dspy.Example(augmented=True, **{**_inputs, **_outputs})
             name = predictor2name.get(id(predictor))
             if name is None:
                 continue
