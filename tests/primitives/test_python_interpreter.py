@@ -2050,6 +2050,70 @@ def test_a_new_standard_library_archive_makes_a_new_snapshot(tmp_path, monkeypat
     with pytest.raises(sandbox_bundle.SandboxBundleError):  # this process builds none in its place
         sandbox_bundle._prepare_snapshot((), None, "", bundle, stdlib)
 
+def test_the_dspy_bundle_has_this_environments_package_where_pyodide_can_run_it(tmp_path, monkeypatch, caplog):
+    import importlib.metadata as metadata
+
+    from dspy.primitives import sandbox_bundle
+
+    # Pyodide ships version 1 of each, and this environment has version 2: name -> (compiled, requires).
+    here = {
+        "core": (True, []),  # compiled, so only Pyodide's build can run
+        "model": (False, ["core"]),  # pure, but it needs core as it is here
+        "helper": (False, []),
+        "app": (False, ["helper", "fast"]),  # pure, and Pyodide has no build of it
+        "fast": (True, []),  # compiled, and the same version as here
+        "bare": (False, []),  # pure, but without the metadata that would tell the sandbox it is installed
+    }
+    lock = {name: {"depends": [], "file_name": f"{name}.whl", "version": "1"} for name in ["sqlite3", *here]}
+    del lock["app"]
+    lock["sqlite3"]["package_type"] = "cpython_module"
+    lock["model"]["depends"] = ["core", "helper"]
+    lock["helper"]["depends"] = ["sqlite3"]  # a part of the standard library that Pyodide ships apart
+    lock["fast"]["version"] = "2"
+    dists = {name: types.SimpleNamespace(metadata={"Name": name}, version="2", requires=requires)
+             for name, (_, requires) in here.items()}
+    (tmp_path / "site").mkdir()
+    for name in here:
+        (tmp_path / "site" / f"{name}.py").write_text("")
+
+    def distribution(name):
+        if name not in dists:
+            raise metadata.PackageNotFoundError(name)
+        return dists[name]
+
+    monkeypatch.setattr(metadata, "distribution", distribution)
+    monkeypatch.setattr(sandbox_bundle, "_distributions", lambda: list(dists.values()))
+    monkeypatch.setattr(sandbox_bundle, "_pyodide_lock", lambda deno_dir: lock)
+    monkeypatch.setattr(sandbox_bundle, "_fetch_wheel", lambda root, info, deno_dir: info["file_name"])
+    monkeypatch.setattr(sandbox_bundle, "_files", lambda dist: [] if here[dist.metadata["Name"]][0] else [
+        (tmp_path / "site" / f"{dist.metadata['Name']}.py", f"{dist.metadata['Name']}.py")])
+    monkeypatch.setattr(sandbox_bundle, "_metadata_files", lambda dist: [] if dist.metadata["Name"] == "bare" else [
+        (tmp_path / "site" / f"{dist.metadata['Name']}.py", f"{dist.metadata['Name']}-2.dist-info/METADATA")])
+    monkeypatch.setattr(sandbox_bundle, "_warned", set())
+    monkeypatch.setattr(logging.getLogger("dspy"), "propagate", True)
+    caplog.set_level(logging.WARNING)
+
+    sandbox_bundle._plan.cache_clear()
+    try:
+        wheels, files = sandbox_bundle._contents(tmp_path, None, ())
+        # helper is this environment's, though Pyodide's model depends on it, and so is app, which needs fast as is.
+        # helper's copy still needs the part of the standard library that Pyodide's build of it does.
+        assert wheels == ["bare.whl", "core.whl", "fast.whl", "model.whl", "sqlite3.whl"]
+        assert sorted(name for _, name in files if name.endswith(".py")) == ["app.py", "helper.py"]
+        assert caplog.text == ""  # no warning of dspy's own packages
+
+        # Libraries that reach them, and helper, which the bundle has from this environment.
+        reached = ["core", "fast", "helper", "model"]
+        monkeypatch.setattr(sandbox_bundle, "_library_plan", lambda lock, libraries: (reached, [], []))
+        sandbox_bundle._contents(tmp_path, None, (), ("shop",))
+        assert "libraries reach: core 1 (2 here), model 1 (2 here)." in caplog.text
+        caplog.clear()
+        sandbox_bundle._contents(tmp_path, None, (), ("shop",))
+        assert caplog.text == ""  # once
+    finally:
+        sandbox_bundle._plan.cache_clear()
+
+
 def test_sandbox_packages_choose_the_pyodide_packages_in_the_dspy_bundle(monkeypatch):
     # Pyodide's own builds, by name, whatever this environment has installed: by default Pillow, for Image.to_pil.
     import importlib.util

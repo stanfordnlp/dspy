@@ -8,15 +8,18 @@ from dataclasses import dataclass, field
 from typing import Any, get_args, get_origin
 
 from dspy.primitives.facade import is_reserved_sandbox_name
+from dspy.primitives.libraries import module_of
 from dspy.signatures.field import PYDANTIC_CONSTRAINT_MAP
 
 
 @dataclass
 class FlexContext:
-    """Signature + tools that the baseline and code-optimization prompts render from."""
+    """Signature, tools and libraries that the baseline and code-optimization prompts render from."""
 
     signature_cls: type
     tools: list[Any] = field(default_factory=list)
+    # What the code may import besides dspy and the standard library, as ``dspy.primitives.libraries`` names each.
+    libraries: list[str] = field(default_factory=list)
 
     def context_names(self) -> dict[str, Any]:
         """Names to inject into the exec globals for the generated code."""
@@ -117,7 +120,14 @@ class FlexContext:
             _collect_custom_types(finfo.annotation, out)
         return out
 
-    def render_context_blurb(self, sandboxed: bool = False) -> str:
+    def library_modules(self) -> list[str]:
+        """The modules the libraries are imported from."""
+        return [module_of(spec) for spec in self.libraries]
+
+    def render_context_blurb(self, sandboxed: bool = False, library_reference: str | None = None) -> str:
+        """The tools, libraries and execution notes the code optimizer is told about. ``library_reference`` is the
+        libraries' API as the module's interpreter has them (``Flex`` reads it there); without it they are listed by
+        how they are imported."""
         parts: list[str] = []
         if self.tools:
             tool_lines: list[str] = []
@@ -127,13 +137,25 @@ class FlexContext:
                 tdesc = tdesc.strip().splitlines()[0] if tdesc else ""
                 tool_lines.append(f"  - {tname}: {tdesc}")
             parts.append("Available tools (in scope by name):\n" + "\n".join(tool_lines))
+        if self.libraries:
+            listed = "\n".join(
+                f"  - from {module_of(spec)} import {spec.partition(':')[2].split('.')[0]}" if ":" in spec
+                else f"  - import {spec}"
+                for spec in self.libraries
+            )
+            parts.append(
+                "Libraries the module may import, with an import at the top of the module. Use them for what they "
+                "do, and DSPy's modules for what needs a language model. Use only what each reference documents. "
+                "Import nothing besides these and the standard library:\n\n" + (library_reference or listed)
+            )
         if sandboxed:
             parts.append(
                 "This module runs in a sandbox: the tools listed above run on the host, and functions you "
                 "define inside the module run in the sandbox. Either kind can be called directly in forward "
                 "or passed to dspy.ReAct/dspy.RLM."
             )
-            if custom := [name for name, t in self.custom_types().items() if _is_user_type(t)]:
+            modules = self.library_modules()
+            if custom := [name for name, t in self.custom_types().items() if _is_user_type(t, modules)]:
                 parts.append(
                     f"In the sandbox, values of {', '.join(sorted(custom))} are plain data, the JSON the type writes, "
                     "like a dict of a model's fields: read them that way, and where the signature names the type, return "
@@ -151,11 +173,12 @@ def _type_name(t: Any) -> str:
     return str(t).replace("typing.", "")
 
 
-def _is_user_type(t: type) -> bool:
-    """A type of the user's, whose values are plain data in the sandbox (see ``facade.HostValues``)."""
+def _is_user_type(t: type, libraries: list[str] | tuple[str, ...] = ()) -> bool:
+    """A type of the user's, whose values are plain data in the sandbox (see ``facade.HostValues``). One of the
+    ``libraries`` the sandbox imports is not: its values are objects of it there."""
     from dspy.primitives.facade import _import_path
 
-    return _import_path(t) is None
+    return _import_path(t, libraries) is None
 
 
 def _collect_custom_types(annotation: Any, out: dict[str, type]) -> None:

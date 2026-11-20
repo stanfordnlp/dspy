@@ -12,6 +12,7 @@ It also resolves which implementation a module gets: a module's own
 ``PythonInterpreter``. See :func:`resolve_interpreter_factory`.
 """
 
+from collections.abc import Sequence
 from typing import Any, Callable, Protocol, runtime_checkable
 
 from dspy.dsp.utils.settings import settings
@@ -88,6 +89,15 @@ class CodeInterpreter(Protocol):
         registered tools must be callable as globals, and state must persist across
         execute() calls. An interpreter that runs code in the host's memory keeps using the
         host's ``dspy`` module as is.
+
+    Libraries:
+        ``dspy.Flex(libraries=...)`` lets its code import modules of the user's. An interpreter
+        that has to do something for that defines ``provide_libraries(modules)``, which is
+        called with the modules' names before the interpreter runs any code (``PythonInterpreter``
+        adds them to its sandbox, ``LocalInterpreter`` to its worker's path). A factory that
+        prepares interpreters ahead of time may define it too, and is then told before it is
+        asked for an interpreter (``InterpreterPool``). One without it is taken to have the
+        modules in its own environment, and executed code reports what it finds there.
     """
 
     @property
@@ -206,9 +216,17 @@ def resolve_interpreter_factory(
     return configured
 
 
-def _create_interpreter(factory: Callable[[], CodeInterpreter] | None) -> CodeInterpreter:
-    """Create an interpreter from ``factory``, or from the configured one, and validate it."""
-    interpreter = resolve_interpreter_factory(factory)()
+def _create_interpreter(
+    factory: Callable[[], CodeInterpreter] | None, libraries: Sequence[str] = ()
+) -> CodeInterpreter:
+    """Create an interpreter from ``factory``, or from the configured one, and validate it. A factory that prepares
+    its interpreters ahead of time is first told the ``libraries`` their code may import (see ``CodeInterpreter``)."""
+    factory = resolve_interpreter_factory(factory)
+    # An interpreter class has provide_libraries too, for its instances: only a factory object is told.
+    provide = None if isinstance(factory, type) else getattr(factory, "provide_libraries", None)
+    if libraries and callable(provide):
+        provide(libraries)
+    interpreter = factory()
     if not isinstance(interpreter, CodeInterpreter):
         raise TypeError(
             "interpreter_factory must return a CodeInterpreter, "

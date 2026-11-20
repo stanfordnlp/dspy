@@ -26,7 +26,7 @@ import pydantic
 import pytest
 
 import dspy
-from dspy.predict.flex import Flex, bridge
+from dspy.predict.flex import Flex, program
 from dspy.primitives.code_interpreter import (
     CodeExecutionError,
     CodeInterpreterError,
@@ -903,7 +903,7 @@ def test_interpreter_is_not_serialized() -> None:
 # =============================================================================
 
 
-def test_parse_module_class_name_prefers_forward() -> None:
+def test_a_program_written_before_the_entry_rule_runs_its_first_class_with_forward() -> None:
     src = textwrap.dedent(
         """
         class Helper:
@@ -914,7 +914,7 @@ def test_parse_module_class_name_prefers_forward() -> None:
                 return dspy.Prediction()
         """
     )
-    assert bridge.parse_module_class_name(src) == "MyModule"
+    assert program.entry({"program.py": src}, "OtherModule") == "MyModule"
 
 
 def test_outputs_cross_with_their_types() -> None:
