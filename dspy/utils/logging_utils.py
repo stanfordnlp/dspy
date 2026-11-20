@@ -14,30 +14,30 @@ class DSPyLoggingStream:
     It also provides capabilities for disabling the stream to silence event logs.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._enabled = True
 
-    def write(self, text):
+    def write(self, text: str) -> None:
         if self._enabled:
             sys.stderr.write(text)
 
-    def flush(self):
+    def flush(self) -> None:
         if self._enabled:
             sys.stderr.flush()
 
     @property
-    def enabled(self):
+    def enabled(self) -> bool:
         return self._enabled
 
     @enabled.setter
-    def enabled(self, value):
+    def enabled(self, value: bool) -> None:
         self._enabled = value
 
 
 DSPY_LOGGING_STREAM = DSPyLoggingStream()
 
 
-def disable_logging():
+def disable_logging() -> None:
     """
     Disables the `DSPyLoggingStream` used by event logging APIs throughout DSPy
     (`eprint()`, `logger.info()`, etc), silencing all subsequent event logs.
@@ -45,7 +45,7 @@ def disable_logging():
     DSPY_LOGGING_STREAM.enabled = False
 
 
-def enable_logging():
+def enable_logging() -> None:
     """
     Enables the `DSPyLoggingStream` used by event logging APIs throughout DSPy
     (`eprint()`, `logger.info()`, etc), emitting all subsequent event logs. This
@@ -54,7 +54,7 @@ def enable_logging():
     DSPY_LOGGING_STREAM.enabled = True
 
 
-def configure_dspy_loggers(root_module_name):
+def configure_dspy_loggers(root_module_name: str) -> None:
     formatter = logging.Formatter(fmt=LOGGING_LINE_FORMAT, datefmt=LOGGING_DATETIME_FORMAT)
 
     dspy_handler_name = "dspy_handler"
