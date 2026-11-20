@@ -147,6 +147,21 @@ def test_reasoning_model_requirements(model):
     assert dspy.LM(model).kwargs == {"temperature": None, "max_completion_tokens": None}
 
 
+@pytest.mark.parametrize("model", ["openai/o1", "openai/gpt-5-nano"])
+def test_reasoning_model_accepts_max_completion_tokens_spelling(model):
+    # This branch stores the OpenAI-native `max_completion_tokens` spelling, so it must accept it too.
+    assert dspy.LM(model, temperature=1.0, max_completion_tokens=16000).kwargs == {
+        "temperature": 1.0,
+        "max_completion_tokens": 16000,
+    }
+    # An explicit `max_tokens` wins over the alias, matching `LM.load_state`.
+    both = dspy.LM(model, temperature=1.0, max_tokens=16000, max_completion_tokens=32000)
+    assert both.kwargs["max_completion_tokens"] == 16000
+    # The documented guard applies to a budget given under this spelling.
+    with pytest.raises(dspy.LMConfigurationError, match="reasoning models require"):
+        dspy.LM(model, temperature=1.0, max_completion_tokens=1000)
+
+
 def test_base_lm_init_uses_lm_defaults_and_isolates_callback_list():
     callbacks = [object()]
     lm = dspy.BaseLM("custom-model", callbacks=callbacks)

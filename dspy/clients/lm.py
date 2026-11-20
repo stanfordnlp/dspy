@@ -249,14 +249,18 @@ class LM(BaseLM):
             **kwargs,
         )
         if _is_openai_reasoning_model(self.model):
-            if (temperature and temperature != 1.0) or (max_tokens and max_tokens < 16000):
+            # This branch stores the OpenAI-native `max_completion_tokens` spelling, so it accepts that
+            # spelling from the caller too. An explicit `max_tokens` wins, as it does in `load_state`.
+            supplied_tokens = kwargs.pop("max_completion_tokens", None)
+            completion_tokens = max_tokens if max_tokens is not None else supplied_tokens
+            if (temperature and temperature != 1.0) or (completion_tokens and completion_tokens < 16000):
                 raise LMConfigurationError(
                     "OpenAI's reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None to "
                     "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5', temperature=1.0, max_tokens=16000)",
                     model=self.model,
                     provider=self._provider_name,
                 )
-            self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
+            self.kwargs = dict(temperature=temperature, max_completion_tokens=completion_tokens, **kwargs)
         if self.kwargs.get("rollout_id") is None:
             self.kwargs.pop("rollout_id", None)
         if isinstance(engine, str):
