@@ -56,11 +56,16 @@ class Retrieve(Parameter):
         passages = dspy.settings.rm(query, k=k, **kwargs)
 
         from collections.abc import Iterable
-        if not isinstance(passages, Iterable):
-            # it's not an iterable yet; make it one.
-            # TODO: we should unify the type signatures of dspy.Retriever
+
+        if isinstance(passages, (str, bytes)) or not isinstance(passages, Iterable):
             passages = [passages]
-        passages = [psg.long_text for psg in passages]
+
+        def _passage_text(psg):
+            if isinstance(psg, str):
+                return psg
+            return psg.long_text
+
+        passages = [_passage_text(psg) for psg in passages]
 
         return Prediction(passages=passages)
 
