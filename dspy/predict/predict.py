@@ -1,3 +1,4 @@
+import collections.abc
 import copy
 import logging
 import random
@@ -395,6 +396,18 @@ def _check_type(value: Any, expected: type) -> bool:
         if not isinstance(value, origin):
             return False
         if args:
+            return all(_check_type(item, args[0]) for item in value)
+        return True
+
+    # Abstract collections such as Sequence[str] or Mapping[str, int], from collections.abc or typing
+    if isinstance(origin, type) and origin.__module__ == "collections.abc":
+        if not isinstance(value, origin):
+            return False
+        if args and isinstance(value, collections.abc.Mapping) and len(args) == 2:
+            key_type, val_type = args
+            return all(_check_type(k, key_type) and _check_type(v, val_type) for k, v in value.items())
+        # Check items only in a collection: iterating an Iterator or Generator would consume it.
+        if args and isinstance(value, collections.abc.Collection):
             return all(_check_type(item, args[0]) for item in value)
         return True
 
