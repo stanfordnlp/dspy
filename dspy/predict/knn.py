@@ -41,7 +41,11 @@ class KNN:
         self.trainset = trainset
         self.embedding = vectorizer
         trainset_casted_to_vectorize = [
-            " | ".join([f"{key}: {value}" for key, value in example.items() if key in example._input_keys])
+            " | ".join(
+                f"{key}: {value}"
+                for key, value in example.items()
+                if example._input_keys is None or key in example._input_keys
+            )
             for example in self.trainset
         ]
         self.trainset_vectors = self.embedding(trainset_casted_to_vectorize).astype(np.float32)
