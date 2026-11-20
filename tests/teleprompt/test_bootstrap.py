@@ -290,3 +290,34 @@ def test_metric_threshold_none_uses_metric_value_as_success(metric_value, expect
     )
 
     assert len(compiled_student.predictor.demos) == expected_demos
+
+
+def test_bootstrap_demo_with_output_field_listed_in_inputs():
+    # Regression for #9472: listing an output field in `with_inputs()` (e.g.
+    # `.with_inputs("context", "turn", "category")`) leaves that key in the
+    # recorded trace inputs as well as in the predicted outputs, so building the
+    # demo with `dspy.Example(augmented=True, **inputs, **outputs)` raised
+    # "got multiple values for keyword argument" before any demo was built.
+    class TurnClassifier(dspy.Signature):
+        """Classify a gameplay turn."""
+
+        context: str = dspy.InputField()
+        turn: str = dspy.InputField()
+        category: str = dspy.OutputField()
+
+    dspy.configure(lm=DummyLM([{"category": "LM-said"}]))
+    student = SimpleModule(TurnClassifier)
+
+    def metric(example, prediction, trace=None):
+        return True
+
+    trainset = [Example(context="c", turn="t", category="labeled").with_inputs("context", "turn", "category")]
+
+    compiled = BootstrapFewShot(metric=metric, max_bootstrapped_demos=1, max_labeled_demos=0).compile(
+        student, trainset=trainset
+    )
+
+    demos = compiled.predictor.demos
+    assert len(demos) == 1
+    # The freshly predicted value wins for a key that appears in both inputs and outputs.
+    assert demos[0].category == "LM-said"
