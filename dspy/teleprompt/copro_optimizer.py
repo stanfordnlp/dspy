@@ -224,7 +224,10 @@ class COPRO(Teleprompter):
                         f"At Depth {d+1}/{self.depth}, Evaluating Prompt Candidate #{c_i+1}/{len(candidates_)} for "
                         f"Predictor {p_i+1} of {len(module.predictors())}.",
                     )
-                    score = evaluate(module_clone, devset=trainset).score
+                    call_kwargs = {}
+                    if "callback_metadata" in eval_kwargs:
+                        call_kwargs["callback_metadata"] = eval_kwargs["callback_metadata"]
+                    score = evaluate(module_clone, devset=trainset, **call_kwargs).score
                     if self.prompt_model:
                         logger.debug(f"prompt_model.inspect_history(n=1) {self.prompt_model.inspect_history(n=1)}")
                     total_calls += 1
