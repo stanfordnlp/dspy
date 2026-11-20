@@ -124,21 +124,29 @@ def normalize_text(s):
 
 
 def em_score(prediction, ground_truth):
-    """Compute boolean exact match after normalization.
+    """Check if normalized strings of prediction and ground truth are exact match and non-empty.
 
     Args:
         prediction (str): Predicted answer.
         ground_truth (str): Reference answer.
 
     Returns:
-        bool: True if normalized strings are identical; otherwise False.
+        bool: True if normalized strings are identical and non-empty; otherwise False.
 
     Examples:
         ```python
         em_score("Paris", "paris")  # True
+        em_score("", "the")  # False (both normalize to "", forced to no-match)
         ```
     """
-    return normalize_text(prediction) == normalize_text(ground_truth)
+    normalized_prediction = normalize_text(prediction)
+    normalized_ground_truth = normalize_text(ground_truth)
+
+    if normalized_prediction == "" and normalized_ground_truth == "":
+        print_message("\n#> EM Metric: Rare edge case of normalized prediction and ground truth both being empty.\n")
+        return False
+
+    return normalized_prediction == normalized_ground_truth
 
 
 def f1_score(prediction, ground_truth):
