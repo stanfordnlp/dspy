@@ -40,6 +40,28 @@ dependencies. `dspy.Flex` and `dspy.RLM` call it on the interpreters they create
 snapshot of one that has already imported dspy, which DSPy records once per dspy source, so it starts faster than a
 plain one. To start interpreters before they are needed, see [`InterpreterPool`](InterpreterPool.md).
 
+## Snapshots
+
+`snapshot()` returns the sandbox's Python state: every variable, function, and object its code made, as compressed
+bytes. `PythonInterpreter(snapshot=...)` starts a new sandbox from them, in another process if you like, instead of
+from a fresh one:
+
+```python
+with dspy.PythonInterpreter() as interpreter:
+    interpreter("rows = [1, 2, 3]")
+    state = interpreter.snapshot()
+
+with dspy.PythonInterpreter(snapshot=state) as interpreter:
+    interpreter("print(sum(rows))")  # "6"
+```
+
+It is a Pyodide memory snapshot, so it holds everything in the sandbox's memory, environment variables passed in
+included: store it as you would a secret. Files the code wrote are not in it. It restores only in an interpreter that
+starts as the one that made it did (the same dspy and Pyodide, `sandbox_cache`, and `provide_dspy()`). A sandbox cannot
+be snapshotted once its Python holds JavaScript objects (from `js`), or once its code has loaded a package or an
+extension module after the sandbox started, whose files and code the snapshot would not hold. Both raise
+`CodeInterpreterError`.
+
 ## Execution Instructions
 
 `PythonInterpreter.execution_instructions` describes stable constraints of its Pyodide execution environment. It
@@ -58,6 +80,7 @@ factory without it remains valid and uses RLM's generic action prompt.
             - execute
             - provide_dspy
             - shutdown
+            - snapshot
             - start
         show_source: true
         show_root_heading: true

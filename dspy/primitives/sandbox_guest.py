@@ -669,7 +669,8 @@ class HostTrace(list):
 
 
 def install(namespace: dict[str, Any], spec: dict[str, Any]) -> None:
-    """Wire this sandbox's dspy to the host; called once, right after sandboxed code first imports dspy."""
+    """Wire this sandbox's dspy to the host: right after sandboxed code first imports dspy, and again for each later
+    session in the same sandbox, like the calls of an RLM session."""
     global _wire
     _wire = GuestValues(namespace)
     settings: dict[str, Any] = {}
@@ -683,6 +684,8 @@ def install(namespace: dict[str, Any], spec: dict[str, Any]) -> None:
         if spec.get("lm") is not None:
             settings["lm"] = HostLM(namespace[LM_TOOL], spec["lm"])
     settings["trace"] = HostTrace(namespace[TRACE_TOOL]) if spec.get("trace") and TRACE_TOOL in namespace else None
+    # Each install runs in an execution, so an async task, of its own: the latest one owns the sandbox's settings.
+    sys.modules["dspy.dsp.utils.settings"].config_owner_async_task = None
     dspy.configure(**settings)
     namespace["__dspy_values"] = _wire
     namespace["__dspy_types"] = {
@@ -713,7 +716,7 @@ def bind(namespace: dict[str, Any]) -> None:
     for name in _WIRE_CALLS:
         function = namespace.get(name)
         if callable(function) and not isinstance(function, HostTool) and not getattr(function, "__dspy_wire__", False):
-            namespace[name] = _wire_call(function, wire, spec["session"])
+            namespace[name] = _wire_call(function, namespace)
     for name, value in TYPING_NAMES.items():
         namespace.setdefault(name, value)
     namespace.update(namespace["__dspy_types"])
@@ -722,12 +725,15 @@ def bind(namespace: dict[str, Any]) -> None:
 _WIRE_CALLS = ("SUBMIT", "llm_query", "llm_query_batched")
 
 
-def _wire_call(function: Callable[..., Any], wire: Wire, session: str) -> Callable[..., Any]:
-    def send(value: Any) -> Any:
-        return {TAG: WIRE, "session": session, "value": wire.encode(value)}
-
+def _wire_call(function: Callable[..., Any], namespace: dict[str, Any]) -> Callable[..., Any]:
     @functools.wraps(function)
     def wire_call(*args: Any, **kwargs: Any) -> Any:
+        # The session installed now: code may keep this function and call it in a later session (an RLM session's).
+        wire, session = namespace["__dspy_values"], namespace["__dspy_guest_spec"]["session"]
+
+        def send(value: Any) -> Any:
+            return {TAG: WIRE, "session": session, "value": wire.encode(value)}
+
         return function(*map(send, args), **{key: send(value) for key, value in kwargs.items()})
 
     wire_call.__dspy_wire__ = True
