@@ -176,3 +176,26 @@ def test_statistics_tracking_during_optimization():
     ), "Optimizer did not properly populate the latest results statistics"
 
     # Additional detailed checks can be added here to verify the contents of the tracked statistics
+
+
+def test_compile_with_eval_constructor_kwargs():
+    # Regression test for #10873: eval_kwargs can contain Evaluate constructor options like max_errors
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
+    dspy.configure(
+        lm=DummyLM(
+            [
+                {
+                    "proposed_instruction": "Optimized instruction 1",
+                    "proposed_prefix_for_output_field": "Optimized instruction 2",
+                },
+            ]
+        )
+    )
+
+    student = SimpleModule("input -> output")
+
+    optimized_student = optimizer.compile(
+        student, trainset=trainset, eval_kwargs={"num_threads": 1, "max_errors": 5, "provide_traceback": False}
+    )
+
+    assert optimized_student is not student, "Optimization did not modify the student"
