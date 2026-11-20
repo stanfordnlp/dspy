@@ -26,6 +26,28 @@ def test_module_initialization():
     assert module._compiled is False, "Module _compiled attribute should be False upon initialization"
 
 
+@pytest.mark.parametrize("existing", [False, True])
+def test_json_save_serialization_failure_preserves_checkpoint(tmp_path, existing):
+    program = dspy.Predict("question -> answer")
+    path = tmp_path / "checkpoint.json"
+    previous = None
+    if existing:
+        program.save(path)
+        previous = path.read_bytes()
+
+    program.traces.append({"unserializable": object()})
+    with pytest.raises(RuntimeError, match="Failed to save state"):
+        program.save(path)
+
+    if existing:
+        assert path.read_bytes() == previous
+        restored = dspy.Predict("question -> answer")
+        restored.load(path)
+        assert restored.traces == []
+    else:
+        assert not path.exists()
+
+
 def test_named_predictors():
     module = HopModule()
     named_preds = module.named_predictors()
