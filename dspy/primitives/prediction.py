@@ -157,8 +157,8 @@ class Completions:
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def __len__(self):
-        # Return the length of the list for one of the keys
-        # It assumes all lists have the same length
+        if not self._completions:
+            return 0
         return len(next(iter(self._completions.values())))
 
     def __contains__(self, key):
