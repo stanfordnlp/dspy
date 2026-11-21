@@ -2,7 +2,6 @@ import ast
 import enum
 import inspect
 import json
-import re
 import types
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Union, get_args, get_origin
@@ -218,17 +217,27 @@ def _unwrap_markdown_fence(value: str) -> str:
     stripped = value.strip()
     if not stripped.startswith("```"):
         return stripped
-    for pattern in (r"(`{3,})(?:[^\n]*)\n(.*?)\1", r"(`{3,})(.*?)\1"):
-        match = re.fullmatch(pattern, stripped, re.DOTALL)
-        if match:
-            inner = match.group(2)
-            assert isinstance(inner, str)
-            return inner.strip()
-    return stripped
+    fence_len = len(stripped) - len(stripped.lstrip("`"))
+    if len(stripped) < 2 * fence_len:
+        return stripped
+    fence = "`" * fence_len
+    if not stripped.endswith(fence):
+        return stripped
+    if len(stripped) > 2 * fence_len and stripped[-fence_len - 1] == "`":
+        return stripped
+    body = stripped[fence_len:-fence_len]
+    newline_idx = body.find("\n")
+    if newline_idx != -1:
+        first_line = body[:newline_idx].lstrip()
+        if not first_line.startswith(("{", "[")):
+            body = body[newline_idx + 1 :]
+    if any(line.strip() == fence for line in body.splitlines()):
+        return stripped
+    return body.strip()
 
 
 def _try_parse_union_with_str(value: str, annotation: Any, non_str_args: tuple[Any, ...]) -> tuple[bool, Any]:
-    non_str_annotation = non_str_args[0] if len(non_str_args) == 1 else Union.__getitem__(non_str_args)
+    non_str_annotation: Any = non_str_args[0] if len(non_str_args) == 1 else Union.__getitem__(non_str_args)
     target = _unwrap_markdown_fence(value)
     has_candidate = False
     candidate: Any = None

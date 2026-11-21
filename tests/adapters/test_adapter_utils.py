@@ -132,9 +132,16 @@ def test_parse_value_union():
     # while fenced non-JSON text/code falls back to the original string intact.
     assert parse_value('```json\n{"a": 1}\n```', dict[str, int] | str) == {"a": 1}
     assert parse_value('```json\n{"a": 1,}\n```', dict[str, int] | str | None) == {"a": 1}
+    assert parse_value('```{"a": 1}```', dict[str, int] | str) == {"a": 1}
+    assert parse_value('````json\n{"a": "```"}\n````', dict[str, str] | str) == {"a": "```"}
     assert parse_value("```\n[1, 2, 3]\n```", list[int] | str) == [1, 2, 3]
     fenced_code = "```python\ndef f():\n    return [1]\n```"
     assert parse_value(fenced_code, list[int] | str) == fenced_code
+    two_blocks = '```json\n{"a": 1}\n```\n```json\n{"b": 2}\n```'
+    assert parse_value(two_blocks, dict[str, int] | str) == two_blocks
+    # Long unclosed backtick runs must finish in linear time without regex backtracking.
+    long_backticks = "`" * 50_000 + "x"
+    assert parse_value(long_backticks, dict[str, int] | str) == long_backticks
 
     import dspy
 
