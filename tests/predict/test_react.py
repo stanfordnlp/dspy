@@ -97,6 +97,39 @@ def test_react_preserves_output_field_metadata_in_lm_request(native):
         assert "An integer confidence percentage from 0 to 100." in prompt
 
 
+@pytest.mark.parametrize("native", [False, True])
+def test_react_submit_schema_omits_placeholder_description(native):
+    class Task(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        confidence: int = dspy.OutputField(desc="An integer confidence percentage from 0 to 100.")
+
+    agent = dspy.ReAct(Task, tools=[])
+    assert agent.tools["submit"].args == {
+        "answer": {"type": "string"},
+        "confidence": {"type": "integer", "description": "An integer confidence percentage from 0 to 100."},
+    }
+
+    outputs = {"answer": "Paris", "confidence": 95}
+    if native:
+        lm = recording_lm([make_response(tool_calls=[("submit_1", "submit", outputs)])])
+    else:
+        lm = dspy.utils.DummyLM([{
+            "next_thought": "Done.",
+            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": outputs}]),
+        }])
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=native)):
+        result = agent(question="What is the capital of France?")
+
+    assert result.answer == "Paris"
+    if native:
+        submit = next(tool for tool in lm.engine.requests[0].tools if tool.name == "submit")
+        assert "description" not in submit.parameters["properties"]["answer"]
+    else:
+        assert "${answer}" not in str(lm.history[0]["messages"])
+
+
 def test_react_text_mock_lm_loop_records_inputs_once():
     def lookup(query: str) -> str:
         return f"found {query}"
