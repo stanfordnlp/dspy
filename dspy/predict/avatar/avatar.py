@@ -49,7 +49,7 @@ class Avatar(dspy.Module):
 
         self.verbose = verbose
         self.max_iters = max_iters
-        self.actor = dspy.TypedPredictor(self.actor_signature)
+        self.actor = dspy.Predict(self.actor_signature)
 
         self.actor_clone = deepcopy(self.actor)
 
@@ -120,9 +120,9 @@ class Avatar(dspy.Module):
         idx = 1
         tool_name = None
         action_results: list[ActionOutput] = []
-        max_iters = None if "max_iters" not in kwargs else kwargs["max_iters"]
+        max_iters = kwargs["max_iters"] if "max_iters" in kwargs else self.max_iters
 
-        while tool_name != "Finish" and (max_iters > 0 if max_iters else True):
+        while tool_name != "Finish" and (max_iters is None or max_iters > 0):
             actor_output = self.actor(**args)
             action = getattr(actor_output, f"action_{idx}")
 
@@ -151,8 +151,19 @@ class Avatar(dspy.Module):
 
             idx += 1
 
-            if max_iters:
+            if max_iters is not None:
                 max_iters -= 1
+
+        if tool_name != "Finish":
+            # The budget ran out without a Finish action, so the actor signature
+            # still lacks the signature's output fields. Append them so the final
+            # call can produce the answer instead of raising AttributeError.
+            for field in list(self.output_fields.keys()):
+                self.actor.signature = self.actor.signature.append(
+                    field,
+                    self._get_field(self.output_fields[field]),
+                    type_=self.output_fields[field].annotation,
+                )
 
         final_answer = self.actor(**args)
         self.actor = deepcopy(self.actor_clone)

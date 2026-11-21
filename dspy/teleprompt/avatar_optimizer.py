@@ -87,7 +87,7 @@ class AvatarOptimizer(Teleprompter):
         self.max_positive_inputs = max_positive_inputs or DEFAULT_MAX_EXAMPLES
         self.max_negative_inputs = max_negative_inputs or DEFAULT_MAX_EXAMPLES
 
-        self.comparator = dspy.TypedPredictor(Comparator)
+        self.comparator = dspy.Predict(Comparator)
         self.feedback_instruction = dspy.Predict(FeedbackBasedInstruction)
 
     def process_example(self, actor, example, return_outputs):
