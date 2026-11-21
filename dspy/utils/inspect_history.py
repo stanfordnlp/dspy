@@ -29,7 +29,8 @@ def pretty_print_history(history: list[dict[str, Any]], n: int = 1, file: TextIO
 
     Args:
         history: The history list to print from.
-        n: Number of recent entries to display. Defaults to 1.
+        n: Number of recent entries to display. Defaults to 1. A value at or
+            below 0 displays nothing.
         file: An optional file-like object to write output to (must have a
             `.write()` method). When provided, ANSI color codes are
             automatically disabled. Defaults to `None` (prints to stdout).
@@ -64,6 +65,11 @@ def pretty_print_history(history: list[dict[str, Any]], n: int = 1, file: TextIO
             body = " ".join(_render_part(c, use_colors) for c in part.get("content", []))
             return _green(f"tool result {part.get('id')}: {body}", use_colors=use_colors)
         return _blue(f"<{kind}>", use_colors=use_colors)
+
+    if n <= 0:
+        # `history[-n:]` is `history[0:]` for n == 0 and a shifted window for a
+        # negative n, which prints entries the caller did not ask for.
+        return
 
     for item in history[-n:]:
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]

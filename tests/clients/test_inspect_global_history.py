@@ -113,6 +113,23 @@ def test_inspect_history_with_n(capsys):
     assert "Third" in out
 
 
+@pytest.mark.parametrize("n", [0, -1])
+def test_inspect_history_with_non_positive_n_prints_nothing(n):
+    out = StringIO()
+    history = [
+        {
+            "messages": [{"role": "user", "content": f"Query {index}"}],
+            "outputs": [{"text": f"Response {index}"}],
+            "timestamp": "now",
+        }
+        for index in range(3)
+    ]
+
+    pretty_print_history(history, n=n, file=out)
+
+    assert out.getvalue() == ""
+
+
 def test_inspect_empty_history(capsys):
     # Configure fresh DummyLM
     lm = DummyLM([])
