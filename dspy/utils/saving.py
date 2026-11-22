@@ -47,7 +47,7 @@ def load(path: str | Path, allow_pickle: bool = False) -> Module:
     if not target_path.exists():
         raise FileNotFoundError(f"The path '{target_path}' does not exist.")
 
-    with open(target_path / "metadata.json") as f:
+    with open(target_path / "metadata.json", encoding="utf-8") as f:
         metadata = orjson.loads(f.read())
 
     dependency_versions = get_dependency_versions()
