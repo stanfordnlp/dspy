@@ -803,3 +803,91 @@ def test_tool_observation_preserves_custom_type():
     ]
     assert len(images) == 2
     assert result.answer == "done"
+
+
+@pytest.mark.parametrize("use_async", [False, True])
+def test_tool_mutating_args_does_not_erase_history(use_async):
+    """Regression test for GitHub issue #10891.
+
+    A tool that consumes its mutable input (e.g. popping items from a list)
+    should not rewrite the recorded tool_call.args in the history.
+    """
+
+    def pack_order(items: list) -> str:
+        packed = []
+        while items:
+            packed.append(items.pop(0))
+        return f"Packed {len(packed)} items."
+
+    lm = dspy.utils.DummyLM([
+        {
+            "next_thought": "Pack the items.",
+            "tool_calls": dspy.ToolCalls.from_dict_list([
+                {"name": "pack_order", "args": {"items": ["notebooks", "folders"]}},
+            ]),
+        },
+        {
+            "next_thought": "Done.",
+            "tool_calls": dspy.ToolCalls.from_dict_list([
+                {"name": "submit", "args": {"answer": "Packed notebooks and folders."}},
+            ]),
+        },
+    ])
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        agent = dspy.ReAct("request -> answer", tools=[pack_order])
+        if use_async:
+            result = asyncio.run(agent.acall(request="Pack notebooks and folders."))
+        else:
+            result = agent(request="Pack notebooks and folders.")
+
+    # The tool result should confirm both items were packed.
+    tool_calls_obj = result.history.messages[0]["tool_calls"]
+    tool_result = tool_calls_obj.tool_call_results.tool_call_results[0]
+    assert "Packed 2 items" in tool_result.value
+
+    # The recorded args must still contain the original items, not an empty list.
+    recorded_args = tool_calls_obj.tool_calls[0].args
+    assert recorded_args["items"] == ["notebooks", "folders"], (
+        f"Tool args were mutated in history: {recorded_args}"
+    )
+
+
+def test_tool_mutating_nested_args_does_not_erase_history():
+    """Regression test for GitHub issue #10891 (nested dict variant).
+
+    When tool args contain nested mutable structures (dict with a list),
+    mutations inside the tool must not leak back into recorded history.
+    """
+
+    def pack_order(lines: dict) -> str:
+        pending = lines["items"]
+        packed = []
+        while pending:
+            packed.append(pending.pop(0))
+        return f"Packed {len(packed)} items."
+
+    lm = dspy.utils.DummyLM([
+        {
+            "next_thought": "Pack the items.",
+            "tool_calls": dspy.ToolCalls.from_dict_list([
+                {"name": "pack_order", "args": {"lines": {"items": ["notebooks", "folders"]}}},
+            ]),
+        },
+        {
+            "next_thought": "Done.",
+            "tool_calls": dspy.ToolCalls.from_dict_list([
+                {"name": "submit", "args": {"answer": "Packed notebooks and folders."}},
+            ]),
+        },
+    ])
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        result = dspy.ReAct("request -> answer", tools=[pack_order])(
+            request="Pack notebooks and folders."
+        )
+
+    recorded_args = result.history.messages[0]["tool_calls"].tool_calls[0].args
+    assert recorded_args["lines"]["items"] == ["notebooks", "folders"], (
+        f"Nested tool args were mutated in history: {recorded_args}"
+    )
