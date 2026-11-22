@@ -273,6 +273,9 @@ def get_annotation_name(annotation):
         # Render PEP 604 unions (e.g. `str | None`) the same way as `typing.Union`/`Optional` on Python < 3.14,
         # matching Python 3.14+ where `get_origin(str | None)` already returns `typing.Union`.
         origin = Union
+    if annotation is Ellipsis:
+        # The variadic marker in `tuple[int, ...]` is not a type and has no `__name__`.
+        return "..."
     if origin is None:
         if annotation is Reasoning:
             # Keep backward compatibility with the old behavior in `dspy.ChainOfThought`, where reasoning

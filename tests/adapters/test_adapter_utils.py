@@ -130,3 +130,9 @@ def test_parse_value_json_repair():
 def test_get_annotation_name_pep604_union_matches_typing_union(pep604_annotation, typing_annotation, expected):
     assert get_annotation_name(typing_annotation) == expected
     assert get_annotation_name(pep604_annotation) == expected
+
+
+def test_get_annotation_name_renders_variadic_tuple_ellipsis():
+    assert get_annotation_name(tuple[int, ...]) == "tuple[int, ...]"
+    assert get_annotation_name(dict[str, tuple[str, ...]]) == "dict[str, tuple[str, ...]]"
+    assert "Ellipsis" not in get_annotation_name(tuple[float, ...] | None)
