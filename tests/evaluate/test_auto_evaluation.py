@@ -1,5 +1,9 @@
+import math
+
+import pytest
+
 import dspy
-from dspy.evaluate.auto_evaluation import CompleteAndGrounded, SemanticF1
+from dspy.evaluate.auto_evaluation import CompleteAndGrounded, SemanticF1, f1_score
 from dspy.primitives.prediction import Prediction
 from dspy.utils.dummies import DummyLM
 
@@ -189,3 +193,61 @@ def test_semantic_f1_prediction_can_be_compared():
     assert isinstance(result1, Prediction)
     assert isinstance(result2, Prediction)
     assert result2.score > result1.score
+
+class TestF1ScoreNonFiniteValues:
+    """f1_score must reject non-finite components (NaN, +inf, -inf) instead of
+    silently clamping them to valid scores.  See GitHub issue #10739."""
+
+    @pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_precision_raises(self, bad_value):
+        with pytest.raises(ValueError, match="precision must be finite"):
+            f1_score(bad_value, 1.0)
+
+    @pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_recall_raises(self, bad_value):
+        with pytest.raises(ValueError, match="recall must be finite"):
+            f1_score(1.0, bad_value)
+
+    def test_both_non_finite_raises(self):
+        with pytest.raises(ValueError):
+            f1_score(float("nan"), float("nan"))
+
+    def test_finite_values_still_work(self):
+        """Ensure normal finite values are unaffected by the guard."""
+        assert f1_score(1.0, 1.0) == 1.0
+        assert f1_score(0.0, 0.0) == 0.0
+        expected = 2 * (0.8 * 0.6) / (0.8 + 0.6)
+        assert abs(f1_score(0.8, 0.6) - expected) < 1e-9
+
+    def test_clamping_still_works_for_finite_out_of_range(self):
+        """Values outside [0, 1] but finite should still be clamped."""
+        expected = 2 * (1.0 * 0.5) / (1.0 + 0.5)
+        assert abs(f1_score(1.5, 0.5) - expected) < 1e-9
+        assert f1_score(-0.5, 1.0) == 0.0
+
+
+class TestSemanticF1NanPropagation:
+    """SemanticF1 must surface the ValueError from f1_score when the judge
+    returns non-finite components."""
+
+    def test_nan_precision_raises_in_metric(self):
+        dspy.configure(
+            lm=DummyLM(
+                [{"plan": "fixture", "precision": "NaN", "recall": 1.0}]
+            )
+        )
+        example = dspy.Example(question="q", response="a")
+        pred = dspy.Prediction(response="b")
+        with pytest.raises(ValueError, match="precision must be finite"):
+            SemanticF1()(example, pred)
+
+    def test_nan_recall_raises_in_metric(self):
+        dspy.configure(
+            lm=DummyLM(
+                [{"plan": "fixture", "precision": 1.0, "recall": "NaN"}]
+            )
+        )
+        example = dspy.Example(question="q", response="a")
+        pred = dspy.Prediction(response="b")
+        with pytest.raises(ValueError, match="recall must be finite"):
+            SemanticF1()(example, pred)

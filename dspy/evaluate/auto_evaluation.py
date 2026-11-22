@@ -34,7 +34,17 @@ class DecompositionalSemanticRecallPrecision(Signature):
 
 
 def f1_score(precision, recall):
-    """Compute the F1 score from precision and recall, clamping both to [0, 1]."""
+    """Compute the F1 score from precision and recall, clamping both to [0, 1].
+
+    Raises ValueError if either value is non-finite (NaN or infinity).
+    """
+    import math
+
+    if not math.isfinite(precision):
+        raise ValueError(f"precision must be finite, got {precision}")
+    if not math.isfinite(recall):
+        raise ValueError(f"recall must be finite, got {recall}")
+
     precision, recall = max(0.0, min(1.0, precision)), max(0.0, min(1.0, recall))
     return 0.0 if precision + recall == 0 else 2 * (precision * recall) / (precision + recall)
 
