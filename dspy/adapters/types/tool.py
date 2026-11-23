@@ -4,7 +4,7 @@ import json
 from decimal import Decimal
 from numbers import Number
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import json_repair
 import pydantic
@@ -650,29 +650,39 @@ def _to_json_default(value: Any) -> Any:
 
 
 def _resolve_json_schema_reference(schema: dict) -> dict:
-    """Recursively resolve json model schema, expanding all references."""
+    """Inline local definitions, retaining the targets of recursive references."""
+    root = schema.copy()
+    definitions = {table: root.pop(table, {}) for table in ("$defs", "definitions")}
+    if not any(definitions.values()):
+        return root
 
-    # If there are no definitions to resolve, return the main schema
-    if "$defs" not in schema and "definitions" not in schema:
-        return schema
+    pending: list[tuple[str, str]] = []
 
-    def resolve_refs(obj: Any) -> Any:
-        if not isinstance(obj, (dict, list)):
+    def resolve_refs(obj: Any, resolving: set[tuple[str, str]]) -> Any:
+        if isinstance(obj, list):
+            return [resolve_refs(item, resolving) for item in obj]
+        if not isinstance(obj, dict):
             return obj
-        if isinstance(obj, dict):
-            if "$ref" in obj:
-                ref_path = obj["$ref"].split("/")[-1]
-                return resolve_refs(schema["$defs"][ref_path])
-            return {k: resolve_refs(v) for k, v in obj.items()}
 
-        # Must be a list
-        return [resolve_refs(item) for item in obj]
+        ref = obj.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/"):
+            table, separator, token = unquote(ref[2:]).partition("/")
+            name = token.replace("~1", "/").replace("~0", "~")
+            if separator and "/" not in token and name in definitions.get(table, {}):
+                key = (table, name)
+                if key not in resolving:
+                    return resolve_refs(definitions[table][name], resolving | {key})
+                pending.append(key)
+        return {k: resolve_refs(v, resolving) for k, v in obj.items()}
 
-    # Resolve all references in the main schema
-    resolved_schema = resolve_refs(schema)
-    # Remove the $defs key as it's no longer needed
-    resolved_schema.pop("$defs", None)
-    return resolved_schema
+    result = resolve_refs(root, set())
+    # Resolving a retained definition can uncover another recursive reference.
+    while pending:
+        table, name = pending.pop()
+        retained = result.setdefault(table, {})
+        if name not in retained:
+            retained[name] = resolve_refs(definitions[table][name], {(table, name)})
+    return result
 
 
 def convert_input_schema_to_tool_args(
@@ -694,10 +704,11 @@ def convert_input_schema_to_tool_args(
     required = schema.get("required", [])
 
     defs = schema.get("$defs", {})
+    definitions = schema.get("definitions", {})
 
     for name, prop in properties.items():
-        if len(defs) > 0:
-            prop = _resolve_json_schema_reference({"$defs": defs, **prop})
+        if defs or definitions:
+            prop = _resolve_json_schema_reference({"$defs": defs, "definitions": definitions, **prop})
         args[name] = prop
         arg_types[name] = _TYPE_MAPPING.get(prop.get("type"), Any)
         arg_desc[name] = prop.get("description", "No description provided.")
