@@ -331,16 +331,18 @@ def _format_input_list_field_value(value: list[Any]) -> str:
     return "\n".join([f"[{idx + 1}] {_format_blob(txt)}" for idx, txt in enumerate(value)])
 
 
-def _format_blob(blob: str) -> str:
+def _format_blob(blob: Any) -> str:
     """
     Formats the specified text blobs so that an LM can parse it correctly within a list
     of multiple text blobs.
 
     Args:
-        blob: The text blob to format.
+        blob: The text blob to format. Values that are not strings are rendered with `str`.
     Returns:
         The formatted text blob.
     """
+    if not isinstance(blob, str):
+        blob = str(blob)
     if "\n" not in blob and "«" not in blob and "»" not in blob:
         return f"«{blob}»"
 
