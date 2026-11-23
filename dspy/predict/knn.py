@@ -49,5 +49,5 @@ class KNN:
     def __call__(self, **kwargs) -> list:
         input_example_vector = self.embedding([" | ".join([f"{key}: {val}" for key, val in kwargs.items()])])
         scores = np.dot(self.trainset_vectors, input_example_vector.T).squeeze()
-        nearest_samples_idxs = scores.argsort()[-self.k :][::-1]
+        nearest_samples_idxs = scores.argsort()[::-1][: max(self.k, 0)]
         return [self.trainset[cur_idx] for cur_idx in nearest_samples_idxs]

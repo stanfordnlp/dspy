@@ -49,3 +49,11 @@ def test_knn_query_specificity(setup_knn):
     nearest_samples = knn(**query)
     assert len(nearest_samples) == 2, "Incorrect number of nearest samples returned"
     assert "Paris" in [sample.answer for sample in nearest_samples], "Expected Paris to be a nearest sample answer"
+
+
+def test_knn_asked_for_no_neighbors_returns_nothing(setup_knn):
+    """`k` is the number of neighbors to retrieve, so zero or less retrieves none of them."""
+    for k in (0, -2):
+        knn = KNN(k=k, trainset=setup_knn.trainset, vectorizer=setup_knn.embedding)
+
+        assert knn(question="What is 3+3?") == []
