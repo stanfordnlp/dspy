@@ -324,6 +324,25 @@ def test_run_tests_reports_each_failure_with_its_file_and_line() -> None:
 
 
 @pytest.mark.deno
+def test_only_the_test_files_hold_tests_and_a_test_may_add_a_global() -> None:
+    helper = ("program.py", program.parse(text(ENTRY))["program.py"] + "\n\n\ndef test_input(x):\n    return x\n")
+    adds = ("test_adds.py", """
+        def test_adds_a_global():
+            globals()["CACHE"] = 1
+
+
+        def test_runs_after_it():
+            assert CACHE == 1
+    """)
+    flex = dspy.Flex(Count)
+    flex._bind_code(text(helper, MODELS, RULES, adds))
+    assert flex.run_tests() == []
+    assert sorted(flex._bridge.test(flex.module_src)["passed"]) == [
+        "test_adds.py::test_adds_a_global", "test_adds.py::test_runs_after_it"
+    ]
+
+
+@pytest.mark.deno
 def test_an_async_test_fails_instead_of_passing_unrun() -> None:
     async_test = ("test_async.py", """
         async def test_total_of_nothing_is_one():

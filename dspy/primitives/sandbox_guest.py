@@ -835,7 +835,9 @@ def run_tests(namespace: dict[str, Any], files: dict[str, str], entry: str) -> s
             except Exception as e:
                 failed[path] = program.describe(e)
                 continue
-            for name, test in vars(module).items():
+            if path == entry:  # imported for its errors; its functions are code, not tests
+                continue
+            for name, test in list(vars(module).items()):  # a test may add a global
                 if name.startswith("test_") and inspect.isfunction(test) and test.__module__ == module.__name__:
                     if inspect.iscoroutinefunction(test):
                         failed[f"{path}::{name}"] = "An async test is not run: write it as a plain def."

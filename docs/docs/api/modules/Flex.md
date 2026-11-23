@@ -49,7 +49,7 @@ for name, source in optimized.files.items():
 
 Files named `test_*.py` hold the program's tests: `test_*` functions that check its deterministic code with `assert`. A forward never imports them. The reflection model writes them alongside the code; GEPA scores the program with your metric as always.
 
-`run_tests()` runs them for you, for example after a library the program uses changed (see [What the code was validated against](#what-the-code-was-validated-against)). It returns each failure in words; empty means they all pass.
+`run_tests()` runs them for you, for example after a library the program uses changed (see [What the code was validated against](#what-the-code-was-validated-against)). It returns each failure in words; empty means they all pass. The tests are the reflection model's, and GEPA judges the program by your metric alone, so an optimized program can fail some of its own tests: run `run_tests()` once after optimizing, and compare later runs with that.
 
 ## Optimizing with GEPA
 
