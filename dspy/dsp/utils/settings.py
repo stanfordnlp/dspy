@@ -4,6 +4,7 @@ import copy
 import logging
 import threading
 from contextlib import contextmanager
+from types import ModuleType
 from typing import Any
 
 import cloudpickle
@@ -267,7 +268,7 @@ class Settings:
 
     def save(
         self, path: str,
-        modules_to_serialize: list[str] | None = None,
+        modules_to_serialize: list[ModuleType] | None = None,
         exclude_keys: list[str] | None = None,
     ):
         """
