@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
 from typing import Any, Callable
@@ -53,10 +54,12 @@ def call_metric(metric: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         asyncio.get_running_loop()
     except RuntimeError:
         if not inspect.iscoroutinefunction(metric):
-            try:
-                asyncio.get_event_loop()
-            except RuntimeError:
-                asyncio.set_event_loop(asyncio.new_event_loop())
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                try:
+                    asyncio.get_event_loop()
+                except RuntimeError:
+                    asyncio.set_event_loop(asyncio.new_event_loop())
             result = metric(*args, **kwargs)
             return result if not inspect.isawaitable(result) else asyncio.run(_await(result))
         result = metric(*args, **kwargs)
