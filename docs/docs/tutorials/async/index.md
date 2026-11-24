@@ -124,7 +124,7 @@ result = tool(x=5)  # Now works everywhere
 print(result)  # 10
 ```
 
-For more details on async tools, see the [Tools documentation](../../learn/programming/tools.md#async-tools).
+For more details on async tools, see the [Tools documentation](../../diving-deeper/tools.md#arguments-are-validated-before-execution).
 
 Note: When using `dspy.ReAct` with tools, calling `acall()` on the ReAct instance will automatically
 execute all tools asynchronously using their `acall()` methods.

@@ -49,3 +49,26 @@ def test_extract_custom_type_from_annotation_with_nested_type():
         EventIdentifier,
         Event,
     ]
+
+
+def test_custom_input_preserves_text_continuation():
+    from dspy.lm15 import ContinuationState, TextPart
+
+    source = TextPart(
+        "annotated",
+        continuation=(ContinuationState(provider="example", kind="opaque", data={"id": 7}),),
+    )
+
+    class Annotated(dspy.Type):
+        def format(self):
+            return [source]
+
+    class QA(dspy.Signature):
+        context: Annotated = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    lm = dspy.utils.DummyLM([{"answer": "ok"}])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        assert dspy.Predict(QA)(context=Annotated()).answer == "ok"
+
+    assert source in lm.history[0]["request"].messages[-1].parts

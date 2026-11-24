@@ -27,6 +27,6 @@ from dspy.adapters.types.audio import _normalize_audio_format
 def test_normalize_audio_format(input_format, expected_format):
     """
     Tests that the _normalize_audio_format helper correctly removes 'x-' prefixes.
-    This single test covers the logic for from_url, from_file, and encode_audio.
+    This single test covers the logic for from_url, from_path, and encode_audio.
     """
     assert _normalize_audio_format(input_format) == expected_format

@@ -17,7 +17,8 @@ import sys
 import pytest
 
 import dspy
-from dspy.lm15 import Message, Response, Usage
+from dspy.lm15 import Message, Request, Response, Usage
+from tests.clients.test_engine_errors import Sink, invoke
 
 
 class Echo:
@@ -41,6 +42,25 @@ class Echo:
 class AsyncEcho(Echo):
     async def complete(self, request):
         return Echo.complete(self, request)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("stream_method", ["absent", None, 42])
+async def test_completion_only_engines_refuse_streaming(asynchronous, stream_method):
+    sync_engine, async_engine = Echo("sync"), AsyncEcho("async")
+    if stream_method != "absent":
+        sync_engine.stream = async_engine.stream = stream_method
+    lm = dspy.LM("custom/echo", engine=sync_engine, async_engine=async_engine, cache=False)
+    with dspy.context(send_stream=Sink()):
+        with pytest.raises(dspy.LMUnsupportedFeatureError, match="does not support streaming"):
+            await invoke(lm, asynchronous, "hi")
+    assert not lm.history
+    assert await invoke(lm, asynchronous, "hi") == ["echo:async" if asynchronous else "echo:sync"]
+
+
+class CustomLM(dspy.BaseLM):
+    """A custom LM relying on the default reconstruction contract."""
 
 
 class BadState(Echo):
@@ -72,9 +92,16 @@ class Stateless:
     {"timeout": 1}, {"extra_headers": {"X-Test": "1"}}, {"headers": {"X-Test": "1"}}, {"api_version": "v1"},
     {"organization": "org"}, {"project": "p"}, {"extra_query": {"a": "b"}}, {"custom_llm_provider": "x"},
 ])
-def test_client_settings_are_refused_with_a_custom_engine(setting):
-    with pytest.raises(ValueError, match=re.escape(f"dspy.LM: {sorted(setting)}") + ".*custom engine owns its own"):
-        dspy.LM("custom/echo", engine=Echo(), **setting)
+@pytest.mark.parametrize("lm_class", [CustomLM, dspy.LM])
+@pytest.mark.parametrize("with_sync", [False, True])
+@pytest.mark.parametrize("on_copy", [False, True])
+def test_client_settings_are_refused_with_a_custom_engine(setting, lm_class, with_sync, on_copy):
+    with pytest.raises(ValueError, match="custom engine owns its own"):
+        if on_copy:
+            lm = lm_class("custom/echo", engine=Echo() if with_sync else None, async_engine=AsyncEcho())
+            lm.copy(**setting)
+        else:
+            lm_class("custom/echo", engine=Echo() if with_sync else None, async_engine=AsyncEcho(), **setting)
 
 
 @pytest.mark.asyncio
@@ -90,9 +117,9 @@ async def test_client_settings_are_refused_on_every_call(setting):
     with pytest.raises(ValueError, match=refused):
         await lm.acall("hi", **setting)
     with pytest.raises(ValueError, match=refused):
-        lm.forward("hi", **setting)
+        lm(Request(model=lm.model, messages=(Message.user("hi"),)), **setting)
     with pytest.raises(ValueError, match=refused):
-        await lm.aforward("hi", **setting)
+        await lm.acall(Request(model=lm.model, messages=(Message.user("hi"),)), **setting)
     assert not lm.history  # refused before any attempt or cache entry
     assert lm("hi") == ["echo:t"]
 
@@ -110,9 +137,11 @@ def test_client_settings_are_refused_on_copy_too():
     assert "api_key" not in switched.kwargs and isinstance(switched.engine, Echo)
 
 
-def test_none_is_not_a_setting():
-    lm = dspy.LM("custom/echo", engine=Echo(), api_key=None, timeout=None, cache=False)
+@pytest.mark.parametrize("lm_class", [CustomLM, dspy.LM])
+def test_none_is_not_a_setting(lm_class):
+    lm = lm_class("custom/echo", engine=Echo(), api_key=None, timeout=None, cache=False)
     assert lm("hi") == ["echo:t"]
+    assert lm.copy(api_key=None, timeout=None)("hi") == ["echo:t"]
 
 
 def test_built_in_engines_keep_taking_client_settings():
@@ -124,49 +153,145 @@ def test_built_in_engines_keep_taking_client_settings():
 # ─── the engine pair is one unit ──────────────────────────────────────
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("typed", [False, True])
+@pytest.mark.parametrize("async_first", [False, True])
+async def test_sync_and_async_engines_keep_separate_cached_answers(typed, async_first):
+    sync_engine, async_engine = Echo("sync"), AsyncEcho("async")
+    lm = dspy.LM("custom/echo", engine=sync_engine, async_engine=async_engine)
+    prompt = Request(model=lm.model, messages=(Message.user("hi"),)) if typed else "hi"
+    for _ in range(2):
+        for asynchronous in (async_first, not async_first):
+            result = await lm.acall(prompt) if asynchronous else lm(prompt)
+            assert (result.text if typed else result[0]) == ("echo:async" if asynchronous else "echo:sync")
+        # Both modes must reuse their own cached answer, not call either engine again.
+        sync_engine.tag = async_engine.tag = "changed"
+
+
 def test_constructor_and_copy_apply_the_same_async_rule():
     with pytest.raises(ValueError, match="async_engine is only used with a custom engine"):
         dspy.LM("custom/echo", engine="auto", async_engine=AsyncEcho())
     lm = dspy.LM("custom/echo", engine=Echo(), async_engine=AsyncEcho(), cache=False)
     with pytest.raises(ValueError, match="async_engine is only used with a custom engine"):
-        lm.copy(engine="litellm", async_engine=AsyncEcho())
-
-
-def test_copy_with_a_new_engine_replaces_the_pair():
-    lm = dspy.LM("custom/echo", engine=Echo("a"), async_engine=AsyncEcho("a"), cache=False)
-    to_litellm = lm.copy(engine="litellm")
-    assert to_litellm.engine == "litellm" and to_litellm._async_engine_spec is None
-    other = lm.copy(engine=Echo("b"))
-    assert other.engine.tag == "b" and other._async_engine_spec is None
-    both = lm.copy(engine=Echo("c"), async_engine=AsyncEcho("c"))
-    assert both.engine.tag == "c" and both._async_engine_spec.tag == "c"
-    # A copy that does not mention the engine keeps the whole pair.
-    same = lm.copy(temperature=0.5)
-    assert same.engine is lm.engine and same._async_engine_spec is lm._async_engine_spec
+        lm.copy(engine="auto", async_engine=AsyncEcho())
 
 
 @pytest.mark.asyncio
-async def test_async_counterpart_must_be_an_engine():
+@pytest.mark.parametrize("lm_class", [dspy.BaseLM, CustomLM, dspy.LM])
+async def test_copy_with_a_new_engine_replaces_the_pair(lm_class):
+    lm = lm_class("custom/echo", engine=Echo("a"), async_engine=AsyncEcho("a"), cache=False)
+    if lm_class is dspy.LM:
+        native = lm.copy(engine="lm15")
+        assert native.engine == "lm15" and native.async_engine is None
+    other = lm.copy(engine=Echo("b"))
+    assert other.engine.tag == "b" and other.async_engine is None
+    assert other("hi") == ["echo:b"]
+    both = lm.copy(engine=Echo("c"), async_engine=AsyncEcho("d"))
+    assert both.engine.tag == "c" and both.async_engine.tag == "d"
+    assert both("hi") == ["echo:c"]
+    assert await both.acall("hi") == ["echo:d"]
+    # A copy that does not mention the engine keeps the whole pair.
+    same = lm.copy(temperature=0.5)
+    assert same.engine is lm.engine and same.async_engine is lm.async_engine
+    assert same("hi") == ["echo:a"]
+    assert await same.acall("hi") == ["echo:a"]
+    async_only = lm.copy(engine=None, async_engine=AsyncEcho("async"))
+    assert async_only.engine is None and async_only.async_engine.tag == "async"
+    assert await async_only.acall("hi") == ["echo:async"]
+    assert async_only.copy(temperature=0.5).async_engine is async_only.async_engine
+    replaced_async = lm.copy(async_engine=AsyncEcho("new-async"))
+    assert replaced_async.engine is lm.engine
+    assert replaced_async("hi") == ["echo:a"]
+    assert await replaced_async.acall("hi") == ["echo:new-async"]
+    cleared_async = lm.copy(async_engine=None)
+    assert cleared_async.engine is lm.engine and cleared_async.async_engine is None
+    assert cleared_async("hi") == ["echo:a"]
+    assert lm.engine.tag == "a" and lm.async_engine.tag == "a"
+    assert lm("hi") == ["echo:a"]
+    assert await lm.acall("hi") == ["echo:a"]
+    assert "engine" not in both.kwargs and "async_engine" not in both.kwargs
+
+
+@pytest.mark.parametrize("lm_class", [dspy.BaseLM, CustomLM])
+def test_base_copy_allows_both_engines_absent(lm_class):
+    empty = lm_class("custom/echo", cache=False)
+    assert empty.copy().engine is None and empty.copy().async_engine is None
+    lm = lm_class("custom/echo", engine=Echo(), async_engine=AsyncEcho(), cache=False)
+    cleared = lm.copy(engine=None)
+    assert cleared.engine is None and cleared.async_engine is None
+    assert lm.engine is not None and lm.async_engine is not None
+    assert lm.copy(engine=None, async_engine=AsyncEcho()).copy(async_engine=None).async_engine is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("lm_class", [dspy.BaseLM, dspy.LM])
+@pytest.mark.parametrize("with_sync", [False, True])
+async def test_custom_capabilities_prefer_sync_otherwise_async(lm_class, with_sync):
+    class FalseyEcho(Echo):
+        def __bool__(self):
+            return False
+
+    class AsyncFeatures(AsyncEcho):
+        supports_function_calling = True
+        supports_reasoning = True
+        supports_response_schema = True
+        supported_params = frozenset({"tools", "response_format"})
+
+        async def complete(self, request):
+            return Response(None, request.model, Message.assistant('{"answer":"async"}'), "stop", Usage())
+
+    lm = lm_class("custom/echo", engine=FalseyEcho("sync") if with_sync else None,
+                  async_engine=AsyncFeatures(), cache=False)
+    # Even falsey sync engines with no capability declarations take precedence;
+    # do not union the engines' hints or fall back separately for missing fields.
+    assert lm.supports_function_calling is (not with_sync)
+    assert lm.supports_reasoning is (not with_sync)
+    assert lm.supports_response_schema is (not with_sync)
+    assert lm.supported_params == (set() if with_sync else {"tools", "response_format"})
+    with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
+        result = await dspy.Predict("question -> answer").acall(question="Which engine?")
+    assert result.answer == "async"
+    if with_sync:
+        assert lm("hi") == ["echo:sync"]
+    else:
+        with pytest.raises(dspy.LMUnsupportedFeatureError, match="no engine"):
+            lm("hi")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("lm_class", [dspy.BaseLM, dspy.LM])
+async def test_async_counterpart_must_be_an_engine(lm_class):
     with pytest.raises(TypeError, match="async complete"):
-        dspy.LM("custom/echo", engine=Echo(), async_engine=object())
-    lm = dspy.LM("custom/echo", engine=Echo(), async_engine=AsyncEcho("z"), cache=False)
+        lm_class("custom/echo", engine=Echo(), async_engine=object())
+    lm = lm_class("custom/echo", engine=Echo(), async_engine=AsyncEcho("z"), cache=False)
+    assert lm("hi") == ["echo:t"]
     assert await lm.acall("hi") == ["echo:z"]
 
 
-def test_each_side_of_the_pair_must_be_the_right_kind():
+@pytest.mark.parametrize("lm_class", [dspy.BaseLM, dspy.LM])
+def test_each_side_of_the_pair_must_be_the_right_kind(lm_class):
     # A sync complete() as the async engine would be awaited as a Response
     # on the first acall; an async complete() as the sync engine would hand
     # execute() a coroutine. Both are refused at construction (greptile on
     # dspy#10441).
     with pytest.raises(TypeError, match=r"async_engine\.complete is not a coroutine function"):
-        dspy.LM("custom/echo", engine=Echo(), async_engine=Echo())
+        lm_class("custom/echo", engine=Echo(), async_engine=Echo())
     with pytest.raises(TypeError, match=r"engine\.complete is a coroutine function"):
-        dspy.LM("custom/echo", engine=AsyncEcho())
-    lm = dspy.LM("custom/echo", engine=Echo(), async_engine=AsyncEcho(), cache=False)
+        lm_class("custom/echo", engine=AsyncEcho())
+
+
+@pytest.mark.parametrize("lm_class", [dspy.BaseLM, CustomLM, dspy.LM])
+def test_copy_checks_each_side_of_the_pair(lm_class):
+    lm = lm_class("custom/echo", engine=Echo(), async_engine=AsyncEcho(), cache=False)
     with pytest.raises(TypeError, match="not a coroutine function"):
         lm.copy(async_engine=Echo())
     with pytest.raises(TypeError, match="is a coroutine function"):
         lm.copy(engine=AsyncEcho())
+    with pytest.raises(TypeError, match="must implement complete"):
+        lm.copy(engine=object())
+    with pytest.raises(TypeError, match="must implement async complete"):
+        lm.copy(async_engine=object())
+    assert lm("hi") == ["echo:t"]
 
 
 class AsyncCallable:
@@ -183,25 +308,37 @@ class WithCallableComplete:
 
 
 @pytest.mark.asyncio
-async def test_an_inherited_async_call_counts_as_a_coroutine_function():
+@pytest.mark.parametrize("lm_class", [dspy.BaseLM, dspy.LM])
+async def test_an_inherited_async_call_counts_as_a_coroutine_function(lm_class):
     # Python resolves __call__ through the MRO; so does the kind check.
-    lm = dspy.LM("custom/echo", engine=Echo(), async_engine=WithCallableComplete(), cache=False)
+    lm = lm_class("custom/echo", engine=Echo(), async_engine=WithCallableComplete(), cache=False)
     assert await lm.acall("hi") == ["echo:inherited"]
 
 
 # ─── saving and loading ───────────────────────────────────────────────
 
 
-def test_custom_engine_round_trips_through_json_state():
-    lm = dspy.LM("custom/echo", engine=Echo("a"), async_engine=AsyncEcho("b"), cache=False, num_retries=0)
+@pytest.mark.asyncio
+@pytest.mark.parametrize("lm_class", [CustomLM, dspy.LM])
+@pytest.mark.parametrize("with_sync", [False, True])
+async def test_custom_engine_round_trips_through_json_state(with_sync, lm_class):
+    lm = lm_class("custom/echo", engine=Echo("a") if with_sync else None,
+                 async_engine=AsyncEcho("b"), cache=False, num_retries=0)
     state = lm.dump_state()
     json.dumps(state)  # JSON-serializable
-    assert state["engine"] == {"class": f"{__name__}:Echo", "state": {"tag": "a"}}
+    assert state["engine"] == ({"class": f"{__name__}:Echo", "state": {"tag": "a"}} if with_sync else None)
     assert state["async_engine"] == {"class": f"{__name__}:AsyncEcho", "state": {"tag": "b"}}
-    loaded = dspy.LM.load_state(state, allow_custom_lm_class=True)
-    assert isinstance(loaded.engine, Echo) and loaded.engine.tag == "a"
+    with pytest.raises(ValueError, match="Refusing to import custom serialized engine class"):
+        lm_class.load_state(state)
+    loaded = lm_class.load_state(state, allow_custom_lm_class=True)
+    if with_sync:
+        assert isinstance(loaded.engine, Echo) and loaded.engine.tag == "a"
+        assert loaded("hi") == ["echo:a"]
+    else:
+        assert loaded.engine is None
     assert isinstance(loaded._async_engine_spec, AsyncEcho) and loaded._async_engine_spec.tag == "b"
-    assert loaded.num_retries == 0 and loaded("hi") == ["echo:a"]
+    assert loaded.num_retries == 0
+    assert await loaded.acall("hi") == ["echo:b"]
 
 
 def test_loading_a_custom_engine_is_gated_like_a_custom_lm_class():
@@ -212,43 +349,56 @@ def test_loading_a_custom_engine_is_gated_like_a_custom_lm_class():
         dspy.BaseLM.load_state(state)
 
 
-def test_program_save_and_load_with_a_custom_engine(tmp_path):
+@pytest.mark.asyncio
+@pytest.mark.parametrize("lm_class", [dspy.BaseLM, CustomLM, dspy.LM])
+@pytest.mark.parametrize("with_sync", [False, True])
+async def test_program_save_and_load_with_a_custom_engine(tmp_path, lm_class, with_sync):
     program = dspy.Predict("question -> answer")
-    program.lm = dspy.LM("custom/echo", engine=Echo("saved"), cache=False)
+    program.lm = lm_class("custom/echo", engine=Echo("saved") if with_sync else None,
+                          async_engine=AsyncEcho("async-saved"), cache=False)
     path = tmp_path / "program.json"
     program.save(path)
     fresh = dspy.Predict("question -> answer")
     with pytest.raises(ValueError, match="allow_unsafe_lm_state"):
         fresh.load(path)
     fresh.load(path, allow_unsafe_lm_state=True)
-    assert isinstance(fresh.lm.engine, Echo) and fresh.lm.engine.tag == "saved"
+    assert type(fresh.lm) is lm_class
+    if with_sync:
+        assert fresh.lm("hi") == ["echo:saved"]
+    else:
+        assert fresh.lm.engine is None
+    assert await fresh.lm.acall("hi") == ["echo:async-saved"]
 
 
-def test_engine_without_state_protocol_is_refused_with_the_way_out():
-    lm = dspy.LM("custom/echo", engine=Stateless())
+@pytest.mark.parametrize("lm_class", [CustomLM, dspy.LM])
+def test_engine_without_state_protocol_is_refused_with_the_way_out(lm_class):
+    lm = lm_class("custom/echo", engine=Stateless())
     with pytest.raises(TypeError, match=r"dump_state\(\) -> dict.*load_state\(state\)") as info:
         lm.dump_state()
     assert "save the program without this LM" in str(info.value)
 
 
-def test_function_local_engine_class_is_refused_at_save_time():
+@pytest.mark.parametrize("lm_class", [CustomLM, dspy.LM])
+def test_function_local_engine_class_is_refused_at_save_time(lm_class):
     class Local(Echo):
         pass
 
-    lm = dspy.LM("custom/echo", engine=Local())
+    lm = lm_class("custom/echo", engine=Local())
     with pytest.raises(TypeError, match=r"not importable as .*<locals>.*module level"):
         lm.dump_state()
 
 
-def test_engine_state_must_be_a_dict():
+@pytest.mark.parametrize("lm_class", [CustomLM, dspy.LM])
+def test_engine_state_must_be_a_dict(lm_class):
     with pytest.raises(TypeError, match="must return a dict"):
-        dspy.LM("custom/echo", engine=BadState()).dump_state()
+        lm_class("custom/echo", engine=BadState()).dump_state()
 
 
-def test_engine_state_must_be_json_at_dump_time():
+@pytest.mark.parametrize("lm_class", [CustomLM, dspy.LM])
+def test_engine_state_must_be_json_at_dump_time(lm_class):
     # Refused where the promise is made, not at file-write time.
     with pytest.raises(TypeError, match=r"JSON-serializable.*set"):
-        dspy.LM("custom/echo", engine=NonJsonState()).dump_state()
+        lm_class("custom/echo", engine=NonJsonState()).dump_state()
 
 
 def test_saved_state_loads_in_a_fresh_process(tmp_path):
@@ -264,7 +414,7 @@ def test_saved_state_loads_in_a_fresh_process(tmp_path):
         "print(type(p.lm.engine).__name__, p.lm.engine.tag)\n"
     )
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True,
-                            cwd=str(tmp_path), env={**os.environ, "PYTHONPATH": ":".join(sys.path)})
+                            cwd=str(tmp_path), env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)})
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "Echo portable"
 
@@ -288,6 +438,5 @@ def test_serialized_engine_records_are_validated():
 
 def test_built_in_engine_selection_state_is_unchanged():
     assert "engine" not in dspy.LM("openai/gpt-4o").dump_state()
-    assert dspy.LM("openai/gpt-4o", engine="litellm").dump_state()["engine"] == "litellm"
     loaded = dspy.LM.load_state(dspy.LM("openai/gpt-4o", engine="lm15").dump_state())
     assert loaded.engine == "lm15"

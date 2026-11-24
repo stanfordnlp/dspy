@@ -1,6 +1,7 @@
 """Failed streams, cancellation, and post-completion work cannot replay a generation."""
 
 import asyncio
+import json
 
 import anyio
 import pytest
@@ -66,34 +67,53 @@ async def test_all_streams_are_validated_and_failures_are_not_cached(case, async
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
-async def test_transient_stream_open_failure_retries_but_failure_after_output_does_not(asynchronous):
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_transient_failure_retries_but_failure_after_output_does_not(asynchronous, streaming):
+    billed = lm15.Response(None, "custom", lm15.Message.assistant(""), "error",
+                           lm15.Usage(input_tokens=3, output_tokens=2))
+    error = lm15.RateLimitError("wait", retry_after=0)
+    error.partial = billed
+
     class Transient(Engine):
-        def stream(self, request):
+        def complete(self, request):
             self.calls += 1
             if self.calls == 1:
-                raise lm15.RateLimitError("wait", retry_after=0)
-            yield lm15.StreamStartEvent()
-            yield lm15.StreamDeltaEvent(lm15.TextDelta("ok"))
-            yield lm15.StreamEndEvent(finish_reason="stop")
+                raise error
+            return lm15.Response(None, "answered-model", lm15.Message.assistant("ok"), "stop",
+                                 lm15.Usage(input_tokens=7, output_tokens=4))
+
+        def stream(self, request):
+            response = self.complete(request)
+            yield lm15.StreamStartEvent(model=response.model)
+            yield lm15.StreamDeltaEvent(lm15.TextDelta(response.text))
+            yield lm15.StreamEndEvent(finish_reason="stop", usage=response.usage)
 
     engine = Transient()
-    lm = dspy.LM("custom", engine=engine, async_engine=AsyncEngine(engine), cache=False, num_retries=1)
-    with dspy.context(send_stream=Sink()):
+    lm = dspy.LM("custom", engine=engine, async_engine=AsyncEngine(engine), cache=True, num_retries=1)
+    with track_usage() as tracker:
+        with dspy.context(send_stream=Sink() if streaming else None):
+            assert await invoke(lm, asynchronous, "hello") == ["ok"]
+        assert lm.history[-1]["response_model"] == "answered-model"
         assert await invoke(lm, asynchronous, "hello") == ["ok"]
+        assert lm.history[-1]["response_model"] == "answered-model"
+        assert lm.history[-1]["usage"] == {}
     assert engine.calls == 2
+    assert tracker.get_total_tokens()[lm.model]["total_tokens"] == 16
 
     class Partial(Engine):
         def stream(self, request):
             self.calls += 1
             yield lm15.StreamStartEvent()
             yield lm15.StreamDeltaEvent(lm15.TextDelta("partial"))
-            raise lm15.RateLimitError("wait", retry_after=0)
+            raise error
 
     engine = Partial()
     lm = dspy.LM("custom", engine=engine, async_engine=AsyncEngine(engine), cache=False, num_retries=1)
-    with dspy.context(send_stream=Sink()), pytest.raises(dspy.LMRateLimitError):
+    with dspy.context(send_stream=Sink()), track_usage() as tracker, pytest.raises(dspy.LMRateLimitError):
         await invoke(lm, asynchronous, "hello")
     assert engine.calls == 1
+    assert tracker.get_total_tokens()[lm.model]["total_tokens"] == 5
+    assert not lm.history
 
 
 class BrokenClose:
@@ -261,6 +281,43 @@ async def test_unnamed_tool_call_preserves_partial_usage(asynchronous):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("model_type", ["chat", "responses"])
+async def test_native_conversion_failure_keeps_billed_usage(model_type, asynchronous, monkeypatch):
+    from tests.clients.test_lm_engine_execution import DualResponse, native_transport
+    usage = {"prompt_tokens": 15, "completion_tokens": 7, "total_tokens": 22}
+    raw = {
+        "model": "fake",
+        "choices": [{"message": {"role": "assistant", "tool_calls": [
+            {"id": "call-1", "type": "function", "function": {"arguments": "{}"}},
+        ]}, "finish_reason": "tool_calls"}],
+        "usage": usage,
+    }
+    if model_type == "responses":
+        raw = {
+            "model": "fake", "status": "completed",
+            "output": [{"type": "function_call", "call_id": "call-1", "arguments": "{}"}],
+            "usage": {"input_tokens": 15, "output_tokens": 7, "total_tokens": 22},
+        }
+
+    transport = native_transport(monkeypatch, [DualResponse(status=200, body=json.dumps(raw).encode()) for _ in range(2)])
+    lm = dspy.LM("openai/fake", model_type=model_type, api_key="fake", cache=True, num_retries=2)
+    with track_usage() as tracker:
+        for count in range(1, 3):
+            with pytest.raises(dspy.LMProviderError) as caught:
+                await invoke(lm, asynchronous, "hello")
+            assert type(caught.value.__cause__) is lm15.ProviderError
+            assert "name" in str(caught.value)
+            assert tracker.get_total_tokens()[lm.model] == {
+                **{key: value * count for key, value in usage.items()},
+                "prompt_tokens_details": None, "completion_tokens_details": None,
+            }
+            assert len(transport.requests) == count  # neither retries nor cached malformed replies
+    assert not lm.history
+    assert not dspy.cache.memory_cache
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
 async def test_parser_bug_is_not_hidden_by_adapter_fallback(asynchronous):
     class Broken(dspy.ChatAdapter):
         def parse(self, signature, completion):
@@ -376,45 +433,6 @@ async def test_materializing_backend_keeps_completed_usage_on_cleanup_failure(as
     assert tracker.get_total_tokens()[lm.model]["total_tokens"] == 3
     assert engine.calls == 1
     assert dspy.cache.memory_cache
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("asynchronous", [False, True])
-async def test_compatibility_stream_keeps_usage_if_sdk_close_fails(asynchronous, monkeypatch):
-    import litellm
-
-    class Source:
-        def __init__(self):
-            self.sent = False
-
-        def __aiter__(self):
-            return self
-
-        async def __anext__(self):
-            if self.sent:
-                raise StopAsyncIteration
-            self.sent = True
-            return {"choices": [{"delta": {"content": "ok"}, "finish_reason": "stop"}]}
-
-        async def aclose(self):
-            raise lm15.TransportError("cleanup failed")
-
-    calls = []
-
-    async def complete(**kwargs):
-        calls.append(kwargs)
-        return Source()
-
-    raw = litellm.ModelResponse(model="fake", choices=[{"message": {"role": "assistant", "content": "ok"}}],
-                               usage={"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3})
-    monkeypatch.setattr(litellm, "acompletion", complete)
-    monkeypatch.setattr(litellm, "stream_chunk_builder", lambda chunks: raw)
-    lm = dspy.LM("openai/fake", engine="litellm", cache=True, num_retries=2)
-    with dspy.context(send_stream=Sink()), track_usage() as tracker, pytest.raises(dspy.LMTransportError):
-        await invoke(lm, asynchronous, "hello")
-    assert len(calls) == 1
-    assert tracker.get_total_tokens()[lm.model]["total_tokens"] == 3
-    assert not dspy.cache.memory_cache
 
 
 @pytest.mark.parametrize("adapter,module,text", [

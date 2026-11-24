@@ -20,7 +20,7 @@ Every DSPy module will use these defaults unless you override them with
 | Setting | Default | Description |
 | --- | --- | --- |
 | `lm` | `None` | Default language model. Pass a [`dspy.LM`](../models/LM.md) instance. |
-| `adapter` | `None` | Formats prompts and parses LM responses. When `None`, modules use [`dspy.ChatAdapter`](../adapters/ChatAdapter.md). |
+| `adapter` | `None` | Formats prompts and parses LM responses. When `None`, modules use [`dspy.XMLAdapter(use_native_function_calling=True)`](../adapters/XMLAdapter.md): native tool calling when the LM supports it, text otherwise. |
 | `callbacks` | `[]` | Observability and logging hooks. See [Observability](../../tutorials/observability/index.md). |
 | `track_usage` | `False` | Record token counts for every LM call. |
 | `async_max_workers` | `8` | Maximum concurrent workers for async operations. |
@@ -31,7 +31,7 @@ Every DSPy module will use these defaults unless you override them with
 | `allow_tool_async_sync_conversion` | `False` | Let async tools run in synchronous code. See [Async](../../tutorials/async/index.md). |
 | `provide_traceback` | `False` | Include Python tracebacks in error logs. |
 | `warn_on_type_mismatch` | `True` | Warn when a module input type does not match the signature. |
-| `interpreter_factory` | `None` | Replaces the default `dspy.PythonInterpreter` factory for code-executing modules ([`dspy.RLM`](../modules/RLM.md), [`dspy.Flex`](../modules/Flex.md), `dspy.ProgramOfThought`, `dspy.CodeAct`). A module's own factory wins, unless it is `PythonInterpreter`. Modules fall back to [`dspy.PythonInterpreter`](../../diving-deeper/rlm.md) when nothing is configured. |
+| `interpreter_factory` | `None` | Replaces the default `dspy.PythonInterpreter` factory for code-executing modules ([`dspy.RLM`](../modules/RLM.md), [`dspy.Flex`](../modules/Flex.md)). A module's own factory wins, unless it is `PythonInterpreter`. Modules fall back to [`dspy.PythonInterpreter`](../../diving-deeper/rlm.md) when nothing is configured. |
 
 ## Examples
 

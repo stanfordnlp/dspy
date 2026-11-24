@@ -7,6 +7,7 @@ from dspy.primitives.code_interpreter import (
     resolve_interpreter_factory,
 )
 from dspy.primitives.example import Example
+from dspy.primitives.interpreter_pool import InterpreterPool
 from dspy.primitives.local_interpreter import LocalInterpreter
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Completions, Prediction
@@ -21,6 +22,7 @@ __all__ = [
     "Example",
     "FinalOutput",
     "CodeInterpreterError",
+    "InterpreterPool",
     "LocalInterpreter",
     "Module",
     "Prediction",

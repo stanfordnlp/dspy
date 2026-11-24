@@ -1,9 +1,11 @@
 import base64
+import json
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
 import dspy
+from dspy.adapters.utils import parse_value
 
 
 def _forbid_host_io(monkeypatch):
@@ -67,34 +69,24 @@ def test_image_url_constructor_does_not_download(monkeypatch):
     assert image.url == "https://example.com/image.png"
 
 
-def test_image_validation_rejects_download_without_host_io(monkeypatch):
+@pytest.mark.parametrize("kwargs", [{"download": True}, {"download": False}, {"verify": False}])
+def test_image_removed_keywords_rejected_without_host_io(monkeypatch, kwargs):
     _forbid_host_io(monkeypatch)
+    url = "http://169.254.169.254/latest/meta-data"
 
-    with pytest.raises((TypeError, ValidationError), match="only valid with a positional image source"):
-        TypeAdapter(dspy.Image).validate_python({"url": "http://169.254.169.254/latest/meta-data", "download": True})
+    with pytest.raises(TypeError, match="no longer accepts"):
+        dspy.Image(url, **kwargs)
+    with pytest.raises(TypeError, match="no longer accepts"):
+        dspy.Image(url=url, **kwargs)
 
-
-def test_image_validation_rejects_download_with_source_keyword_without_host_io(monkeypatch):
-    _forbid_host_io(monkeypatch)
-
-    with pytest.raises((TypeError, ValidationError), match="only valid with a positional image source"):
-        TypeAdapter(dspy.Image).validate_python({"source": "http://169.254.169.254/latest/meta-data", "download": True})
-
-
-def test_image_positional_download_compatibility_shim(monkeypatch):
-    class Response:
-        content = b"remote bytes"
-        headers = {"Content-Type": "image/png"}
-
-        def raise_for_status(self):
-            return None
-
-    monkeypatch.setattr("dspy.adapters.types.image.requests.get", lambda *args, **kwargs: Response())
-
-    with pytest.warns(DeprecationWarning, match="download.*deprecated"):
-        image = dspy.Image("https://example.com/image.png", download=True)
-
-    assert base64.b64decode(image.url.split(",", 1)[1]) == b"remote bytes"
+    for field in ("url", "source"):
+        value = {field: url, **kwargs}
+        with pytest.raises(TypeError, match="no longer accepts"):
+            TypeAdapter(dspy.Image).validate_python(value)
+        with pytest.raises(TypeError, match="no longer accepts"):
+            TypeAdapter(dspy.Image).validate_json(json.dumps(value))
+        with pytest.raises(TypeError, match="no longer accepts"):
+            parse_value(json.dumps(value), dspy.Image)
 
 
 def test_explicit_local_resource_factories(tmp_path):
@@ -110,14 +102,9 @@ def test_explicit_local_resource_factories(tmp_path):
     assert base64.b64decode(dspy.File.from_path(str(file_path)).file_data.split(",", 1)[1]) == b"file bytes"
 
 
-def test_audio_from_file_is_deprecated_alias(tmp_path):
-    audio_path = tmp_path / "audio.wav"
-    audio_path.write_bytes(b"audio bytes")
-
-    with pytest.warns(DeprecationWarning, match="Audio.from_file is deprecated"):
-        aliased = dspy.Audio.from_file(str(audio_path))
-
-    assert base64.b64decode(aliased.data) == b"audio bytes"
+def test_removed_audio_factory_alias():
+    with pytest.raises(AttributeError, match="from_file"):
+        dspy.Audio.from_file("unused.wav")
 
 
 @pytest.mark.parametrize(
@@ -211,13 +198,18 @@ def test_audio_rejects_sampling_rate_for_non_array_inputs(source):
         dspy.Audio(source, sampling_rate=44100)
 
 
-def test_audio_from_url_passes_verify(monkeypatch):
+@pytest.mark.parametrize(
+    ("factory", "module", "mime_type"),
+    [(dspy.Image.from_url, "image", "image/png"), (dspy.Audio.from_url, "audio", "audio/wav")],
+)
+@pytest.mark.parametrize("verify", [True, False])
+def test_from_url_passes_verify(monkeypatch, factory, module, mime_type, verify):
     captured = {}
 
     class Response:
         def __init__(self):
             self.content = b"remote bytes"
-            self.headers = {"Content-Type": "audio/wav"}
+            self.headers = {"Content-Type": mime_type}
 
         def raise_for_status(self):
             return None
@@ -226,8 +218,10 @@ def test_audio_from_url_passes_verify(monkeypatch):
         captured.update(kwargs)
         return Response()
 
-    monkeypatch.setattr("dspy.adapters.types.audio.requests.get", fake_get)
+    monkeypatch.setattr(f"dspy.adapters.types.{module}.requests.get", fake_get)
 
-    dspy.Audio.from_url("https://example.com/a.wav", verify=False)
+    resource = factory("https://example.com/resource", verify=verify)
 
-    assert captured["verify"] is False
+    assert captured["verify"] is verify
+    encoded = resource.url.split(",", 1)[1] if isinstance(resource, dspy.Image) else resource.data
+    assert base64.b64decode(encoded) == b"remote bytes"

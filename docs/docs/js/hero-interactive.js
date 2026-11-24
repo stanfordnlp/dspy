@@ -14,7 +14,7 @@
     { line: "lm = dspy." + m("LM") + "(" + s('"openai/gpt-5.4-nano"') + ")" },
     { line: "lm = dspy." + m("LM") + "(" + s('"anthropic/claude-sonnet-4-20250514"') + ")" },
     { line: "lm = dspy." + m("LM") + "(" + s('"openrouter/deepseek/deepseek-r1"') + ")" },
-    { line: "lm = dspy." + m("LM") + "(" + s('"ollama_chat/llama3.2"') + ", api_base=" + s('"http://localhost:11434"') + ")" },
+    { line: "lm = dspy." + m("LM") + "(" + s('"ollama_chat/llama3.2"') + ")" },
   ];
 
   var fieldConfigs = [

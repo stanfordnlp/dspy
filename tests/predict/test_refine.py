@@ -7,6 +7,42 @@ from dspy.primitives.prediction import Prediction
 from dspy.utils.dummies import DummyLM
 
 
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("reasoning_type", [dspy.Reasoning, str])
+def test_refine_feedback_preserves_reasoning(native, reasoning_type):
+    from dspy.lm15 import Message, Response, TextPart, ThinkingPart, Usage
+
+    feedback = []
+    answers = iter(["wrong", "correct"])
+
+    class Engine:
+        supports_reasoning = native
+
+        def complete(self, request):
+            if "program_trajectory" in request.system:
+                feedback.append("\n".join(message.text for message in request.messages))
+                text = '[[ ## discussion ## ]]\nFix division\n[[ ## advice ## ]]\n{"predict": "Divide by three"}'
+                parts = []
+            else:
+                reasoning = "used-seven-instead-of-three"
+                name = "plan" if "[[ ## plan ## ]]" in request.system else "reasoning"
+                text = f"[[ ## {name} ## ]]\n{reasoning}\n" if f"[[ ## {name} ## ]]" in request.system else ""
+                text += f"[[ ## answer ## ]]\n{next(answers)}"
+                parts = [ThinkingPart(reasoning)] if native else []
+            return Response(None, request.model, Message.assistant(parts + [TextPart(text)]), "stop", Usage())
+
+    cot = dspy.ChainOfThought("question -> answer", rationale_field_type=reasoning_type)
+    lm = dspy.LM("custom/refine", engine=Engine(), cache=False)
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False)):
+        result = dspy.Refine(cot, N=2, reward_fn=lambda _, p: float(p.answer == "correct"), threshold=1)(
+            question="Divide 21 by 3"
+        )
+    assert result.answer == "correct"
+    assert len(feedback) == 1
+    # Both the trace and final program output must retain the failed reasoning.
+    assert feedback[0].count("used-seven-instead-of-three") == 2
+
+
 class DummyModule(dspy.Module):
     def __init__(self, signature, forward_fn):
         super().__init__()

@@ -31,6 +31,7 @@ jobs:
           persist-credentials: false
       - name: Install dependencies and build
         run: |
+          bash scripts/bootstrap_python.sh
           pip install -r docs/requirements.txt -e .
           python docs/scripts/build_docs.py current \
             --config docs/mkdocs.yml \
@@ -56,7 +57,9 @@ jobs:
           cache: "pip"
           cache-dependency-path: docs/requirements.txt
       - name: Install documentation dependencies
-        run: python -m pip install -r docs/requirements.txt -e .
+        run: |
+          bash scripts/bootstrap_python.sh
+          python -m pip install -r docs/requirements.txt -e .
       - name: Build Current documentation
         run: |
           python docs/scripts/build_docs.py current \

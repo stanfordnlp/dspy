@@ -1,19 +1,19 @@
 import copy
+import logging
 import os
 from collections.abc import Iterator
 from typing import Any
 
 import pytest
 
-# Read LiteLLM's bundled model catalog instead of fetching its live copy from GitHub, so capability
-# lookups do not change under the suite when upstream edits or retires an entry. Set before anything
-# imports litellm; tests of the remote path unset it with monkeypatch.
+# DSPy still reads the model catalog after removing LiteLLM. Keep ordinary
+# tests on the bundled snapshot; remote-catalog tests explicitly unset this.
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
 from tests.test_utils.server import (  # noqa: F401
-    _litellm_test_server,
-    litellm_test_server,
-    read_litellm_test_server_request_logs,
+    _openai_test_server,
+    openai_test_server,
+    read_test_server_request_logs,
 )
 
 SKIP_DEFAULT_FLAGS = ["reliability", "extra", "llm_call", "deno"]
@@ -23,6 +23,26 @@ def _close_cache(cache: Any) -> None:
     disk_cache = getattr(cache, "disk_cache", None)
     if hasattr(disk_cache, "close"):
         disk_cache.close()
+
+
+@pytest.fixture(autouse=True)
+def propagate_dspy_logs() -> Iterator[None]:
+    """Let `caplog` see dspy's log records.
+
+    `configure_dspy_loggers` sets `propagate = False` on the `dspy` logger. Up to pytest 8.2 the
+    capture handler lives only on the root logger, so that flag stops `caplog` from seeing any dspy
+    record (pytest 9 also attaches it to the logger named in `caplog.at_level`, which is why these
+    assertions pass locally but fail under the minimum dependency profile). Without this fixture,
+    tests asserting on dspy log output instead depend on an earlier test having leaked
+    `propagate = True`, which is order-dependent under `-n auto --dist worksteal`.
+    """
+    logger = logging.getLogger("dspy")
+    original = logger.propagate
+    logger.propagate = True
+    try:
+        yield
+    finally:
+        logger.propagate = original
 
 
 @pytest.fixture(autouse=True)

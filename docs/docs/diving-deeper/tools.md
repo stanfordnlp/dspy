@@ -4,9 +4,9 @@
 
 A tool lets a DSPy program call Python code chosen by a language model. The model sees a name, description, and argument schema; it selects the tool and supplies arguments; DSPy executes the callable and makes the result available to the program.
 
-Tools are a shared DSPy primitive, not a ReAct-specific feature. `dspy.ReAct` and `dspy.ReActV2` use them in agent loops, `dspy.RLM` exposes them inside its interpreter, `dspy.Flex` can wire them into optimized programs, and adapters use the same tool schemas for native provider function calling. `dspy.utils.mcp` bridges remote MCP tools into this interface.
+Tools are a shared DSPy primitive, not a ReAct-specific feature. `dspy.ReAct` uses them in its structured-history agent loop, `dspy.RLM` exposes them inside its interpreter, `dspy.Flex` can wire them into optimized programs, and adapters use the same tool schemas for native provider function calling. `dspy.utils.mcp` bridges remote MCP tools into this interface.
 
-Read this page when you want to define, wrap, validate, or import tools. For the agent loop that decides when to call them, see [ReAct and ReActV2](react.md).
+Read this page when you want to define, wrap, validate, or import tools. For the agent loop that decides when to call them, see [ReAct](react.md).
 
 ## Defining a tool
 
@@ -68,7 +68,7 @@ with dspy.context(adapter=adapter):
     result = agent(question="What changed in DSPy 3.3?")
 ```
 
-When native calling is active and the LM supports it, the adapter converts each tool with `Tool.format_as_litellm_function_call()` and sends the resulting descriptors in the LM request. Otherwise, it keeps tool selection in DSPy's normal adapter-formatted fields. The same `Tool` works in either mode.
+When native calling is active and the LM supports it, the adapter converts each tool with `Tool.as_function_tool()` into an lm15 `FunctionTool` and sends it in the LM request. Otherwise, it keeps tool selection in DSPy's normal adapter-formatted fields. The same `Tool` works in either mode.
 
 ## Structured tool calls and results
 
@@ -113,8 +113,8 @@ Wraps a callable and infers any metadata not supplied explicitly.
 **`Tool.__call__(**kwargs)` / `Tool.acall(**kwargs)`**
 Validates, coerces, and executes tool arguments through synchronous or asynchronous entry points.
 
-**`Tool.format_as_litellm_function_call()`** → `dict`
-Returns the OpenAI/LiteLLM-style function descriptor used by adapters for native calling.
+**`Tool.as_function_tool()`** → `dspy.lm15.FunctionTool`
+Returns the provider-neutral function declaration adapters send for native calling.
 
 **`Tool.from_mcp_tool(session, tool, *, result_mode="text")`** → `Tool`
 Wraps a remote MCP tool as an asynchronous DSPy tool. Set `result_mode="structured"` to return structured MCP results when available.
@@ -127,7 +127,7 @@ Stores one or more requested calls in a provider-neutral form.
 
 ## Cross-links
 
-- [ReAct and ReActV2](react.md) — how DSPy's agent modules choose, execute, record, and replay tools.
+- [ReAct](react.md) — how DSPy's agent loop chooses, executes, records, and replays tools.
 - [Adapters: how signatures become prompts](adapters.md) — where tool schemas and `ToolCalls` become provider requests and responses.
 - [RLM: exploring large contexts with code](rlm.md) — how RLM makes supplied tools callable inside its sandbox.
 - [Built-in module variants](built-in-module-variants.md) — other modules that consume tools.

@@ -4,37 +4,23 @@ from dspy.clients.engines.base import validate_request
 from dspy.lm15 import Message, Response, TextPart, ThinkingPart, Usage, response_to_events
 
 
+def _text(parts):
+    return "".join(part.text for part in parts if isinstance(part, TextPart))
+
+
 class DummyEngine:
     def __init__(self, owner):
         self.owner = owner
 
     def complete(self, request):
         validate_request(request)
+        # Scripted answers are keyed on visible text; media parts carry none.
         messages = []
         if request.system is not None:
-            system = request.system if isinstance(request.system, str) else "".join(p.text for p in request.system)
+            system = request.system if isinstance(request.system, str) else _text(request.system)
             messages.append({"role": "system", "content": system})
-        messages.extend({"role": m.role, "content": m.text or ""} for m in request.messages)
+        messages.extend({"role": m.role, "content": _text(m.parts)} for m in request.messages)
         return self._complete_messages(messages)
-
-    def complete_legacy(self, lm, request, *, prompt=None, messages=None, **context):
-        """Scripted answers do not require provider-compatible input blocks.
-
-        Keep the original messages (including filenames and opaque blocks).
-        The dummy generates canonical responses, but does not send inputs to a
-        provider or pretend those inputs round-trip through a narrower schema.
-        """
-        from dspy.clients.call_result import CallResult, combine
-
-        if messages is None and isinstance(prompt, (list, tuple)) and all(
-            isinstance(message, dict) and "role" in message for message in prompt
-        ):
-            messages = prompt
-        else:
-            messages = request["messages"]
-        count = request.get("n") or 1
-        results = [CallResult.native(self._complete_messages(messages)) for _ in range(count)]
-        return results[0] if count == 1 else combine(results, model_type="chat")
 
     def _complete_messages(self, messages):
         owner = self.owner
@@ -64,9 +50,6 @@ class AsyncDummyEngine:
 
     async def complete(self, request):
         return self.sync.complete(request)
-
-    async def complete_legacy(self, lm, request, **context):
-        return self.sync.complete_legacy(lm, request, **context)
 
     async def stream(self, request):
         for event in self.sync.stream(request):
