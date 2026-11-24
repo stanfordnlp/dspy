@@ -199,8 +199,7 @@ class Tool(Type):
                     raise ValueError(f"Arg {k} is not in the tool's args.")
             try:
                 instance = _json_schema_instance(v)
-                type_str = self.args[k].get("type")
-                if type_str is not None and type_str != "Any":
+                if self.args[k].get("type") != "Any":
                     validate(instance=instance, schema=self.args[k])
             except ValidationError as e:
                 raise ValueError(f"Arg {k} is invalid: {e.message}")
@@ -652,7 +651,9 @@ def _to_json_default(value: Any) -> Any:
 def _resolve_json_schema_reference(schema: dict) -> dict:
     """Inline local definitions, retaining the targets of recursive references."""
     root = schema.copy()
-    definitions = {table: root.pop(table, {}) for table in ("$defs", "definitions")}
+    definitions = {
+        table: defs if isinstance(defs := root.pop(table, None), dict) else {} for table in ("$defs", "definitions")
+    }
     if not any(definitions.values()):
         return root
 
@@ -709,7 +710,9 @@ def convert_input_schema_to_tool_args(
     definitions = schema.get("definitions", {})
 
     for name, prop in properties.items():
-        if defs or definitions:
+        if isinstance(prop, bool):
+            prop = {} if prop else {"not": {}}
+        elif defs or definitions:
             prop = _resolve_json_schema_reference({"$defs": defs, "definitions": definitions, **prop})
         args[name] = prop
         arg_types[name] = _TYPE_MAPPING.get(prop.get("type"), Any)

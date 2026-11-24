@@ -1245,9 +1245,12 @@ def test_convert_input_schema_to_tool_args_with_boolean_definitions():
     with pytest.raises(ValidationError):
         validate("anything", args["reject"])
 
-    allow_parameters = Tool(lambda **kwargs: kwargs, args={"allow": args["allow"]}).as_function_tool().parameters
-    validate({"allow": "anything"}, allow_parameters)
+    allow_tool = Tool(lambda **kwargs: kwargs, args={"allow": args["allow"]})
+    assert allow_tool(allow="anything") == {"allow": "anything"}
+    validate({"allow": "anything"}, allow_tool.as_function_tool().parameters)
 
-    reject_parameters = Tool(lambda **kwargs: kwargs, args={"reject": args["reject"]}).as_function_tool().parameters
+    reject_tool = Tool(lambda **kwargs: kwargs, args={"reject": args["reject"]})
+    with pytest.raises(ValueError, match="Arg reject is invalid"):
+        reject_tool(reject="anything")
     with pytest.raises(ValidationError):
-        validate({"reject": "anything"}, reject_parameters)
+        validate({"reject": "anything"}, reject_tool.as_function_tool().parameters)
