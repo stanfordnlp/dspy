@@ -1,9 +1,10 @@
 """Call metrics from DSPy's synchronous evaluation paths.
 
-Metrics are ordinary callables. Sync metrics run on the calling thread.
-``async def`` metrics are supported: they are awaited via :func:`asyncio.run`
-when there is no running loop, and run on a daemon worker thread when a loop
-is already running, so they cannot deadlock against the caller's loop.
+Metrics are ordinary callables. Sync metrics run on the calling thread; async
+metrics (`async def` functions, objects with `async def __call__`, and sync
+wrappers that return a coroutine) are awaited via :func:`asyncio.run` when no
+event loop is running, and run on a daemon worker thread when a loop is already
+running, so they cannot deadlock against the caller's loop.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ async def _await(result: Any) -> Any:
 
 
 def _run_in_worker_thread(func: Callable[[], Any]) -> Any:
-    """Run ``func`` on a daemon worker thread and return its result.
+    """Run ``func`` on a worker thread and return its result.
 
     Does not wait for a stuck worker after interruption, since the metric runs
     in the background otherwise.
@@ -39,9 +40,10 @@ def _run_in_worker_thread(func: Callable[[], Any]) -> Any:
 def call_metric(metric: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     """Call a metric from synchronous code, accepting sync or async metrics.
 
-    Sync metrics run on the calling thread. Async metrics are awaited with
-    :func:`asyncio.run` when no event loop is running on the calling thread;
-    when a loop is already running, async metrics run on a daemon worker thread
+    Sync metrics run on the calling thread. Async metrics (including objects
+    with ``async def __call__`` and sync wrappers returning a coroutine) are
+    awaited with :func:`asyncio.run` when no event loop is running on the
+    calling thread; when a loop is already running, they run on a worker thread
     so their event-loop driving does not deadlock against the caller's loop.
 
     DSPy settings and context variables are copied into the worker thread, so
@@ -55,22 +57,25 @@ def call_metric(metric: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
                 asyncio.get_event_loop()
             except RuntimeError:
                 asyncio.set_event_loop(asyncio.new_event_loop())
-            return metric(*args, **kwargs)
-        return asyncio.run(metric(*args, **kwargs))
+            result = metric(*args, **kwargs)
+            return result if not inspect.isawaitable(result) else asyncio.run(_await(result))
+        result = metric(*args, **kwargs)
+        return asyncio.run(_await(result)) if inspect.isawaitable(result) else result
 
-    if not inspect.iscoroutinefunction(metric):
-        # Ordinary sync metrics stay on the calling thread, preserving main-thread
-        # behavior for sqlite/file handles and making interrupts prompt.
-        return metric(*args, **kwargs)
+    if inspect.iscoroutinefunction(metric):
+        parent_overrides = thread_local_overrides.get().copy()
 
-    parent_overrides = thread_local_overrides.get().copy()
+        def run_async() -> Any:
+            original = thread_local_overrides.get()
+            token = thread_local_overrides.set({**original, **parent_overrides})
+            try:
+                return asyncio.run(metric(*args, **kwargs))
+            finally:
+                thread_local_overrides.reset(token)
 
-    def run_async() -> Any:
-        original = thread_local_overrides.get()
-        token = thread_local_overrides.set({**original, **parent_overrides})
-        try:
-            return asyncio.run(metric(*args, **kwargs))
-        finally:
-            thread_local_overrides.reset(token)
+        return _run_in_worker_thread(run_async)
 
-    return _run_in_worker_thread(run_async)
+    result = metric(*args, **kwargs)
+    if inspect.isawaitable(result):
+        return _run_in_worker_thread(lambda: asyncio.run(_await(result)))
+    return result

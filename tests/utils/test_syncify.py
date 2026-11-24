@@ -75,6 +75,26 @@ def test_call_metric_async_without_running_loop():
     assert call_metric(metric, 1) == 2
 
 
+def test_call_metric_supports_async_callable_object():
+    class AsyncMetric:
+        async def __call__(self, x):
+            await asyncio.sleep(0)
+            return x + 1
+
+    assert call_metric(AsyncMetric(), 1) == 2
+
+
+def test_call_metric_supports_sync_wrapper_returning_coroutine():
+    def sync_wrapper(x):
+        async def inner():
+            await asyncio.sleep(0)
+            return x + 1
+
+        return inner()
+
+    assert call_metric(sync_wrapper, 1) == 2
+
+
 def test_call_metric_sync_metric_stays_on_calling_thread_with_running_loop():
     threads = []
 
