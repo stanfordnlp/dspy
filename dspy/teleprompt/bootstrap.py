@@ -6,6 +6,7 @@ import tqdm
 
 import dspy
 from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.utils.metric_call import call_metric
 
 from .vanilla import LabeledFewShot
 
@@ -206,7 +207,7 @@ class BootstrapFewShot(Teleprompter):
                         predictor.demos = predictor_cache[name]
 
                 if self.metric:
-                    metric_val = self.metric(example, prediction, trace)
+                    metric_val = call_metric(self.metric, example, prediction, trace)
                     if self.metric_threshold is not None:
                         success = metric_val >= self.metric_threshold
                     else:

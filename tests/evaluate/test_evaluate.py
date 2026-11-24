@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import json
 import signal
@@ -577,3 +578,40 @@ def test_evaluate_raises_on_empty_devset():
     )
     with pytest.raises(ValueError, match="devset"):
         ev(program)
+
+
+def test_evaluate_supports_async_metric():
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}}))
+    devset = [new_example("What is 1+1?", "2")]
+
+    async def async_metric(example, prediction):
+        await asyncio.sleep(0)
+        return answer_exact_match(example, prediction)
+
+    ev = Evaluate(devset=devset, metric=async_metric, display_progress=False, num_threads=1)
+
+    async def main():
+        return ev(Predict("question -> answer"))
+
+    assert asyncio.run(main()).score == 100.0
+
+
+def test_evaluate_supports_metric_driving_its_own_loop():
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}}))
+    devset = [new_example("What is 1+1?", "2")]
+
+    def loop_driving_metric(example, prediction):
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(
+                asyncio.sleep(0, result=answer_exact_match(example, prediction))
+            )
+        finally:
+            loop.close()
+
+    ev = Evaluate(devset=devset, metric=loop_driving_metric, display_progress=False, num_threads=1)
+
+    async def main():
+        return ev(Predict("question -> answer"))
+
+    assert asyncio.run(main()).score == 100.0
