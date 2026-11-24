@@ -57,10 +57,11 @@ class StreamListener:
         self.adapter_identifiers = {
             "ChatAdapter": {
                 "start_identifier": f"[[ ## {self.signature_field_name} ## ]]",
-                "end_identifier": re.compile(r"\[\[ ## (\w+) ## \]\]"),
+                "start_pattern": re.compile(rf"\[\[\s*##\s*{re.escape(self.signature_field_name)}\s*##\s*\]\]"),
+                "end_identifier": re.compile(r"\[\[\s*##\s*(\w+)\s*##\s*\]\]"),
                 "start_indicator": "[",
-                "end_pattern_prefixes": ["[", "[[", "[[ ", "[[ #", "[[ ##"],
-                "end_pattern_contains": "[[ ##",
+                "end_pattern_prefixes": ["[", "[[", "[[ ", "[[ #", "[[ ##", "[[#", "[[##"],
+                "end_pattern_contains": "##",
             },
             "JSONAdapter": {
                 "start_identifier": f'"{self.signature_field_name}":',
@@ -137,6 +138,9 @@ class StreamListener:
                 self._use_native_reasoning = False
                 self._wire_field_name = name
                 self.adapter_identifiers["ChatAdapter"]["start_identifier"] = f"[[ ## {name} ## ]]"
+                self.adapter_identifiers["ChatAdapter"]["start_pattern"] = re.compile(
+                    rf"\[\[\s*##\s*{re.escape(name)}\s*##\s*\]\]"
+                )
                 self.adapter_identifiers["JSONAdapter"]["start_identifier"] = f'"{name}":'
                 self.adapter_identifiers["XMLAdapter"]["start_identifier"] = f"<{name}>"
                 self.adapter_identifiers["XMLAdapter"]["end_identifier"] = re.compile(rf"</{name}>")
@@ -195,13 +199,22 @@ class StreamListener:
         if chunk_message is None:
             return
 
-        if chunk_message and start_identifier in chunk_message and not isinstance(adapter, JSONAdapter):
+        start_pattern = self.adapter_identifiers[adapter_name].get("start_pattern")
+
+        if (
+            chunk_message
+            and (start_identifier in chunk_message or (start_pattern and start_pattern.search(chunk_message)))
+            and not isinstance(adapter, JSONAdapter)
+        ):
             # If the cache is hit, the chunk_message could be the full response. When it happens we can
             # directly end the stream listening. In some models like gemini, each stream chunk can be multiple
             # tokens, so it's possible that response only has one chunk, we also fall back to this logic.
-            message_after_start_identifier = chunk_message[
-                chunk_message.find(start_identifier) + len(start_identifier) :
-            ]
+            if start_pattern and (m := start_pattern.search(chunk_message)):
+                message_after_start_identifier = chunk_message[m.end() :]
+            else:
+                message_after_start_identifier = chunk_message[
+                    chunk_message.find(start_identifier) + len(start_identifier) :
+                ]
             if re.search(end_identifier, message_after_start_identifier):
                 self.cache_hit = True
                 self.stream_start = True
@@ -221,13 +234,17 @@ class StreamListener:
             self.field_start_queue.append(chunk_message)
             concat_message = "".join(self.field_start_queue)
 
-            if start_identifier in concat_message:
+            start_match = start_pattern.search(concat_message) if start_pattern else None
+            if start_match or start_identifier in concat_message:
                 # We have a full identifier, we can start the stream.
                 self.stream_start = True
                 self.field_start_queue = []
                 # Keep the part after the start_identifier from the concat_message, we need to write it to the buffer.
-                value_start_index = concat_message.find(start_identifier) + len(start_identifier)
-                chunk_message = concat_message[value_start_index:].lstrip()
+                if start_match:
+                    chunk_message = concat_message[start_match.end() :].lstrip()
+                else:
+                    value_start_index = concat_message.find(start_identifier) + len(start_identifier)
+                    chunk_message = concat_message[value_start_index:].lstrip()
 
                 if isinstance(adapter, JSONAdapter):
                     # For JSONAdapter, we rely on partial json parsing to detect the end of the field we are listening
@@ -236,7 +253,7 @@ class StreamListener:
                     # appearance of the next key.
                     self.json_adapter_state["field_accumulated_messages"] += "{" + start_identifier
 
-            elif self._buffered_message_end_with_start_identifier(concat_message.strip(), start_identifier):
+            elif (start_pattern and ("[" in concat_message)) or self._buffered_message_end_with_start_identifier(concat_message.strip(), start_identifier):
                 # If the buffered message ends with part of the start_identifier, we keep looking for the
                 # start_identifier from the token stream.
                 return

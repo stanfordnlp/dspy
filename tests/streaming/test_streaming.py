@@ -2715,3 +2715,74 @@ async def test_streamify_preserves_nonstreaming_responses_calls(asynchronous, mo
     assert len(calls) == 1
     assert lm.history[0]["usage"]["total_tokens"] == 13
     assert lm.history[1]["usage"] == {}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "completed_marker",
+    ["[[ ## completed ## ]]", "[[ ## completed ##]]", "[[## completed ##]]", "[[##completed##]]"],
+)
+async def test_stream_listener_chat_adapter_completed_spacing_variations(completed_marker):
+    from dspy.lm15 import StreamDeltaEvent, StreamEndEvent, TextDelta, Usage
+
+    async def stream(*args, **kwargs):
+        texts = ("[[ ## answer ## ]]\n", "Paris\n\n", completed_marker)
+        for i, text in enumerate(texts):
+            yield StreamDeltaEvent(TextDelta(text=text, part_index=i))
+        yield StreamEndEvent(finish_reason="stop", usage=Usage(input_tokens=10, output_tokens=5, total_tokens=15))
+
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False, num_retries=0)
+    program = dspy.streamify(
+        dspy.Predict("question -> answer"),
+        is_async_program=True,
+        stream_listeners=[dspy.streaming.StreamListener("answer")],
+    )
+    with patch_streaming(side_effect=stream), dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        values = [value async for value in program(question="Capital of France?")]
+        chunks = [v.chunk for v in values if isinstance(v, StreamResponse)]
+        full_text = "".join(chunks)
+        assert full_text == "Paris"
+        assert values[-1].answer == "Paris"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "start_header,next_header",
+    [
+        ("[[ ## thought ## ]]", "[[ ## answer ## ]]"),
+        ("[[ ## thought ##]]", "[[ ## answer ## ]]"),
+        ("[[## thought ##]]", "[[ ## answer ## ]]"),
+        ("[[##thought##]]", "[[ ## answer ## ]]"),
+        ("[[ ## thought ## ]]", "[[ ## answer ##]]"),
+        ("[[ ## thought ## ]]", "[[## answer ##]]"),
+        ("[[ ## thought ## ]]", "[[##answer##]]"),
+        ("[[## thought ##]]", "[[## answer ##]]"),
+    ],
+)
+async def test_stream_listener_chat_adapter_header_spacing_variations(start_header, next_header):
+    from dspy.lm15 import StreamDeltaEvent, StreamEndEvent, TextDelta, Usage
+
+    class QA(dspy.Signature):
+        question: str = dspy.InputField()
+        thought: str = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    async def stream(*args, **kwargs):
+        texts = (start_header + "\n", "Deep thinking.\n\n", next_header + "\n", "Paris\n\n[[ ## completed ## ]]")
+        for i, text in enumerate(texts):
+            yield StreamDeltaEvent(TextDelta(text=text, part_index=i))
+        yield StreamEndEvent(finish_reason="stop", usage=Usage(input_tokens=10, output_tokens=5, total_tokens=15))
+
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False, num_retries=0)
+    program = dspy.streamify(
+        dspy.Predict(QA),
+        is_async_program=True,
+        stream_listeners=[dspy.streaming.StreamListener("thought")],
+    )
+    with patch_streaming(side_effect=stream), dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        values = [value async for value in program(question="Capital of France?")]
+        chunks = [v.chunk for v in values if isinstance(v, StreamResponse)]
+        full_text = "".join(chunks)
+        assert full_text == "Deep thinking."
+
+

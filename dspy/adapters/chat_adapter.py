@@ -20,7 +20,7 @@ from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError
 
-field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
+field_header_pattern = re.compile(r"\[\[\s*##\s*(\w+)\s*##\s*\]\]")
 
 
 class FieldInfoWithName(NamedTuple):
@@ -221,7 +221,7 @@ class ChatAdapter(Adapter):
             if match:
                 # If the header pattern is found, split the rest of the line as content
                 header = match.group(1)
-                remaining_content = line[match.end() :].strip()
+                remaining_content = line.strip()[match.end() :].strip()
                 sections.append((header, [remaining_content] if remaining_content else []))
             else:
                 sections[-1][1].append(line)
