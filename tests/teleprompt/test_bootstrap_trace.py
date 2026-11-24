@@ -1,11 +1,13 @@
 from typing import Any, ClassVar
 from unittest import mock
 
-from litellm import Choices, Message, ModelResponse
+import pytest
 
 import dspy
 from dspy.primitives.example import Example
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, bootstrap_trace_data
+from dspy.utils import DummyLM
+from tests.test_utils.engines import make_response
 
 
 def test_bootstrap_trace_data():
@@ -37,43 +39,17 @@ def test_bootstrap_trace_data():
     # Configure dspy
     dspy.configure(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
 
-    # Mock litellm completion responses
-    # 4 successful responses and 1 that will trigger AdapterParseError
-    successful_responses = [
-        ModelResponse(
-            choices=[Choices(message=Message(content='```json\n{"number": 1}\n```'))],
+    # One reply per example: JSON parsing failures do not restart execution in
+    # another format. Keep four successes and one captured parsing failure.
+    responses = [
+        make_response(
+            "This is an invalid JSON!" if number is None else f'```json\n{{"number": {number}}}\n```',
             model="openai/gpt-4o-mini",
-        ),
-        ModelResponse(
-            choices=[Choices(message=Message(content='```json\n{"number": 2}\n```'))],
-            model="openai/gpt-4o-mini",
-        ),
-        ModelResponse(
-            choices=[Choices(message=Message(content='```json\n{"number": 3}\n```'))],
-            model="openai/gpt-4o-mini",
-        ),
-        ModelResponse(
-            choices=[Choices(message=Message(content='```json\n{"number": 4}\n```'))],
-            model="openai/gpt-4o-mini",
-        ),
+        )
+        for number in (1, 2, None, 4, 5)
     ]
 
-    # Create a side effect that will trigger AdapterParseError on the 3rd call (index 2)
-    def completion_side_effect(*args, **kwargs):
-        call_count = completion_side_effect.call_count
-        completion_side_effect.call_count += 1
-
-        if call_count in (2, 3):
-            # Return malformed responses for both structured-output mode and JSON-mode fallback.
-            return ModelResponse(
-                choices=[Choices(message=Message(content="This is an invalid JSON!"))],
-                model="openai/gpt-4o-mini",
-            )
-        return successful_responses[call_count if call_count < 2 else call_count - 2]
-
-    completion_side_effect.call_count = 0
-
-    with mock.patch("litellm.completion", side_effect=completion_side_effect):
+    with mock.patch("dspy.clients.engines.LM15Engine.complete", side_effect=responses) as completion:
         # Call bootstrap_trace_data
         results = bootstrap_trace_data(
             program=program,
@@ -84,7 +60,8 @@ def test_bootstrap_trace_data():
             capture_failed_parses=True,
         )
 
-    # Verify results
+    # Verify results, including the absence of a hidden JSON-mode replay.
+    assert completion.call_count == 5
     assert len(results) == 5, f"Expected 5 results, got {len(results)}"
 
     # Count successful and failed predictions
@@ -121,6 +98,43 @@ def test_bootstrap_trace_data():
             assert len(trace_entry) == 3, "Trace entry should have 3 elements"
 
 
+@pytest.mark.parametrize("response, format_failure_score, expected_score", [
+    ({}, -2, -2),
+    ({"answer": "4"}, -2, -0.5),
+    ({"answer": "4"}, -1, 0),
+])
+@pytest.mark.parametrize("adapter", [
+    dspy.ChatAdapter(use_json_adapter_fallback=False),
+    dspy.JSONAdapter(),
+    dspy.XMLAdapter(use_json_adapter_fallback=False),
+])
+def test_chain_of_thought_parse_failure_is_captured(adapter, response, format_failure_score, expected_score):
+    program = dspy.ChainOfThought("question -> answer")
+    example = Example(question="2+2?", answer="4").with_inputs("question")
+    lm = DummyLM([response], adapter=adapter)
+
+    with dspy.context(lm=lm, adapter=adapter):
+        data = bootstrap_trace_data(
+            program=program,
+            dataset=[example],
+            metric=lambda e, p, t=None: 1.0,
+            num_threads=1,
+            raise_on_error=False,
+            capture_failed_parses=True,
+            failure_score=1,
+            format_failure_score=format_failure_score,
+        )
+
+    assert len(data) == 1
+    result = data[0]
+    prediction = result["prediction"]
+    assert isinstance(prediction, FailedPrediction)
+    assert prediction.completion_text == lm.history[-1]["outputs"][0]
+    assert prediction.format_reward == expected_score
+    assert result["score"] == expected_score
+    assert result["trace"] == [(program.predict, {"question": "2+2?"}, prediction)]
+
+
 def test_bootstrap_trace_data_passes_callback_metadata(monkeypatch):
     from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
 
@@ -151,3 +165,30 @@ def test_bootstrap_trace_data_passes_callback_metadata(monkeypatch):
     )
 
     assert captured_metadata["value"] == {"disable_logging": True}
+
+
+def test_capture_crashes_does_not_capture_lm_errors():
+    """``capture_crashes`` converts program bugs into FailedPrediction, but an LMError is
+    infrastructure: repainting it as a code failure would hand the optimizer an invalid
+    evaluation, so it must propagate to the evaluator's error handling instead."""
+    from dspy.utils.exceptions import LMRateLimitError
+
+    example = Example(q="x").with_inputs("q")
+
+    class Bug(dspy.Module):
+        def forward(self, **kwargs):
+            raise RuntimeError("a real code failure")
+
+    data = bootstrap_trace_data(Bug(), dataset=[example], num_threads=1, capture_crashes=True)
+    assert isinstance(data[0]["prediction"], FailedPrediction)
+    assert "RuntimeError" in data[0]["prediction"].completion_text
+
+    class Flaky(dspy.Module):
+        def forward(self, **kwargs):
+            raise LMRateLimitError("429 from the provider")
+
+    # raise_on_error=False mirrors the flex GEPA call site (gepa_flex_utils).
+    data = bootstrap_trace_data(
+        Flaky(), dataset=[example], num_threads=1, capture_crashes=True, raise_on_error=False
+    )
+    assert data == []  # handled by the evaluator as an error, never repainted as a FailedPrediction

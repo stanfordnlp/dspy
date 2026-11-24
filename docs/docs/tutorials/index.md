@@ -20,9 +20,10 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
     - [Building RAG as Agent](agents/index.ipynb)
     - [Entity Extraction](entity_extraction/index.ipynb)
     - [Classification](classification/index.md)
+    - [Decision-Making with Jev Types](jev_decisions/index.md)
     - [Multi-Hop RAG](multihop_search/index.ipynb)
     - [Privacy-Conscious Delegation](papillon/index.md)
-    - [Program Of Thought](program_of_thought/index.ipynb)
+    - [Code execution with RLM](../api/modules/RLM.md)
     - [Image Generation Prompt iteration](image_generation_prompting/index.ipynb)
     - [Audio](audio/index.ipynb)
 
@@ -68,5 +69,4 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
     - [Financial Analysis with Yahoo Finance](yahoo_finance_react/index.md)
     - [Automated Code Generation from Documentation](sample_code_generation/index.md)
     - [Building a Creative Text-Based AI Game](ai_text_game/index.md)
-
 

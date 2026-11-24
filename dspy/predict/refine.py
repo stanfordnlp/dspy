@@ -5,7 +5,7 @@ from typing import Callable
 import orjson
 
 import dspy
-from dspy.adapters.utils import get_field_description_string
+from dspy.adapters.utils import _get_adapter, get_field_description_string
 from dspy.predict.predict import Prediction
 from dspy.signatures import InputField, OutputField, Signature
 
@@ -101,7 +101,7 @@ class Refine(Module):
         rollout_ids = [start + i for i in range(self.N)]
         best_pred, best_trace, best_reward = None, None, -float("inf")
         advice = None
-        adapter = dspy.settings.adapter or dspy.ChatAdapter()
+        adapter = _get_adapter()
 
         for idx, rid in enumerate(rollout_ids):
             lm_ = lm.copy(rollout_id=rid, temperature=1.0)
@@ -120,7 +120,7 @@ class Refine(Module):
 
                         class WrapperAdapter(adapter.__class__):
                             def __call__(self, lm, lm_kwargs, signature, demos, inputs):
-                                inputs["hint_"] = advice.get(signature2name[signature], "N/A")  # noqa: B023
+                                inputs["hint_"] = advice.get(signature2name.get(signature), "N/A")  # noqa: B023
                                 signature = signature.append(
                                     "hint_", InputField(desc="A hint to the module from an earlier run")
                                 )
@@ -204,6 +204,9 @@ def recursive_mask(o):
         return o
     except TypeError:
         pass
+
+    if isinstance(o, dspy.Reasoning):
+        return str(o)
 
     # If it's a dictionary, apply recursively to its values.
     if isinstance(o, dict):

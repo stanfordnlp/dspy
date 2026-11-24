@@ -234,7 +234,7 @@ def precision_score(prediction, ground_truth):
 
     Examples:
         ```python
-        precision_score("eiffel tower in paris", "eiffel tower")  # 0.67
+        precision_score("eiffel tower in paris", "eiffel tower")  # 0.5
         ```
     """
     prediction_tokens = normalize_text(prediction).split()

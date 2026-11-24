@@ -66,7 +66,7 @@ These optimizers produce optimal instructions for the prompt and, in the case of
 
 This optimizer is used to fine-tune the underlying LLM(s).
 
-9. [**`BootstrapFinetune`**](/api/optimizers/BootstrapFinetune): Distills a prompt-based DSPy program into weight updates. The output is a DSPy program that has the same steps, but where each step is conducted by a finetuned model instead of a prompted LM. [See the classification fine-tuning tutorial](https://dspy.ai/tutorials/classification_finetuning/) for a complete example.
+9. [**`BootstrapFinetune`**](../../api/optimizers/BootstrapFinetune.md): Distills a prompt-based DSPy program into weight updates. The output is a DSPy program that has the same steps, but where each step is conducted by a finetuned model instead of a prompted LM. [See the classification fine-tuning tutorial](https://dspy.ai/tutorials/classification_finetuning/) for a complete example.
 
 
 ### Program Transformations

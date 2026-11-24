@@ -1,8 +1,10 @@
 import threading
 import time
+from unittest import mock
 
 import pytest
 
+from dspy.utils.callback import ACTIVE_CALL_ID
 from dspy.utils.parallelizer import ParallelExecutor
 
 
@@ -16,6 +18,21 @@ def test_worker_threads_independence():
     results = executor.execute(task, data)
 
     assert results == [2, 4, 6, 8, 10]
+
+
+@pytest.mark.parametrize("num_threads", [1, 3])
+def test_workers_inherit_active_callback_call_id(num_threads):
+    executor = ParallelExecutor(num_threads=num_threads)
+
+    for parent_call_id in ["first-parent", "second-parent"]:
+        token = ACTIVE_CALL_ID.set(parent_call_id)
+        try:
+            observed_call_ids = executor.execute(lambda _: ACTIVE_CALL_ID.get(), range(5))
+
+            assert observed_call_ids == [parent_call_id] * 5
+            assert ACTIVE_CALL_ID.get() == parent_call_id
+        finally:
+            ACTIVE_CALL_ID.reset(token)
 
 
 def test_parallel_execution_speed():
@@ -166,3 +183,15 @@ def test_sequential_compare_results():
     results = executor.execute(task, data)
 
     assert results == [(1, False), (2, False), (3, True), (4, True), (5, True)]
+
+
+@pytest.mark.parametrize("num_threads", [1, 3])
+def test_none_returning_tasks_are_counted_as_complete(num_threads):
+    data = [1, 2, 3, 4, 5]
+    executor = ParallelExecutor(num_threads=num_threads, disable_progress_bar=True)
+
+    with mock.patch.object(executor, "_update_progress") as update_progress:
+        results = executor.execute(lambda _: None, data)
+
+    assert results == [None] * len(data)
+    assert update_progress.call_args == mock.call(mock.ANY, len(data), len(data))

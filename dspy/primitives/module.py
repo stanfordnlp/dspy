@@ -1,5 +1,5 @@
-import inspect
 import logging
+import sys
 from typing import Any, TextIO
 
 from dspy.dsp.utils.settings import settings
@@ -179,8 +179,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def set_lm(self, lm):
         """Set the language model for all predictors in this module.
 
-        This method recursively sets the language model for all Predict
-        instances contained within this module.
+        This method recursively sets the language model on every leaf module
+        in this module.
 
         Args:
             lm: The language model instance to use for all predictors.
@@ -191,14 +191,15 @@ class Module(BaseModule, metaclass=ProgramMeta):
             >>> program = dspy.Predict("question -> answer")
             >>> program.set_lm(lm)
         """
-        for _, param in self.named_predictors():
-            param.lm = lm
+        for _, param in self.named_parameters():
+            if isinstance(param, Module):
+                param.lm = lm
 
     def get_lm(self):
         """Get the language model used by this module's predictors.
 
-        Returns the language model if all predictors use the same LM.
-        Raises an error if multiple different LMs are in use.
+        Returns the language model if every module leaf uses the same LM. Raises an error if multiple
+        different LMs are in use.
 
         Returns:
             The language model instance used by this module's predictors.
@@ -207,7 +208,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
             ValueError: If multiple different language models are being
                 used by the predictors in this module.
         """
-        all_used_lms = [param.lm for _, param in self.named_predictors()]
+        all_used_lms = [param.lm for _, param in self.named_parameters() if isinstance(param, Module)]
 
         if len(set(all_used_lms)) == 1:
             return all_used_lms[0]
@@ -336,9 +337,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
         attr = super().__getattribute__(name)
 
         if name == "forward" and callable(attr):
-            # Check if forward is called through __call__ or directly
-            stack = inspect.stack()
-            forward_called_directly = len(stack) <= 1 or stack[1].function != "__call__"
+            # Only the immediate caller matters; avoid walking the full stack on every call.
+            forward_called_directly = sys._getframe(1).f_code.co_name != "__call__"
 
             if forward_called_directly:
                 logger.warning(

@@ -37,6 +37,9 @@ To install the very latest from `main`:
 pip install git+https://github.com/stanfordnlp/dspy.git
 ```
 
+The current LM integration uses bundled native lm15 engines, without a LiteLLM
+runtime dependency or fallback. See the [LM migration guide](docs/docs/community/normalized-lm-api-migration.md)
+for breaking changes to provider options, custom LMs, text completions, and embeddings.
 
 
 
@@ -85,4 +88,3 @@ If you use DSPy or DSP in a research paper, please cite our work as follows:
 * [**Releasing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Twitter Thread, Feb 2023)
 * [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Twitter Thread, Jan 2023)
 * [**Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP**](https://arxiv.org/abs/2212.14024.pdf) (Academic Paper, Dec 2022) -->
-

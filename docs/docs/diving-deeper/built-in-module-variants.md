@@ -2,15 +2,15 @@
 
 ## Intent
 
-`Predict`, `ChainOfThought`, and `ReAct` cover most programs, but DSPy ships a handful of other modules for situations where one LM call is not enough, or where reasoning needs a Python runtime, or where you want to fan out across examples. This page collects those modules, groups them by what they’re for, and gives selection guidance so you know which one to reach for when.
+`Predict`, `ChainOfThought`, and `ReAct` cover most programs, but DSPy ships a handful of other modules for situations where one LM call is not enough, or where reasoning needs a Python runtime, or where you want to fan out across examples, or where the module's structure itself is worth learning rather than hand-writing. This page collects those modules, groups them by what they’re for, and gives selection guidance so you know which one to reach for when.
 
-Read this when a plain `Predict` or `ChainOfThought` isn’t getting you there and you’re trying to decide between sampling more, comparing drafts, executing code, or running the same module in parallel.
+Read this when a plain `Predict` or `ChainOfThought` isn’t getting you there and you’re trying to decide between sampling more, comparing drafts, executing code, running the same module in parallel, or letting an optimizer discover the structure.
 
 ## Design decisions
 
 ### 1. These variants wrap the spine; they don’t replace it
 
-`BestOfN` and `Refine` take a module and sample it. `MultiChainComparison` consumes completions produced by an outer `Predict`. `ProgramOfThought` and `CodeAct` hold internal `ChainOfThought` predictors. The variants are recipes built on the spine, not parallel implementations of it. Before reaching for one, ask whether the question is “I need more of what `Predict` already does” or “I need something `Predict` can’t do at all” — the answer is usually the former, and that’s the case these handle.
+`BestOfN` and `Refine` take a module and sample it. `MultiChainComparison` consumes completions produced by an outer `Predict`. `RLM` holds internal `Predict` modules. The variants are recipes built on the spine, not parallel implementations of it. Before reaching for one, ask whether the question is “I need more of what `Predict` already does” or “I need something `Predict` can’t do at all” — the answer is usually the former, and that’s the case these handle.
 
 ### 2. Sampling-and-aggregating modules vary one thing: the rollout ID
 
@@ -24,29 +24,29 @@ The signature `reward_fn(args, pred) -> float` mirrors the inference-time metric
 
 `forward(completions, **kwargs)` takes the completions as a positional argument rather than producing them. The caller produces M samples through a separate `Predict` (typically with `n=M`) and hands them in. Splitting sampling from judging keeps the two concerns independent: the completions could come from different LMs, from cache, or from earlier signatures — none of which `MultiChainComparison` needs to know about.
 
-### 5. `ProgramOfThought` and `CodeAct` ship with a Python interpreter
+### 5. `RLM` ships with a Python interpreter
 
-Both rely on `PythonInterpreter`, which runs LM-generated code in a sandbox via Deno’s WASM runtime. Deno isolation is the reason: the LM’s code runs in a process with no filesystem or network access by default, so executing untrusted output is bounded. Installing Deno is a hard dependency for both modules; the constructor raises if Deno isn’t available.
+`RLM` relies on `PythonInterpreter`, which runs LM-generated code in a sandbox via Deno’s WASM runtime. Deno isolation is the reason: the LM’s code runs in a process with no filesystem or network access by default, so executing untrusted output is bounded. Each invocation gets a fresh interpreter, while retries and iterations within that invocation share its state.
 
-### 6. `CodeAct` is `ReAct` plus a code sandbox
-
-The class literally inherits from both: `class CodeAct(ReAct, ProgramOfThought)`. The combination matters because some tasks need both the iterative loop of ReAct (think → act → observe) and the expressive power of writing Python (loops, list comprehensions, library calls). Tools are passed as plain `def` functions and dropped into the sandbox via `inspect.getsource`, so the LM calls them as regular Python rather than as JSON-shaped tool calls.
-
-### 7. `Parallel` is a runner, not a `Module`
+### 6. `Parallel` is a runner, not a `Module`
 
 It exposes a `forward(exec_pairs)` method but isn’t a `Module` subclass. It doesn’t hold predictors, doesn’t serialize, doesn’t appear in `named_predictors`. The work isn’t “an LM call I’m doing on your behalf” — it’s “a batch of LM calls you’ve assembled, run in parallel.” Keeping it outside the Module tree means optimizers and `dump_state` ignore it, which is what you’d want from a runner.
 
-### 8. `dspy.Parallel` and `Module.batch` overlap on purpose
+### 7. `dspy.Parallel` and `Module.batch` overlap on purpose
 
 Both run modules in parallel using the same `ParallelExecutor` underneath. The difference is what they accept: `Module.batch(examples)` takes one module and many examples; `dspy.Parallel()(exec_pairs)` takes many `(module, example)` pairs. Use `Module.batch` for the common case — evaluating one program on a dataset; reach for `Parallel` when the modules differ across examples or you want fine-grained control over which pair runs where.
 
-### 9. `majority` is the no-LM aggregator
+### 8. `majority` is the no-LM aggregator
 
 A plain function — no LM call, no signature, no `dspy.Module`. It tallies completions and returns the most-common normalized value (with `default_normalize` folding case and whitespace). Aggregation should not look like a step that calls a model, so the API is a function call, not a module constructor. Pair it with a multi-sample `Predict` or with `BestOfN`‘s `pred.completions` when the task has a discrete answer.
 
-### 10. `RLM` is marked experimental for a reason
+### 9. `RLM` gives generated code a sub-LM to call
 
-The class is decorated with `@experimental` and the interface is still in flux. It composes a code sandbox with built-in `llm_query` / `llm_query_batched` tools that let generated code call a separate sub-LM mid-execution. The mental model is a Python REPL the LM drives, with another LM available as a callable inside. Useful, but the boundary conditions — max call counts, sandbox lifetime, error recovery — are still being worked out.
+`RLM` composes a code sandbox with built-in `llm_query` / `llm_query_batched` tools that let generated code call a separate sub-LM mid-execution. The mental model is a Python REPL the LM drives, with another LM available as a callable inside. `max_llm_calls` caps those sub-LM calls across the whole run.
+
+### 10. `Flex` puts the module's code into the optimization search space
+
+Every other DSPy module fixes its structure at construction time; `Flex` doesn't. It holds its implementation as source code (`module_src`) and marks that code as the optimizable parameter, so `dspy.GEPA` rewrites its *entire implementation* — how many predictors, which primitives, what runs in Python instead of an LM — against your metric, rather than only tuning instructions. Construct it from a signature like any module (it begins as a one-call `Predict` baseline, or `RLM` when given tools), then let optimization discover the decomposition. It has its own deep dive: [Flex: Optimizable module code](flex.md).
 
 ## API walkthrough
 
@@ -74,14 +74,10 @@ The constructor mutates the input signature: it prepends one output field (a syn
 
 For tasks where the answer is best computed, not narrated.
 
-**`dspy.ProgramOfThought(signature, max_iters=3, interpreter=None)`**
-Holds three internal `ChainOfThought` predictors: `code_generate` produces Python, `code_regenerate` rewrites it after an execution error, and `generate_output` extracts the declared output fields from the run’s printed result. The forward loop asks `code_generate` for code, runs it through the `PythonInterpreter`, and on error feeds the error message back to `code_regenerate` for up to `max_iters` rounds. Once execution succeeds, `generate_output` produces the signature’s output fields. If `max_iters` is exhausted, the module raises.
+`RLM` accepts an `interpreter_factory` that is called once per invocation; DSPy shuts down the returned interpreter even when the invocation raises. `PythonInterpreter` is the public default, and `dspy.configure(interpreter_factory=...)` replaces it at each invocation. A module's own factory wins, unless it is `PythonInterpreter`.
 
-**`dspy.CodeAct(signature, tools, max_iters=5, interpreter=None)`**
-Multiple inheritance from `ReAct` and `ProgramOfThought`. Tools must be plain `def` functions, not callable objects — the module reads `inspect.getsource(tool.func)` and injects each definition into the sandbox at the start of every `forward`. Each iteration: an inner `codeact` predictor produces Python plus a `finished` boolean; the interpreter runs the code; the trajectory dict gains a `generated_code_i` and `code_output_i` (or `observation_i` on parse/execution error). The loop exits when the LM sets `finished=True` or `max_iters` is reached. A `ChainOfThought` extractor then reads the trajectory and produces the declared outputs.
-
-**`dspy.RLM(signature, max_iters=20, max_llm_calls=50, max_output_chars=10_000, verbose=False, tools=None, sub_lm=None, interpreter=None)`**
-Experimental. A REPL-style code agent that exposes two built-in tools — `llm_query` and `llm_query_batched` — so generated code can call a separate `sub_lm` mid-execution. A shared counter across iterations enforces `max_llm_calls`; tool names are validated as Python identifiers; `SandboxSerializable` inputs encode into the sandbox so large contexts don’t have to be re-marshalled each turn. If the loop ends without an explicit submission, the extractor pass produces the final outputs from the trajectory.
+**`dspy.RLM(signature, max_iters=20, max_llm_calls=50, max_output_chars=10_000, verbose=False, tools=None, sub_lm=None, interpreter_factory=PythonInterpreter)`**
+A REPL-style code agent that exposes two built-in tools — `llm_query` and `llm_query_batched` — so generated code can call a separate `sub_lm` mid-execution. A shared counter across iterations enforces `max_llm_calls`; tool names are validated as Python identifiers; `SandboxSerializable` inputs encode into the sandbox so large contexts don’t have to be re-marshalled each turn. If the loop ends without an explicit submission, the extractor pass produces the final outputs from the trajectory.
 
 ### Running modules in parallel
 
@@ -92,11 +88,13 @@ Wraps `ParallelExecutor` and submits each `(module, example)` pair to a thread p
 
 **`dspy.KNN`** is a retrieval helper, not a generation module — see the Retrievers reference page.
 
-**`dspy.ReAct`** is the canonical tool-using loop and has its own page: [Tools, ReAct, and MCP](tools-react-and-mcp.md). The wrapping machinery there is what `CodeAct` and `RLM` reuse.
+**`dspy.ReAct`** is the canonical structured-history tool-using loop and has its own page: [ReAct](react.md). The shared [tool-wrapping machinery](tools.md) is also used by `RLM`.
 
 ## Cross-links
 
 - [Modules: composing your own](modules.md) — every variant here is a `dspy.Module` (except `Parallel` and `majority`), so the composition rules apply.
-- [Tools, ReAct, and MCP](tools-react-and-mcp.md) — `CodeAct` and `RLM` use the same tool-wrapping machinery as `ReAct`.
-- [RLM: exploring large contexts with code](rlm.md) — the deep dive on the experimental REPL-driven module summarized above.
+- [Tools and MCP](tools.md) — `RLM` and ReAct use the same tool-wrapping machinery.
+- [ReAct](react.md) — the dedicated agent-loop guide and migration from trajectory-based execution.
+- [RLM: exploring large contexts with code](rlm.md) — the deep dive on the REPL-driven module summarized above.
+- [Flex: Optimizable module code](flex.md) — the deep dive on the code-optimizable Flex module summarized above.
 - [Settings and `context()`](settings-and-context.md) — how `Parallel` and `Module.batch` snapshot the active overrides into each worker.

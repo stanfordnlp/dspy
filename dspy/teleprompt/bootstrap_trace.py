@@ -8,7 +8,7 @@ from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
-from dspy.utils.exceptions import AdapterParseError
+from dspy.utils.exceptions import AdapterParseError, LMError
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,7 @@ def bootstrap_trace_data(
     format_failure_score: float = -1,
     log_format_failures: bool = False,
     callback_metadata: dict[str, Any] | None = None,
+    capture_crashes: bool = False,
 ) -> list[TraceData]:
     # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
     # (if metric != None)
@@ -53,7 +54,7 @@ def bootstrap_trace_data(
     def wrapped_metric(example, prediction, trace=None):
         prediction, _ = prediction
         if isinstance(prediction, FailedPrediction):
-            return prediction.format_reward or format_failure_score
+            return prediction.format_reward if prediction.format_reward is not None else format_failure_score
         return metric(example, prediction, trace) if metric else True
 
     # Use `object.__getattribute__` to bypass the custom hook `Module.__getattribute__` so that we avoid
@@ -87,7 +88,7 @@ def bootstrap_trace_data(
                     failed_pred = FailedPrediction(
                         completion_text=completion_str,
                         format_reward=format_failure_score
-                        + (failure_score - format_failure_score) * (present / expected),
+                        + (failure_score - format_failure_score) * (len(present) / len(expected)),
                     )
                 else:
                     failed_pred = FailedPrediction(completion_text=completion_str, format_reward=format_failure_score)
@@ -107,6 +108,14 @@ def bootstrap_trace_data(
                     )
 
                 return failed_pred, trace
+            except LMError:
+                raise
+            except Exception as e:
+                if not capture_crashes:
+                    raise
+                logger.warning("Program raised on an example; capturing it as a failed prediction: %s: %s",
+                               type(e).__name__, e)
+                return FailedPrediction(completion_text=f"{type(e).__name__}: {e}"), dspy.settings.trace.copy()
 
     program.forward = MethodType(patched_forward, program)
 

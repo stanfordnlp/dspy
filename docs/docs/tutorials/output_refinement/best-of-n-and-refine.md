@@ -87,7 +87,7 @@ refine = dspy.Refine(
 Both modules serve similar purposes but differ in their approach:
 
 - `BestOfN` simply tries different rollout IDs and selects the best resulting prediction as defined by the `reward_fn`.
-- `Refine` adds an feedback loop, using the lm to generate a detailed feedback about the module's own performance using the previous prediction and the code in the `reward_fn`. This feedback is then used as hints for subsequent runs.
+- `Refine` adds a feedback loop, using the lm to generate a detailed feedback about the module's own performance using the previous prediction and the code in the `reward_fn`. This feedback is then used as hints for subsequent runs.
 
 ## Practical Examples
 

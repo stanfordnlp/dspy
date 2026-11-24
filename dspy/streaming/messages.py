@@ -1,12 +1,24 @@
 import asyncio
 import concurrent.futures
 from dataclasses import dataclass
-from typing import Any
-
-import anyio.from_thread
+from typing import TYPE_CHECKING, Any
 
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
+from dspy.utils.lazy_import import require
+
+if TYPE_CHECKING:
+    from dspy.signatures.signature import Signature
+
+anyio = require("anyio")
+
+
+@dataclass
+class _StreamSignature:
+    """The adapter's render signature, queued before that call's response chunks."""
+
+    predict_id: int
+    signature: type["Signature"]
 
 
 @dataclass
@@ -117,7 +129,7 @@ class StatusStreamingCallback(BaseCallback):
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         stream = settings.send_stream
         if stream is None or outputs == "Completed.":
@@ -145,7 +157,7 @@ class StatusStreamingCallback(BaseCallback):
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         stream = settings.send_stream
         if stream is None:
@@ -173,7 +185,7 @@ class StatusStreamingCallback(BaseCallback):
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         stream = settings.send_stream
         if stream is None:

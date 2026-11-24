@@ -12,7 +12,13 @@ from typing import Any, Callable
 
 from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 
-__all__ = ["MockInterpreter"]
+__all__ = ["MockInterpreter", "MockInterpreterFactory"]
+
+
+def _is_facade_setup(code: str) -> bool:
+    from dspy.primitives.facade import BOOTSTRAP
+
+    return code in (BOOTSTRAP, "import dspy")
 
 
 class MockInterpreter:
@@ -62,6 +68,8 @@ class MockInterpreter:
         self.tools = tools or {}
         self.call_count = 0
         self.call_history: list[tuple[str, dict[str, Any]]] = []
+        # Sandbox dspy bridge setup (RLM and Flex run it per interpreter); kept out of the script.
+        self.setup_history: list[tuple[str, dict[str, Any]]] = []
         self._shutdown = False
 
     def start(self) -> None:
@@ -89,6 +97,10 @@ class MockInterpreter:
             raise CodeInterpreterError("MockInterpreter has been shutdown")
 
         variables = variables or {}
+        if self.execute_fn is None and _is_facade_setup(code):
+            self.setup_history.append((code, variables))
+            return None
+
         self.call_history.append((code, variables))
         self.call_count += 1
 
@@ -130,3 +142,21 @@ class MockInterpreter:
     ) -> Any:
         """Shorthand for execute()."""
         return self.execute(code, variables)
+
+
+class MockInterpreterFactory:
+    """Callable test provider that records every interpreter it creates."""
+
+    def __init__(
+        self,
+        responses: list[str | FinalOutput | Exception] | None = None,
+        execute_fn: Callable[[str, dict[str, Any]], Any] | None = None,
+    ) -> None:
+        self.responses = list(responses) if responses else []
+        self.execute_fn = execute_fn
+        self.instances: list[MockInterpreter] = []
+
+    def __call__(self) -> MockInterpreter:
+        interpreter = MockInterpreter(responses=self.responses, execute_fn=self.execute_fn)
+        self.instances.append(interpreter)
+        return interpreter

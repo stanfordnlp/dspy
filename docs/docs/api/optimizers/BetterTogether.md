@@ -149,4 +149,4 @@ Example optimizer combinations:
 
 - [BetterTogether Paper: arxiv:2407.10930](https://arxiv.org/abs/2407.10930)
 - [Databricks Case Study](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization) - Real-world application combining BetterTogether with GEPA
-- [DSPy Optimizers Overview](../../../learn/programming/optimizers.md)
+- [Optimizers: choosing one](../../diving-deeper/choosing-an-optimizer.md)

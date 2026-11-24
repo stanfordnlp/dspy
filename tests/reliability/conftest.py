@@ -57,8 +57,8 @@ def configure_model(request):
     else:
         pytest.skip(
             f"Skipping test because no reliability testing YAML configuration was found"
-            f" for model {model_name}, or the YAML configuration is missing LiteLLM parameters"
-            f" for this model ('litellm_params' section of conf file is missing)."
+            f" for model {model_name}, or the YAML configuration is missing LM parameters"
+            f" for this model ('lm_params' section of conf file is missing)."
         )
 
     # Store `should_ignore_failure` flag on the request node for use in post-test handling

@@ -21,6 +21,11 @@
 <!-- END_API_REF -->
 
 One of the key insights behind GEPA is its ability to leverage domain-specific textual feedback. Users should provide a feedback function as the GEPA metric, which has the following call signature:
+
+**Known limitation:** predictors sharing the same signature can receive each other's reflective
+examples. Do not rely on correct predictor-specific feedback attribution in that case
+([#9974](https://github.com/stanfordnlp/dspy/pull/9974)).
+
 <!-- START_API_REF -->
 ::: dspy.teleprompt.gepa.gepa.GEPAFeedbackMetric
     handler: python
@@ -61,11 +66,48 @@ See GEPA usage tutorials in [GEPA Tutorials](../../../tutorials/gepa_ai_program/
 GEPA can act as a test-time/inference search mechanism. By setting your `valset` to your _evaluation batch_ and using `track_best_outputs=True`, GEPA produces for each batch element the highest-scoring outputs found during the evolutionary search.
 
 ```python
-gepa = dspy.GEPA(metric=metric, track_stats=True, ...)
+gepa = dspy.GEPA(metric=metric, track_stats=True, track_best_outputs=True, ...)
 new_prog = gepa.compile(student, trainset=my_tasks, valset=my_tasks)
 highest_score_achieved_per_task = new_prog.detailed_results.highest_score_achieved_per_val_task
 best_outputs = new_prog.detailed_results.best_outputs_valset
 ```
+
+### Saving and reusing optimized programs
+
+Use the standard [saving and loading APIs](../../../diving-deeper/saving-and-loading.md):
+
+```python
+new_prog.save("optimized.json")
+restored = student.deepcopy()  # same program architecture
+restored.load("optimized.json")
+result = restored(**test_example.inputs())
+```
+
+JSON state retains optimized instructions and Flex source, not `detailed_results` or search state.
+Configure the inference LM and adapter when loading in a new process.
+
+### Objective-Aware Frontier Tracking
+
+Metrics can return named `objective_scores` alongside the scalar score and feedback:
+
+```python
+def metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
+    quality = measure_quality(gold, pred)
+    privacy = measure_privacy(gold, pred)
+    return dspy.Prediction(
+        score=(quality + privacy) / 2,
+        objective_scores={"quality": quality, "privacy": privacy},
+        feedback="...",
+    )
+
+gepa = dspy.GEPA(metric=metric, gepa_kwargs={"frontier_type": "objective"}, track_stats=True)
+```
+
+`frontier_type` can be `"instance"` (the default), `"objective"`, `"hybrid"` (both instance and objective),
+or `"cartesian"` (each validation-instance/objective pair). The scalar score still gates acceptance and determines
+the final candidate; objectives only affect parent and merge selection. Each objective is maximized and averaged
+over examples that report it. Predictor-level objective scores are ignored. `objective_pareto_front` contains the
+independent maximum for each objective, not nondominated objective vectors.
 
 ## How Does GEPA Work?
 

@@ -4,7 +4,7 @@ import inspect
 import json
 import types
 from collections.abc import Mapping
-from typing import Any, Literal, Union, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Union, get_args, get_origin
 
 import json_repair
 import pydantic
@@ -15,6 +15,53 @@ from dspy.adapters.types.base_type import Type as DspyType
 from dspy.adapters.types.code import Code
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.signatures.utils import get_dspy_field_type
+
+if TYPE_CHECKING:
+    from dspy.adapters.base import Adapter
+    from dspy.signatures.signature import Signature
+
+
+def _get_adapter() -> "Adapter":
+    """Resolve the configured adapter, or DSPy's implicit default."""
+    from dspy.adapters.xml_adapter import XMLAdapter
+    from dspy.dsp.utils.settings import settings
+
+    return settings.adapter if settings.adapter is not None else XMLAdapter(use_native_function_calling=True)
+
+
+def annotation_allows_none(annotation: Any) -> bool:
+    """Whether the annotation admits None (e.g. `str | None`, `Optional[str]`, `None`)."""
+    if annotation is None or annotation is type(None):
+        return True
+
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+
+    if origin is Annotated:
+        return bool(args) and annotation_allows_none(args[0])
+
+    if origin is Union or origin is types.UnionType:
+        return any(annotation_allows_none(arg) for arg in args)
+
+    return False
+
+
+def apply_output_field_defaults(signature: "type[Signature]", fields: dict[str, Any]) -> dict[str, Any]:
+    """
+    Fill output fields that are missing from a parsed LM response, in signature order.
+
+    An output field is optional when it declares a default, a default factory, or an annotation
+    that allows None; a missing optional field takes that fallback (in that order of precedence).
+    """
+    completed = {}
+    for name, field_info in signature.output_fields.items():
+        if name in fields:
+            completed[name] = fields[name]
+        elif not field_info.is_required():
+            completed[name] = field_info.get_default(call_default_factory=True)
+        elif annotation_allows_none(field_info.annotation):
+            completed[name] = None
+    return completed
 
 
 def _annotation_is_subclass(annotation: Any, expected_base: type) -> bool:
@@ -33,13 +80,33 @@ def serialize_for_json(value: Any) -> Any:
     Returns:
         The formatted value, which is serializable as a JSON string.
     """
-    # Attempt to format the value as a JSON-compatible object using pydantic, falling back to
-    # a string representation of the value if that fails (e.g. if the value contains an object
-    # that pydantic doesn't recognize or can't serialize)
+    # Format the value as a JSON-compatible object using pydantic. A nested value pydantic can't
+    # serialize (e.g. a numpy scalar) becomes its string form without affecting its siblings; the
+    # whole value falls back to its string form only if pydantic can't handle it at all.
     try:
-        return TypeAdapter(type(value)).dump_python(value, mode="json")
-    except Exception:
+        return TypeAdapter(type(value)).dump_python(value, mode="json", fallback=str)
+    except Exception as exc:
+        from dspy.adapters.types.base_type import TypeFormatError
+
+        if isinstance(exc, TypeFormatError):
+            raise
+        if isinstance(exc.__cause__, TypeFormatError):
+            raise exc.__cause__ from None
         return str(value)
+
+
+def format_tool_calls(field_info: FieldInfo, value: Any) -> Any:
+    """Render a tool-call field without protocol metadata; nested application data stays intact."""
+    from dspy.adapters.types.tool import ToolCalls
+
+    if field_info.annotation in (ToolCalls, ToolCalls | None) and isinstance(value, dict):
+        value = ToolCalls.model_validate(value)
+    if not isinstance(value, ToolCalls):
+        return value
+    formatted = value.format()
+    if value.tool_call_results is not None:
+        formatted["tool_call_results"] = value.tool_call_results
+    return formatted
 
 
 def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> str | dict:
@@ -58,7 +125,7 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> s
         # If the field has no special type requirements, format it as a nice numbered list for the LM.
         string_value = _format_input_list_field_value(value)
     else:
-        jsonable_value = serialize_for_json(value)
+        jsonable_value = serialize_for_json(format_tool_calls(field_info, value))
         if isinstance(jsonable_value, dict) or isinstance(jsonable_value, list):
             string_value = json.dumps(jsonable_value, ensure_ascii=False)
         else:
@@ -170,7 +237,8 @@ def parse_value(value, annotation):
             if v in allowed:
                 return v
 
-        raise ValueError(f"{value!r} is not one of {allowed!r}")
+            # Coerce string forms of non-string members (e.g. "2" for Literal[1, 2, 3]) below.
+            value = v
 
     if not isinstance(value, str):
         return TypeAdapter(annotation).validate_python(value)
@@ -193,7 +261,7 @@ def parse_value(value, annotation):
             try:
                 # For dspy.Type, try parsing from the original value in case it has a custom parser
                 return TypeAdapter(annotation).validate_python(value)
-            except Exception:
+            except pydantic.ValidationError:
                 raise e
         raise
 
@@ -201,6 +269,10 @@ def parse_value(value, annotation):
 def get_annotation_name(annotation):
     origin = get_origin(annotation)
     args = get_args(annotation)
+    if origin is types.UnionType:
+        # Render PEP 604 unions (e.g. `str | None`) the same way as `typing.Union`/`Optional` on Python < 3.14,
+        # matching Python 3.14+ where `get_origin(str | None)` already returns `typing.Union`.
+        origin = Union
     if origin is None:
         if annotation is Reasoning:
             # Keep backward compatibility with the old behavior in `dspy.ChainOfThought`, where reasoning
@@ -229,7 +301,7 @@ def get_field_description_string(fields: dict) -> str:
         field_message += f" ({get_annotation_name(v.annotation)})"
         desc = v.json_schema_extra["desc"] if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
 
-        custom_types = DspyType.extract_custom_type_from_annotation(v.annotation)
+        custom_types = DspyType.extract_custom_type_from_annotation(v.rebuild_annotation())
         for custom_type in custom_types:
             if len(custom_type.description()) > 0:
                 desc += f"\n    Type description of {get_annotation_name(custom_type)}: {custom_type.description()}"

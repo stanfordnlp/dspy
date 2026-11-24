@@ -164,7 +164,7 @@ class DogPictureSignature(dspy.Signature):
 
 image_url = "https://picsum.photos/id/237/200/300"
 classify = dspy.Predict(DogPictureSignature)
-classify(image_1=dspy.Image.from_url(image_url))
+classify(image_1=dspy.Image(image_url))
 ```
 
 **Possible Output:**
@@ -234,6 +234,22 @@ dspy.configure(warn_on_type_mismatch=False)
 predictor = dspy.Predict("number: int -> result: str")
 predictor(number="42")  # No warning
 ```
+
+### Optional Output Fields
+
+Output fields are required by default: if the LM response does not contain a declared output field, the adapter raises an `AdapterParseError`. An output field becomes optional when it declares a default value, a `default_factory`, or an annotation that allows `None`. When the LM omits an optional field, the parsed prediction falls back to the default, the factory result, or `None`, in that order of precedence.
+
+```python
+class Extract(dspy.Signature):
+    """Extract structured information from text."""
+    text: str = dspy.InputField()
+    title: str = dspy.OutputField()                                # required: missing -> AdapterParseError
+    note: str | None = dspy.OutputField(default="No note")         # missing -> "No note"
+    tags: list[str] = dspy.OutputField(default_factory=list)      # missing -> []
+    subtitle: str | None = dspy.OutputField()                      # missing -> None
+```
+
+As for input fields: a missing input with a default is filled into the prompt, an input whose annotation allows `None` is omitted from the prompt, and a missing required input logs a warning.
 
 ## Using signatures to build modules & compiling them
 

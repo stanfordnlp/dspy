@@ -10,6 +10,7 @@ from dspy.primitives.module import Module
 from dspy.teleprompt.bootstrap_finetune import (
     BootstrapFinetune,
     all_predictors_have_lms,
+    assert_all_predictors_have_lms,
     kill_lms,
     launch_lms,
     prepare_student,
@@ -308,7 +309,7 @@ class BetterTogether(Teleprompter):
         self, student: Module, teacher: Module | list[Module] | None
     ) -> tuple[Module, list[Module] | None]:
         student = prepare_student(student)
-        all_predictors_have_lms(student)
+        assert_all_predictors_have_lms(student, role="student")
 
         if not teacher:
             return student, None

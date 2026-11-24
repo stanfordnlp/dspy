@@ -245,6 +245,76 @@ def test_valset_ratio_validation():
         assert "must be in range [0, 1)" in str(e)
 
 
+def test_compile_requires_student_lms():
+    """Student predictors without an LM must fail fast with a clear error.
+
+    ``all_predictors_have_lms`` is a predicate, so calling it for its side
+    effects validated nothing and compilation only failed later inside
+    ``launch_lms`` with ``AttributeError: 'NoneType' object has no attribute
+    'launch'``.
+    """
+    optimizer = BetterTogether(metric=simple_metric, p=SimpleOptimizer())
+    # Deliberately no student.set_lm(...), despite the docstring requiring it.
+    student = SimpleModule("input -> output")
+
+    with pytest.raises(ValueError, match=r"student\.set_lm\(lm\)"):
+        optimizer.compile(student, trainset=trainset, valset=valset, strategy="p")
+
+
+def test_compile_names_the_predictors_missing_an_lm():
+    """The error lists exactly the predictors that are missing an LM."""
+    optimizer = BetterTogether(metric=simple_metric, p=SimpleOptimizer())
+
+    class TwoPredictorModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.qa = Predict("input -> output")
+            self.summarize = Predict("input -> output")
+
+        def forward(self, **kwargs):
+            return self.qa(**kwargs)
+
+    student = TwoPredictorModule()
+    # Only the first predictor has an LM set.
+    student.qa.set_lm(DummyLM([{"output": "test"}]))
+
+    with pytest.raises(ValueError) as excinfo:
+        optimizer.compile(student, trainset=trainset, valset=valset, strategy="p")
+
+    assert "summarize" in str(excinfo.value)
+    assert "'qa'" not in str(excinfo.value)
+
+
+def test_error_message_warns_that_set_lm_overwrites():
+    """The advice must warn that set_lm replaces every predictor's LM.
+
+    Module.set_lm assigns to all named parameters, so recommending it bare
+    would silently drop LMs deliberately set on other predictors (flagged in
+    review on https://github.com/stanfordnlp/dspy/pull/10569).
+    """
+    optimizer = BetterTogether(metric=simple_metric, p=SimpleOptimizer())
+    student = SimpleModule("input -> output")
+
+    with pytest.raises(ValueError) as excinfo:
+        optimizer.compile(student, trainset=trainset, valset=valset, strategy="p")
+
+    message = str(excinfo.value)
+    assert "student.set_lm(lm)" in message
+    assert "overwrite" in message
+
+
+def test_compile_accepts_student_with_all_lms_set():
+    """A student whose predictors all have an LM passes the check."""
+    optimizer = BetterTogether(metric=simple_metric, p=SimpleOptimizer())
+    student = SimpleModule("input -> output")
+    student.set_lm(DummyLM([{"output": "test"}]))
+
+    prepared, teacher = optimizer._prepare_student_and_teacher(student, None)
+
+    assert prepared is student
+    assert teacher is None
+
+
 def test_optimizer_compile_args_validation():
     """Test that optimizer_compile_args is validated correctly."""
     optimizer = BetterTogether(metric=simple_metric)

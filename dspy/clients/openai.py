@@ -2,10 +2,11 @@ import time
 from datetime import datetime
 from typing import Any
 
-import openai
-
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat, TrainingStatus, save_data
+from dspy.utils.lazy_import import require
+
+openai = require("openai")
 
 
 class TrainingJobOpenAI(TrainingJob):
@@ -48,8 +49,7 @@ class OpenAIProvider(Provider):
     @staticmethod
     def is_provider_model(model: str) -> bool:
         if model.startswith("openai/") or model.startswith("ft:"):
-            # Although it looks strange, `ft:` is a unique identifier for openai finetuned models in litellm context:
-            # https://github.com/BerriAI/litellm/blob/cd893134b7974d9f21477049a373b469fff747a5/litellm/utils.py#L4495
+            # OpenAI fine-tuned model identifiers start with `ft:`.
             return True
 
         return False

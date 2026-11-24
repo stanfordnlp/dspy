@@ -5,7 +5,9 @@ from typing import Any
 
 import pydantic
 
-from dspy.adapters.types.base_type import Type
+from dspy._vendor.lm15.types import document
+from dspy.adapters.types.base_type import Type, split_data_uri
+from dspy.lm15 import DocumentPart
 
 
 class File(Type):
@@ -14,6 +16,11 @@ class File(Type):
 
     The file_data field should be a data URI with the format:
         data:<mime_type>;base64,<base64_encoded_data>
+
+    Construct from in-memory values only: raw ``bytes``, a data URI string, a
+    ``{"file_data"|"file_id"|"filename"}`` dict, or another ``File``. Construction and adapter
+    parsing never access the filesystem; use :meth:`from_path` to read a local file,
+    :meth:`from_bytes` for raw bytes, or :meth:`from_file_id` to reference a preuploaded file.
 
     Examples:
         ```python
@@ -39,6 +46,20 @@ class File(Type):
         extra="forbid",
     )
 
+    def __init__(self, *args, **data):
+        if len(args) > 1:
+            raise TypeError(f"File expected at most 1 positional argument, received {len(args)}")
+        if args:
+            normalized = encode_file_to_dict(args[0])
+            overlap = sorted(set(normalized) & set(data))
+            if overlap:
+                raise TypeError(
+                    f"File received {', '.join(overlap)} from both the positional source and keyword arguments"
+                )
+            normalized.update(data)
+            data = normalized
+        super().__init__(**data)
+
     @pydantic.model_validator(mode="before")
     @classmethod
     def validate_input(cls, values: Any) -> Any:
@@ -56,17 +77,21 @@ class File(Type):
 
         return encode_file_to_dict(values)
 
-    def format(self) -> list[dict[str, Any]]:
-        try:
-            file_dict = {}
-            if self.file_data:
-                file_dict["file_data"] = self.file_data
-            if self.file_id:
-                file_dict["file_id"] = self.file_id
-            if self.filename:
-                file_dict["filename"] = self.filename
+    def format(self) -> list[DocumentPart]:
+        """Render as one lm15 document part.
 
-            return [{"type": "file", "file": file_dict}]
+        `filename` is kept for display only: the canonical document part
+        carries the media type from the data URI instead, and engines derive
+        any file name a provider requires from it.
+        """
+        try:
+            if self.file_id:
+                return [document(file_id=self.file_id)]
+            inline = split_data_uri(self.file_data)
+            if inline is None:
+                raise ValueError("file_data must be a base64 data URI")
+            media_type, data = inline
+            return [document(data=data, media_type=media_type)]
         except Exception as e:
             raise ValueError(f"Failed to format file for DSPy: {e}")
 
@@ -79,7 +104,9 @@ class File(Type):
             if self.file_data.startswith("data:"):
                 # file data has "data:text/plain;base64,..." format
                 mime_type = self.file_data.split(";")[0].split(":")[1]
-                len_data = len(self.file_data.split("base64,")[1]) if "base64," in self.file_data else len(self.file_data)
+                len_data = (
+                    len(self.file_data.split("base64,")[1]) if "base64," in self.file_data else len(self.file_data)
+                )
                 parts.append(f"file_data=<DATA_URI({mime_type}, {len_data} chars)>")
             else:
                 len_data = len(self.file_data)
@@ -144,7 +171,7 @@ def encode_file_to_dict(file_input: Any) -> dict:
     Encode various file inputs to a dict with file_data, file_id, and/or filename.
 
     Args:
-        file_input: Can be a file path (str), bytes, or File instance.
+        file_input: Can be bytes, a data URI string, a structured dictionary, or a File instance.
 
     Returns:
         dict: A dictionary with file_data, file_id, and/or filename keys.
@@ -159,16 +186,18 @@ def encode_file_to_dict(file_input: Any) -> dict:
             result["filename"] = file_input.filename
         return result
 
-    elif isinstance(file_input, str):
-        if os.path.isfile(file_input):
-            file_obj = File.from_path(file_input)
-        else:
-            raise ValueError(f"Unrecognized file string: {file_input}; must be a valid file path")
+    elif isinstance(file_input, dict):
+        if "file_data" in file_input or "file_id" in file_input or "filename" in file_input:
+            return file_input
+        raise ValueError("Value of `dspy.File` must contain at least one of: file_data, file_id, or filename")
 
-        return {
-            "file_data": file_obj.file_data,
-            "filename": file_obj.filename,
-        }
+    elif isinstance(file_input, str):
+        if file_input.startswith("data:"):
+            return {"file_data": file_input}
+        raise ValueError(
+            f"String file inputs must be data URIs, received: {file_input}. "
+            "Load local files with File.from_path()."
+        )
 
     elif isinstance(file_input, bytes):
         file_obj = File.from_bytes(file_input)

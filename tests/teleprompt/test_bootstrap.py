@@ -27,6 +27,69 @@ def test_bootstrap_initialization():
     assert bootstrap.metric == simple_metric, "Metric not correctly initialized"
 
 
+def lookup():
+    return "ready"
+
+
+def test_bootstrap_multiturn_react():
+    replies = [
+        {
+            "next_thought": "Look it up.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [
+                    {"name": "lookup", "args": {}},
+                ]
+            ),
+        },
+        {
+            "next_thought": "Done.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [
+                    {"name": "submit", "args": {"answer": "ready"}},
+                ]
+            ),
+        },
+    ]
+    selected = []
+    for _ in range(2):
+        agent = dspy.ReAct("question -> answer", tools=[lookup], max_iters=2)
+        with dspy.context(lm=DummyLM(replies), adapter=dspy.ChatAdapter(use_native_function_calling=False)):
+            compiled = BootstrapFewShot(
+                metric=lambda example, prediction, trace: prediction.answer == example.answer,
+                max_bootstrapped_demos=1,
+                max_labeled_demos=0,
+            ).compile(agent, trainset=[Example(question="Look it up.", answer="ready").with_inputs("question")])
+        demos = compiled.predictors()[0].demos
+        assert len(demos) == 1
+        selected.append(demos[0].tool_calls.model_dump())
+        assert str(demos[0].next_thought) in {"Look it up.", "Done."}
+    assert selected[0] == selected[1]
+
+
+def test_bootstrap_repeated_predictor_selection_is_reproducible():
+    class RepeatedPredictor(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = Predict("question -> answer")
+
+        def forward(self, question):
+            for _ in range(3):
+                result = self.predict(question=question)
+            return result
+
+    selected = []
+    for _ in range(2):
+        with dspy.context(lm=DummyLM([{"answer": value} for value in ["first", "middle", "last"]] * 12)):
+            compiled = BootstrapFewShot(max_bootstrapped_demos=12, max_labeled_demos=0).compile(
+                RepeatedPredictor(), trainset=[Example(question=f"q{i}").with_inputs("question") for i in range(12)]
+            )
+        demos = compiled.predict.demos
+        assert [demo.question for demo in demos] == [f"q{i}" for i in range(12)]
+        selected.append([demo.answer for demo in demos])
+    assert selected[0] == selected[1]
+    assert set(selected[0]) == {"first", "middle", "last"}
+
+
 class SimpleModule(dspy.Module):
     def __init__(self, signature):
         super().__init__()
@@ -34,6 +97,42 @@ class SimpleModule(dspy.Module):
 
     def forward(self, **kwargs):
         return self.predictor(**kwargs)
+
+
+class TwoPredictorModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.p1 = Predict("input -> output")
+        self.p2 = Predict("input -> output")
+
+    def forward(self, **kwargs):
+        return self.p2(**self.p1(**kwargs))
+
+
+def test_bootstrap_labeled_demos_sampled_independently_per_predictor():
+    # Each predictor must draw its labeled demos from the FULL validation pool.
+    # Regression: _train reassigned the shared `raw_demos` to the sampled subset
+    # inside the per-predictor loop, so later predictors sampled from the prior
+    # predictor's leftovers -- starving them when an earlier predictor consumed
+    # most of the pool via bootstrapped (augmented) demos.
+    student = TwoPredictorModule()
+    names = [name for name, _ in student.named_predictors()]
+    pool = [Example(input=f"q{i}", output=f"a{i}").with_inputs("input") for i in range(10)]
+    augmented = [Example(input=f"aug{i}", output=f"x{i}").with_inputs("input") for i in range(5)]
+
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=5, max_labeled_demos=8)
+    bootstrap.student = student
+    bootstrap.validation = pool
+    # First predictor has 5 bootstrapped demos; second has none.
+    bootstrap.name2traces = {names[0]: list(augmented), names[1]: []}
+
+    bootstrap._train()
+
+    p1, p2 = (p for _, p in student.named_predictors())
+    # p1: 5 augmented + 3 labeled = 8
+    assert len(p1.demos) == 8
+    # p2: 0 augmented, so it must still get the full labeled quota from the full pool.
+    assert len(p2.demos) == 8
 
 
 def test_compile_with_predict_instances():
@@ -132,3 +231,62 @@ def test_validation_set_usage():
 
     # Check that validation examples are part of student's demos after compilation
     assert len(compiled_student.predictor.demos) >= len(valset), "Validation set not used in compiled student demos"
+
+
+@pytest.mark.parametrize(
+    ("metric_value", "metric_threshold", "expected_demos"),
+    [
+        (0.0, 0.0, 1),
+        (-0.1, 0.0, 0),
+        (0.0, 0.01, 0),
+        (0.0, -0.01, 1),
+        # Bool metrics are compared numerically too, so False clears a threshold of 0.
+        (True, 0, 1),
+        (False, 0, 1),
+    ],
+)
+def test_metric_threshold_zero_is_applied(metric_value, metric_threshold, expected_demos):
+    # A threshold of 0.0 must be compared numerically rather than treated as unset.
+    def metric(example, prediction, trace=None):
+        return metric_value
+
+    dspy.configure(lm=DummyLM([{"output": "blue"}]))
+    bootstrap = BootstrapFewShot(
+        metric=metric,
+        metric_threshold=metric_threshold,
+        max_bootstrapped_demos=1,
+        max_labeled_demos=0,
+    )
+    compiled_student = bootstrap.compile(
+        SimpleModule("input -> output"), teacher=SimpleModule("input -> output"), trainset=trainset
+    )
+
+    assert len(compiled_student.predictor.demos) == expected_demos
+
+
+@pytest.mark.parametrize(
+    ("metric_value", "expected_demos"),
+    [
+        (0.0, 0),
+        (False, 0),
+        (1.0, 1),
+        (True, 1),
+    ],
+)
+def test_metric_threshold_none_uses_metric_value_as_success(metric_value, expected_demos):
+    # With no threshold, the metric's own (truthy/falsy) value decides success.
+    def metric(example, prediction, trace=None):
+        return metric_value
+
+    dspy.configure(lm=DummyLM([{"output": "blue"}]))
+    bootstrap = BootstrapFewShot(
+        metric=metric,
+        metric_threshold=None,
+        max_bootstrapped_demos=1,
+        max_labeled_demos=0,
+    )
+    compiled_student = bootstrap.compile(
+        SimpleModule("input -> output"), teacher=SimpleModule("input -> output"), trainset=trainset
+    )
+
+    assert len(compiled_student.predictor.demos) == expected_demos

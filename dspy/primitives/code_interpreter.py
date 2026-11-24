@@ -4,36 +4,35 @@ Abstract interpreter interface for code execution environments.
 This module defines the CodeInterpreter protocol that allows RLM and other
 code-executing modules to work with different interpreter implementations:
 - PythonInterpreter: Local Deno/Pyodide WASM interpreter
+- LocalInterpreter: Persistent local CPython worker
 - MockInterpreter: Scriptable responses for testing
+
+It also resolves which implementation a module gets: a module's own
+``interpreter_factory`` argument, else ``dspy.settings.interpreter_factory``, else
+``PythonInterpreter``. See :func:`resolve_interpreter_factory`.
 """
 
 from typing import Any, Callable, Protocol, runtime_checkable
+
+from dspy.dsp.utils.settings import settings
+from dspy.utils.exceptions import DSPyError
 
 # Types that can be used directly in Python function signatures for SUBMIT()
 SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
 
 
-class CodeInterpreterError(RuntimeError):
-    """Error raised during code interpretation.
+class CodeInterpreterError(DSPyError, RuntimeError):
+    """Base class for errors reported by a code interpreter.
 
-    This exception covers two distinct failure modes:
-
-    1. **Execution errors**: The sandbox ran user code that failed.
-       - NameError, TypeError, ValueError, etc.
-       - Tool call failures (unknown tool, tool raised exception)
-       - These are normal user code errors.
-
-    2. **Protocol errors**: Communication between host and sandbox failed.
-       - Malformed JSON from sandbox
-       - Sandbox process crashed or became unresponsive
-       - Invalid JSON-RPC message structure
-       - These may indicate a corrupted sandbox needing restart.
-
-    The error message typically includes the original error type (e.g., "NameError: ...")
-    which can help distinguish the failure mode.
-
-    Note: SyntaxError is raised separately (not wrapped) for invalid Python syntax.
+    A bare instance indicates a failure that submitted code cannot repair, such
+    as invalid host-side setup or a process/protocol failure. Recoverable
+    submitted-code failures use :class:`CodeExecutionError`. Implementations
+    should make process/protocol failures terminal for that interpreter session.
     """
+
+
+class CodeExecutionError(CodeInterpreterError):
+    """Recoverable error raised by code running in a healthy interpreter."""
 
 
 class FinalOutput:
@@ -74,20 +73,31 @@ class CodeInterpreter(Protocol):
         4. shutdown() - Release resources
 
     Example implementations:
-        - LocalInterpreter: Deno/Pyodide WASM interpreter (local)
+        - PythonInterpreter: Deno/Pyodide WASM interpreter (local sandbox)
+        - LocalInterpreter: Persistent local CPython worker (not a sandbox)
         - MockInterpreter: Scriptable responses for testing
 
     Pooling:
         For interpreter pooling, call start() to pre-warm instances, then
         distribute execute() calls across the pool.
+
+    Sandbox dspy bridge:
+        dspy.Flex and dspy.RLM let executed code import the real ``dspy`` and route its LM
+        calls to the host through a registered tool, so executed code must be able to import
+        the host's ``dspy`` (``PythonInterpreter.provide_dspy`` arranges it in Pyodide),
+        registered tools must be callable as globals, and state must persist across
+        execute() calls. An interpreter that runs code in the host's memory keeps using the
+        host's ``dspy`` module as is.
     """
 
     @property
-    def tools(self) -> dict[str, Callable[..., str]]:
+    def tools(self) -> dict[str, Callable[..., Any]]:
         """Tools available for interpreter code to call.
 
         Tools are host-side functions that can be invoked from within the
-        interpreter. Each tool accepts keyword arguments and returns a string.
+        interpreter. Each tool accepts keyword arguments. Return values must
+        satisfy the boundary supported by the interpreter; Flex tools must
+        return JSON-compatible values.
 
         Implementations should accept tools via constructor and expose them
         through this property.
@@ -104,7 +114,10 @@ class CodeInterpreter(Protocol):
         For pooling scenarios, call start() on multiple instances to have
         them ready before distributing work.
 
-        Calling start() multiple times should be safe (idempotent).
+        Calling start() multiple times before shutdown should be safe (idempotent).
+        If the underlying interpreter process exits, the session state is lost and
+        the implementation should raise CodeInterpreterError instead of silently
+        starting a new session.
         """
         ...
 
@@ -128,7 +141,8 @@ class CodeInterpreter(Protocol):
             - None: If no output was produced
 
         Raises:
-            CodeInterpreterError: On runtime errors (undefined vars, tool failures, etc.)
+            CodeExecutionError: On runtime errors in the submitted code or a called tool.
+            CodeInterpreterError: If host-side setup or the interpreter process/protocol fails.
             SyntaxError: On invalid Python syntax
 
         Note:
@@ -146,3 +160,64 @@ class CodeInterpreter(Protocol):
         A new instance should be created for a fresh session.
         """
         ...
+
+
+def _validate_interpreter_factory(factory: Any, name: str = "interpreter_factory") -> None:
+    """Validate the configured provider without invoking it."""
+    if not isinstance(factory, type) and isinstance(factory, CodeInterpreter):
+        raise TypeError(
+            f"{name} received an object that already implements CodeInterpreter, so its ownership "
+            "is ambiguous. "
+            "If this object also creates interpreters, pass a dedicated zero-argument creation callable instead."
+        )
+    if not callable(factory):
+        raise TypeError(
+            f"{name} must be a zero-argument callable that creates a CodeInterpreter, "
+            f"not {type(factory).__name__}."
+        )
+
+
+def resolve_interpreter_factory(
+    factory: Callable[[], CodeInterpreter] | None = None,
+) -> Callable[[], CodeInterpreter]:
+    """Return the factory that creates the next interpreter.
+
+    The module's own factory wins, then ``dspy.settings.interpreter_factory``, then
+    ``PythonInterpreter``. ``None`` and ``PythonInterpreter`` both mean "unset", since the
+    code-executing modules carry ``PythonInterpreter`` as their literal default argument.
+
+    Call this where you create an interpreter, not earlier, so that
+    ``dspy.context(interpreter_factory=...)`` scopes the way callers expect.
+
+    Raises:
+        TypeError: If ``dspy.settings.interpreter_factory`` is not a zero-argument callable.
+    """
+    # Imported here because python_interpreter imports this module.
+    from dspy.primitives.python_interpreter import PythonInterpreter
+
+    if factory is not None and factory is not PythonInterpreter:
+        return factory
+
+    configured = settings.get("interpreter_factory")
+    if configured is None:
+        return PythonInterpreter
+
+    _validate_interpreter_factory(configured, name="dspy.settings.interpreter_factory")
+    return configured
+
+
+def _create_interpreter(factory: Callable[[], CodeInterpreter] | None) -> CodeInterpreter:
+    """Create an interpreter from ``factory``, or from the configured one, and validate it."""
+    interpreter = resolve_interpreter_factory(factory)()
+    if not isinstance(interpreter, CodeInterpreter):
+        raise TypeError(
+            "interpreter_factory must return a CodeInterpreter, "
+            f"not {type(interpreter).__name__}."
+        )
+    return interpreter
+
+
+def _validate_interpreter(interpreter: Any) -> None:
+    """Validate a caller-owned interpreter."""
+    if not isinstance(interpreter, CodeInterpreter):
+        raise TypeError(f"interpreter must implement CodeInterpreter, not {type(interpreter).__name__}.")

@@ -46,11 +46,15 @@ it:
 import random
 import string
 
-from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel
 
+try:
+    from mcp.server.fastmcp import FastMCP as MCPServer  # SDK v1
+except ImportError:
+    from mcp.server import MCPServer  # SDK v2
+
 # Create an MCP server
-mcp = FastMCP("Airline Agent")
+mcp = MCPServer("Airline Agent")
 
 
 class Date(BaseModel):
@@ -220,10 +224,10 @@ if __name__ == "__main__":
 
 Before we start the server, let's take a look at the code.
 
-We first create a `FastMCP` instance, which is a utility that helps quickly build an MCP server:
+We first create a server instance, using the class name provided by the installed SDK version:
 
 ```python
-mcp = FastMCP("Airline Agent")
+mcp = MCPServer("Airline Agent")
 ```
 
 Then we define our data structures, which in a real-world application would be the database schema, e.g.:
@@ -278,15 +282,12 @@ if __name__ == "__main__":
     mcp.run()
 ```
 
-Now we have finished writing the server! Let's launch it:
-
-```shell
-python path_to_your_working_directory/mcp_server.py
-```
+Now we have finished writing the server. You do not need to launch it separately; the MCP client
+below starts it as a subprocess.
 
 ## Write a DSPy Program That Utilizes Tools in MCP Server
 
-Now that the server is running, let's build the actual airline service agent which
+Now that the server is ready, let's build the actual airline service agent which
 utilizes the MCP tools in our server to assist users. In your working directory,
 create a file named `dspy_mcp_agent.py`, and follow the guide to add code to it.
 
@@ -296,12 +297,15 @@ We first need to gather all available tools from the MCP server and make them
 usable by DSPy. DSPy provides an API [`dspy.Tool`](https://dspy.ai/api/primitives/Tool/)
 as the standard tool interface. Let's convert all the MCP tools to `dspy.Tool`.
 
-We need to create an MCP client instance to communicate with the MCP server, fetch all available
-tools, and convert them to `dspy.Tool` using the static method `from_mcp_tool`:
+We use the MCP SDK v2 high-level `Client` to start the server, fetch its available tools, and convert
+them to `dspy.Tool` using the static method `from_mcp_tool`. Keep the client context open while DSPy
+uses the converted tools:
 
 ```python
-from mcp import ClientSession, StdioServerParameters
+from mcp import Client, StdioServerParameters
 from mcp.client.stdio import stdio_client
+
+import dspy
 
 # Create server parameters for stdio connection
 server_params = StdioServerParameters(
@@ -310,21 +314,19 @@ server_params = StdioServerParameters(
     env=None,
 )
 
+
 async def run():
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            # Initialize the connection
-            await session.initialize()
-            # List available tools
-            tools = await session.list_tools()
+    async with Client(stdio_client(server_params)) as client:
+        # List available tools
+        tools = await client.list_tools()
 
-            # Convert MCP tools to DSPy tools
-            dspy_tools = []
-            for tool in tools.tools:
-                dspy_tools.append(dspy.Tool.from_mcp_tool(session, tool))
+        # Convert MCP tools to DSPy tools
+        dspy_tools = []
+        for tool in tools.tools:
+            dspy_tools.append(dspy.Tool.from_mcp_tool(client, tool))
 
-            print(len(dspy_tools))
-            print(dspy_tools[0].args)
+        print(len(dspy_tools))
+        print(dspy_tools[0].args)
 
 if __name__ == "__main__":
     import asyncio
@@ -370,7 +372,7 @@ Then we create the ReAct agent by passing the tools and signature into the `dspy
 put together the complete code script:
 
 ```python
-from mcp import ClientSession, StdioServerParameters
+from mcp import Client, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 import dspy
@@ -378,7 +380,7 @@ import dspy
 # Create server parameters for stdio connection
 server_params = StdioServerParameters(
     command="python",  # Executable
-    args=["script_tmp/mcp_server.py"],  # Optional command line arguments
+    args=["path_to_your_working_directory/mcp_server.py"],  # Server script
     env=None,  # Optional environment variables
 )
 
@@ -400,23 +402,20 @@ dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
 
 async def run(user_request):
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            # Initialize the connection
-            await session.initialize()
-            # List available tools
-            tools = await session.list_tools()
+    async with Client(stdio_client(server_params)) as client:
+        # List available tools
+        tools = await client.list_tools()
 
-            # Convert MCP tools to DSPy tools
-            dspy_tools = []
-            for tool in tools.tools:
-                dspy_tools.append(dspy.Tool.from_mcp_tool(session, tool))
+        # Convert MCP tools to DSPy tools
+        dspy_tools = []
+        for tool in tools.tools:
+            dspy_tools.append(dspy.Tool.from_mcp_tool(client, tool))
 
-            # Create the agent
-            react = dspy.ReAct(DSPyAirlineCustomerService, tools=dspy_tools)
+        # Create the agent
+        react = dspy.ReAct(DSPyAirlineCustomerService, tools=dspy_tools)
 
-            result = await react.acall(user_request=user_request)
-            print(result)
+        result = await react.acall(user_request=user_request)
+        print(result)
 
 
 if __name__ == "__main__":
@@ -431,17 +430,11 @@ Note that we must call `react.acall` because MCP tools are async by default. Let
 python path_to_your_working_directory/dspy_mcp_agent.py
 ```
 
-You should see output similar to this:
+The returned prediction contains `process_result`, the agent's final answer, plus `history` and `termination_reason`.
+The model finishes by calling `submit` with `process_result`; ReAct does not add a separate `reasoning` output.
+Inspect `result.history.messages` to see the structured tool calls and their results.
 
-```
-Prediction(
-    trajectory={'thought_0': 'I need to fetch flight information for Adam from SFO to JFK on 09/01/2025 to find available flights for booking.', 'tool_name_0': 'fetch_flight_info', 'tool_args_0': {'date': {'year': 2025, 'month': 9, 'day': 1, 'hour': 0}, 'origin': 'SFO', 'destination': 'JFK'}, 'observation_0': ['{"flight_id": "DA123", "date_time": {"year": 2025, "month": 9, "day": 1, "hour": 1}, "origin": "SFO", "destination": "JFK", "duration": 3.0, "price": 200.0}', '{"flight_id": "DA125", "date_time": {"year": 2025, "month": 9, "day": 1, "hour": 7}, "origin": "SFO", "destination": "JFK", "duration": 9.0, "price": 500.0}'], ..., 'tool_name_4': 'finish', 'tool_args_4': {}, 'observation_4': 'Completed.'},
-    reasoning="I successfully booked a flight for Adam from SFO to JFK on 09/01/2025. I found two available flights, selected the more economical option (flight DA123 at 1 AM for $200), retrieved Adam's user profile, and completed the booking process. The confirmation number for the flight is 8h7clk3q.",
-    process_result='Your flight from SFO to JFK on 09/01/2025 has been successfully booked. Your confirmation number is 8h7clk3q.'
-)
-```
-
-The `trajectory` field contains the entire thinking and acting process. If you're curious about what's happening
+The `history` field contains the thinking and acting process. If you're curious about what's happening
 under the hood, check out the [Observability Guide](https://dspy.ai/tutorials/observability/) to set up MLflow,
 which visualizes every step happening inside `dspy.ReAct`!
 

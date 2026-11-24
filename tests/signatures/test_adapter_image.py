@@ -1,5 +1,7 @@
+import base64
 import os
 import tempfile
+import warnings
 from io import BytesIO
 
 import pydantic
@@ -24,7 +26,7 @@ def sample_pil_image():
 @pytest.fixture
 def sample_dspy_image_download():
     url = "https://images.dog.ceo/breeds/dane-great/n02109047_8912.jpg"
-    return dspy.Image(url, download=True)
+    return dspy.Image.from_url(url)
 
 
 @pytest.fixture
@@ -38,7 +40,8 @@ def sample_dspy_image_no_download():
 
 
 def count_messages_with_image_url_pattern(messages):
-    pattern = {"type": "image_url", "image_url": {"url": lambda x: isinstance(x, str)}}
+    """Count lm15 image parts (as recorded in LM history) addressed by a URL or inline data."""
+    pattern = {"type": "image", "media_type": lambda x: isinstance(x, str)}
 
     try:
 
@@ -209,7 +212,7 @@ def test_save_load_complex_default_types():
 
     result = loaded_predictor(**examples[0].inputs())
     assert result.caption == "A list of images"
-    assert str(lm.history[-1]["messages"]).count("'url'") == 4
+    assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 4
     assert "<DSPY_IMAGE_START>" not in str(lm.history[-1]["messages"])
 
 
@@ -343,8 +346,8 @@ def test_pdf_url_support():
     """Test support for PDF files from URLs"""
     pdf_url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
 
-    # Create a dspy.Image object from the PDF URL with download=True
-    pdf_image = dspy.Image(pdf_url, download=True)
+    # Download the PDF into a dspy.Image data URI.
+    pdf_image = dspy.Image.from_url(pdf_url)
 
     # The data URI should contain application/pdf in the MIME type
     assert "data:application/pdf" in pdf_image.url
@@ -381,7 +384,7 @@ def test_different_mime_types():
 
     for file_type, url in file_urls.items():
         # Download and encode
-        encoded = encode_image(url, download_images=True)
+        encoded = dspy.Image.from_url(url).url
 
         # Check for correct MIME type in the encoded data - using 'in' instead of startswith
         # to account for possible parameters in the MIME type
@@ -402,7 +405,7 @@ def test_mime_type_from_response_headers():
     assert "pdf" in expected_mime_type.lower()
 
     # Encode with download to test MIME type from headers
-    encoded = encode_image(pdf_url, download_images=True)
+    encoded = dspy.Image.from_url(pdf_url).url
 
     # The encoded data should contain the correct MIME type
     assert "application/pdf" in encoded
@@ -422,7 +425,7 @@ def test_pdf_from_file():
 
     try:
         # Create a dspy.Image from the file
-        pdf_image = dspy.Image(tmp_file_path)
+        pdf_image = dspy.Image.from_path(tmp_file_path)
 
         # The constructor encodes the file into a data URI we can inspect directly
         assert "data:application/pdf" in pdf_image.url
@@ -451,53 +454,121 @@ def test_image_repr():
     url_image = dspy.Image("https://example.com/dog.jpg")
     assert str(url_image) == (
         "<<CUSTOM-TYPE-START-IDENTIFIER>>"
-        '[{"type": "image_url", "image_url": {"url": "https://example.com/dog.jpg"}}]'
+        '[{"type": "image", "media_type": "image/jpeg", "url": "https://example.com/dog.jpg"}]'
         "<<CUSTOM-TYPE-END-IDENTIFIER>>"
     )
     assert repr(url_image) == "Image(url='https://example.com/dog.jpg')"
 
     sample_pil = PILImage.new("RGB", (60, 30), color="red")
     pil_image = dspy.Image(sample_pil)
-    assert str(pil_image).startswith('<<CUSTOM-TYPE-START-IDENTIFIER>>[{"type": "image_url",')
+    assert str(pil_image).startswith('<<CUSTOM-TYPE-START-IDENTIFIER>>[{"type": "image", "media_type": "image/png", "data": "')
     assert str(pil_image).endswith("<<CUSTOM-TYPE-END-IDENTIFIER>>")
-    assert "base64" in str(pil_image)
+    assert '"data": "' in str(pil_image)
 
 
-def test_from_methods_warn(tmp_path):
-    """Deprecated from_* methods emit warnings"""
+def test_image_constructor_supports_positional_source_and_url_keyword():
+    source = "https://example.com/dog.jpg"
+
+    assert dspy.Image(source).url == source
+    assert dspy.Image(url=source).url == source
+
+    with pytest.raises(pydantic.ValidationError, match="source"):
+        dspy.Image(source=source)
+
+    with pytest.raises(TypeError, match="both `source` and `url`"):
+        dspy.Image(source, url=source)
+
+
+def test_canonical_factories_do_not_warn(tmp_path):
     tmp_file = tmp_path / "test.png"
     tmp_file.write_bytes(b"pngdata")
 
-    with pytest.warns(DeprecationWarning):
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        response = type("Response", (), {"content": b"pngdata", "headers": {"Content-Type": "image/png"}})()
+        response.raise_for_status = lambda: None
+        monkeypatch.setattr("dspy.adapters.types.image.requests.get", lambda *args, **kwargs: response)
         dspy.Image.from_url("https://example.com/dog.jpg")
-    with pytest.warns(DeprecationWarning):
-        dspy.Image.from_file(str(tmp_file))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        dspy.Image.from_path(str(tmp_file))
+
+
+@pytest.mark.parametrize("name", ["from_file", "from_PIL"])
+def test_removed_image_factory_aliases(name):
+    with pytest.raises(AttributeError, match=name):
+        getattr(dspy.Image, name)
+
+
+def test_pil_image_constructor_preserves_pixels():
     sample_pil = PILImage.new("RGB", (10, 10), color="blue")
-    with pytest.warns(DeprecationWarning):
-        dspy.Image.from_PIL(sample_pil)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        image = dspy.Image(sample_pil)
+
+    assert image.url.startswith("data:image/png;base64,")
+    decoded = PILImage.open(BytesIO(base64.b64decode(image.url.split(",", 1)[1])))
+    assert decoded.size == (10, 10)
+    assert decoded.getpixel((0, 0)) == (0, 0, 255)
 
 
 def test_invalid_string_format():
-    """Test that invalid string formats raise a ValueError"""
+    """A string that is neither a data URI nor a URL raises."""
     invalid_string = "this_is_not_a_url_or_file"
 
     # Should raise a ValueError and not pass the string through
-    with pytest.raises(ValueError, match="Unrecognized") as warning_info:
-        image = dspy.Image(invalid_string)
+    with pytest.raises(ValueError, match="Unrecognized"):
+        dspy.Image(invalid_string)
 
-def test_pil_image_with_download_parameter():
-    """Test behavior when PIL image is passed with download=True"""
-    sample_pil = PILImage.new("RGB", (60, 30), color="red")
 
-    # PIL image should be encoded regardless of download parameter
-    image_no_download = dspy.Image(sample_pil)
-    image_with_download = dspy.Image(sample_pil, download=True)
+def test_positional_local_path_hard_breaks(tmp_path, monkeypatch):
+    """Image(path) raises pointing at from_path, and never touches the filesystem to decide."""
+    tmp_file = tmp_path / "photo.png"
+    tmp_file.write_bytes(b"pngdata")
 
-    # Both should result in base64 encoded data URIs
-    assert image_no_download.url.startswith("data:")
-    assert image_with_download.url.startswith("data:")
-    assert "base64," in image_no_download.url
-    assert "base64," in image_with_download.url
+    monkeypatch.setattr("builtins.open", lambda *a, **k: pytest.fail("Image(path) read the filesystem"))
 
-    # They should be identical since PIL images are always encoded
-    assert image_no_download.url == image_with_download.url
+    with pytest.raises(ValueError, match=r"Image\.from_path"):
+        dspy.Image(str(tmp_file))
+
+
+@pytest.mark.parametrize("source", ["https://example.com/dog.jpg", PILImage.new("RGB", (2, 1), color="red")])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"download": True},
+        {"download": False},
+        {"download": None},
+        {"verify": True},
+        {"verify": False},
+        {"verify": None},
+        {"download": True, "verify": False},
+    ],
+)
+def test_image_constructor_rejects_removed_keywords(source, kwargs):
+    with pytest.raises(TypeError, match=r"no longer accepts.*Image\.from_url"):
+        dspy.Image(source, **kwargs)
+
+
+def test_from_path_missing_file():
+    with pytest.raises(ValueError, match="File not found"):
+        dspy.Image.from_path("/nonexistent/image.png")
+
+
+def test_unidentifiable_bytes_raise_value_error():
+    with pytest.raises(ValueError, match="could not be identified as an image"):
+        dspy.Image(b"not an image")
+
+
+def test_image_to_pil_decodes_embedded_images_only(monkeypatch):
+    image = dspy.Image(PILImage.new("RGB", (6, 4), (255, 0, 0)))
+    pil = image.to_pil()
+    assert pil.size == (6, 4) and pil.getpixel((0, 0)) == (255, 0, 0)
+    assert dspy.Image(pil).url == image.url  # dspy.Image(pil_image) goes the other way
+
+    with pytest.raises(ValueError, match="needs an embedded base64 image"):
+        dspy.Image("https://example.com/x.png").to_pil()
+    monkeypatch.setattr(dspy.adapters.types.image, "PIL_AVAILABLE", False)
+    with pytest.raises(ImportError, match="Pillow is required"):
+        image.to_pil()

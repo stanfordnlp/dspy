@@ -1,81 +1,152 @@
 import asyncio
+import dataclasses
+import io
+import json
+import logging
 import os
 import random
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+import types
+from collections import namedtuple
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import NamedTuple
 
 import pytest
+from pydantic import BaseModel, ConfigDict
 
-from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
-from dspy.primitives.python_interpreter import PythonInterpreter
+import dspy.primitives.python_interpreter as python_interpreter
+from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.primitives.deno_utils import deno_subprocess_env
+from dspy.primitives.python_interpreter import (
+    LARGE_VAR_THRESHOLD,
+    PythonInterpreter,
+    _find_deno_executable,
+    _make_jsonable,
+    _validate_deno_version,
+)
+
+
+class _Hit(BaseModel):
+    document_id: int
+    title: str
+
+
+class _TimestampedHit(_Hit):
+    created_at: datetime
+
+
+class _UnserializableValue:
+    pass
+
+
+class _UnserializableModel(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    value: _UnserializableValue
+
 
 pytestmark = pytest.mark.deno
 
 
-def test_execute_simple_code():
-    with PythonInterpreter() as interpreter:
-        code = "print('Hello, World!')"
-        result = interpreter.execute(code)
-        assert result == "Hello, World!\n", "Simple print statement should return 'Hello World!\n'"
+def test_execute_simple_code(pooled_interpreter):
+    interpreter = pooled_interpreter
+    code = "print('Hello, World!')"
+    result = interpreter.execute(code)
+    assert result == "Hello, World!\n", "Simple print statement should return 'Hello World!\n'"
 
 
-def test_import():
-    with PythonInterpreter() as interpreter:
-        code = "import math\nresult = math.sqrt(4)\nresult"
-        result = interpreter.execute(code)
-        assert result == 2, "Should be able to import and use math.sqrt"
+def test_import(pooled_interpreter):
+    interpreter = pooled_interpreter
+    code = "import math\nresult = math.sqrt(4)\nresult"
+    result = interpreter.execute(code)
+    assert result == 2, "Should be able to import and use math.sqrt"
 
 
-def test_user_variable_definitions():
-    with PythonInterpreter() as interpreter:
-        code = "result = number + 1\nresult"
-        result = interpreter.execute(code, variables={"number": 4})
-        assert result == 5, "User variable assignment should work"
+def test_user_variable_definitions(pooled_interpreter):
+    interpreter = pooled_interpreter
+    code = "result = number + 1\nresult"
+    result = interpreter.execute(code, variables={"number": 4})
+    assert result == 5, "User variable assignment should work"
 
 
-def test_rejects_python_keywords_as_variable_names():
+def test_non_finite_float_variables(pooled_interpreter):
+    """Regression test: inf/-inf/nan variables must be injected as valid Python literals.
+
+    str(float("inf")) is the bare word "inf", which is not a valid Python name, so
+    injecting it as `x = inf` previously raised NameError in the sandbox.
+    """
+    interpreter = pooled_interpreter
+    inf_code = "result = 1 if x == float('inf') else 0\nresult"
+    assert interpreter.execute(inf_code, variables={"x": float("inf")}) == 1
+
+    neg_inf_code = "result = 1 if x == float('-inf') else 0\nresult"
+    assert interpreter.execute(neg_inf_code, variables={"x": float("-inf")}) == 1
+
+    nan_code = "import math\nresult = 1 if math.isnan(x) else 0\nresult"
+    assert interpreter.execute(nan_code, variables={"x": float("nan")}) == 1
+
+
+def test_rejects_python_keywords_as_variable_names(pooled_interpreter):
     """Test that Python keywords are rejected as variable names."""
-    with PythonInterpreter() as interpreter:
-        # These are valid Python identifiers but reserved keywords
-        # Using them as variable names would cause syntax errors
-        keywords_to_test = ["for", "class", "import", "def", "return", "if", "while"]
+    interpreter = pooled_interpreter
+    # These are valid Python identifiers but reserved keywords
+    # Using them as variable names would cause syntax errors
+    keywords_to_test = ["for", "class", "import", "def", "return", "if", "while"]
 
-        for keyword in keywords_to_test:
-            with pytest.raises(CodeInterpreterError, match="Invalid variable name"):
-                interpreter.execute("print(x)", variables={keyword: 42})
-
-
-def test_failure_syntax_error():
-    with PythonInterpreter() as interpreter:
-        code = "+++"
-        with pytest.raises(SyntaxError, match="Invalid Python syntax"):
-            interpreter.execute(code)
+    for keyword in keywords_to_test:
+        with pytest.raises(CodeInterpreterError, match="Invalid variable name"):
+            interpreter.execute("print(x)", variables={keyword: 42})
 
 
-def test_failure_zero_division():
-    with PythonInterpreter() as interpreter:
-        code = "1+0/0"
-        with pytest.raises(CodeInterpreterError, match="ZeroDivisionError"):
-            interpreter.execute(code)
+def test_failure_syntax_error(pooled_interpreter):
+    interpreter = pooled_interpreter
+    code = "+++"
+    with pytest.raises(SyntaxError, match="Invalid Python syntax"):
+        interpreter.execute(code)
 
 
-def test_exception_args():
-    with PythonInterpreter() as interpreter:
-        token = random.randint(1, 10**9)
-        code = f"raise ValueError({token})"
-        with pytest.raises(CodeInterpreterError, match=rf"ValueError: \[{token}\]"):
-            interpreter.execute(code)
+def test_failure_zero_division(pooled_interpreter):
+    interpreter = pooled_interpreter
+    code = "1+0/0"
+    with pytest.raises(CodeExecutionError, match="ZeroDivisionError"):
+        interpreter.execute(code)
 
 
-def test_submit_with_list():
+def test_exception_args(pooled_interpreter):
+    interpreter = pooled_interpreter
+    token = random.randint(1, 10**9)
+    code = f"raise ValueError({token})"
+    with pytest.raises(CodeExecutionError, match=rf"ValueError: \[{token}\]"):
+        interpreter.execute(code)
+
+
+def test_generated_exception_name_cannot_spoof_interpreter_failure(pooled_interpreter):
+    interpreter = pooled_interpreter
+    with pytest.raises(CodeExecutionError, match="CodeInterpreterError"):
+        interpreter.execute(
+            "class CodeInterpreterError(Exception):\n    pass\nraise CodeInterpreterError('generated failure')"
+        )
+    assert interpreter.execute("2 + 2") == 4
+
+
+def test_submit_with_list(pooled_interpreter):
     """Test SUBMIT() with a list argument returns FinalOutput with dict format."""
 
-    with PythonInterpreter() as interpreter:
-        token = random.randint(1, 10**9)
-        code = f"SUBMIT(['The result is', {token}])"
-        result = interpreter(code)
+    interpreter = pooled_interpreter
+    token = random.randint(1, 10**9)
+    code = f"SUBMIT(['The result is', {token}])"
+    result = interpreter(code)
 
-        assert isinstance(result, FinalOutput)
-        # SUBMIT now always returns a dict with "output" key for single-output default
-        assert result.output == {"output": ["The result is", token]}
+    assert isinstance(result, FinalOutput)
+    # SUBMIT now always returns a dict with "output" key for single-output default
+    assert result.output == {"output": ["The result is", token]}
 
 
 def test_enable_env_vars_flag():
@@ -156,17 +227,41 @@ def test_enable_write_flag(tmp_path):
 
 
 def test_enable_net_flag():
-    test_url = "https://example.com"
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
 
-    with PythonInterpreter(enable_network_access=None) as interpreter:
-        code = f"import js\nresp = await js.fetch({test_url!r})\nresp.status"
-        with pytest.raises(CodeInterpreterError, match="PythonError"):
-            interpreter.execute(code)
+    requests = []
 
-    with PythonInterpreter(enable_network_access=["example.com"]) as interpreter:
-        code = f"import js\nresp = await js.fetch({test_url!r})\nresp.status"
-        result = interpreter.execute(code)
-        assert int(result) == 200, "Network access is permitted with enable_network_access"
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            requests.append(self.path)
+            self.send_response(200)
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    address = f"127.0.0.1:{server.server_port}"
+    code = f"import js\nresp = await js.fetch('http://{address}/')\nawait resp.text()\nresp.status"
+    try:
+        with PythonInterpreter(enable_network_access=None) as interpreter:
+            with pytest.raises(CodeInterpreterError):
+                interpreter.execute(code)
+        assert requests == [], "Denied requests must not reach the server"
+
+        with PythonInterpreter(enable_network_access=[address]) as interpreter:
+            result = interpreter.execute(code)
+            assert int(result) == 200, "Network access is permitted with enable_network_access"
+        assert requests == ["/"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
 
 
 def test_interpreter_security_filesystem_access(tmp_path):
@@ -201,6 +296,40 @@ except Exception as e:
         assert secret_content in output
 
 
+def test_default_runner_cannot_read_shared_deno_cache(monkeypatch, tmp_path):
+    shared_cache = tmp_path / "deno"
+    shared_cache.mkdir()
+    canary = shared_cache / "secret.txt"
+    canary.write_text("shared cache secret")
+    monkeypatch.setenv("DENO_DIR", str(shared_cache))
+
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            f"""import js
+try:
+    js.Deno.readTextFileSync({str(canary)!r})
+    result = "disclosed"
+except Exception as error:
+    result = str(error)
+result"""
+        )
+
+    assert "disclosed" not in result
+    assert "read access" in result.lower()
+
+
+def test_default_runner_starts_offline_from_warm_shared_cache(monkeypatch, tmp_path):
+    shared_cache = tmp_path / "deno"
+    runner = str(Path(python_interpreter.__file__).with_name("runner.js"))
+    env = {**deno_subprocess_env(), "DENO_DIR": str(shared_cache)}
+    subprocess.run([_find_deno_executable(), "cache", "--no-config", "--no-lock", runner], env=env, check=True)
+    monkeypatch.setenv("DENO_DIR", str(shared_cache))
+
+    with PythonInterpreter() as interpreter:
+        interpreter.deno_command.insert(interpreter.deno_command.index(os.path.realpath(runner)), "--cached-only")
+        assert interpreter.execute("1 + 1") == 2
+
+
 def test_tools_dict_is_copied():
     """Test that tools dict is defensively copied, not stored by reference."""
     tools = {"my_tool": lambda: "result"}
@@ -213,28 +342,121 @@ def test_tools_dict_is_copied():
     assert "new_tool" not in sandbox.tools
 
 
-def test_serialize_tuple():
+def test_serialize_tuple(pooled_interpreter):
     """Test that tuples can be serialized as variables."""
-    with PythonInterpreter() as interpreter:
-        result = interpreter.execute("x", variables={"x": (1, 2, 3)})
-        assert result == [1, 2, 3]  # Tuples become lists in JSON
+    interpreter = pooled_interpreter
+    result = interpreter.execute("x", variables={"x": (1, 2, 3)})
+    assert result == [1, 2, 3]  # Tuples become lists in JSON
 
 
-def test_serialize_set():
+def test_serialize_set(pooled_interpreter):
     """Test that sets can be serialized as variables."""
-    with PythonInterpreter() as interpreter:
-        result = interpreter.execute("sorted(x)", variables={"x": {3, 1, 2}})
-        assert result == [1, 2, 3]
+    interpreter = pooled_interpreter
+    result = interpreter.execute("sorted(x)", variables={"x": {3, 1, 2}})
+    assert result == [1, 2, 3]
 
 
-def test_serialize_set_mixed_types():
+def test_serialize_set_mixed_types(pooled_interpreter):
     """Test that sets with mixed types can be serialized (fallback to list)."""
-    with PythonInterpreter() as interpreter:
-        # Mixed types can't be sorted, so they serialize as a list in arbitrary order
-        # We verify the list contains the expected elements
-        result = interpreter.execute("x", variables={"x": {1, "a"}})
-        assert isinstance(result, list)
-        assert set(result) == {1, "a"}
+    interpreter = pooled_interpreter
+    # Mixed types can't be sorted, so they serialize as a list in arbitrary order
+    # We verify the list contains the expected elements
+    result = interpreter.execute("x", variables={"x": {1, "a"}})
+    assert isinstance(result, list)
+    assert set(result) == {1, "a"}
+
+
+def test_serialize_pydantic_variable(pooled_interpreter):
+    """Pydantic instances passed via variables= should arrive in the sandbox as dicts."""
+    interpreter = pooled_interpreter
+    result = interpreter.execute(
+        "hit['document_id']",
+        variables={"hit": _Hit(document_id=7, title="abc")},
+    )
+    assert result == 7
+
+
+def test_serialize_pydantic_nested_in_dict(pooled_interpreter):
+    """Pydantic instances nested inside list/dict variables should be coerced too."""
+    interpreter = pooled_interpreter
+    result = interpreter.execute(
+        "(data['hit']['document_id'], data['hit']['title'])",
+        variables={"data": {"hit": _Hit(document_id=11, title="nested")}},
+    )
+    assert result == [11, "nested"]
+
+
+def test_serialize_pydantic_in_list_variable(pooled_interpreter):
+    """A list variable whose elements are Pydantic instances should be coerced too."""
+    interpreter = pooled_interpreter
+    result = interpreter.execute(
+        "sum(h['document_id'] for h in hits)",
+        variables={"hits": [_Hit(document_id=1, title="a"), _Hit(document_id=2, title="b")]},
+    )
+    assert result == 3
+
+
+def test_pydantic_json_values_are_compatible_with_large_variable_injection(monkeypatch):
+    """The large-variable path should serialize Pydantic's JSON-mode values."""
+    value = _TimestampedHit(
+        document_id=7,
+        title="dated",
+        created_at=datetime(2026, 5, 14, 8, 7, 27),
+    )
+    expected = {
+        "document_id": 7,
+        "title": "dated",
+        "created_at": "2026-05-14T08:07:27",
+    }
+    interpreter = PythonInterpreter()
+
+    assert interpreter._to_json_compatible(value) == expected
+
+    monkeypatch.setattr("dspy.primitives.python_interpreter.LARGE_VAR_THRESHOLD", 0)
+    code = interpreter._inject_variables("hit", {"hit": value})
+    assert "hit = json.loads" in code
+    assert json.loads(interpreter._pending_large_vars["hit"]) == expected
+
+
+def test_json_mode_values_cross_every_host_to_sandbox_path():
+    """Bare datetimes/enums/sets (not wrapped in a model) serialize the way they would into a
+    JSON body on all three host->sandbox paths: variable injection, large-var injection, and
+    tool results — instead of raising "Unsupported value type" or str()-flattening the result."""
+
+    class Color(Enum):
+        RED = "red"
+
+    value = {"t": datetime(2026, 1, 1), "c": Color.RED}
+    interpreter = PythonInterpreter()
+    assert interpreter._serialize_value(value) == "{'t': '2026-01-01T00:00:00', 'c': 'red'}"
+    assert interpreter._to_json_compatible(value) == {"t": "2026-01-01T00:00:00", "c": "red"}
+    jsonable = _make_jsonable({**value, "s": {3, 1}})
+    assert jsonable["t"] == "2026-01-01T00:00:00" and jsonable["c"] == "red"
+    assert sorted(jsonable["s"]) == [1, 3]
+
+
+def test_json_mode_coercion_preserves_existing_fallbacks():
+    class P(NamedTuple):
+        x: int
+        y: int
+
+    assert _make_jsonable(P(1, 2)) == {"x": 1, "y": 2}  # namedtuples keep field names, not [1, 2]
+    obj = object()
+    assert _make_jsonable(obj) is obj  # unknown values still take the json.dumps/str fallback
+    with pytest.raises(CodeInterpreterError, match="Unsupported value type"):
+        PythonInterpreter()._serialize_value(object())  # injection still rejects them loudly
+
+
+def test_unserializable_pydantic_variable_raises_code_interpreter_error():
+    """Invalid host variables should fail before the interpreter process starts."""
+    interpreter = PythonInterpreter()
+    value = _UnserializableModel(value=_UnserializableValue())
+
+    with pytest.raises(CodeInterpreterError, match="Unable to serialize _UnserializableModel as JSON") as exc_info:
+        interpreter.execute("value", variables={"value": value})
+
+    assert type(exc_info.value) is CodeInterpreterError
+    assert interpreter.deno_process is None
 
 
 def test_deno_command_dict_raises_type_error():
@@ -243,171 +465,1011 @@ def test_deno_command_dict_raises_type_error():
         PythonInterpreter(deno_command={"invalid": "dict"})
 
 
+def test_custom_deno_command_is_unchanged():
+    command = ["custom-deno", "run", "custom-runner.js", "argument"]
+
+    interpreter = PythonInterpreter(deno_command=command)
+
+    assert interpreter.deno_command == command
+    assert interpreter.deno_command is not command
+
+
+def test_rejects_mounts_with_the_same_guest_basename(tmp_path):
+    first = tmp_path / "first" / "shared.txt"
+    second = tmp_path / "second" / "shared.txt"
+    first.parent.mkdir()
+    second.parent.mkdir()
+
+    with pytest.raises(CodeInterpreterError, match="unique basenames"):
+        PythonInterpreter(deno_command=["deno"], enable_read_paths=[first], enable_write_paths=[second])
+
+
+def test_allows_same_canonical_file_as_read_and_write_mount(tmp_path):
+    path = tmp_path / "shared.txt"
+
+    PythonInterpreter(deno_command=["deno"], enable_read_paths=[path], enable_write_paths=[path])
+
+
+def test_rejects_alias_basename_colliding_with_another_file(tmp_path):
+    first = tmp_path / "first.txt"
+    second = tmp_path / "second" / "shared.txt"
+    alias = tmp_path / "alias" / "shared.txt"
+    second.parent.mkdir()
+    alias.parent.mkdir()
+    try:
+        alias.symlink_to(first)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+
+    with pytest.raises(CodeInterpreterError, match="unique basenames"):
+        PythonInterpreter(deno_command=["deno"], enable_read_paths=[first, alias, second])
+
+
+def test_custom_deno_command_preserves_environment(monkeypatch):
+    monkeypatch.setenv("DENO_NO_PACKAGE_JSON", "0")
+    captured = {}
+    interpreter = PythonInterpreter(deno_command=["custom-deno", "run"])
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        captured["env"] = kwargs["env"]
+        return object()
+
+    monkeypatch.setattr(python_interpreter.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(interpreter, "_health_check", lambda: None)
+
+    interpreter._spawn_process()
+
+    assert captured["command"] == ["custom-deno", "run"]
+    assert captured["env"]["DENO_NO_PACKAGE_JSON"] == "0"
+
+
+def test_deno_subprocess_env_disables_package_json(monkeypatch):
+    monkeypatch.setenv("DENO_NO_PACKAGE_JSON", "0")
+    monkeypatch.setenv("DSPY_DENO_TEST_VALUE", "preserved")
+
+    env = deno_subprocess_env()
+
+    assert env["DENO_NO_PACKAGE_JSON"] == "1"
+    assert env["DSPY_DENO_TEST_VALUE"] == "preserved"
+    assert os.environ["DENO_NO_PACKAGE_JSON"] == "0"
+
+
+def test_managed_deno_package_is_preferred(monkeypatch):
+    managed_deno = types.SimpleNamespace(find_deno_bin=lambda: "/managed/bin/deno")
+    monkeypatch.setitem(sys.modules, "deno", managed_deno)
+
+    assert _find_deno_executable() == "/managed/bin/deno"
+
+
+def test_missing_managed_deno_binary_falls_back_to_path(monkeypatch):
+    def missing_binary():
+        raise FileNotFoundError
+
+    managed_deno = types.SimpleNamespace(find_deno_bin=missing_binary)
+    monkeypatch.setitem(sys.modules, "deno", managed_deno)
+    monkeypatch.setattr(shutil, "which", lambda executable: "/system/bin/deno" if executable == "deno" else None)
+
+    assert _find_deno_executable() == "/system/bin/deno"
+
+
+def test_default_command_uses_managed_deno_for_info_and_run(monkeypatch, tmp_path):
+    deno_executable = str(tmp_path / "managed-deno")
+    seen_operations = []
+    monkeypatch.setattr(python_interpreter, "_find_deno_executable", lambda: deno_executable)
+    monkeypatch.setattr(
+        python_interpreter,
+        "_validate_deno_version",
+        lambda executable: seen_operations.append(("version", executable)),
+    )
+    monkeypatch.setattr(
+        PythonInterpreter,
+        "_get_deno_dir",
+        staticmethod(lambda executable: seen_operations.append(("info", executable)) or str(tmp_path / "cache")),
+    )
+
+    interpreter = PythonInterpreter()
+
+    assert seen_operations == [("info", deno_executable)]
+    assert interpreter.deno_command[:5] == [
+        deno_executable,
+        "run",
+        "--no-config",
+        "--no-lock",
+        "--node-modules-dir=false",
+    ]
+    runner_index = interpreter.deno_command.index(os.path.realpath(interpreter._get_runner_path()))
+    assert all(interpreter.deno_command.index(flag) < runner_index for flag in interpreter.deno_command[2:5])
+
+    monkeypatch.setattr(python_interpreter.subprocess, "Popen", lambda *args, **kwargs: object())
+    monkeypatch.setattr(interpreter, "_health_check", lambda: None)
+    interpreter._spawn_process()
+
+    assert seen_operations == [("info", deno_executable), ("version", deno_executable)]
+
+
+def test_default_command_revokes_shared_cache_after_startup(monkeypatch, tmp_path):
+    shared_cache = tmp_path / "deno"
+    monkeypatch.setattr(PythonInterpreter, "_get_deno_dir", staticmethod(lambda executable: str(shared_cache)))
+    interpreter = PythonInterpreter()
+
+    assert str(shared_cache) in next(arg for arg in interpreter.deno_command if arg.startswith("--allow-read="))
+    assert f"--dspy-deno-dir={shared_cache}" in interpreter.deno_command
+
+
+def test_rejects_write_paths_overlapping_runtime_files(monkeypatch, tmp_path):
+    cache = tmp_path / "deno"
+    monkeypatch.setattr(PythonInterpreter, "_get_deno_dir", staticmethod(lambda executable: str(cache)))
+
+    with pytest.raises(CodeInterpreterError, match="runtime files"):
+        PythonInterpreter(enable_write_paths=[cache])
+
+
+def test_rejects_write_paths_overlapping_the_compiled_sandbox_archives():
+    from dspy.primitives.sandbox_bundle import bundle_root
+
+    with pytest.raises(CodeInterpreterError, match="runtime files"):
+        PythonInterpreter(enable_write_paths=[bundle_root() / "stdlib.zip"])
+
+
+def test_starts_from_the_compiled_standard_library():
+    with PythonInterpreter() as interpreter:
+        # Modules come from the bytecode beside each source in the standard library archive.
+        assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".pyc")
+        stdlib = next(arg.split("=", 1)[1] for arg in interpreter.deno_command if arg.startswith("--dspy-stdlib="))
+        assert stdlib in next(arg for arg in interpreter.deno_command if arg.startswith("--allow-read="))
+        # Sandboxed code cannot read the archive once Pyodide has started from it.
+        read = interpreter.execute(
+            "from js import Deno\n"
+            f"try:\n    Deno.readFileSync({stdlib!r})\n    result = 'read'\n"
+            "except Exception as e:\n    result = str(e)\n"
+            "result"
+        )
+        assert "Requires read access" in read
+
+
+def test_rebuilds_the_compiled_standard_library_after_the_cache_is_cleared(monkeypatch, tmp_path):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path / "sandbox")
+    for _ in range(2):
+        with PythonInterpreter() as interpreter:
+            assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".pyc")
+        shutil.rmtree(tmp_path / "sandbox")
+
+
+def test_a_failed_build_is_retried_only_after_a_while(monkeypatch, tmp_path):
+    from dspy.primitives import sandbox_bundle
+
+    builds = []
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path / "sandbox")
+    monkeypatch.setattr(sandbox_bundle, "_build", lambda *args: builds.append(args) or 1 / 0)
+    monkeypatch.setattr(sandbox_bundle, "_failed", {})
+    for _ in range(2):
+        with PythonInterpreter() as interpreter:
+            assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".py")
+    assert len(builds) == 1  # the second start fell back right away
+
+    monkeypatch.setattr(sandbox_bundle, "_RETRY_AFTER", 0.0)  # once the wait is over, the build is tried again
+    with PythonInterpreter() as interpreter:
+        interpreter.execute("1")
+    assert len(builds) == 2
+
+
+@pytest.mark.parametrize(
+    "failure,failures,status,expected_error",
+    [
+        ("tls", 2, 200, None),
+        ("timeout", 2, 200, None),
+        ("tls", 3, 200, "unexpected TLS EOF"),
+        ("tls", 0, 404, "404 Client Error"),
+    ],
+)
+def test_sandbox_wheel_download_retry_policy(monkeypatch, tmp_path, failure, failures, status, expected_error):
+    import hashlib
+    import ssl
+    import zipfile
+
+    import requests
+
+    from dspy.primitives import sandbox_bundle
+
+    wheel = io.BytesIO()
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("download_probe.py", "answer = 42\n")
+    payload = wheel.getvalue()
+    name = "download_probe-1.0-py3-none-any.whl"
+    info = {"file_name": name, "sha256": hashlib.sha256(payload).hexdigest()}
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path)
+    monkeypatch.setattr(sandbox_bundle, "_plan", lambda deno_dir, packages: ({"download-probe": info}, ["download-probe"], []))
+    monkeypatch.setattr(sandbox_bundle, "_planned_at", {})
+    monkeypatch.setattr(sandbox_bundle, "_failed", {})
+
+    response = requests.Response()
+    response.status_code = status
+    response._content = payload
+    response._content_consumed = True
+    error = (
+        requests.exceptions.SSLError(ssl.SSLEOFError(8, "unexpected TLS EOF"))
+        if failure == "tls" else requests.ReadTimeout("read timed out")
+    )
+    replies = iter([
+        *[error for _ in range(failures)],
+        response,
+    ])
+
+    def get(*args, **kwargs):
+        reply = next(replies)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    monkeypatch.setattr(requests, "get", get)
+    with PythonInterpreter() as interpreter:
+        if expected_error:
+            with pytest.raises(sandbox_bundle.SandboxBundleError, match=expected_error):
+                interpreter.provide_dspy()
+            assert not (tmp_path / name).exists()
+        else:
+            interpreter.provide_dspy()
+            assert interpreter.execute("import download_probe\ndownload_probe.answer") == 42
+            assert (tmp_path / name).read_bytes() == payload
+
+
+@pytest.mark.parametrize("opt_out", ["argument", "environment"])
+def test_the_sandbox_cache_can_be_turned_off(monkeypatch, tmp_path, opt_out):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path / "sandbox")
+    if opt_out == "environment":
+        monkeypatch.setenv("DSPY_SANDBOX_CACHE", "0")
+    with PythonInterpreter(**({"sandbox_cache": False} if opt_out == "argument" else {})) as interpreter:
+        assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".py")
+        assert not any(arg.startswith("--dspy-stdlib=") for arg in interpreter.deno_command)
+    assert not (tmp_path / "sandbox").exists()  # nothing written, not even the directory
+
+
+def test_without_the_cache_a_dspy_sandbox_gets_a_bundle_of_its_own(monkeypatch, tmp_path):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "bundle_root", lambda: tmp_path / "sandbox")
+    interpreter = PythonInterpreter(sandbox_cache=False)
+    interpreter.provide_dspy()
+    bundle = next(arg.split("=", 1)[1] for arg in interpreter.deno_command if arg.startswith("--dspy-bundle="))
+    assert Path(bundle).is_relative_to(os.path.realpath(sandbox_bundle.scratch_root()))  # removed when the process exits
+    with interpreter:
+        assert interpreter.execute("import dspy\ndspy.Predict.__name__") == "Predict"
+    assert not (tmp_path / "sandbox").exists()
+
+
+def test_the_package_data_bundled_outside_git_is_the_one_dspy_declares():
+    tomllib = pytest.importorskip("tomllib")
+    from dspy.primitives import sandbox_bundle
+
+    pyproject = tomllib.loads((Path(sandbox_bundle.__file__).parents[2] / "pyproject.toml").read_text())
+    declared = {
+        f"{package.removeprefix('dspy').lstrip('.').replace('.', '/')}/{pattern}".lstrip("/")
+        for package, patterns in pyproject["tool"]["setuptools"]["package-data"].items()
+        for pattern in patterns
+    }
+    assert declared == set(sandbox_bundle._DSPY_PACKAGE_DATA)
+
+
+def test_the_cache_follows_the_pyodide_release_runner_js_pins():
+    from dspy.primitives import sandbox_bundle
+
+    runner = (Path(sandbox_bundle.__file__).parent / "runner.js").read_text()
+    assert f'"npm:pyodide@{sandbox_bundle.PYODIDE_VERSION}/pyodide.js"' in runner
+    assert re.findall(r"npm:pyodide@[\d.]+", runner) == [f"npm:pyodide@{sandbox_bundle.PYODIDE_VERSION}"]  # pinned once
+    assert sandbox_bundle.bundle_root().name == f"pyodide-{sandbox_bundle.PYODIDE_VERSION}"
+    assert sandbox_bundle._pinned_pyodide(Path(sandbox_bundle.__file__).parent / "missing.js") is None  # no crash
+
+
+def test_starts_from_the_source_standard_library_when_the_compiled_one_cannot_be_built(monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    def unavailable(*args):
+        raise sandbox_bundle.SandboxBundleError("read-only cache")
+
+    monkeypatch.setattr(sandbox_bundle, "prepare_stdlib", unavailable)
+    with PythonInterpreter() as interpreter:
+        assert interpreter.execute("import email.utils; email.utils.__file__").endswith(".py")
+        assert not any(arg.startswith("--dspy-stdlib=") for arg in interpreter.deno_command)
+
+
+@pytest.mark.parametrize("version", [(2, 0, 0), (2, 4, 5), (2, 9, 5)])
+def test_accepts_supported_deno_2_versions(monkeypatch, version):
+    monkeypatch.setattr(python_interpreter, "_get_deno_version", lambda executable: version)
+
+    _validate_deno_version("/system/bin/deno")
+
+
+@pytest.mark.parametrize("version", [(1, 46, 3), (3, 0, 0)])
+def test_rejects_unsupported_system_deno(monkeypatch, version):
+    monkeypatch.setattr(python_interpreter, "_get_deno_version", lambda executable: version)
+    version_text = "\\.".join(map(str, version))
+
+    with pytest.raises(CodeInterpreterError, match=rf"Unsupported Deno version {version_text}"):
+        _validate_deno_version("/system/bin/deno")
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout", "stderr"),
+    [
+        (0, "not a Deno version", ""),
+        (0, "", "deno 2.9.5"),
+        (1, "deno 2.9.5", "version probe failed"),
+    ],
+)
+def test_rejects_invalid_deno_version_probe(monkeypatch, returncode, stdout, stderr):
+    result = types.SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+    monkeypatch.setattr(python_interpreter.subprocess, "run", lambda *args, **kwargs: result)
+
+    with pytest.raises(CodeInterpreterError, match="Unable to determine the Deno version"):
+        _validate_deno_version("/fake/bin/deno")
+
+
+def test_deno_version_probe_is_bounded_and_not_cached(monkeypatch):
+    results = iter(
+        [
+            types.SimpleNamespace(returncode=0, stdout="deno 2.9.5", stderr=""),
+            types.SimpleNamespace(returncode=0, stdout="deno 2.9.4", stderr=""),
+        ]
+    )
+    seen_timeouts = []
+
+    def fake_run(*args, **kwargs):
+        seen_timeouts.append(kwargs["timeout"])
+        return next(results)
+
+    monkeypatch.setattr(python_interpreter.subprocess, "run", fake_run)
+
+    assert python_interpreter._get_deno_version("/fake/bin/deno") == (2, 9, 5)
+    assert python_interpreter._get_deno_version("/fake/bin/deno") == (2, 9, 4)
+    assert seen_timeouts == [python_interpreter.DENO_PROBE_TIMEOUT_SECONDS] * 2
+
+
+def test_deno_version_probe_timeout_is_reported_as_indeterminate(monkeypatch):
+    def timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr(python_interpreter.subprocess, "run", timeout)
+
+    with pytest.raises(CodeInterpreterError, match="Unable to determine the Deno version"):
+        _validate_deno_version("/hanging/bin/deno")
+
+
+def test_deno_info_probe_is_bounded(monkeypatch):
+    captured = {}
+
+    def fake_run(*args, **kwargs):
+        captured.update(kwargs)
+        return types.SimpleNamespace(returncode=0, stdout=json.dumps({"denoDir": "/cache"}))
+
+    monkeypatch.setattr(python_interpreter.subprocess, "run", fake_run)
+    PythonInterpreter._query_deno_dir.cache_clear()
+
+    assert PythonInterpreter._query_deno_dir("/bounded/bin/deno") == "/cache"
+    assert captured["timeout"] == python_interpreter.DENO_PROBE_TIMEOUT_SECONDS
+
+
+def test_explicit_deno_dir_skips_info_query(monkeypatch, tmp_path):
+    deno_dir = str(tmp_path / "deno-cache")
+    monkeypatch.setenv("DENO_DIR", deno_dir)
+    monkeypatch.setattr(
+        PythonInterpreter,
+        "_query_deno_dir",
+        staticmethod(lambda executable: pytest.fail(f"unexpected Deno info query for {executable}")),
+    )
+
+    assert PythonInterpreter._get_deno_dir("/managed/bin/deno") == deno_dir
+
+
+def test_ignores_parent_package_json_and_node_modules(monkeypatch, tmp_path):
+    """A parent Node project must not redirect runner.js's Pyodide import."""
+    project_dir = tmp_path / "node-project"
+    runner_dir = project_dir / "runtime"
+    fake_pyodide_dir = project_dir / "node_modules" / "pyodide"
+    runner_dir.mkdir(parents=True)
+    fake_pyodide_dir.mkdir(parents=True)
+
+    runner_path = runner_dir / "runner.js"
+    shutil.copyfile(Path(python_interpreter.__file__).with_name("runner.js"), runner_path)
+    (project_dir / "package.json").write_text(json.dumps({"dependencies": {"pyodide": "0.29.4"}}))
+    (fake_pyodide_dir / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "pyodide",
+                "version": "0.29.4",
+                "type": "module",
+                "exports": {"./pyodide.js": "./pyodide.js"},
+            }
+        )
+    )
+    (fake_pyodide_dir / "blocked.txt").write_text("ambient package was selected")
+    (fake_pyodide_dir / "pyodide.js").write_text(
+        'Deno.readTextFileSync(new URL("./blocked.txt", import.meta.url));\n'
+        'export default { loadPyodide() { throw new Error("DSPy loaded Pyodide from parent node_modules"); } };\n'
+    )
+
+    class ParentProjectInterpreter(PythonInterpreter):
+        def _get_runner_path(self):
+            return str(runner_path)
+
+    monkeypatch.chdir(runner_dir)
+    monkeypatch.delenv("DENO_NO_PACKAGE_JSON", raising=False)
+
+    with ParentProjectInterpreter() as interpreter:
+        assert interpreter.execute("6 * 7") == 42
+
+    assert not (project_dir / "deno.lock").exists()
+
+
 # =============================================================================
 # Typed Tool Signature Tests
 # =============================================================================
 
 
-def test_tool_with_typed_signature():
+def test_tool_with_typed_signature(configure_pooled_interpreter):
     """Test that tools get proper typed signatures from inspect."""
 
     def my_tool(query: str, limit: int = 10) -> str:
         return f"searched '{query}' with limit {limit}"
 
-    with PythonInterpreter(tools={"my_tool": my_tool}) as sandbox:
-        # Tool should be callable with typed signature
-        result = sandbox.execute('my_tool(query="test", limit=5)')
-        assert result == "searched 'test' with limit 5"
+    sandbox = configure_pooled_interpreter(tools={"my_tool": my_tool})
+    # Tool should be callable with typed signature
+    result = sandbox.execute('my_tool(query="test", limit=5)')
+    assert result == "searched 'test' with limit 5"
 
 
-def test_tool_positional_args():
+def test_tool_none_type_and_nested_json_default():
+    def tool(value: type(None) = None, items: list = [None]):  # noqa: B006
+        return [value, items]
+
+    with PythonInterpreter(tools={"tool": tool}) as interpreter:
+        assert interpreter.execute("tool()") == [None, [None]]
+
+
+@pytest.mark.parametrize(
+    ("field", "code", "expected"),
+    [
+        ({"name": "nothing", "type": "NoneType"}, "SUBMIT(nothing=None)", {"nothing": None}),
+        ({"name": "FinalOutput", "type": "str"}, "SUBMIT(FinalOutput='ok')", {"FinalOutput": "ok"}),
+    ],
+)
+def test_submit_valid_runtime_edge_cases(field, code, expected):
+    with PythonInterpreter(output_fields=[field]) as interpreter:
+        assert interpreter.execute(code) == FinalOutput(expected)
+
+
+def test_tool_positional_args(configure_pooled_interpreter):
     """Test that tools work with positional arguments."""
 
     def search(query: str, limit: int = 10) -> str:
         return f"query={query}, limit={limit}"
 
-    with PythonInterpreter(tools={"search": search}) as sandbox:
-        result = sandbox.execute('search("hello")')
-        assert result == "query=hello, limit=10"
+    sandbox = configure_pooled_interpreter(tools={"search": search})
+    result = sandbox.execute('search("hello")')
+    assert result == "query=hello, limit=10"
 
 
-def test_tool_keyword_args():
+def test_tool_keyword_args(configure_pooled_interpreter):
     """Test that tools work with keyword arguments."""
 
     def search(query: str, limit: int = 10) -> str:
         return f"query={query}, limit={limit}"
 
-    with PythonInterpreter(tools={"search": search}) as sandbox:
-        result = sandbox.execute('search(query="hello", limit=5)')
-        assert result == "query=hello, limit=5"
+    sandbox = configure_pooled_interpreter(tools={"search": search})
+    result = sandbox.execute('search(query="hello", limit=5)')
+    assert result == "query=hello, limit=5"
 
 
-def test_tool_default_args():
+def test_tool_default_args(configure_pooled_interpreter):
     """Test that tool default arguments work correctly."""
 
     def greet(name: str, greeting: str = "Hello") -> str:
         return f"{greeting}, {name}!"
 
-    with PythonInterpreter(tools={"greet": greet}) as sandbox:
-        # Without default
-        result = sandbox.execute('greet("World")')
-        assert result == "Hello, World!"
+    sandbox = configure_pooled_interpreter(tools={"greet": greet})
+    # Without default
+    result = sandbox.execute('greet("World")')
+    assert result == "Hello, World!"
 
-        # Overriding default
-        result = sandbox.execute('greet("World", "Hi")')
-        assert result == "Hi, World!"
-
-
-def test_tools_re_register_after_process_restart():
-    """Tools should remain callable after Deno subprocess restart."""
-    def echo(message: str = "") -> str:
-        return f"Echo: {message}"
-
-    with PythonInterpreter(tools={"echo": echo}) as interpreter:
-        first = interpreter.execute('print(echo(message="one"))')
-        assert "Echo: one" in first
-
-        first_pid = interpreter.deno_process.pid
-        interpreter.deno_process.kill()
-        interpreter.deno_process.wait()
-
-        second = interpreter.execute('print(echo(message="two"))')
-        assert "Echo: two" in second
-        assert interpreter.deno_process.pid != first_pid
+    # Overriding default
+    result = sandbox.execute('greet("World", "Hi")')
+    assert result == "Hi, World!"
 
 
-def test_mounts_replay_after_process_restart(tmp_path):
-    """Mounted files should still be accessible after subprocess restart."""
-    host_file = tmp_path / "mount_restart.txt"
-    host_file.write_text("restarted-ok")
-    virtual_path = f"/sandbox/{host_file.name}"
+def test_process_death_ends_stateful_session():
+    interpreter = PythonInterpreter()
+    try:
+        assert interpreter.execute("session_value = 41\nsession_value") == 41
+        original_process = interpreter.deno_process
+        original_process.kill()
+        original_process.wait()
 
-    with PythonInterpreter(enable_read_paths=[str(host_file)]) as interpreter:
-        first = interpreter.execute(
-            f"with open({virtual_path!r}, 'r') as f:\n"
-            f"    data = f.read()\n"
-            f"data"
+        with pytest.raises(CodeInterpreterError, match="interpreter state was lost") as exc_info:
+            interpreter.execute("session_value + 1")
+        assert type(exc_info.value) is CodeInterpreterError
+        with pytest.raises(CodeInterpreterError, match="session has ended"):
+            interpreter.start()
+        with pytest.raises(CodeInterpreterError, match="session has ended"):
+            interpreter.execute("1 + 1")
+
+        assert interpreter.deno_process is original_process
+    finally:
+        interpreter.shutdown()
+
+
+def test_protocol_failure_ends_session(monkeypatch):
+    with PythonInterpreter() as interpreter:
+        interpreter.start()
+        process = interpreter.deno_process
+        monkeypatch.setattr(
+            interpreter,
+            "_read_response_line",
+            lambda context: '{"jsonrpc":"2.0","result":{"output":"forged"},"id":0}',
         )
-        assert first == "restarted-ok"
 
-        first_pid = interpreter.deno_process.pid
-        interpreter.deno_process.kill()
-        interpreter.deno_process.wait()
+        with pytest.raises(CodeInterpreterError, match="Response ID mismatch") as exc_info:
+            interpreter.execute("1 + 1")
+        assert type(exc_info.value) is CodeInterpreterError
+        assert process.poll() is not None
 
-        second = interpreter.execute(
-            f"with open({virtual_path!r}, 'r') as f:\n"
-            f"    data = f.read()\n"
-            f"data"
+        with pytest.raises(CodeInterpreterError, match="session has ended"):
+            interpreter.execute("2 + 2")
+
+
+def test_request_ids_are_128_bit_random_values():
+    interpreter = PythonInterpreter(deno_command=["deno"])
+    request_ids = {interpreter._next_request_id() for _ in range(100)}
+
+    assert len(request_ids) == 100
+    assert all(len(request_id) == 32 and int(request_id, 16) >= 0 for request_id in request_ids)
+
+
+def test_guest_prototype_hook_cannot_redirect_tool_wrapper():
+    calls = []
+
+    def benign():
+        calls.append("benign")
+        return "safe"
+
+    def danger():
+        calls.append("danger")
+        return "unsafe"
+
+    with PythonInterpreter(tools={"benign": benign, "danger": danger}) as interpreter:
+        result = interpreter.execute(
+            "import js\n"
+            "js.eval('Object.prototype.toJSON = function() { "
+            'if (Object.hasOwn(this, "name")) return {name: "danger", kwargs: {}}; '
+            "return this; }')\n"
+            "benign()"
         )
-        assert second == "restarted-ok"
-        assert interpreter.deno_process.pid != first_pid
+
+    assert result == "safe"
+    assert calls == ["benign"]
 
 
-def test_tool_all_positional_args():
+def test_tool_cannot_reenter_same_interpreter():
+    holder = {}
+
+    def nested_execute():
+        return holder["interpreter"].execute("'nested'")
+
+    with PythonInterpreter(tools={"nested_execute": nested_execute}) as interpreter:
+        holder["interpreter"] = interpreter
+        with pytest.raises(CodeExecutionError, match="cannot execute recursively"):
+            interpreter.execute("nested_execute()")
+        assert interpreter.execute("40 + 2") == 42
+
+
+def test_failed_health_check_ends_session(monkeypatch):
+    interpreter = PythonInterpreter()
+    monkeypatch.setattr(
+        interpreter,
+        "_send_request",
+        lambda *args: {"jsonrpc": "2.0", "result": {"output": "unexpected"}, "id": 1},
+    )
+
+    try:
+        with pytest.raises(CodeInterpreterError, match="Unexpected ping response"):
+            interpreter.start()
+        assert interpreter.deno_process.poll() is not None
+
+        with pytest.raises(CodeInterpreterError, match="session has ended"):
+            interpreter.start()
+    finally:
+        interpreter.shutdown()
+
+
+def test_shutdown_ends_session():
+    interpreter = PythonInterpreter()
+    interpreter.start()
+    interpreter.shutdown()
+
+    with pytest.raises(CodeInterpreterError, match="session has ended") as exc_info:
+        interpreter.start()
+    assert type(exc_info.value) is CodeInterpreterError
+    with pytest.raises(CodeInterpreterError, match="session has ended"):
+        interpreter.execute("1 + 1")
+
+
+def test_tool_all_positional_args(configure_pooled_interpreter):
     """Test that tools work when all arguments are passed positionally."""
 
     def add(a: int, b: int, c: int) -> str:
         return f"{a + b + c}"
 
-    with PythonInterpreter(tools={"add": add}) as sandbox:
-        result = sandbox.execute("add(1, 2, 3)")
-        assert result == "6"
+    sandbox = configure_pooled_interpreter(tools={"add": add})
+    result = sandbox.execute("add(1, 2, 3)")
+    assert result == "6"
 
-        # Mixed: some positional, some keyword
-        result = sandbox.execute("add(10, 20, c=30)")
-        assert result == "60"
+    # Mixed: some positional, some keyword
+    result = sandbox.execute("add(10, 20, c=30)")
+    assert result == "60"
 
 
-def test_tool_error_surfaces_as_runtime_error():
+def test_tool_error_surfaces_as_runtime_error(configure_pooled_interpreter):
     """Test that exceptions raised by a tool surface as RuntimeError in the sandbox."""
 
     def failing_tool(x: int) -> str:
         raise ValueError(f"bad value: {x}")
 
-    with PythonInterpreter(tools={"failing_tool": failing_tool}) as sandbox:
-        result = sandbox.execute(
-            "try:\n"
-            "    failing_tool(42)\n"
-            "    output = 'no error'\n"
-            "except RuntimeError as e:\n"
-            "    output = str(e)\n"
-            "output"
-        )
-        assert "ValueError" in result
-        assert "bad value: 42" in result
+    sandbox = configure_pooled_interpreter(tools={"failing_tool": failing_tool})
+    result = sandbox.execute(
+        "try:\n"
+        "    failing_tool(42)\n"
+        "    output = 'no error'\n"
+        "except RuntimeError as e:\n"
+        "    output = str(e)\n"
+        "output"
+    )
+    assert "ValueError" in result
+    assert "bad value: 42" in result
 
 
-def test_tool_async_def_function():
+def test_tool_async_def_function(configure_pooled_interpreter):
     """async def tools should be awaited so the sandbox sees the resolved value."""
 
     async def slow_search(query: str) -> str:
         await asyncio.sleep(0)
         return f"answer:{query}"
 
-    with PythonInterpreter(tools={"slow_search": slow_search}) as sandbox:
-        result = sandbox.execute("slow_search(query='hello')")
-        assert result == "answer:hello"
+    sandbox = configure_pooled_interpreter(tools={"slow_search": slow_search})
+    result = sandbox.execute("slow_search(query='hello')")
+    assert result == "answer:hello"
 
 
-def test_tool_async_def_raises_propagates():
+def test_tool_async_def_raises_propagates(configure_pooled_interpreter):
     """Exceptions raised inside an async tool should surface as RuntimeError in the sandbox."""
 
     async def failing_async(x: int) -> str:
         await asyncio.sleep(0)
         raise ValueError(f"boom:{x}")
 
-    with PythonInterpreter(tools={"failing_async": failing_async}) as sandbox:
-        result = sandbox.execute(
-            "try:\n"
-            "    failing_async(7)\n"
-            "    output = 'no error'\n"
-            "except RuntimeError as e:\n"
-            "    output = str(e)\n"
-            "output"
-        )
-        assert "ValueError" in result
-        assert "boom:7" in result
+    sandbox = configure_pooled_interpreter(tools={"failing_async": failing_async})
+    result = sandbox.execute(
+        "try:\n"
+        "    failing_async(7)\n"
+        "    output = 'no error'\n"
+        "except RuntimeError as e:\n"
+        "    output = str(e)\n"
+        "output"
+    )
+    assert "ValueError" in result
+    assert "boom:7" in result
 
+
+# =============================================================================
+# Tool Return Type Tests
+# =============================================================================
+
+
+def test_tool_returning_int(configure_pooled_interpreter):
+    """Test that tools returning int preserve the type in the sandbox."""
+
+    def count_items(label: str) -> int:
+        return 4
+
+    sandbox = configure_pooled_interpreter(tools={"count_items": count_items})
+    result = sandbox.execute(
+        'n = count_items(label="pages")\n'
+        'print(type(n).__name__)\n'
+        'print(n + 1)'
+    )
+    assert "int" in result
+    assert "5" in result
+
+
+def test_tool_returning_float(configure_pooled_interpreter):
+    """Test that tools returning float preserve the type in the sandbox."""
+
+    def get_score() -> float:
+        return 0.95
+
+    sandbox = configure_pooled_interpreter(tools={"get_score": get_score})
+    result = sandbox.execute(
+        "x = get_score()\n"
+        "print(type(x).__name__)\n"
+        "print(x * 2)"
+    )
+    assert "float" in result
+    assert "1.9" in result
+
+
+def test_tool_returning_bool(configure_pooled_interpreter):
+    """Test that tools returning bool preserve the type in the sandbox."""
+
+    def is_valid() -> bool:
+        return True
+
+    sandbox = configure_pooled_interpreter(tools={"is_valid": is_valid})
+    result = sandbox.execute(
+        'v = is_valid()\n'
+        'print(type(v).__name__)\n'
+        'print(v and "yes")'
+    )
+    assert "bool" in result
+    assert "yes" in result
+
+
+def test_tool_returning_none(configure_pooled_interpreter):
+    """Test that tools returning None yield an empty string in the sandbox.
+
+    Pyodide does not map JS null to Python None (it becomes JsNull), so
+    None results are sent as empty strings to match existing behavior.
+    """
+
+    def do_nothing() -> None:
+        return None
+
+    sandbox = configure_pooled_interpreter(tools={"do_nothing": do_nothing})
+    result = sandbox.execute(
+        "v = do_nothing()\n"
+        "print(type(v).__name__)\n"
+        "print(repr(v))"
+    )
+    assert "str" in result
+    assert "''" in result
+
+
+def test_tool_returning_list(configure_pooled_interpreter):
+    """Test that tools returning list preserve the type in the sandbox."""
+
+    def get_pages() -> list:
+        return [1, 2, 3]
+
+    sandbox = configure_pooled_interpreter(tools={"get_pages": get_pages})
+    result = sandbox.execute(
+        "pages = get_pages()\n"
+        "print(type(pages).__name__)\n"
+        "print(pages[0] + 10)"
+    )
+    assert "list" in result
+    assert "11" in result
+
+
+def test_tool_returning_dict(configure_pooled_interpreter):
+    """Test that tools returning dict preserve the type in the sandbox."""
+
+    def get_info() -> dict:
+        return {"count": 4, "label": "pages"}
+
+    sandbox = configure_pooled_interpreter(tools={"get_info": get_info})
+    result = sandbox.execute(
+        'info = get_info()\n'
+        'print(type(info).__name__)\n'
+        'print(info["count"] + 1)'
+    )
+    assert "dict" in result
+    assert "5" in result
+
+
+def test_tool_json_null_is_python_none(configure_pooled_interpreter):
+    def get_values():
+        return {"values": [None, "jsnull", {"null": None}]}
+
+    sandbox = configure_pooled_interpreter(tools={"get_values": get_values})
+    # Inspect inside Python: converting JsNull back to host JSON can otherwise hide the wrong guest type.
+    result = sandbox.execute("v = get_values()['values']; [v[0] is None, v[1], v[2]['null'] is None]")
+    assert result == [True, "jsnull", True]
+
+
+def test_tool_returning_non_json_serializable(configure_pooled_interpreter):
+    """Test that tools returning non-JSON-serializable objects fall back to string."""
+
+    class Custom:
+        def __str__(self):
+            return "custom-object"
+
+    def get_custom() -> object:
+        return Custom()
+
+    sandbox = configure_pooled_interpreter(tools={"get_custom": get_custom})
+    result = sandbox.execute(
+        "v = get_custom()\n"
+        "print(v)"
+    )
+    assert "custom-object" in result
+
+
+def test_tool_returning_nan_falls_back_to_string(configure_pooled_interpreter):
+    """Test that tools returning float('nan') or float('inf') fall back to string.
+
+    These values are not valid JSON, so they should go through the str()
+    fallback path rather than breaking JSON.parse in the sandbox.
+    """
+
+    def get_nan() -> float:
+        return float("nan")
+
+    def get_inf() -> float:
+        return float("inf")
+
+    sandbox = configure_pooled_interpreter(tools={"get_nan": get_nan, "get_inf": get_inf})
+    result = sandbox.execute(
+        "n = get_nan()\n"
+        "print(type(n).__name__)\n"
+        "print(n)"
+    )
+    assert "str" in result
+    assert "nan" in result
+
+    result = sandbox.execute(
+        "i = get_inf()\n"
+        "print(type(i).__name__)\n"
+        "print(i)"
+    )
+    assert "str" in result
+    assert "inf" in result
+
+
+def test_tool_returns_pydantic_model(configure_pooled_interpreter):
+    """Pydantic models returned from a tool should arrive in the sandbox as dicts."""
+
+    def search() -> _TimestampedHit:
+        return _TimestampedHit(
+            document_id=42,
+            title="example",
+            created_at=datetime(2026, 5, 14, 8, 7, 27),
+        )
+
+    sandbox = configure_pooled_interpreter(tools={"search": search})
+    result = sandbox.execute("r = search()\n(r['document_id'], r['title'], r['created_at'])")
+    assert result == [42, "example", "2026-05-14T08:07:27"]
+
+
+def test_tool_returns_list_of_pydantic_models(configure_pooled_interpreter):
+    """Lists of Pydantic models from a tool should round-trip as lists of dicts."""
+
+    def search_many() -> list[_Hit]:
+        return [_Hit(document_id=1, title="a"), _Hit(document_id=2, title="b")]
+
+    sandbox = configure_pooled_interpreter(tools={"search_many": search_many})
+    result = sandbox.execute(
+        "hits = search_many()\nsum(h['document_id'] for h in hits)"
+    )
+    assert result == 3
+
+
+def test_tool_returning_unserializable_pydantic_model_raises_execution_error(configure_pooled_interpreter):
+    """A BaseModel that cannot honor JSON transport should remain a visible tool error."""
+
+    def get_value() -> _UnserializableModel:
+        return _UnserializableModel(value=_UnserializableValue())
+
+    sandbox = configure_pooled_interpreter(tools={"get_value": get_value})
+    with pytest.raises(
+        CodeExecutionError,
+        match="CodeInterpreterError.*Unable to serialize _UnserializableModel as JSON",
+    ):
+        sandbox.execute("get_value()")
+
+
+# -- dataclass tool returns --------------------------------------------------
+
+
+@dataclasses.dataclass
+class _BBox:
+    x0: float
+    top: float
+    x1: float
+    bottom: float
+
+
+@dataclasses.dataclass
+class _PageTable:
+    index: int
+    bbox: _BBox
+    strategy: str
+
+
+def test_tool_returns_dataclass(configure_pooled_interpreter):
+    """Dataclass instances returned from a tool should arrive as dicts."""
+
+    def get_bbox() -> _BBox:
+        return _BBox(x0=18.2, top=108.0, x1=554.4, bottom=748.8)
+
+    sandbox = configure_pooled_interpreter(tools={"get_bbox": get_bbox})
+    result = sandbox.execute("b = get_bbox()\n(b['x0'], b['bottom'])")
+    assert result == [18.2, 748.8]
+
+
+def test_tool_returns_nested_dataclass(configure_pooled_interpreter):
+    """Nested dataclass instances should be recursively converted to dicts."""
+
+    def get_table() -> _PageTable:
+        return _PageTable(index=0, bbox=_BBox(x0=1.0, top=2.0, x1=3.0, bottom=4.0), strategy="lines")
+
+    sandbox = configure_pooled_interpreter(tools={"get_table": get_table})
+    result = sandbox.execute("t = get_table()\n(t['bbox']['x0'], t['strategy'])")
+    assert result == [1.0, "lines"]
+
+
+def test_tool_returns_list_of_dataclasses(configure_pooled_interpreter):
+    """Lists of dataclass instances should round-trip as lists of dicts."""
+
+    def get_tables() -> list[_PageTable]:
+        return [
+            _PageTable(index=0, bbox=_BBox(x0=1.0, top=2.0, x1=3.0, bottom=4.0), strategy="lines"),
+            _PageTable(index=1, bbox=_BBox(x0=5.0, top=6.0, x1=7.0, bottom=8.0), strategy="text"),
+        ]
+
+    sandbox = configure_pooled_interpreter(tools={"get_tables": get_tables})
+    result = sandbox.execute("ts = get_tables()\n[t['index'] for t in ts]")
+    assert result == [0, 1]
+
+
+# -- namedtuple tool returns -------------------------------------------------
+
+
+class _TypedPoint(NamedTuple):
+    x: float
+    y: float
+    label: str
+
+
+_Point = namedtuple("_Point", ["x", "y"])
+
+
+def test_tool_returns_typing_namedtuple(configure_pooled_interpreter):
+    """typing.NamedTuple instances should arrive as dicts."""
+
+    def get_point() -> _TypedPoint:
+        return _TypedPoint(x=10.5, y=20.3, label="origin")
+
+    sandbox = configure_pooled_interpreter(tools={"get_point": get_point})
+    result = sandbox.execute("p = get_point()\n(p['x'], p['label'])")
+    assert result == [10.5, "origin"]
+
+
+def test_tool_returns_collections_namedtuple(configure_pooled_interpreter):
+    """collections.namedtuple instances should arrive as dicts."""
+
+    def get_point() -> _Point:
+        return _Point(x=3.0, y=4.0)
+
+    sandbox = configure_pooled_interpreter(tools={"get_point": get_point})
+    result = sandbox.execute("p = get_point()\np['x'] + p['y']")
+    assert result == 7.0
+
+
+def test_tool_returns_dataclass_with_unserializable_field_falls_back(configure_pooled_interpreter):
+    """Dataclass with non-serializable fields should fall back to str() gracefully."""
+
+    @dataclasses.dataclass
+    class _Holder:
+        name: str
+        lock: threading.Lock
+
+    def get_holder() -> _Holder:
+        return _Holder(name="test", lock=threading.Lock())
+
+    sandbox = configure_pooled_interpreter(tools={"get_holder": get_holder})
+    result = sandbox.execute("h = get_holder()\ntype(h).__name__")
+    assert result == "str"
 
 
 # =============================================================================
@@ -415,7 +1477,7 @@ def test_tool_async_def_raises_propagates():
 # =============================================================================
 
 
-def test_submit_with_typed_signature():
+def test_submit_with_typed_signature(configure_pooled_interpreter):
     """Test SUBMIT with typed output signature."""
 
     output_fields = [
@@ -423,14 +1485,14 @@ def test_submit_with_typed_signature():
         {"name": "confidence", "type": "float"},
     ]
 
-    with PythonInterpreter(output_fields=output_fields) as sandbox:
-        result = sandbox.execute('SUBMIT(answer="the answer", confidence=0.95)')
+    sandbox = configure_pooled_interpreter(output_fields=output_fields)
+    result = sandbox.execute('SUBMIT(answer="the answer", confidence=0.95)')
 
-        assert isinstance(result, FinalOutput)
-        assert result.output == {"answer": "the answer", "confidence": 0.95}
+    assert isinstance(result, FinalOutput)
+    assert result.output == {"answer": "the answer", "confidence": 0.95}
 
 
-def test_submit_positional_args():
+def test_submit_positional_args(configure_pooled_interpreter):
     """Test SUBMIT with positional arguments."""
 
     output_fields = [
@@ -438,14 +1500,14 @@ def test_submit_positional_args():
         {"name": "confidence", "type": "float"},
     ]
 
-    with PythonInterpreter(output_fields=output_fields) as sandbox:
-        result = sandbox.execute('SUBMIT("the answer", 0.95)')
+    sandbox = configure_pooled_interpreter(output_fields=output_fields)
+    result = sandbox.execute('SUBMIT("the answer", 0.95)')
 
-        assert isinstance(result, FinalOutput)
-        assert result.output == {"answer": "the answer", "confidence": 0.95}
+    assert isinstance(result, FinalOutput)
+    assert result.output == {"answer": "the answer", "confidence": 0.95}
 
 
-def test_submit_multi_output():
+def test_submit_multi_output(configure_pooled_interpreter):
     """Test SUBMIT with multiple output fields using positional args."""
 
     output_fields = [
@@ -453,20 +1515,20 @@ def test_submit_multi_output():
         {"name": "score", "type": "int"},
     ]
 
-    with PythonInterpreter(output_fields=output_fields) as sandbox:
-        # Positional args: values mapped to output fields in order
-        code = """
+    sandbox = configure_pooled_interpreter(output_fields=output_fields)
+    # Positional args: values mapped to output fields in order
+    code = """
 a = "my answer"
 s = 42
 SUBMIT(a, s)
 """
-        result = sandbox.execute(code)
+    result = sandbox.execute(code)
 
-        assert isinstance(result, FinalOutput)
-        assert result.output == {"answer": "my answer", "score": 42}
+    assert isinstance(result, FinalOutput)
+    assert result.output == {"answer": "my answer", "score": 42}
 
 
-def test_submit_wrong_arg_count():
+def test_submit_wrong_arg_count(configure_pooled_interpreter):
     """Test SUBMIT with wrong number of args gives clear error."""
 
     output_fields = [
@@ -474,10 +1536,10 @@ def test_submit_wrong_arg_count():
         {"name": "score", "type": "int"},
     ]
 
-    with PythonInterpreter(output_fields=output_fields) as sandbox:
-        with pytest.raises(CodeInterpreterError) as exc_info:
-            sandbox.execute("x = 1; SUBMIT(x)")  # Only 1 arg, expects 2
-        assert "missing 1 required positional argument" in str(exc_info.value)
+    sandbox = configure_pooled_interpreter(output_fields=output_fields)
+    with pytest.raises(CodeInterpreterError) as exc_info:
+        sandbox.execute("x = 1; SUBMIT(x)")  # Only 1 arg, expects 2
+    assert "missing 1 required positional argument" in str(exc_info.value)
 
 
 def test_extract_parameters():
@@ -515,89 +1577,79 @@ def test_extract_parameters_complex_types():
 # =============================================================================
 
 
-def test_large_variable_injection():
+def test_large_variable_injection(pooled_interpreter):
     """Test that large strings are injected via filesystem to avoid Pyodide's FFI size limit."""
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
     # Create a string just over the threshold
     large_data = "x" * (LARGE_VAR_THRESHOLD + 1024)
 
-    with PythonInterpreter() as interpreter:
-        result = interpreter.execute("len(data)", variables={"data": large_data})
-        assert result == len(large_data), "Large variable should be correctly injected and accessible"
+    interpreter = pooled_interpreter
+    result = interpreter.execute("len(data)", variables={"data": large_data})
+    assert result == len(large_data), "Large variable should be correctly injected and accessible"
 
 
-def test_large_variable_content_integrity():
+def test_large_variable_content_integrity(pooled_interpreter):
     """Test that large variable content is preserved exactly through filesystem injection."""
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
     # Create a string with recognizable pattern just over threshold
     pattern = "ABCDEFGHIJ" * 100
     large_data = pattern * ((LARGE_VAR_THRESHOLD // len(pattern)) + 1)
 
-    with PythonInterpreter() as interpreter:
-        # Check first and last parts to verify content integrity
-        code = """
+    interpreter = pooled_interpreter
+    # Check first and last parts to verify content integrity
+    code = """
 first_100 = data[:100]
 last_100 = data[-100:]
 (first_100, last_100)
 """
-        result = interpreter.execute(code, variables={"data": large_data})
-        assert result[0] == large_data[:100], "First 100 chars should match"
-        assert result[1] == large_data[-100:], "Last 100 chars should match"
+    result = interpreter.execute(code, variables={"data": large_data})
+    assert result[0] == large_data[:100], "First 100 chars should match"
+    assert result[1] == large_data[-100:], "Last 100 chars should match"
 
 
-def test_mixed_small_and_large_variables():
+def test_mixed_small_and_large_variables(pooled_interpreter):
     """Test that small and large variables can be used together."""
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
     small_var = "hello"
     large_var = "x" * (LARGE_VAR_THRESHOLD + 1024)
 
-    with PythonInterpreter() as interpreter:
-        code = "f'{small} has {len(small)} chars, large has {len(large)} chars'"
-        result = interpreter.execute(code, variables={"small": small_var, "large": large_var})
-        expected = f"{small_var} has {len(small_var)} chars, large has {len(large_var)} chars"
-        assert result == expected, "Both small and large variables should work together"
+    interpreter = pooled_interpreter
+    code = "f'{small} has {len(small)} chars, large has {len(large)} chars'"
+    result = interpreter.execute(code, variables={"small": small_var, "large": large_var})
+    expected = f"{small_var} has {len(small_var)} chars, large has {len(large_var)} chars"
+    assert result == expected, "Both small and large variables should work together"
 
 
-def test_multiple_large_variables():
+def test_multiple_large_variables(pooled_interpreter):
     """Test that multiple large variables can be injected."""
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
     large_a = "a" * (LARGE_VAR_THRESHOLD + 100)
     large_b = "b" * (LARGE_VAR_THRESHOLD + 200)
 
-    with PythonInterpreter() as interpreter:
-        code = "(len(var_a), len(var_b), var_a[0], var_b[0])"
-        result = interpreter.execute(code, variables={"var_a": large_a, "var_b": large_b})
-        assert result == [len(large_a), len(large_b), "a", "b"], "Multiple large variables should work"
+    interpreter = pooled_interpreter
+    code = "(len(var_a), len(var_b), var_a[0], var_b[0])"
+    result = interpreter.execute(code, variables={"var_a": large_a, "var_b": large_b})
+    assert result == [len(large_a), len(large_b), "a", "b"], "Multiple large variables should work"
 
 
-def test_large_list_variable():
+def test_large_list_variable(pooled_interpreter):
     """Test that large list variables are injected via filesystem and JSON parsed."""
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
     # Each element "x" serializes to ~3 chars, so divide threshold by 3
     num_elements = LARGE_VAR_THRESHOLD // 3
     large_list = ["x"] * num_elements
 
-    with PythonInterpreter() as interpreter:
-        code = "(len(data), data[0], data[-1], type(data).__name__)"
-        result = interpreter.execute(code, variables={"data": large_list})
-        assert result == [num_elements, "x", "x", "list"]
+    interpreter = pooled_interpreter
+    code = "(len(data), data[0], data[-1], type(data).__name__)"
+    result = interpreter.execute(code, variables={"data": large_list})
+    assert result == [num_elements, "x", "x", "list"]
 
 
-def test_nested_sets_and_tuples():
+def test_nested_sets_and_tuples(pooled_interpreter):
     """Test that nested structures with sets and tuples are converted to JSON-compatible types."""
     complex_data = {"tags": {1, 2, 3}, "coords": (10, 20), "nested": [{"inner_set": {"a", "b"}}]}
 
-    with PythonInterpreter() as interpreter:
-        result = interpreter.execute("data", variables={"data": complex_data})
-        # Sets become sorted lists, tuples become lists
-        assert result["tags"] == [1, 2, 3]
-        assert result["coords"] == [10, 20]
-        assert result["nested"][0]["inner_set"] == ["a", "b"]
+    interpreter = pooled_interpreter
+    result = interpreter.execute("data", variables={"data": complex_data})
+    # Sets become sorted lists, tuples become lists
+    assert result["tags"] == [1, 2, 3]
+    assert result["coords"] == [10, 20]
+    assert result["nested"][0]["inner_set"] == ["a", "b"]
 
 
 def test_small_variable_not_using_filesystem():
@@ -617,8 +1669,6 @@ def test_large_variable_threshold_boundary():
     The threshold applies to the serialized size, not the original value.
     For strings, serialization adds 2 bytes (quotes).
     """
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
     # Serialized size at threshold - should use embedded (not filesystem)
     # Account for 2 bytes of quotes added by repr()
     at_threshold = "x" * (LARGE_VAR_THRESHOLD - 2)
@@ -690,3 +1740,359 @@ def test_enable_read_paths_multiple_files(tmp_path):
         assert contents["test1.txt"] == "Content 1"
         assert contents["test2.txt"] == "Content 2"
         assert contents["test3.txt"] == "Content 3"
+
+
+def test_system_exit_is_recoverable_and_session_stays_synced(pooled_interpreter):
+    """Regression test for #10165: the unhandled Deno rejection accompanying
+    SystemExit must not be consumed as the response, desyncing later requests."""
+    interpreter = pooled_interpreter
+    with pytest.raises(CodeExecutionError, match="SystemExit"):
+        interpreter.execute("import sys\nsys.exit(0)")
+
+    assert interpreter.execute("print('still alive')") == "still alive\n"
+
+
+def test_keyboard_interrupt_is_recoverable_and_session_stays_synced(pooled_interpreter):
+    """KeyboardInterrupt takes the same asyncio re-raise path as SystemExit (#10165)."""
+    interpreter = pooled_interpreter
+    with pytest.raises(CodeExecutionError, match="KeyboardInterrupt"):
+        interpreter.execute("raise KeyboardInterrupt('stop')")
+
+    assert interpreter.execute("print('still alive')") == "still alive\n"
+
+
+def test_base_exception_subclasses_are_recoverable_and_session_stays_synced(pooled_interpreter):
+    """Subclasses of SystemExit/KeyboardInterrupt take the same re-raise path (#10165)."""
+    interpreter = pooled_interpreter
+    for code, error_type in [
+        ("class ExitSignal(SystemExit): pass\nraise ExitSignal(0)", "ExitSignal"),
+        ("class InterruptSignal(KeyboardInterrupt): pass\nraise InterruptSignal()", "InterruptSignal"),
+    ]:
+        with pytest.raises(CodeExecutionError, match=error_type):
+            interpreter.execute(code)
+        assert interpreter.execute("print('still alive')") == "still alive\n"
+
+
+def test_out_of_band_messages_are_skipped_not_consumed_as_responses():
+    """Notifications and unsolicited id-less errors are diagnostics, not responses (#10165)."""
+    interpreter = PythonInterpreter()
+
+    notification = {"jsonrpc": "2.0", "method": "unhandled_error", "params": {"message": "boom"}}
+    assert interpreter._handle_out_of_band_message(notification, "during test")
+    assert interpreter._last_diagnostic == "boom"
+
+    unsolicited_error = {"jsonrpc": "2.0", "error": {"code": -32007, "message": "crash"}, "id": None}
+    assert interpreter._handle_out_of_band_message(unsolicited_error, "during test")
+    assert interpreter._last_diagnostic == "crash"
+
+    # Real responses (success or error, with an id) must not be consumed.
+    result = {"jsonrpc": "2.0", "result": {"output": "2\n"}, "id": 1}
+    assert not interpreter._handle_out_of_band_message(result, "during test")
+    error_response = {"jsonrpc": "2.0", "error": {"code": -32007, "message": "boom"}, "id": 1}
+    assert not interpreter._handle_out_of_band_message(error_response, "during test")
+
+
+def test_id_less_protocol_errors_are_terminal():
+    """ParseError/InvalidRequest mean the sandbox never read the request, so no
+    response will follow; waiting for one would block forever (#10165)."""
+    interpreter = PythonInterpreter()
+    parse_error = {"jsonrpc": "2.0", "error": {"code": -32700, "message": "Invalid JSON input"}, "id": None}
+    with pytest.raises(CodeInterpreterError, match="Protocol error"):
+        interpreter._handle_out_of_band_message(parse_error, "during test")
+
+
+def test_unsolicited_error_line_is_not_consumed_as_the_response(monkeypatch):
+    """#10165: an id-less async error arriving ahead of the real response (the
+    wire trace an unhandled rejection produces) must not be mistaken for it."""
+    request_id = "a" * 32
+    monkeypatch.setattr(python_interpreter.secrets, "token_hex", lambda _: request_id)
+
+    class FakeDeno:
+        def __init__(self, lines):
+            self.stdin = io.StringIO()
+            self.stdout = io.StringIO("".join(line + "\n" for line in lines))
+            self.stderr = io.StringIO()
+
+        def poll(self):
+            return None
+
+    interpreter = PythonInterpreter()
+    interpreter.deno_process = FakeDeno([
+        json.dumps({"jsonrpc": "2.0", "error": {"code": -32007, "message": "Unhandled async error: PythonError"}, "id": None}),
+        json.dumps({"jsonrpc": "2.0", "result": {"output": "ok\n"}, "id": request_id}),
+    ])
+    assert interpreter.execute("print('ok')") == "ok\n"
+
+
+def test_base_exceptions_do_not_desync_interpreter():
+    with PythonInterpreter() as interpreter:
+        for code, error_type in [
+            ("import sys\nsys.exit(0)", "SystemExit"),
+            ("raise KeyboardInterrupt()", "KeyboardInterrupt"),
+            ("class ExitSignal(SystemExit): pass\nraise ExitSignal(0)", "ExitSignal"),
+            ("class InterruptSignal(KeyboardInterrupt): pass\nraise InterruptSignal()", "InterruptSignal"),
+        ]:
+            with pytest.raises(CodeExecutionError, match=error_type):
+                interpreter.execute(code)
+            assert interpreter.execute("print('still alive')") == "still alive\n"
+
+
+def test_execution_instructions_are_class_metadata():
+    interpreter = PythonInterpreter(deno_command=["deno", "run"])
+
+    assert interpreter.execution_instructions == PythonInterpreter.execution_instructions
+    assert "Pyodide" in interpreter.execution_instructions
+    assert "standard libraries" in interpreter.execution_instructions
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_a_package_on_disk_is_bundled_without_its_local_files(tmp_path, monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    class Editable:  # an editable install, whose metadata lists no files
+        files = None
+
+        def __init__(self):
+            self.metadata = {"Name": "flexpkg"}
+
+        def read_text(self, name):
+            return None
+
+    package = tmp_path / "flexpkg"
+    names = ["__init__.py", "data.json", "sub/__init__.py", "new.py", "secrets.yaml", ".env", "ignored.py",
+             "local.key", "sub/.cache/token"]
+    for name in names:
+        (package / name).parent.mkdir(parents=True, exist_ok=True)
+        (package / name).write_text("x = 1\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    def bundled():
+        return sorted(arcname.removeprefix("flexpkg/") for _, arcname in sandbox_bundle._files(Editable()))
+
+    # Outside a git work tree, only its Python source: the other files may be local ones, like credentials.
+    assert bundled() == ["__init__.py", "ignored.py", "new.py", "sub/__init__.py"]
+    # And the package data it declares, like dspy's own.
+    shipped = sandbox_bundle._shipped(package, ("data.json", "sub/*.json"))
+    assert sorted(path.relative_to(package).as_posix() for path in shipped) == [
+        "__init__.py", "data.json", "ignored.py", "new.py", "sub/__init__.py"
+    ]
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / ".gitignore").write_text("*.key\nignored.py\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "flexpkg/__init__.py", "flexpkg/data.json"], check=True)
+    # In one, the files git tracks and the Python source it doesn't ignore. Hidden files, like a .env, stay out.
+    assert bundled() == ["__init__.py", "data.json", "new.py", "sub/__init__.py"]
+
+
+def test_pruning_leaves_builds_in_progress_and_files_other_processes_replace(tmp_path, monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    old = time.time() - 7200
+    for name in ["dspy-a.zip", "dspy-b.zip", "dspy-c.zip", "dspy-d.zip.123.456.tmp"]:
+        (tmp_path / name).write_text("x")
+        os.utime(tmp_path / name, (old, old))
+    gone = tmp_path / "dspy-e.zip"  # listed, then replaced by another process before it is looked at
+    listed = list(tmp_path.glob("dspy-*")) + [gone]
+    monkeypatch.setattr(Path, "glob", lambda self, pattern: iter(listed))
+
+    sandbox_bundle._prune(tmp_path, keep=tmp_path / "dspy-a.zip", count=2)
+
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["dspy-a.zip", "dspy-c.zip", "dspy-d.zip.123.456.tmp"]
+
+    # One another process takes into use after it was listed is kept.
+    (tmp_path / "dspy-b.zip").write_text("x")
+    os.utime(tmp_path / "dspy-b.zip", (old, old))
+    listed = list(tmp_path.glob("dspy-*"))
+    looked = []
+    real = sandbox_bundle._last_used
+
+    def last_used(path):
+        if path.name == "dspy-b.zip" and path in looked:
+            os.utime(path)  # just now, by another process
+        looked.append(path)
+        return real(path)
+
+    monkeypatch.setattr(sandbox_bundle, "_last_used", last_used)
+    sandbox_bundle._prune(tmp_path, keep=tmp_path / "dspy-a.zip", count=2)
+    assert (tmp_path / "dspy-b.zip").exists()
+
+
+def test_a_module_added_or_removed_after_the_first_bundle_makes_a_new_plan(tmp_path, monkeypatch):
+    import functools
+
+    from dspy.primitives import sandbox_bundle
+
+    package = tmp_path / "pkg"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "old.py").write_text("")
+    listed = []
+
+    @functools.cache
+    def plan(deno_dir, packages):  # lists the package's modules once, until its cache is cleared, as _plan does
+        listed.append(deno_dir)
+        return {}, [], [(path, f"pkg/{path.name}") for path in sorted(package.glob("*.py"))]
+
+    def changed(step):  # the folder gets a new modification time, however coarse the file system's clock
+        os.utime(package, ns=(step, step))
+
+    def names():
+        return [name for _, name in sandbox_bundle._contents(tmp_path, None, True)[1]]
+
+    monkeypatch.setattr(sandbox_bundle, "_plan", plan)
+    monkeypatch.setattr(sandbox_bundle, "_planned_at", {})
+    changed(1)
+    assert names() == names() == ["pkg/__init__.py", "pkg/old.py"]
+    assert len(listed) == 1  # an unchanged folder keeps the plan
+    (package / "new.py").write_text("")
+    changed(2)
+    assert names() == ["pkg/__init__.py", "pkg/new.py", "pkg/old.py"]
+    (package / "old.py").unlink()
+    changed(3)
+    assert names() == ["pkg/__init__.py", "pkg/new.py"]
+
+
+def test_an_edited_source_file_makes_a_new_dspy_bundle(tmp_path, monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    source = tmp_path / "module.py"
+    source.write_text("value = 1\n")
+    root = tmp_path / "cache"
+    monkeypatch.setattr(sandbox_bundle, "_plan", lambda deno_dir, packages: ({}, [], [(source, "module.py")]))
+    monkeypatch.setattr(sandbox_bundle, "_build", lambda *args, **kwargs: args[3].write_text("built"))
+
+    first = sandbox_bundle._prepare_bundle((), None, "", root)
+    assert sandbox_bundle._prepare_bundle((), None, "", root) == first  # unchanged sources reuse it
+    source.write_text("value = 22\n")  # patched in place, as an installed file may be
+    assert sandbox_bundle._prepare_bundle((), None, "", root) != first
+
+
+def _with_dspy() -> PythonInterpreter:
+    interpreter = PythonInterpreter()
+    interpreter.provide_dspy()
+    return interpreter
+
+
+def _flag(interpreter: PythonInterpreter, name: str) -> str | None:
+    return next((arg.split("=", 1)[1] for arg in interpreter.deno_command if arg.startswith(f"{name}=")), None)
+
+
+def test_a_sandbox_with_dspy_restores_a_snapshot_that_has_imported_it():
+    with _with_dspy() as interpreter:
+        snapshot = _flag(interpreter, "--dspy-snapshot")
+        assert snapshot is not None
+        assert interpreter.execute(
+            "import sys\n"
+            "imported = 'dspy' in sys.modules\n"
+            "import pydantic, regex, sqlite3, ssl\n"  # compiled extension modules, loaded again for the restore
+            "class Model(pydantic.BaseModel):\n"
+            "    x: int\n"
+            "[imported, Model(x='3').x, regex.match('[a-z]+', 'abc')[0],\n"
+            " sqlite3.connect(':memory:').execute('select 2').fetchone()[0]]"
+        ) == [True, 3, "abc", 2]
+        read = interpreter.execute(
+            "from js import Deno\n"
+            f"try:\n    Deno.readFileSync({snapshot!r})\n    result = 'read'\n"
+            "except Exception as e:\n    result = str(e)\n"
+            "result"
+        )
+        assert "Requires read access" in read
+
+
+def test_sandboxes_restored_from_one_snapshot_draw_different_random_numbers():
+    draws = []
+    for _ in range(2):
+        with _with_dspy() as interpreter:
+            draws.append(interpreter.execute("import random\nrandom.random()"))
+    assert draws[0] != draws[1]
+
+
+def test_a_sandbox_that_cannot_restore_its_snapshot_starts_without_it(tmp_path, monkeypatch, caplog):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "_refused", set())
+    interpreter = _with_dspy()
+    original = _flag(interpreter, "--dspy-snapshot")
+    # A copy whose recorded layout of the extension modules is off by one, as if they had landed elsewhere.
+    size = (sandbox_bundle.bundle_root() / "stdlib.zip").stat().st_size
+    data = Path(original).read_bytes()
+    assert f"[{size},".encode() in data
+    tampered = tmp_path / "tampered.snap"
+    tampered.write_bytes(data.replace(f"[{size},".encode(), f"[{size + 1},".encode()))
+    interpreter.deno_command = [arg.replace(original, str(tampered)) for arg in interpreter.deno_command]
+
+    monkeypatch.setattr(logging.getLogger("dspy"), "propagate", True)  # so that caplog sees its warnings
+    with interpreter, caplog.at_level("WARNING"):
+        assert interpreter.execute("import dspy\ndspy.Predict.__name__") == "Predict"
+    assert "without its dspy snapshot" in caplog.text
+    assert _flag(interpreter, "--dspy-snapshot") is None
+    assert not tampered.exists()  # discarded, so that the next process builds a new one
+    assert tampered.name in sandbox_bundle._refused
+
+
+def test_a_new_standard_library_archive_makes_a_new_snapshot(tmp_path, monkeypatch):
+    from dspy.primitives import sandbox_bundle
+
+    monkeypatch.setattr(sandbox_bundle, "_build", lambda *args, **kwargs: args[3].write_text("built"))
+    monkeypatch.setattr(sandbox_bundle, "_refused", set())
+    bundle, stdlib = tmp_path / "dspy-0123.zip", tmp_path / "stdlib.zip"
+    bundle.write_text("bundle")
+    stdlib.write_text("stdlib")
+
+    first = sandbox_bundle._prepare_snapshot((), None, "", bundle, stdlib)
+    assert sandbox_bundle._prepare_snapshot((), None, "", bundle, stdlib) == first
+    stdlib.write_text("rebuilt")
+    second = sandbox_bundle._prepare_snapshot((), None, "", bundle, stdlib)
+    assert second != first
+
+    sandbox_bundle.discard_snapshot(second)  # one a sandbox could not restore
+    assert not second.exists()
+    with pytest.raises(sandbox_bundle.SandboxBundleError):  # this process builds none in its place
+        sandbox_bundle._prepare_snapshot((), None, "", bundle, stdlib)
+
+def test_sandbox_packages_choose_the_pyodide_packages_in_the_dspy_bundle(monkeypatch):
+    # Pyodide's own builds, by name, whatever this environment has installed: by default Pillow, for Image.to_pil.
+    import importlib.util
+    import zipfile
+
+    from dspy.primitives import sandbox_bundle
+
+    lock = {name: {"depends": [], "file_name": f"{name}.whl"} for name in ("pillow", "libwebp", "numpy")}
+    lock["pillow"]["depends"] = ["libwebp"]
+    fetched = set()
+
+    def fetch_wheel(root, info, deno_dir):  # an empty wheel, without the network
+        fetched.add(info["file_name"].removesuffix(".whl"))
+        zipfile.ZipFile(root / info["file_name"], "w").close()
+        return info["file_name"]
+
+    monkeypatch.setattr(sandbox_bundle, "_pyodide_lock", lambda deno_dir: lock)
+    monkeypatch.setattr(sandbox_bundle, "_distributions", lambda: [])
+    monkeypatch.setattr(sandbox_bundle, "_fetch_wheel", fetch_wheel)
+    monkeypatch.setattr(sandbox_bundle, "_build", lambda *args, **kwargs: args[3].write_text("built"))
+    find_spec = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name, *args: None if name == "PIL" else find_spec(name, *args))
+
+    def bundle(**kwargs):
+        fetched.clear()
+        interpreter = PythonInterpreter(sandbox_cache=False, **kwargs)
+        interpreter.provide_dspy()
+        return sorted(fetched), next(arg for arg in interpreter.deno_command if arg.startswith("--dspy-bundle="))
+
+    sandbox_bundle._plan.cache_clear()
+    try:
+        default = bundle()
+        assert default[0] == ["libwebp", "pillow"]  # though this environment has no Pillow
+        none = bundle(sandbox_packages=[])
+        assert none[0] == [] and none[1] != default[1]
+        more = bundle(sandbox_packages=["NumPy", "pillow"])
+        assert more[0] == ["libwebp", "numpy", "pillow"] and more[1] not in (default[1], none[1])
+        assert bundle(sandbox_packages=("pillow", "numpy")) == more  # one bundle, whatever the order or spelling
+        assert bundle() == default  # reused
+
+        with pytest.raises(ValueError, match="no package named 'nump'"):  # not a bundle RLM can do without
+            bundle(sandbox_packages=["nump"])
+        with pytest.raises(TypeError, match=r"like \['numpy'\]"):
+            PythonInterpreter(sandbox_packages="numpy")
+    finally:
+        sandbox_bundle._plan.cache_clear()

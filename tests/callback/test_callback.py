@@ -1,9 +1,12 @@
+import asyncio
 import time
 
+import cloudpickle
 import pytest
 
 import dspy
 from dspy.utils.callback import ACTIVE_CALL_ID, BaseCallback, with_callbacks
+from dspy.utils.callback_context import _bind_active_call_id
 from dspy.utils.dummies import DummyLM
 
 
@@ -52,6 +55,38 @@ class MyCallback(BaseCallback):
 
     def on_tool_end(self, call_id, outputs, exception):
         self.calls.append({"handler": "on_tool_end", "outputs": outputs, "exception": exception})
+
+
+def test_bind_active_call_id_restores_context_after_exception():
+    observed_call_ids = []
+
+    def fail():
+        observed_call_ids.append(ACTIVE_CALL_ID.get())
+        raise ValueError("boom")
+
+    token = ACTIVE_CALL_ID.set("parent-call")
+    try:
+        bound = _bind_active_call_id(fail)
+    finally:
+        ACTIVE_CALL_ID.reset(token)
+
+    with pytest.raises(ValueError, match="boom"):
+        bound()
+
+    assert observed_call_ids == ["parent-call"]
+    assert ACTIVE_CALL_ID.get() is None
+
+
+@pytest.mark.asyncio
+async def test_with_callbacks_wrappers_round_trip_through_cloudpickle():
+    async def async_fn(self):
+        return "async"
+
+    sync_fn = cloudpickle.loads(cloudpickle.dumps(with_callbacks(lambda self: "sync")))
+    async_fn = cloudpickle.loads(cloudpickle.dumps(with_callbacks(async_fn)))
+
+    assert sync_fn(object()) == "sync"
+    assert await async_fn(object()) == "async"
 
 
 @pytest.mark.parametrize(
@@ -115,24 +150,70 @@ def test_callback_injection_local():
 
 
 def test_callback_error_handling():
+    expected_error = ValueError("Error")
+
     class Target(dspy.Module):
         @with_callbacks
         def forward(self, x: int, y: str, z: float) -> int:
             time.sleep(0.1)
-            raise ValueError("Error")
+            raise expected_error
 
     callback = MyCallback()
     dspy.configure(callbacks=[callback])
 
     target = Target()
 
-    with pytest.raises(ValueError, match="Error"):
+    with pytest.raises(ValueError, match="Error") as exc_info:
         target.forward(1, "2", 3.0)
 
     assert len(callback.calls) == 2
     assert callback.calls[0]["handler"] == "on_module_start"
     assert callback.calls[1]["handler"] == "on_module_end"
-    assert isinstance(callback.calls[1]["exception"], ValueError)
+    assert callback.calls[1]["exception"] is exc_info.value is expected_error
+
+
+@pytest.mark.parametrize("expected_error", [KeyboardInterrupt(), SystemExit()])
+def test_callback_reports_and_propagates_base_exception(expected_error):
+    class Target(dspy.Module):
+        @with_callbacks
+        def forward(self):
+            raise expected_error
+
+    callback = MyCallback()
+    target = Target(callbacks=[callback])
+
+    with pytest.raises(BaseException) as exc_info:
+        target.forward()
+
+    assert callback.calls[1]["handler"] == "on_module_end"
+    assert callback.calls[1]["outputs"] is None
+    assert callback.calls[1]["exception"] is exc_info.value is expected_error
+    assert ACTIVE_CALL_ID.get() is None
+
+
+@pytest.mark.asyncio
+async def test_callback_reports_and_propagates_async_cancellation():
+    started = asyncio.Event()
+
+    class Target(dspy.Module):
+        @with_callbacks
+        async def run(self):
+            started.set()
+            await asyncio.Event().wait()
+
+    callback = MyCallback()
+    target = Target(callbacks=[callback])
+    task = asyncio.create_task(target.run())
+    await started.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert callback.calls[1]["handler"] == "on_module_end"
+    assert callback.calls[1]["outputs"] is None
+    assert isinstance(callback.calls[1]["exception"], asyncio.CancelledError)
+    assert ACTIVE_CALL_ID.get() is None
 
 
 def test_multiple_callbacks():
@@ -155,11 +236,53 @@ def test_multiple_callbacks():
     assert len(callback_2.calls) == 2
 
 
-def test_callback_complex_module():
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_custom_adapter_mixin_keeps_local_and_global_callbacks(asynchronous):
+    class FormatMixin:
+        def format(self, signature, demos, inputs):
+            return dspy.adapters.Prompt(messages=(dspy.lm15.Message.user(inputs["question"]),))
+
+        def parse(self, signature, completion):
+            return {"answer": int(completion)}
+
+    class CustomAdapter(FormatMixin, dspy.ChatAdapter):
+        pass
+
+    class Engine:
+        def complete(self, request):
+            return dspy.lm15.Response(
+                id="response", model=request.model,
+                message=dspy.lm15.Message.assistant("42"), usage=dspy.lm15.Usage(),
+                finish_reason="stop",
+            )
+
+    class AsyncEngine:
+        async def complete(self, request):
+            return Engine().complete(request)
+
+    local, global_ = MyCallback(), MyCallback()
+    with dspy.context(
+        lm=dspy.LM("test/mixin", engine=Engine(), async_engine=AsyncEngine(), cache=False),
+        adapter=CustomAdapter(callbacks=[local]), callbacks=[global_],
+    ):
+        predict = dspy.Predict("question -> answer: int")
+        result = await predict.acall(question="6 * 7?") if asynchronous else predict(question="6 * 7?")
+
+    assert result.answer == 42
+    for callback in (local, global_):
+        assert [call["handler"] for call in callback.calls if call["handler"].startswith("on_adapter_")] == [
+            "on_adapter_format_start", "on_adapter_format_end", "on_adapter_parse_start", "on_adapter_parse_end",
+        ]
+
+
+@pytest.mark.parametrize("adapter", [None, dspy.ChatAdapter(), dspy.JSONAdapter()])
+def test_callback_complex_module(adapter):
     callback = MyCallback()
     dspy.configure(
-        lm=DummyLM({"How are you?": {"answer": "test output", "reasoning": "No more responses"}}),
+        lm=DummyLM({"How are you?": {"answer": "test output", "plan": "No more responses"}}),
         callbacks=[callback],
+        adapter=adapter,
     )
 
     cot = dspy.ChainOfThought("question -> answer", n=3)
@@ -167,12 +290,17 @@ def test_callback_complex_module():
     assert result["answer"] == "test output"
     assert result["reasoning"] == "No more responses"
 
-    assert len(callback.calls) == 14
+    assert len(callback.calls) == 18
     assert [call["handler"] for call in callback.calls] == [
         "on_module_start",
         "on_module_start",
         "on_adapter_format_start",
         "on_adapter_format_end",
+        # Each candidate is a separate LM call (n=3).
+        "on_lm_start",
+        "on_lm_end",
+        "on_lm_start",
+        "on_lm_end",
         "on_lm_start",
         "on_lm_end",
         # Parsing will run per output (n=3)
@@ -187,23 +315,30 @@ def test_callback_complex_module():
     ]
 
 @pytest.mark.asyncio
-async def test_callback_async_module():
+@pytest.mark.parametrize("adapter", [None, dspy.ChatAdapter(), dspy.JSONAdapter()])
+async def test_callback_async_module(adapter):
     callback = MyCallback()
     with dspy.context(
-        lm=DummyLM({"How are you?": {"answer": "test output", "reasoning": "No more responses"}}),
+        lm=DummyLM({"How are you?": {"answer": "test output", "plan": "No more responses"}}),
         callbacks=[callback],
+        adapter=adapter,
     ):
         cot = dspy.ChainOfThought("question -> answer", n=3)
         result = await cot.acall(question="How are you?")
     assert result["answer"] == "test output"
     assert result["reasoning"] == "No more responses"
 
-    assert len(callback.calls) == 14
+    assert len(callback.calls) == 18
     assert [call["handler"] for call in callback.calls] == [
         "on_module_start",
         "on_module_start",
         "on_adapter_format_start",
         "on_adapter_format_end",
+        # Each candidate is a separate LM call (n=3).
+        "on_lm_start",
+        "on_lm_end",
+        "on_lm_start",
+        "on_lm_end",
         "on_lm_start",
         "on_lm_end",
         # Parsing will run per output (n=3)
