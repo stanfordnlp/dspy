@@ -199,7 +199,8 @@ class Tool(Type):
                     raise ValueError(f"Arg {k} is not in the tool's args.")
             try:
                 instance = _json_schema_instance(v)
-                if self.args[k].get("type") != "Any":
+                type_str = self.args[k].get("type")
+                if (type_str is not None and type_str != "Any") or "not" in self.args[k]:
                     validate(instance=instance, schema=self.args[k])
             except ValidationError as e:
                 raise ValueError(f"Arg {k} is invalid: {e.message}")

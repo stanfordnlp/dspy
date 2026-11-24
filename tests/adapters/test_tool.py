@@ -1254,3 +1254,14 @@ def test_convert_input_schema_to_tool_args_with_boolean_definitions():
         reject_tool(reject="anything")
     with pytest.raises(ValidationError):
         validate({"reject": "anything"}, reject_tool.as_function_tool().parameters)
+
+
+def test_tool_optional_date_argument_still_accepts_date_instance():
+    import datetime
+
+    def format_day(day: datetime.date | None = None) -> str | None:
+        return day.isoformat() if day is not None else None
+
+    tool = Tool(format_day)
+    assert tool(day=datetime.date(2026, 1, 2)) == "2026-01-02"
+    assert tool(day=None) is None
