@@ -2786,3 +2786,69 @@ async def test_stream_listener_chat_adapter_header_spacing_variations(start_head
         assert full_text == "Deep thinking."
 
 
+@pytest.mark.anyio
+async def test_stream_listener_chat_adapter_split_tab_marker_and_markdown_heading():
+    from dspy.lm15 import StreamDeltaEvent, StreamEndEvent, TextDelta, Usage
+
+    class QA(dspy.Signature):
+        question: str = dspy.InputField()
+        thought: str = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    listener = dspy.streaming.StreamListener("answer")
+
+    async def stream(*args, **kwargs):
+        texts = (
+            "[[ ## thought ## ]]\n",
+            "Consider [edge] cases.\n",
+            "More thoughts without brackets.\n\n",
+            "[[ ## answer ## ]]\n",
+            "## Summary\n",
+            "Paris",
+            "\n\n[[\t#",
+            "# completed ##]]",
+        )
+        for i, text in enumerate(texts):
+            yield StreamDeltaEvent(TextDelta(text=text, part_index=i))
+        yield StreamEndEvent(finish_reason="stop", usage=Usage(input_tokens=10, output_tokens=5, total_tokens=15))
+
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False, num_retries=0)
+    program = dspy.streamify(
+        dspy.Predict(QA),
+        is_async_program=True,
+        stream_listeners=[listener],
+    )
+    with patch_streaming(side_effect=stream), dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        values = [value async for value in program(question="Capital of France?")]
+        chunks = [v.chunk for v in values if isinstance(v, StreamResponse)]
+        full_text = "".join(chunks)
+        assert full_text == "## Summary\nParis"
+        assert "[[" not in full_text
+        assert values[-1].answer == "## Summary\nParis"
+
+
+def test_stream_listener_chat_adapter_does_not_buffer_markdown_heading_or_earlier_field():
+    from types import SimpleNamespace
+
+    listener = dspy.streaming.StreamListener("answer")
+
+    def make_chunk(text: str):
+        return SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=text), finish_reason=None)])
+
+    with dspy.context(adapter=dspy.ChatAdapter()):
+        # Earlier field with '[' should not keep growing field_start_queue
+        listener.receive(make_chunk("[[ ## thought ## ]]"))
+        listener.receive(make_chunk("Some [bracket] text"))
+        assert listener.field_start_queue == []
+        listener.receive(make_chunk("More plain text"))
+        assert listener.field_start_queue == []
+
+        # Start answer stream and verify ordinary Markdown '##' heading flushes immediately
+        listener.receive(make_chunk("[[ ## answer ## ]]"))
+        resp = listener.receive(make_chunk("## Summary"))
+        assert isinstance(resp, StreamResponse)
+        assert resp.chunk == "## Summary"
+        assert listener.field_end_queue.empty()
+
+
+

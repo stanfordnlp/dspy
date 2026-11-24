@@ -60,8 +60,8 @@ class StreamListener:
                 "start_pattern": re.compile(rf"\[\[\s*##\s*{re.escape(self.signature_field_name)}\s*##\s*\]\]"),
                 "end_identifier": re.compile(r"\[\[\s*##\s*(\w+)\s*##\s*\]\]"),
                 "start_indicator": "[",
-                "end_pattern_prefixes": ["[", "[[", "[[ ", "[[ #", "[[ ##", "[[#", "[[##"],
-                "end_pattern_contains": "##",
+                "end_pattern_prefix_regex": re.compile(r"\[(?:\[\s*#?)?$"),
+                "end_pattern_contains_regex": re.compile(r"\[\[\s*##"),
             },
             "JSONAdapter": {
                 "start_identifier": f'"{self.signature_field_name}":',
@@ -99,6 +99,27 @@ class StreamListener:
                 return True
         return False
 
+    def _could_form_start_pattern(self, concat_message: str, field_name: str) -> bool:
+        """Check if concat_message ends with a valid partial prefix of [[ ## <field_name> ## ]]."""
+        if concat_message.endswith("["):
+            return True
+        idx = concat_message.rfind("[[")
+        if idx == -1:
+            return False
+        tail = concat_message[idx:]
+        if re.fullmatch(r"\[\[\s*#{0,2}", tail):
+            return True
+        m = re.match(r"\[\[\s*##\s*(.*)", tail, re.DOTALL)
+        if not m:
+            return False
+        rest = m.group(1)
+        if field_name.startswith(rest):
+            return True
+        if rest.startswith(field_name):
+            after_field = rest[len(field_name) :]
+            return bool(re.fullmatch(r"\s*(?:#(?:#(?:\s*\]?)?)?)?", after_field))
+        return False
+
     def _could_form_end_identifier(self, concat_message: str, adapter_name: str) -> bool:
         """Check if the buffered message could potentially form the end identifier.
 
@@ -116,14 +137,20 @@ class StreamListener:
         adapter_config = self.adapter_identifiers[adapter_name]
         end_pattern_prefixes = adapter_config.get("end_pattern_prefixes", [])
         end_pattern_contains = adapter_config.get("end_pattern_contains")
+        end_pattern_prefix_regex = adapter_config.get("end_pattern_prefix_regex")
+        end_pattern_contains_regex = adapter_config.get("end_pattern_contains_regex")
 
         # First check: does it end with a potential start of the pattern?
         if any(concat_message.endswith(prefix) for prefix in end_pattern_prefixes):
+            return True
+        if end_pattern_prefix_regex and end_pattern_prefix_regex.search(concat_message):
             return True
 
         # Second check: if there's a pattern marker, check if message contains it
         # This handles cases like "[[ ## com" where we have partial field name
         if end_pattern_contains and end_pattern_contains in concat_message:
+            return True
+        if end_pattern_contains_regex and end_pattern_contains_regex.search(concat_message):
             return True
 
         return False
@@ -253,7 +280,7 @@ class StreamListener:
                     # appearance of the next key.
                     self.json_adapter_state["field_accumulated_messages"] += "{" + start_identifier
 
-            elif (start_pattern and ("[" in concat_message)) or self._buffered_message_end_with_start_identifier(concat_message.strip(), start_identifier):
+            elif (start_pattern and self._could_form_start_pattern(concat_message, self._wire_field_name)) or self._buffered_message_end_with_start_identifier(concat_message.strip(), start_identifier):
                 # If the buffered message ends with part of the start_identifier, we keep looking for the
                 # start_identifier from the token stream.
                 return
