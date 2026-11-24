@@ -676,6 +676,8 @@ def _resolve_json_schema_reference(schema: dict) -> dict:
         return {k: resolve_refs(v, resolving) for k, v in obj.items()}
 
     result = resolve_refs(root, set())
+    if isinstance(result, bool):
+        return {} if result else {"not": {}}
     # Resolving a retained definition can uncover another recursive reference.
     while pending:
         table, name = pending.pop()

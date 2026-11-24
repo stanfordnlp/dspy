@@ -1218,3 +1218,36 @@ def test_convert_input_schema_to_tool_args_with_draft07_definitions():
     with pytest.raises(ValidationError):
         validate({"name": "root", "child": {"name": 123}}, args["node"])
 
+
+def test_convert_input_schema_to_tool_args_with_boolean_definitions():
+    schema = {
+        "type": "object",
+        "definitions": {
+            "AllowAny": True,
+            "RejectAll": False,
+        },
+        "properties": {
+            "allow": {"$ref": "#/definitions/AllowAny"},
+            "reject": {"$ref": "#/definitions/RejectAll"},
+        },
+    }
+
+    args, arg_types, arg_desc = convert_input_schema_to_tool_args(schema)
+
+    assert args["allow"] == {}
+    assert args["reject"] == {"not": {}}
+    assert arg_types["allow"] is Any
+    assert arg_types["reject"] is Any
+    assert arg_desc["allow"] == "No description provided."
+    assert arg_desc["reject"] == "No description provided."
+
+    validate("anything", args["allow"])
+    with pytest.raises(ValidationError):
+        validate("anything", args["reject"])
+
+    allow_parameters = Tool(lambda **kwargs: kwargs, args={"allow": args["allow"]}).as_function_tool().parameters
+    validate({"allow": "anything"}, allow_parameters)
+
+    reject_parameters = Tool(lambda **kwargs: kwargs, args={"reject": args["reject"]}).as_function_tool().parameters
+    with pytest.raises(ValidationError):
+        validate({"reject": "anything"}, reject_parameters)
