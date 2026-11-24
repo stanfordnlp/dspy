@@ -233,12 +233,12 @@ def test_rag_grounded_refusal_scores_answerable_answer():
         lm=DummyLM(
             [
                 {
-                    "reasoning": "Comparing the responses",
+                    "plan": "Comparing the responses",
                     "precision": 0.8,
                     "recall": 0.6,
                 },
                 {
-                    "reasoning": "Checking the claims",
+                    "plan": "Checking the claims",
                     "system_response_claims": "1+1=2",
                     "discussion": "supported by context",
                     "groundedness": 1.0,
@@ -265,12 +265,12 @@ def test_rag_grounded_refusal_feedback_names_ungrounded_claims():
         lm=DummyLM(
             [
                 {
-                    "reasoning": "Comparing the responses",
+                    "plan": "Comparing the responses",
                     "precision": 1.0,
                     "recall": 1.0,
                 },
                 {
-                    "reasoning": "Checking the claims",
+                    "plan": "Checking the claims",
                     "system_response_claims": "several",
                     "discussion": "not supported",
                     "groundedness": 0.2,
