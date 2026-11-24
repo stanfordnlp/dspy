@@ -610,8 +610,4 @@ def test_evaluate_supports_metric_driving_its_own_loop():
             loop.close()
 
     ev = Evaluate(devset=devset, metric=loop_driving_metric, display_progress=False, num_threads=1)
-
-    async def main():
-        return ev(Predict("question -> answer"))
-
-    assert asyncio.run(main()).score == 100.0
+    assert ev(Predict("question -> answer")).score == 100.0

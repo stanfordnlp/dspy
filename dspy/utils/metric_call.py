@@ -1,10 +1,9 @@
 """Call metrics from DSPy's synchronous evaluation paths.
 
-Metrics are ordinary callables, but they may be ``async def`` functions or may
-drive their own event loop (e.g. an async LLM client wrapped in
-``run_until_complete``). Running those directly on a thread that already has
-an event loop — as happens in Jupyter — deadlocks. This module keeps the
-synchronous metric API while making such metrics safe to use.
+Metrics are ordinary callables. Sync metrics run on the calling thread.
+``async def`` metrics are supported: they are awaited via :func:`asyncio.run`
+when there is no running loop, and run on a daemon worker thread when a loop
+is already running, so they cannot deadlock against the caller's loop.
 """
 
 from __future__ import annotations
@@ -22,36 +21,56 @@ async def _await(result: Any) -> Any:
     return await result
 
 
-def call_metric(metric: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-    """Call ``metric`` from synchronous code, accepting sync or async metrics.
+def _run_in_worker_thread(func: Callable[[], Any]) -> Any:
+    """Run ``func`` on a daemon worker thread and return its result.
 
-    When no event loop is running, sync metrics are called directly and async
-    metrics are driven with :func:`asyncio.run`. When a loop is running, the
-    metric runs on a worker thread with a fresh loop state, so metrics that
-    create or drive their own loop cannot deadlock against the caller's loop.
+    Does not wait for a stuck worker after interruption, since the metric runs
+    in the background otherwise.
+    """
+    context = copy_context()
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(context.run, func)
+    try:
+        return future.result()
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
+def call_metric(metric: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """Call a metric from synchronous code, accepting sync or async metrics.
+
+    Sync metrics run on the calling thread. Async metrics are awaited with
+    :func:`asyncio.run` when no event loop is running on the calling thread;
+    when a loop is already running, async metrics run on a daemon worker thread
+    so their event-loop driving does not deadlock against the caller's loop.
 
     DSPy settings and context variables are copied into the worker thread, so
-    metrics still see the caller's configuration and trace.
+    async metrics still see the caller's configuration.
     """
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        result = metric(*args, **kwargs)
-        return asyncio.run(_await(result)) if inspect.isawaitable(result) else result
+        if not inspect.iscoroutinefunction(metric):
+            try:
+                asyncio.get_event_loop()
+            except RuntimeError:
+                asyncio.set_event_loop(asyncio.new_event_loop())
+            return metric(*args, **kwargs)
+        return asyncio.run(metric(*args, **kwargs))
+
+    if not inspect.iscoroutinefunction(metric):
+        # Ordinary sync metrics stay on the calling thread, preserving main-thread
+        # behavior for sqlite/file handles and making interrupts prompt.
+        return metric(*args, **kwargs)
 
     parent_overrides = thread_local_overrides.get().copy()
-    context = copy_context()
 
-    def worker() -> Any:
+    def run_async() -> Any:
         original = thread_local_overrides.get()
         token = thread_local_overrides.set({**original, **parent_overrides})
         try:
-            result = metric(*args, **kwargs)
-            return asyncio.run(_await(result)) if inspect.isawaitable(result) else result
+            return asyncio.run(metric(*args, **kwargs))
         finally:
             thread_local_overrides.reset(token)
 
-    # A fresh thread has no running event loop, even when the caller (e.g. a
-    # notebook) does. One worker is enough: the metric is the only task here.
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        return executor.submit(context.run, worker).result()
+    return _run_in_worker_thread(run_async)

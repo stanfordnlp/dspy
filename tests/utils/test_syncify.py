@@ -1,5 +1,9 @@
 import asyncio
 import threading
+import time
+from unittest import mock
+
+import pytest
 
 import dspy
 from dspy.utils.metric_call import call_metric
@@ -71,22 +75,57 @@ def test_call_metric_async_without_running_loop():
     assert call_metric(metric, 1) == 2
 
 
-def test_call_metric_with_running_loop_uses_thread_without_running_loop():
+def test_call_metric_sync_metric_stays_on_calling_thread_with_running_loop():
     threads = []
 
     def metric(x):
         threads.append(threading.current_thread())
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return x + 1
-        raise AssertionError("metric ran on a thread with a running event loop")
+        return x + 1
+
+    async def main():
+        return call_metric(metric, 1)
+
+    assert asyncio.run(main()) == 2
+    assert threads and threads[0] is threading.main_thread()
+
+
+def test_call_metric_async_metric_with_running_loop_runs_without_running_loop():
+    threads = []
+
+    async def metric(x):
+        threads.append(threading.current_thread())
+        return x + 1
 
     async def main():
         return call_metric(metric, 1)
 
     assert asyncio.run(main()) == 2
     assert threads and threads[0] is not threading.main_thread()
+
+
+def test_call_metric_interrupt_does_not_wait_for_stuck_metric():
+    async def stuck_metric():
+        await asyncio.sleep(30)
+        return 1
+
+    import concurrent.futures
+
+    async def main():
+        return call_metric(stuck_metric)
+
+    with mock.patch.object(concurrent.futures.Future, "result", side_effect=KeyboardInterrupt):
+        start = time.time()
+        with pytest.raises(KeyboardInterrupt):
+            asyncio.run(main())
+        assert time.time() - start < 5
+
+
+def test_call_metric_sync_metric_uses_current_loop():
+    def metric():
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(asyncio.sleep(0, result=7))
+
+    assert call_metric(metric) == 7
 
 
 def test_call_metric_async_with_running_loop():
