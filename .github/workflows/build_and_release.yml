@@ -37,7 +37,9 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: python3 -m pip install --upgrade setuptools wheel twine build semver packaging
+        run: |
+          bash scripts/bootstrap_python.sh
+          python3 -m pip install --upgrade setuptools wheel twine build semver packaging
       - name: Install Deno
         uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
@@ -68,6 +70,7 @@ jobs:
       - name: Test package installation and functionality
         run: |
           source test_before_testpypi/bin/activate
+          bash scripts/bootstrap_python.sh
           # Install the locally built wheel and testing dependencies
           pip install dist/*.whl pytest pytest-asyncio pytest-mock
           pytest tests/metadata/test_metadata.py tests/predict
@@ -75,7 +78,7 @@ jobs:
           deactivate
       # Publish to test-PyPI
       - name: Publish distribution 📦 to test-PyPI
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
+        uses: ./.github/actions/pypi-publish # zizmor: ignore[self-repository] actionlint does not yet support $/ paths
         with:
           repository-url: https://test.pypi.org/legacy/
 
@@ -100,7 +103,9 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: python3 -m pip install --upgrade setuptools wheel twine build
+        run: |
+          bash scripts/bootstrap_python.sh
+          python3 -m pip install --upgrade setuptools wheel twine build
       - name: Install Deno
         uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
@@ -128,6 +133,7 @@ jobs:
       - name: Test package installation and functionality
         run: |
           source test_before_pypi/bin/activate
+          bash scripts/bootstrap_python.sh
           # Install the locally built wheel and testing dependencies
           pip install dist/*.whl pytest pytest-asyncio pytest-mock
           pytest tests/metadata/test_metadata.py tests/predict
@@ -141,7 +147,7 @@ jobs:
           path: dist/*.whl
           if-no-files-found: error
       - name: Publish distribution 📦 to PyPI (dspy)
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        uses: ./.github/actions/pypi-publish # zizmor: ignore[self-repository] actionlint does not yet support $/ paths
         with:
           attestations: false
       # Publish to dspy-ai
@@ -160,7 +166,7 @@ jobs:
       - name: Validate built distributions (dspy-ai)
         run: python3 -m twine check --strict .github/.internal_dspyai/dist/*
       - name: Publish distribution 📦 to PyPI (dspy-ai)
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        uses: ./.github/actions/pypi-publish # zizmor: ignore[self-repository] actionlint does not yet support $/ paths
         with:
           attestations: false
           packages-dir: .github/.internal_dspyai/dist/
@@ -199,7 +205,9 @@ jobs:
           path: release-wheel
       - name: Install documentation dependencies and release wheel
         if: steps.publishable.outputs.publish == 'true'
-        run: python -m pip install -r docs/requirements.txt release-wheel/*.whl
+        run: |
+          bash scripts/bootstrap_python.sh
+          python -m pip install -r docs/requirements.txt release-wheel/*.whl
       - name: Verify API introspection uses the release wheel
         if: steps.publishable.outputs.publish == 'true'
         run: |

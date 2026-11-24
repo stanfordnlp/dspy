@@ -2358,40 +2358,40 @@ def _validate_logprobs_field(obj: object, field_name: str, *, allow_none: bool) 
 
 @dataclass(frozen=True, slots=True)
 class Usage:
-    """Token usage.
+    """Token usage. Every counter means the same thing on every provider.
 
-    ``input_tokens`` and ``output_tokens`` are common dimensions.
-    ``total_tokens`` is the provider-reported or billed total when present;
-    providers may include reasoning, audio, cache, or future token classes in
-    totals differently, so it is not forced to equal input + output.
+    - ``input_tokens``: every token the model read for this response,
+      including the parts read from the prompt cache (``cache_read_tokens``),
+      written to it (``cache_write_tokens``), and any tokens the provider
+      added for its own tool use.
+    - ``output_tokens``: every token the model generated, including its
+      reasoning (``reasoning_tokens``) and audio (``output_audio_tokens``).
+    - ``cache_read_tokens``, ``cache_write_tokens``, ``input_audio_tokens``
+      are parts of ``input_tokens``; ``reasoning_tokens`` and
+      ``output_audio_tokens`` are parts of ``output_tokens``.
+    - ``total_tokens`` is ``input_tokens + output_tokens``.
 
-    ``reasoning_tokens`` is populated only when the provider reports an exact
-    separate reasoning/thinking token count. Some providers, notably Anthropic,
-    can return ``ThinkingPart`` content while reporting only combined
-    ``output_tokens``; in that case ``reasoning_tokens`` remains ``None``.
+    The adapters map each provider's own counting onto these meanings
+    (MAP-19, lm15-contract docs/mapping-rules.md); the provider's own numbers
+    stay untouched in ``Response.provider_data``. A value is either the
+    provider's count or an exact sum of the provider's counts, never an
+    estimate.
 
-    Every counter is ``int | None``: ``None`` means "the provider did not
-    report this dimension", which is distinct from a reported ``0``.
-    ``Usage()`` with no arguments therefore means "nothing reported" and
-    serializes to ``{}`` (omitted entirely by enclosing serializers, per
-    docs/serde-rules.md).
+    Every counter is ``int | None``: ``None`` means "not reported" (or, from
+    an adapter, "the provider's numbers did not determine it"), which is
+    distinct from a reported ``0``. ``Usage()`` serializes to ``{}``.
 
-    ``total_tokens``: an explicit value is preserved as provider telemetry.
-    When omitted, it auto-computes as ``input_tokens + output_tokens`` only
-    when BOTH are present; if either is ``None`` the total stays ``None``.
+    Construction enforces the parts-of relations (INV-029): a part never
+    exceeds its whole, and an explicit ``total_tokens`` equals
+    ``input_tokens + output_tokens`` when both are present. When
+    ``total_tokens`` is omitted it is computed from the two when both are
+    present. Arithmetic over usage (``InferencePricing.estimate``) treats
+    ``None`` as unknown, never as zero.
 
-    Arithmetic over usage (e.g. ``InferencePricing.estimate``) must treat
-    ``None`` as "unknown", never as zero.
-
-    Counters are provider-verbatim (spec/types.md, Usage, 2026-09-02): the
-    same field means different things across providers. ``input_tokens``
-    includes cached tokens on OpenAI, Gemini, and xAI but not on Anthropic
-    (whose cache counters are disjoint); ``output_tokens`` includes
-    reasoning on OpenAI and Anthropic but not on Gemini and xAI. lm15 does
-    not normalise: that is what a bill reconciles against. A consumer
-    comparing across providers must apply the provider's rule from the
-    table in the spec; ``Response.provider_data`` and the router's
-    resolution say which provider answered.
+    Changed in 2.0 (lm15-contract changes/2026-10-31-usage-one-meaning.md):
+    in 1.x the counters were each provider's own, so ``input_tokens``
+    excluded cached tokens on Anthropic and ``output_tokens`` excluded
+    reasoning on Gemini and xAI.
     """
 
     input_tokens: int | None = None
@@ -2407,6 +2407,7 @@ class Usage:
         for field_name in (
             "input_tokens",
             "output_tokens",
+            "total_tokens",
             "cache_read_tokens",
             "cache_write_tokens",
             "reasoning_tokens",
@@ -2415,14 +2416,70 @@ class Usage:
         ):
             _coerce_int_field(self, field_name)
             _validate_non_negative(getattr(self, field_name), field_name=field_name)
-        _coerce_int_field(self, "total_tokens")
-        _validate_non_negative(self.total_tokens, field_name="total_tokens")
+        problem = usage_inconsistency(
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
+            total_tokens=self.total_tokens,
+            cache_read_tokens=self.cache_read_tokens,
+            cache_write_tokens=self.cache_write_tokens,
+            reasoning_tokens=self.reasoning_tokens,
+            input_audio_tokens=self.input_audio_tokens,
+            output_audio_tokens=self.output_audio_tokens,
+        )
+        if problem is not None:
+            raise ValueError(
+                f"{problem} (INV-029). Since lm15-contract MAP-19 (2026-10-31) input_tokens includes "
+                "cached tokens and output_tokens includes reasoning, on every provider; an earlier "
+                "record from Anthropic, Gemini or xAI must add them (changes/2026-10-31-usage-one-meaning.md)"
+            )
         if (
             self.total_tokens is None
             and self.input_tokens is not None
             and self.output_tokens is not None
         ):
             object.__setattr__(self, "total_tokens", self.input_tokens + self.output_tokens)
+
+
+def usage_inconsistency(
+    *,
+    input_tokens: int | None,
+    output_tokens: int | None,
+    total_tokens: int | None,
+    cache_read_tokens: int | None = None,
+    cache_write_tokens: int | None = None,
+    reasoning_tokens: int | None = None,
+    input_audio_tokens: int | None = None,
+    output_audio_tokens: int | None = None,
+) -> str | None:
+    """The first INV-029 relation these counters break, or None.
+
+    The parts-of relations, checked only between present counters: the
+    cache counters (alone and together) and input audio within input;
+    reasoning and output audio within output; an explicit total equal to
+    input + output.
+    """
+    if input_tokens is not None:
+        cached = [c for c in (cache_read_tokens, cache_write_tokens) if c is not None]
+        if sum(cached) > input_tokens:
+            return (
+                f"cache_read_tokens + cache_write_tokens ({sum(cached)}) exceed "
+                f"input_tokens ({input_tokens})"
+            )
+        if input_audio_tokens is not None and input_audio_tokens > input_tokens:
+            return f"input_audio_tokens ({input_audio_tokens}) exceed input_tokens ({input_tokens})"
+    if output_tokens is not None:
+        if reasoning_tokens is not None and reasoning_tokens > output_tokens:
+            return f"reasoning_tokens ({reasoning_tokens}) exceed output_tokens ({output_tokens})"
+        if output_audio_tokens is not None and output_audio_tokens > output_tokens:
+            return f"output_audio_tokens ({output_audio_tokens}) exceed output_tokens ({output_tokens})"
+    if (
+        total_tokens is not None
+        and input_tokens is not None
+        and output_tokens is not None
+        and total_tokens != input_tokens + output_tokens
+    ):
+        return f"total_tokens ({total_tokens}) is not input_tokens + output_tokens ({input_tokens} + {output_tokens})"
+    return None
 
 
 # ─── Response ────────────────────────────────────────────────────────

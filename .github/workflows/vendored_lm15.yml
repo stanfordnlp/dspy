@@ -6,9 +6,11 @@ on:
       - 'dspy/_vendor/**'
       - 'dspy/lm15.py'
       - 'dspy/__init__.py'
+      - 'dspy/clients/**'
       - 'pyproject.toml'
       - 'scripts/update_vendored_lm15.py'
       - 'tests/test_vendored_lm15.py'
+      - 'tests/clients/**'
       - '.github/workflows/vendored_lm15.yml'
   workflow_dispatch:
 
@@ -33,6 +35,7 @@ jobs:
         run: |
           uv venv --python 3.12 "$RUNNER_TEMP/lm15-wheel-venv"
           uv pip install --python "$RUNNER_TEMP/lm15-wheel-venv/bin/python" dist/*.whl pytest
+          "$RUNNER_TEMP/lm15-wheel-venv/bin/python" -I -c 'import importlib.util; assert importlib.util.find_spec("litellm") is None'
           mkdir "$RUNNER_TEMP/lm15-wheel-tests"
           cp tests/test_vendored_lm15.py "$RUNNER_TEMP/lm15-wheel-tests/"
           cd "$RUNNER_TEMP/lm15-wheel-tests"

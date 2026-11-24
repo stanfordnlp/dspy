@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import random
-from collections import defaultdict
 from typing import Any
 
-from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern
+from dspy.adapters.chat_adapter import FieldInfoWithName
+from dspy.adapters.utils import _get_adapter
 from dspy.clients.base_lm import BaseLM
 from dspy.dsp.utils.utils import dotdict
 from dspy.signatures.field import OutputField
@@ -25,16 +25,16 @@ class DummyLM(BaseLM):
 
     Examples:
 
-    ```
+    ```python
+    import dspy
+    from dspy.utils import DummyLM
+
+    predictor = dspy.Predict("question -> answer")
     lm = DummyLM([{"answer": "red"}, {"answer": "blue"}])
     dspy.configure(lm=lm)
-    predictor("What color is the sky?")
-    # Output:
-    # [[## answer ##]]
+    print(predictor(question="What color is the sky?").answer)
     # red
-    predictor("What color is the sky?")
-    # Output:
-    # [[## answer ##]]
+    print(predictor(question="What color is the sky?").answer)
     # blue
     ```
 
@@ -42,28 +42,25 @@ class DummyLM(BaseLM):
 
     If a dictionary of dictionaries is provided, the dummy model will return the value
     corresponding to the key which is contained with the final message of the prompt,
-    formatted according to the `format_field_with_value` function from the chat adapter.
+    formatted according to the configured adapter's `format_field_with_value` function.
 
-    ```
+    ```python
     lm = DummyLM({"What color is the sky?": {"answer": "blue"}})
     dspy.configure(lm=lm)
-    predictor("What color is the sky?")
-    # Output:
-    # [[## answer ##]]
+    print(predictor(question="What color is the sky?").answer)
     # blue
     ```
 
     Mode 3: Follow examples
 
-    If `follow_examples` is set to True, and the prompt contains an example input exactly equal to the prompt,
-    the dummy model will return the output from that example.
+    If `follow_examples` is set to True, and the prompt contains a demonstration matching the current input,
+    the dummy model will return the output from that demonstration.
 
-    ```
+    ```python
     lm = DummyLM([{"answer": "red"}], follow_examples=True)
     dspy.configure(lm=lm)
-    predictor("What color is the sky?, demos=dspy.Example(input="What color is the sky?", output="blue"))
-    # Output:
-    # [[## answer ##]]
+    demo = dspy.Example(question="What color is the sky?", answer="blue")
+    print(predictor(question="What color is the sky?", demos=[demo]).answer)
     # blue
     ```
 
@@ -76,41 +73,26 @@ class DummyLM(BaseLM):
         reasoning: bool = False,
         adapter=None,
     ):
-        super().__init__("dummy", "chat", 0.0, 1000, True)
+        from dspy.clients.engines.dummy_engine import AsyncDummyEngine, DummyEngine
+
+        engine = DummyEngine(self)
+        super().__init__("dummy", "chat", 0.0, 1000, True, engine=engine, async_engine=AsyncDummyEngine(engine))
         self.answers = answers
         if isinstance(answers, list):
             self.answers = iter(answers)
         self.follow_examples = follow_examples
         self.reasoning = reasoning
 
-        # Set adapter, defaulting to ChatAdapter
-        if adapter is None:
-            from dspy.adapters.chat_adapter import ChatAdapter
-            adapter = ChatAdapter()
+        # Without an explicit override, follow the adapter active at call time.
         self.adapter = adapter
-
-        from dspy.clients.engines.dummy_engine import AsyncDummyEngine, DummyEngine
-
-        self._engine_spec = DummyEngine(self)
-        self._async_engine_spec = AsyncDummyEngine(self._engine_spec)
         # DummyLM has always consumed scripted answers even for repeated calls.
         self._cache_responses = False
 
     def _use_example(self, messages):
-        # find all field names
-        fields = defaultdict(int)
-        for message in messages:
-            if "content" in message:
-                if ma := field_header_pattern.match(message["content"]):
-                    fields[message["content"][ma.start() : ma.end()]] += 1
-        # find the fields which are missing from the final turns
-        max_count = max(fields.values())
-        output_fields = [field for field, count in fields.items() if count != max_count]
-
-        # get the output from the last turn that has the output fields as headers
+        # Replay the most recent matching user/assistant example.
         final_input = messages[-1]["content"].split("\n\n")[0]
         for input, output in zip(reversed(messages[:-1]), reversed(messages), strict=False):
-            if any(field in output["content"] for field in output_fields) and final_input in input["content"]:
+            if input["role"] == "user" and output["role"] == "assistant" and final_input in input["content"]:
                 return output["content"]
 
     def _format_answer_fields(self, field_names_and_values: dict[str, Any]):
@@ -120,7 +102,7 @@ class DummyLM(BaseLM):
         }
         # The reason why DummyLM needs an adapter is because it needs to know which output format to mimic.
         # Normally LMs should not have any knowledge of an adapter, because the output format is defined in the prompt.
-        adapter = self.adapter
+        adapter = self.adapter if self.adapter is not None else _get_adapter()
 
         # Try to use role="assistant" if the adapter supports it (like JSONAdapter)
         try:
@@ -128,15 +110,6 @@ class DummyLM(BaseLM):
         except TypeError:
             # Fallback for adapters that don't support role parameter (like ChatAdapter)
             return adapter.format_field_with_value(fields_with_values)
-
-    def forward(self, prompt=None, messages=None, **kwargs):
-        from dspy.clients.execution import execute, prepare
-
-        return execute(self, prepare(self, prompt, messages, kwargs, direct=True)).provider_response()
-
-    async def aforward(self, prompt=None, messages=None, **kwargs):
-        # Preserve the historical subclass extension point on async calls.
-        return self.forward(prompt=prompt, messages=messages, **kwargs)
 
     def copy(self, **kwargs):
         from dspy.clients.engines.dummy_engine import AsyncDummyEngine, DummyEngine

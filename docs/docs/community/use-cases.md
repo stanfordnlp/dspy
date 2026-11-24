@@ -53,17 +53,16 @@ This list represents companies that have publicly shared their use cases or have
 | **[VMware](https://www.vmware.com/)** | RAG and other prompt optimization applications. [Interview in The Register.](https://www.theregister.com/2024/02/22/prompt_engineering_ai_models/) [Business Insider.](https://www.businessinsider.com/chaptgpt-large-language-model-ai-prompt-engineering-automated-optimizer-2024-3) |
 | **[Nubank](https://nubank.com.br/)** | Uses DSPy with GEPA to optimize modular, semantically versioned prompts for production-grade financial-service agents. [Engineering blog](https://building.nubank.com/building-ai-agents-for-131-million-customers/) |
 | **[Nous Research](https://nousresearch.com/)** | Evolutionary self-improvement for the Hermes agent: optimizes skills, prompts, and code using DSPy + GEPA. [GitHub](https://github.com/NousResearch/hermes-agent-self-evolution) |
-| **[Haize Labs](https://www.haizelabs.com/)** | Automated red-teaming for LLMs. [Blog](https://blog.haizelabs.com/posts/dspy/) |
-| **[Plastic Labs](https://www.plasticlabs.ai/)** | R&D pipelines for Honcho. [Blog](https://blog.plasticlabs.ai/blog/User-State-is-State-of-the-Art) |
+| **[Haize Labs](https://www.haizelabs.com/)** | Automated red-teaming for LLMs. [Blog](https://www.haizelabs.com/blog/red-teaming-language-models-with-dspy) |
+| **[Plastic Labs](https://www.plasticlabs.ai/)** | R&D pipelines for Honcho. [Archived blog](https://plasticlabs.ai/blog/archive/ARCHIVED;-User-State-is-State-of-the-Art) |
 | **[PingCAP](https://pingcap.com/)** | Building a knowledge graph. [Article](https://www.pingcap.com/article/building-a-graphrag-from-wikipedia-page-using-dspy-openai-and-tidb-vector-database/) |
-| **[Salomatic](https://langtrace.ai/blog/case-study-how-salomatic-used-langtrace-to-build-a-reliable-medical-report-generation-system)** | Enriching medical reports using DSPy. [Blog](https://langtrace.ai/blog/case-study-how-salomatic-used-langtrace-to-build-a-reliable-medical-report-generation-system) |
+| **[Salomatic](https://dev.to/langtrace/how-salomatic-used-langtrace-to-build-a-reliable-medical-report-generation-system-49hd)** | Enriching medical reports using DSPy. [Blog](https://dev.to/langtrace/how-salomatic-used-langtrace-to-build-a-reliable-medical-report-generation-system-49hd) |
 | **[Truelaw](https://www.youtube.com/watch?v=O0F3RAWZNfM)** | How Truelaw builds bespoke LLM pipelines for law firms using DSPy. [Podcast](https://www.youtube.com/watch?v=O0F3RAWZNfM) |
 | **[STChealth](https://stchealth.com/)** | Using DSPy for entity resolution including human-readable rationale for decisions. |
 | **[Moody's](https://www.moodys.com/)** | Leveraging DSPy to optimize RAG systems, LLM-as-a-Judge, and agentic systems for financial workflows. |
 | **[Normal Computing](https://www.normalcomputing.com/)** | Translate specs from chip companies from English to intermediate formal languages |
 | **[Procure.FYI](https://www.procure.fyi/)** | Process messy, publicly available technology spending and pricing data via DSPy. |
 | **[RadiantLogic](https://www.radiantlogic.com/)** | AI Data Assistant. DSPy is used for the agent that routes the query, the context extraction module, the text-to-sql conversion engine, and the table summarization module. |
-| **[Raia](https://raiahealth.com/)** | Using DSPy for AI-powered Personal Healthcare Agents. |
 | **[Hyperlint](https://hyperlint.com)** | Uses DSPy to generate technical documentation. DSPy helps to fetch relevant information and synthesize that into tutorials. |
 | **[Starops](https://staropshq.com/) & [Saya](https://heysaya.ai/)** | Building research documents given a user's corpus. Generate prompts to create more articles from example articles. |
 | **[Tessel AI](https://tesselai.com/)** | Enhancing human-machine interaction with data use cases. |

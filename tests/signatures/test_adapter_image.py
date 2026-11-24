@@ -40,7 +40,8 @@ def sample_dspy_image_no_download():
 
 
 def count_messages_with_image_url_pattern(messages):
-    pattern = {"type": "image_url", "image_url": {"url": lambda x: isinstance(x, str)}}
+    """Count lm15 image parts (as recorded in LM history) addressed by a URL or inline data."""
+    pattern = {"type": "image", "media_type": lambda x: isinstance(x, str)}
 
     try:
 
@@ -211,7 +212,7 @@ def test_save_load_complex_default_types():
 
     result = loaded_predictor(**examples[0].inputs())
     assert result.caption == "A list of images"
-    assert str(lm.history[-1]["messages"]).count("'url'") == 4
+    assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 4
     assert "<DSPY_IMAGE_START>" not in str(lm.history[-1]["messages"])
 
 
@@ -453,16 +454,16 @@ def test_image_repr():
     url_image = dspy.Image("https://example.com/dog.jpg")
     assert str(url_image) == (
         "<<CUSTOM-TYPE-START-IDENTIFIER>>"
-        '[{"type": "image_url", "image_url": {"url": "https://example.com/dog.jpg"}}]'
+        '[{"type": "image", "media_type": "image/jpeg", "url": "https://example.com/dog.jpg"}]'
         "<<CUSTOM-TYPE-END-IDENTIFIER>>"
     )
     assert repr(url_image) == "Image(url='https://example.com/dog.jpg')"
 
     sample_pil = PILImage.new("RGB", (60, 30), color="red")
     pil_image = dspy.Image(sample_pil)
-    assert str(pil_image).startswith('<<CUSTOM-TYPE-START-IDENTIFIER>>[{"type": "image_url",')
+    assert str(pil_image).startswith('<<CUSTOM-TYPE-START-IDENTIFIER>>[{"type": "image", "media_type": "image/png", "data": "')
     assert str(pil_image).endswith("<<CUSTOM-TYPE-END-IDENTIFIER>>")
-    assert "base64" in str(pil_image)
+    assert '"data": "' in str(pil_image)
 
 
 def test_image_constructor_supports_positional_source_and_url_keyword():
@@ -493,16 +494,23 @@ def test_canonical_factories_do_not_warn(tmp_path):
         dspy.Image.from_path(str(tmp_file))
 
 
-def test_deprecated_factory_aliases_warn(tmp_path):
-    tmp_file = tmp_path / "test.png"
-    tmp_file.write_bytes(b"pngdata")
+@pytest.mark.parametrize("name", ["from_file", "from_PIL"])
+def test_removed_image_factory_aliases(name):
+    with pytest.raises(AttributeError, match=name):
+        getattr(dspy.Image, name)
 
-    with pytest.warns(DeprecationWarning, match="Image.from_file is deprecated"):
-        dspy.Image.from_file(str(tmp_file))
 
+def test_pil_image_constructor_preserves_pixels():
     sample_pil = PILImage.new("RGB", (10, 10), color="blue")
-    with pytest.warns(DeprecationWarning):
-        dspy.Image.from_PIL(sample_pil)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        image = dspy.Image(sample_pil)
+
+    assert image.url.startswith("data:image/png;base64,")
+    decoded = PILImage.open(BytesIO(base64.b64decode(image.url.split(",", 1)[1])))
+    assert decoded.size == (10, 10)
+    assert decoded.getpixel((0, 0)) == (0, 0, 255)
 
 
 def test_invalid_string_format():
@@ -525,37 +533,22 @@ def test_positional_local_path_hard_breaks(tmp_path, monkeypatch):
         dspy.Image(str(tmp_file))
 
 
-def test_deprecated_download_true_downloads(monkeypatch):
-    response = type("Response", (), {"content": b"pngdata", "headers": {"Content-Type": "image/png"}})()
-    response.raise_for_status = lambda: None
-    monkeypatch.setattr("dspy.adapters.types.image.requests.get", lambda *args, **kwargs: response)
-
-    with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
-        image = dspy.Image("https://example.com/dog.jpg", download=True)
-
-    assert image.url.startswith("data:image/png;base64,")
-    assert base64.b64decode(image.url.split(",", 1)[1]) == b"pngdata"
-
-
-def test_deprecated_download_false_keeps_reference():
-    source = "https://example.com/dog.jpg"
-    with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
-        image = dspy.Image(source, download=False)
-    assert image.url == source
-
-
-def test_deprecated_verify_warns_without_download():
-    source = "https://example.com/dog.jpg"
-    with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
-        image = dspy.Image(source, verify=False)
-    assert image.url == source
-
-
-def test_pil_image_with_deprecated_download_still_encodes():
-    sample_pil = PILImage.new("RGB", (60, 30), color="red")
-    with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
-        image = dspy.Image(sample_pil, download=True)
-    assert image.url.startswith("data:image/")
+@pytest.mark.parametrize("source", ["https://example.com/dog.jpg", PILImage.new("RGB", (2, 1), color="red")])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"download": True},
+        {"download": False},
+        {"download": None},
+        {"verify": True},
+        {"verify": False},
+        {"verify": None},
+        {"download": True, "verify": False},
+    ],
+)
+def test_image_constructor_rejects_removed_keywords(source, kwargs):
+    with pytest.raises(TypeError, match=r"no longer accepts.*Image\.from_url"):
+        dspy.Image(source, **kwargs)
 
 
 def test_from_path_missing_file():
@@ -566,3 +559,16 @@ def test_from_path_missing_file():
 def test_unidentifiable_bytes_raise_value_error():
     with pytest.raises(ValueError, match="could not be identified as an image"):
         dspy.Image(b"not an image")
+
+
+def test_image_to_pil_decodes_embedded_images_only(monkeypatch):
+    image = dspy.Image(PILImage.new("RGB", (6, 4), (255, 0, 0)))
+    pil = image.to_pil()
+    assert pil.size == (6, 4) and pil.getpixel((0, 0)) == (255, 0, 0)
+    assert dspy.Image(pil).url == image.url  # dspy.Image(pil_image) goes the other way
+
+    with pytest.raises(ValueError, match="needs an embedded base64 image"):
+        dspy.Image("https://example.com/x.png").to_pil()
+    monkeypatch.setattr(dspy.adapters.types.image, "PIL_AVAILABLE", False)
+    with pytest.raises(ImportError, match="Pillow is required"):
+        image.to_pil()

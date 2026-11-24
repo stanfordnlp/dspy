@@ -1,14 +1,11 @@
 """Offline checks for the coordinated LM engine path."""
 
 import json
-import zipfile
-from pathlib import Path
 
 import pytest
 
 import dspy
 from dspy._vendor.lm15.testing import FakeResponse, FakeTransport
-from dspy.clients.engines import LiteLLMEngine
 from dspy.lm15 import Config, Message, Request, Response, RouterConfig
 from dspy.utils.callback import BaseCallback
 from dspy.utils.usage_tracker import track_usage
@@ -49,14 +46,14 @@ def native_transport(monkeypatch, responses):
 
     transport = FakeTransport(responses)
     monkeypatch.setattr(execution, "RouterConfig", lambda **kwargs: RouterConfig(
-        **{**kwargs, "api_keys": {"openai-chat": "fake"}, "transport": transport},
+        **{**kwargs, "api_keys": {"openai-chat": "fake", **(kwargs.get("api_keys") or {})}, "transport": transport},
     ))
     return transport
 
 
 def test_default_native_cache_and_typed_request(monkeypatch):
     transport = native_transport(monkeypatch, [wire(), wire("typed")])
-    lm = dspy.LM("openai/gpt-4o-mini")
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat")
     with track_usage() as usage:
         assert lm("hello") == ["hello"]
         assert lm("hello") == ["hello"]
@@ -74,7 +71,7 @@ def test_default_native_cache_and_typed_request(monkeypatch):
 @pytest.mark.asyncio
 async def test_async_native_cache_and_history(monkeypatch):
     transport = native_transport(monkeypatch, [wire("async")])
-    lm = dspy.LM("openai/gpt-4o-mini")
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat")
     try:
         with track_usage() as usage:
             assert await lm.acall("hello") == ["async"]
@@ -100,7 +97,7 @@ def test_native_n_fans_out_but_bookkeeping_is_one_call(monkeypatch):
             self.events.append(("end", call_id))
 
     trace = Trace()
-    lm = dspy.LM("openai/gpt-4o-mini", callbacks=[trace])
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat", callbacks=[trace])
     with track_usage() as usage:
         assert lm("hello", n=2) == ["first", "second"]
     assert len(transport.requests) == 2
@@ -118,67 +115,36 @@ def test_native_retries_without_backend_fallback(monkeypatch):
     transport = native_transport(monkeypatch, [wire(status=429), wire("recovered")])
     delays = []
     monkeypatch.setattr(execution.time, "sleep", delays.append)
-    lm = dspy.LM("openai/gpt-4o-mini", num_retries=1, cache=False)
+    lm = dspy.LM("openai/gpt-4o-mini", model_type="chat", num_retries=1, cache=False)
     assert lm("hello") == ["recovered"]
     assert len(transport.requests) == 2
     assert delays == [1]
 
 
 def test_provider_auth_error_does_not_switch_backend(monkeypatch):
-    native_transport(monkeypatch, [wire(status=401)])
-
-    def forbidden(*args, **kwargs):
-        pytest.fail("An authentication failure must not invoke LiteLLM")
-
-    monkeypatch.setattr(LiteLLMEngine, "complete_legacy", forbidden)
+    transport = native_transport(monkeypatch, [wire(status=401)])
     with pytest.raises(dspy.LMAuthError):
         dspy.LM("openai/gpt-4o-mini", cache=False)("hello")
+    assert len(transport.requests) == 1
 
 
-def test_unrepresentable_ordinary_options_choose_compatibility_before_io(monkeypatch):
+@pytest.mark.parametrize("options", [
+    {"audio": {"voice": "alloy", "format": "wav"}},
+    {"questions": {"flag": {"type": "noul", "instructions": "Is this correct?"}}},
+])
+def test_unrepresentable_ordinary_options_refuse_before_io(monkeypatch, options):
     transport = native_transport(monkeypatch, [])
-    from dspy.clients.call_result import CallResult
-
-    calls = []
-
-    def complete(engine, lm, request, **context):
-        calls.append(request)
-        return CallResult(outputs=["compatible"], response_model=lm.model)
-
-    monkeypatch.setattr(LiteLLMEngine, "complete_legacy", complete)
-    assert dspy.LM("openai/gpt-4o-mini")("hello", audio={"voice": "alloy", "format": "wav"}) == ["compatible"]
-    assert calls[0]["audio"]["voice"] == "alloy"
+    lm = dspy.LM("openai/gpt-4o-mini", engine="lm15", cache=False)
+    with pytest.raises(dspy.LMUnsupportedFeatureError, match="provider options"):
+        lm("hello", **options)
     assert not transport.requests
-
-
-@pytest.mark.asyncio
-async def test_legacy_plugin_sync_async_preserve_forward_inputs():
-    from dspy.dsp.utils.utils import dotdict
-
-    class Plugin(dspy.BaseLM):
-        def forward(self, prompt=None, messages=None, **kwargs):
-            self.received = prompt, messages, kwargs
-            return dotdict(model=self.model, usage={"total_tokens": 1}, choices=[
-                dotdict(message=dotdict(content="ok"), finish_reason="stop")
-            ])
-
-        async def aforward(self, **kwargs):
-            return self.forward(**kwargs)
-
-    plugin = Plugin("custom")
-    with pytest.warns(DeprecationWarning, match="scheduled for removal in 3.5"):
-        assert plugin("hello") == ["ok"]
-    assert plugin.received == ("hello", None, {})
-    with pytest.warns(DeprecationWarning, match="scheduled for removal in 3.5"):
-        assert await plugin.acall("hello") == ["ok"]
-    assert len(plugin.history) == 2
 
 
 def test_new_native_cache_uses_restricted_plain_data(monkeypatch, tmp_path):
     transport = native_transport(monkeypatch, [wire()])
     dspy.configure_cache(enable_disk_cache=True, enable_memory_cache=False, disk_cache_dir=tmp_path, restrict_pickle=True)
     try:
-        lm = dspy.LM("openai/gpt-4o-mini")
+        lm = dspy.LM("openai/gpt-4o-mini", model_type="chat")
         assert lm("hello") == ["hello"]
         assert lm("hello") == ["hello"]
         assert len(transport.requests) == 1
@@ -187,40 +153,27 @@ def test_new_native_cache_uses_restricted_plain_data(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("case_index", range(6))
-async def test_old_disk_cache_hits_before_native_routing(case_index, monkeypatch, tmp_path):
-    from tests.clients.test_lm_migration_compatibility import plain
-
-    fixtures = Path(__file__).parent / "fixtures" / "lm_3_3_0"
-    case = json.loads((fixtures / "manifest.json").read_text())["cases"][case_index]
-    with zipfile.ZipFile(fixtures / f"{case['name']}.zip") as archive:
-        archive.extractall(tmp_path)
-    dspy.configure_cache(enable_disk_cache=True, enable_memory_cache=False, disk_cache_dir=tmp_path)
-    import dspy.clients.execution as execution
-
-    def forbidden(*args, **kwargs):
-        pytest.fail("An old disk hit must not even initialize an engine")
-
-    monkeypatch.setattr(execution, "_engine", forbidden)
-    try:
-        lm = dspy.LM(**case["init"])
-        output = lm(**case["call"]) if case["mode"] == "sync" else await lm.acall(**case["call"])
-        assert plain(output) == case["outputs"]
-        assert lm.history[-1]["usage"] == {}
-    finally:
-        dspy.cache.disk_cache.close()
-
-
-@pytest.mark.asyncio
-async def test_native_streaming_reaches_existing_listener(monkeypatch):
-    payloads = [{"choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}]}
-                for text in ("[[ ## answer ## ]]\n", "native", "\n\n[[ ## completed ## ]]")]
-    payloads.append({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-                     "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3}})
+@pytest.mark.parametrize("model_type", [None, "chat"])
+async def test_native_streaming_reaches_existing_listener(model_type, monkeypatch):
+    text_parts = ("<answer>", "native", "</answer>")
+    if model_type == "chat":
+        payloads = [{"choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}]}
+                    for text in text_parts]
+        payloads.append({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                         "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3}})
+    else:
+        payloads = [{"type": "response.created", "response": {"id": "r", "model": "gpt-4o-mini"}}]
+        payloads.extend({"type": "response.output_text.delta", "output_index": 0, "delta": text} for text in text_parts)
+        payloads.append({"type": "response.completed", "response": {
+            "id": "r", "status": "completed", "output": [{"type": "message", "role": "assistant", "content": [
+                {"type": "output_text", "text": "".join(text_parts)},
+            ]}], "usage": {"input_tokens": 2, "output_tokens": 1, "total_tokens": 3},
+        }})
     chunks = [f"data: {json.dumps(payload)}\n\n".encode() for payload in payloads]
     chunks.append(b"data: [DONE]\n\n")
     transport = native_transport(monkeypatch, [FakeResponse(status=200, body=b"", chunks=chunks)])
-    lm = dspy.LM("openai/gpt-4o-mini")
+    options = {} if model_type is None else {"model_type": model_type}
+    lm = dspy.LM("openai/gpt-4o-mini", api_key="fake", **options)
     predict = dspy.Predict("question -> answer")
     streamer = dspy.streamify(predict, stream_listeners=[dspy.streaming.StreamListener("answer")])
     with dspy.context(lm=lm):
@@ -230,6 +183,7 @@ async def test_native_streaming_reaches_existing_listener(monkeypatch):
     assert "".join(value.chunk for value in values if isinstance(value, dspy.streaming.StreamResponse)) == "native"
     assert len(cached) == 1 and cached[0].answer == "native"
     assert len(transport.requests) == 1
+    assert transport.requests[0].url.endswith("/chat/completions" if model_type == "chat" else "/responses")
 
 
 @pytest.mark.asyncio

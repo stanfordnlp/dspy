@@ -1,8 +1,11 @@
+import json
+
 import pydantic
 import pytest
 
 import dspy
 from dspy.experimental import Citations
+from dspy.lm15 import CitationPart, Message, Response, TextPart, Usage
 
 
 def test_citation_validate_input():
@@ -20,8 +23,11 @@ def test_citation_validate_input():
     assert citation.type == "char_location"
     assert citation.supported_text == "The Earth orbits the Sun."
 
+    # Providers that report no offsets still produce a valid citation.
+    minimal = Citations.Citation(cited_text="text")
+    assert minimal.document_index is None
     with pytest.raises(pydantic.ValidationError):
-        Citations.Citation(cited_text="text")
+        Citations.Citation(document_index=0)
 
 
 def test_citations_in_nested_type():
@@ -97,7 +103,7 @@ def test_citations_format():
         )
     ])
 
-    formatted = citations.format()
+    formatted = json.loads(citations.format())
 
     assert isinstance(formatted, list)
     assert len(formatted) == 2
@@ -137,58 +143,40 @@ def test_citations_postprocessing():
 
     adapter = ChatAdapter(native_response_types=[Citations])
 
-    outputs = [{
-        "text": "[[ ## answer ## ]]\nThe answer is blue.\n\n[[ ## citations ## ]]\n[]",
-        "citations": [
-            {
-                "cited_text": "The sky is blue",
-                "document_index": 0,
-                "document_title": "Weather Guide",
-                "start_char_index": 10,
-                "end_char_index": 25,
-                "supported_text": "The sky is blue"
-            }
-        ]
-    }]
-
-    result = adapter._call_postprocess(
-        CitationSignature.delete("citations"),
-        CitationSignature,
-        outputs,
-        dspy.LM(model="anthropic/claude-3-5-sonnet-20241022"),
-        lm_kwargs={},
+    response = Response(
+        id=None, model="claude", finish_reason="stop", usage=Usage(),
+        message=Message.assistant([
+            TextPart("[[ ## answer ## ]]\nThe answer is blue.\n\n[[ ## citations ## ]]\n[]"),
+            CitationPart(text="The sky is blue", title="Weather Guide"),
+        ]),
     )
+
+    result = adapter._call_postprocess(CitationSignature.delete("citations"), CitationSignature, [response])
 
     assert len(result) == 1
     assert "citations" in result[0]
     assert isinstance(result[0]["citations"], Citations)
     assert len(result[0]["citations"]) == 1
     assert result[0]["citations"][0].cited_text == "The sky is blue"
+    assert result[0]["citations"][0].document_title == "Weather Guide"
 
 
 def test_citation_extraction_from_lm_response():
-    from unittest.mock import MagicMock
+    response = Response(
+        id=None, model="m", finish_reason="stop", usage=Usage(),
+        message=Message.assistant([
+            TextPart("answer"),
+            CitationPart(text="The sky is blue", title="Weather Guide", url="https://example.com/weather"),
+        ]),
+    )
 
-    mock_choice = MagicMock(message=MagicMock(provider_specific_fields={"citations": [[
-        {
-            "type": "char_location",
-            "cited_text": "The sky is blue",
-            "document_index": 0,
-            "document_title": "Weather Guide",
-            "start_char_index": 10,
-            "end_char_index": 25,
-            "supported_text": "The sky is blue"
-        }
-    ]]}))
-
-    lm = dspy.LM(model="test")
-    citations = lm._extract_citations_from_response(mock_choice)
+    citations = Citations.parse_lm_response(response)
 
     assert citations is not None
     assert len(citations) == 1
-    assert citations[0]["cited_text"] == "The sky is blue"
-    assert citations[0]["document_index"] == 0
-    assert citations[0]["document_title"] == "Weather Guide"
-    assert citations[0]["start_char_index"] == 10
-    assert citations[0]["end_char_index"] == 25
-    assert citations[0]["supported_text"] == "The sky is blue"
+    assert citations[0].cited_text == "The sky is blue"
+    assert citations[0].document_title == "Weather Guide"
+    assert citations[0].url == "https://example.com/weather"
+    assert Citations.parse_lm_response(Response(
+        id=None, model="m", finish_reason="stop", usage=Usage(), message=Message.assistant("plain"),
+    )) is None

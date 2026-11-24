@@ -577,4 +577,3 @@ def test_evaluate_raises_on_empty_devset():
     )
     with pytest.raises(ValueError, match="devset"):
         ev(program)
-

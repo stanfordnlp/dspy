@@ -27,7 +27,7 @@ class UsageTracker:
         result: dict[str, Any] = {}
         for key, value in usage_entry.items():
             if isinstance(value, BaseModel):
-                # Convert Pydantic models to dicts, like `PromptTokensDetailsWrapper` from litellm.
+                # Convert provider SDK Pydantic usage models to dictionaries.
                 result[key] = value.model_dump()
             else:
                 result[key] = value
@@ -62,7 +62,7 @@ class UsageTracker:
             elif self._is_summable(current_v) and self._is_summable(v):
                 result[k] = current_v + v
             # Otherwise keep `current_v` as-is. `usage` is not guaranteed to hold only
-            # counts: both litellm's `Usage` and dspy's `LMUsage` allow extra fields, so
+            # counts: provider SDKs and custom engines may include extra fields, so
             # whatever a provider reports flows through verbatim.
         return result
 
