@@ -153,8 +153,10 @@ class DummyVectorizer:
         self.max_length = max_length
         self.n_gram = n_gram
         self.P = 10**9 + 7  # A large prime number
-        random.seed(123)
-        self.coeffs = [random.randrange(1, self.P) for _ in range(n_gram)]
+        # A local generator keeps the coefficients reproducible without reseeding the process-wide
+        # `random` module that callers, and DSPy's own samplers, keep drawing from.
+        rng = random.Random(123)
+        self.coeffs = [rng.randrange(1, self.P) for _ in range(n_gram)]
 
     def _hash(self, gram):
         """Hashes a string using a polynomial hash function."""
