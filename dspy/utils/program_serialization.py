@@ -1002,7 +1002,7 @@ def _serialize_custom_module(module: BaseModule) -> dict[str, Any]:
 
 def _custom_module_payload(module: BaseModule, *, construction_mode: str, config: dict[str, Any]) -> dict[str, Any]:
     cls = type(module)
-    return {
+    payload = {
         "module": cls.__module__,
         "qualname": cls.__qualname__,
         "construction_mode": construction_mode,
@@ -1011,6 +1011,9 @@ def _custom_module_payload(module: BaseModule, *, construction_mode: str, config
         "compiled_sub_modules": _compiled_sub_modules(module),
         "compiled": bool(getattr(module, "_compiled", False)),
     }
+    if cls.dump_state is not BaseModule.dump_state or cls.load_state is not BaseModule.load_state:
+        payload["state"] = _ensure_json_dict(module.dump_state(json_mode=True), context=f"{cls.__qualname__} state")
+    return payload
 
 
 def serialize_program(module: BaseModule) -> dict[str, Any]:
@@ -1353,3 +1356,9 @@ def _restore_custom_module(instance: Module, module_data: dict[str, Any], *, all
         param.load_state(entry["state"], allow_unsafe_lm_state=allow_unsafe_lm_state)
     for name in compiled_names:
         sub_modules[name]._compiled = True
+
+    if "state" in module_data:
+        state = module_data["state"]
+        if not isinstance(state, dict):
+            raise ValueError("Invalid program.json: 'state' must be a JSON object.")
+        instance.load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)

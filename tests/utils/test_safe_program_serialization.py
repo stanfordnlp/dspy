@@ -859,3 +859,40 @@ def test_signature_field_constraints_roundtrip_and_unknown_metadata_is_rejected(
     with pytest.raises(ValueError, match="unsupported"):
         dspy.Predict(Validated).save(tmp_path / "validated", save_program=True, format="json")
     assert not (tmp_path / "validated").exists()
+
+
+class _Thresholded(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.threshold = 0.5
+        self.classify = dspy.Predict("text -> label")
+
+    def to_program_config(self):
+        return {}
+
+    @classmethod
+    def from_program_config(cls, config):
+        return cls()
+
+    def dump_state(self, json_mode=True):
+        return {**super().dump_state(json_mode=json_mode), "threshold": self.threshold}
+
+    def load_state(self, state, *, allow_unsafe_lm_state=False):
+        self.threshold = state["threshold"]
+        params = {name: value for name, value in state.items() if name != "threshold"}
+        return super().load_state(params, allow_unsafe_lm_state=allow_unsafe_lm_state)
+
+
+def test_custom_module_state_methods_are_preserved(tmp_path):
+    program = _Thresholded()
+    program.threshold = 0.9
+    program.classify.update_config(temperature=0.2)
+    program.classify.demos = [dspy.Example(text="hi", label="greeting")]
+
+    save_dir = tmp_path / "thresholded"
+    program.save(save_dir, save_program=True, format="json")
+    loaded = dspy.load(save_dir, safe_modules=[_Thresholded])
+
+    assert loaded.threshold == 0.9
+    assert loaded.classify.config == {"temperature": 0.2}
+    assert loaded.classify.demos == [{"text": "hi", "label": "greeting"}]
