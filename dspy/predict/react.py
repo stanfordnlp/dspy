@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any, Callable, get_args
 
 import pydantic
@@ -139,11 +140,20 @@ class ReAct(Module):
     def forward(self, **input_args):
         max_iters = input_args.pop("max_iters", self.max_iters)
         history = _coerce_history(input_args.pop("history", None))
-        pending_inputs = {name: input_args[name] for name in self.signature.input_fields if name in input_args}
+        pending_inputs = {
+            name: input_args[name]
+            for name in self.signature.input_fields
+            if name in input_args
+        }
+        existing_ids = _extract_tool_call_ids(history)
+        turn_offset = _find_turn_offset(history, existing_ids)
 
         break_reason = "max_iters"
         for turn_index in range(max_iters):
-            turn_inputs = {**pending_inputs, **self._turn_budget_inputs(turn_index, max_iters)}
+            turn_inputs = {
+                **pending_inputs,
+                **self._turn_budget_inputs(turn_index, max_iters),
+            }
             try:
                 pred = self.react(
                     history=history,
@@ -152,7 +162,10 @@ class ReAct(Module):
                 )
                 tool_calls = _coerce_tool_calls(getattr(pred, "tool_calls", None))
             except (AdapterParseError, ValueError) as err:
-                logger.warning("Ending ReAct loop after parse failure: %s", format_error_for_lm(err, traceback_frames=5))
+                logger.warning(
+                    "Ending ReAct loop after parse failure: %s",
+                    format_error_for_lm(err, traceback_frames=5),
+                )
                 break_reason = "parse_error"
                 break
             except ContextWindowExceededError:
@@ -164,7 +177,9 @@ class ReAct(Module):
                 break_reason = "empty_tool_calls"
                 break
 
-            tool_calls = _ensure_tool_call_ids(tool_calls, turn_index)
+            tool_calls = _ensure_tool_call_ids(
+                tool_calls, turn_offset + turn_index, existing_ids
+            )
             tool_call_results, final_outputs = self._execute_tool_calls(tool_calls)
             event = self._history_event(turn_inputs, pred, tool_calls, tool_call_results)
             if final_outputs is not None:
@@ -173,18 +188,31 @@ class ReAct(Module):
             pending_inputs = {}
 
             if final_outputs is not None:
-                return Prediction(**final_outputs, history=history, termination_reason="submit")
+                return Prediction(
+                    **final_outputs, history=history, termination_reason="submit"
+                )
 
-        return self._forced_submit(history, pending_inputs, break_reason, max_iters)
+        return self._forced_submit(
+            history, pending_inputs, break_reason, max_iters, turn_offset, existing_ids
+        )
 
     async def aforward(self, **input_args):
         max_iters = input_args.pop("max_iters", self.max_iters)
         history = _coerce_history(input_args.pop("history", None))
-        pending_inputs = {name: input_args[name] for name in self.signature.input_fields if name in input_args}
+        pending_inputs = {
+            name: input_args[name]
+            for name in self.signature.input_fields
+            if name in input_args
+        }
+        existing_ids = _extract_tool_call_ids(history)
+        turn_offset = _find_turn_offset(history, existing_ids)
 
         break_reason = "max_iters"
         for turn_index in range(max_iters):
-            turn_inputs = {**pending_inputs, **self._turn_budget_inputs(turn_index, max_iters)}
+            turn_inputs = {
+                **pending_inputs,
+                **self._turn_budget_inputs(turn_index, max_iters),
+            }
             try:
                 pred = await self.react.acall(
                     history=history,
@@ -193,7 +221,10 @@ class ReAct(Module):
                 )
                 tool_calls = _coerce_tool_calls(getattr(pred, "tool_calls", None))
             except (AdapterParseError, ValueError) as err:
-                logger.warning("Ending ReAct loop after parse failure: %s", format_error_for_lm(err, traceback_frames=5))
+                logger.warning(
+                    "Ending ReAct loop after parse failure: %s",
+                    format_error_for_lm(err, traceback_frames=5),
+                )
                 break_reason = "parse_error"
                 break
             except ContextWindowExceededError:
@@ -205,7 +236,9 @@ class ReAct(Module):
                 break_reason = "empty_tool_calls"
                 break
 
-            tool_calls = _ensure_tool_call_ids(tool_calls, turn_index)
+            tool_calls = _ensure_tool_call_ids(
+                tool_calls, turn_offset + turn_index, existing_ids
+            )
             tool_call_results, final_outputs = await self._aexecute_tool_calls(tool_calls)
             event = self._history_event(turn_inputs, pred, tool_calls, tool_call_results)
             if final_outputs is not None:
@@ -214,9 +247,13 @@ class ReAct(Module):
             pending_inputs = {}
 
             if final_outputs is not None:
-                return Prediction(**final_outputs, history=history, termination_reason="submit")
+                return Prediction(
+                    **final_outputs, history=history, termination_reason="submit"
+                )
 
-        return await self._aforced_submit(history, pending_inputs, break_reason, max_iters)
+        return await self._aforced_submit(
+            history, pending_inputs, break_reason, max_iters, turn_offset, existing_ids
+        )
 
     def _turn_budget_inputs(self, turn_index: int | None, max_iters: int | None) -> dict[str, str]:
         """Build the per-call turn budget input; ``turn_index=None`` marks the forced final submit."""
@@ -298,6 +335,8 @@ class ReAct(Module):
         pending_inputs: dict[str, Any],
         break_reason: str,
         turn_index: int,
+        turn_offset: int = 0,
+        existing_ids: set[str] | None = None,
     ) -> Prediction:
         turn_inputs = {**pending_inputs, **self._turn_budget_inputs(None, None)}
         try:
@@ -310,27 +349,50 @@ class ReAct(Module):
                 },
                 **turn_inputs,
             )
-            tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
+            tool_calls = _ensure_tool_call_ids(
+                _coerce_tool_calls(getattr(pred, "tool_calls", None)),
+                turn_offset + turn_index,
+                existing_ids,
+            )
         except (AdapterParseError, ValueError, ContextWindowExceededError) as err:
-            logger.warning("Forced submit failed: %s", format_error_for_lm(err, traceback_frames=5))
+            logger.warning(
+                "Forced submit failed: %s",
+                format_error_for_lm(err, traceback_frames=5),
+            )
             raise
 
-        submit_calls = ToolCalls(tool_calls=[call for call in tool_calls.tool_calls if call.name == "submit"])
+        submit_calls = ToolCalls(
+            tool_calls=[
+                call for call in tool_calls.tool_calls if call.name == "submit"
+            ]
+        )
         if not submit_calls.tool_calls:
-            raise ValueError(f"ReAct failed to produce final outputs after {break_reason}: no submit call.")
+            raise ValueError(
+                f"ReAct failed to produce final outputs after {break_reason}: "
+                "no submit call."
+            )
 
         tool_call_results, final_outputs = self._execute_tool_calls(submit_calls)
-        event = self._history_event(turn_inputs, pred, submit_calls, tool_call_results)
+        event = self._history_event(
+            turn_inputs, pred, submit_calls, tool_call_results
+        )
         if final_outputs is not None:
             event.update(final_outputs)
         _append_history_event(history, event)
 
         if final_outputs is not None:
-            return Prediction(**final_outputs, history=history, termination_reason="forced_submit")
+            return Prediction(
+                **final_outputs, history=history, termination_reason="forced_submit"
+            )
 
-        errors = "\n".join(str(result.value) for result in tool_call_results.tool_call_results if result.is_error)
+        errors = "\n".join(
+            str(result.value)
+            for result in tool_call_results.tool_call_results
+            if result.is_error
+        )
         raise ValueError(
-            f"ReAct failed to produce final outputs after {break_reason}: submit failed.\n{errors}"
+            f"ReAct failed to produce final outputs after {break_reason}: "
+            f"submit failed.\n{errors}"
         )
 
     async def _aforced_submit(
@@ -339,6 +401,8 @@ class ReAct(Module):
         pending_inputs: dict[str, Any],
         break_reason: str,
         turn_index: int,
+        turn_offset: int = 0,
+        existing_ids: set[str] | None = None,
     ) -> Prediction:
         turn_inputs = {**pending_inputs, **self._turn_budget_inputs(None, None)}
         try:
@@ -351,27 +415,50 @@ class ReAct(Module):
                 },
                 **turn_inputs,
             )
-            tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
+            tool_calls = _ensure_tool_call_ids(
+                _coerce_tool_calls(getattr(pred, "tool_calls", None)),
+                turn_offset + turn_index,
+                existing_ids,
+            )
         except (AdapterParseError, ValueError, ContextWindowExceededError) as err:
-            logger.warning("Forced submit failed: %s", format_error_for_lm(err, traceback_frames=5))
+            logger.warning(
+                "Forced submit failed: %s",
+                format_error_for_lm(err, traceback_frames=5),
+            )
             raise
 
-        submit_calls = ToolCalls(tool_calls=[call for call in tool_calls.tool_calls if call.name == "submit"])
+        submit_calls = ToolCalls(
+            tool_calls=[
+                call for call in tool_calls.tool_calls if call.name == "submit"
+            ]
+        )
         if not submit_calls.tool_calls:
-            raise ValueError(f"ReAct failed to produce final outputs after {break_reason}: no submit call.")
+            raise ValueError(
+                f"ReAct failed to produce final outputs after {break_reason}: "
+                "no submit call."
+            )
 
         tool_call_results, final_outputs = await self._aexecute_tool_calls(submit_calls)
-        event = self._history_event(turn_inputs, pred, submit_calls, tool_call_results)
+        event = self._history_event(
+            turn_inputs, pred, submit_calls, tool_call_results
+        )
         if final_outputs is not None:
             event.update(final_outputs)
         _append_history_event(history, event)
 
         if final_outputs is not None:
-            return Prediction(**final_outputs, history=history, termination_reason="forced_submit")
+            return Prediction(
+                **final_outputs, history=history, termination_reason="forced_submit"
+            )
 
-        errors = "\n".join(str(result.value) for result in tool_call_results.tool_call_results if result.is_error)
+        errors = "\n".join(
+            str(result.value)
+            for result in tool_call_results.tool_call_results
+            if result.is_error
+        )
         raise ValueError(
-            f"ReAct failed to produce final outputs after {break_reason}: submit failed.\n{errors}"
+            f"ReAct failed to produce final outputs after {break_reason}: "
+            f"submit failed.\n{errors}"
         )
 
 
@@ -405,12 +492,118 @@ def _coerce_tool_calls(tool_calls: Any) -> ToolCalls:
     return ToolCalls.model_validate(tool_calls)
 
 
-def _ensure_tool_call_ids(tool_calls: ToolCalls, turn_index: int) -> ToolCalls:
+def _extract_tool_call_ids(history: dspy.History | None) -> set[str]:
+    """Collect all tool-call IDs already present in history."""
+    if history is None or not getattr(history, "messages", None):
+        return set()
+
+    found_ids: set[str] = set()
+    for message in history.messages:
+        if not isinstance(message, dict):
+            continue
+        for value in message.values():
+            if isinstance(value, ToolCalls):
+                for tc in value.tool_calls:
+                    if tc.id:
+                        found_ids.add(str(tc.id))
+                if value.tool_call_results is not None:
+                    try:
+                        results = ToolCallResults.model_validate(
+                            value.tool_call_results
+                        )
+                        for res in results.tool_call_results:
+                            if res.call_id:
+                                found_ids.add(str(res.call_id))
+                    except Exception:
+                        pass
+            elif isinstance(value, dict) and "tool_calls" in value:
+                raw_calls = value.get("tool_calls")
+                if isinstance(raw_calls, list):
+                    for call in raw_calls:
+                        if isinstance(call, dict) and call.get("id"):
+                            found_ids.add(str(call["id"]))
+                        elif hasattr(call, "id") and getattr(call, "id", None):
+                            found_ids.add(str(call.id))
+                raw_results = value.get("tool_call_results")
+                if raw_results is not None:
+                    try:
+                        results = ToolCallResults.model_validate(raw_results)
+                        for res in results.tool_call_results:
+                            if res.call_id:
+                                found_ids.add(str(res.call_id))
+                    except Exception:
+                        pass
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict) and item.get("id"):
+                        found_ids.add(str(item["id"]))
+                    elif hasattr(item, "id") and getattr(item, "id", None):
+                        found_ids.add(str(item.id))
+
+        if "tool_call_id" in message and message["tool_call_id"]:
+            found_ids.add(str(message["tool_call_id"]))
+        if "id" in message and message.get("role") == "tool" and message["id"]:
+            found_ids.add(str(message["id"]))
+
+    return found_ids
+
+
+def _find_turn_offset(
+    history: dspy.History | None, existing_ids: set[str]
+) -> int:
+    """Calculate the starting turn offset from existing history."""
+    if not existing_ids:
+        return 0
+
+    max_turn = -1
+    pattern = re.compile(r"^call_(\d+)_\d+$")
+    for call_id in existing_ids:
+        match = pattern.match(call_id)
+        if match:
+            max_turn = max(max_turn, int(match.group(1)))
+
+    if max_turn >= 0:
+        return max_turn + 1
+
+    tool_message_count = 0
+    if history and getattr(history, "messages", None):
+        for message in history.messages:
+            if isinstance(message, dict):
+                for value in message.values():
+                    if isinstance(value, ToolCalls) or (
+                        isinstance(value, dict) and "tool_calls" in value
+                    ):
+                        tool_message_count += 1
+                        break
+    return max(tool_message_count, len(existing_ids))
+
+
+def _ensure_tool_call_ids(
+    tool_calls: ToolCalls,
+    turn_index: int,
+    existing_ids: set[str] | None = None,
+) -> ToolCalls:
+    candidate_turn = turn_index
+    if existing_ids is not None:
+        unassigned_indices = [
+            i for i, call in enumerate(tool_calls.tool_calls) if call.id is None
+        ]
+        if unassigned_indices:
+            while any(
+                f"call_{candidate_turn}_{i}" in existing_ids
+                for i in unassigned_indices
+            ):
+                candidate_turn += 1
+
     ensured = []
     for call_index, tool_call in enumerate(tool_calls.tool_calls):
         if tool_call.id is None:
-            tool_call = tool_call.model_copy(update={"id": f"call_{turn_index}_{call_index}"})
+            tool_call = tool_call.model_copy(
+                update={"id": f"call_{candidate_turn}_{call_index}"}
+            )
         ensured.append(tool_call)
+        if existing_ids is not None and tool_call.id is not None:
+            existing_ids.add(tool_call.id)
     return ToolCalls(tool_calls=ensured)
 
 
