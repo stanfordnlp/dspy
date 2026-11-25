@@ -3,6 +3,7 @@ import logging
 from collections import deque
 from collections.abc import Generator
 from pathlib import Path
+from typing import Literal
 
 import cloudpickle
 import orjson
@@ -169,20 +170,28 @@ class BaseModule:
 
         _apply(self.deepcopy())  # trial run raises before self is touched
         _apply(self)
-    def save(self, path, save_program=False, modules_to_serialize=None):
+    def save(
+        self,
+        path,
+        save_program=False,
+        modules_to_serialize=None,
+        *,
+        format: Literal["pickle", "json"] | None = None,
+    ):
         """Save the module.
 
         Save the module to a directory or a file. There are two modes:
         - `save_program=False`: Save only the state of the module to a json or pickle file, based on the value of
             the file extension.
-        - `save_program=True`: Save the whole module to a directory via cloudpickle, which contains both the state and
-            architecture of the model.
+        - `save_program=True`: Save the whole module to a directory. By default (`format=None` or `format="pickle"`),
+            uses cloudpickle (`program.pkl`). Pass `format="json"` for safe, pickle-free declarative serialization
+            (`program.json`) that can be loaded with `dspy.load(path, allow_pickle=False)`.
 
-        If `save_program=True` and `modules_to_serialize` are provided, it will register those modules for serialization
-        with cloudpickle's `register_pickle_by_value`. This causes cloudpickle to serialize the module by value rather
-        than by reference, ensuring the module is fully preserved along with the saved program. This is useful
-        when you have custom modules that need to be serialized alongside your program. If None, then no modules
-        will be registered for serialization.
+        If `save_program=True` with pickle format and `modules_to_serialize` are provided, it will register those
+        modules for serialization with cloudpickle's `register_pickle_by_value`. This causes cloudpickle to serialize
+        the module by value rather than by reference, ensuring the module is fully preserved along with the saved
+        program. This is useful when you have custom modules that need to be serialized alongside your program. If
+        None, then no modules will be registered for serialization.
 
         We also save the dependency versions, so that the loaded model can check if there is a version mismatch on
         critical dependencies or DSPy version.
@@ -190,17 +199,24 @@ class BaseModule:
         Args:
             path (str): Path to the saved state file, which should be a .json or .pkl file when `save_program=False`,
                 and a directory when `save_program=True`.
-            save_program (bool): If True, save the whole module to a directory via cloudpickle, otherwise only save
-                the state.
+            save_program (bool): If True, save the whole module to a directory, otherwise only save the state.
             modules_to_serialize (list): A list of modules to serialize with cloudpickle's `register_pickle_by_value`.
-                If None, then no modules will be registered for serialization.
+                Only supported when `save_program=True` and `format` is `None` or `"pickle"`.
+            format (Literal["pickle", "json"] | None): Program serialization format when `save_program=True`.
+                Defaults to `"pickle"` for backward compatibility. Use `"json"` for pickle-free declarative saving.
 
         """
         metadata = {}
         metadata["dependency_versions"] = get_dependency_versions()
         path = Path(path)
 
+        if not save_program and format is not None:
+            raise ValueError("`format` can only be specified when `save_program=True`.")
+
         if save_program:
+            effective_format = "pickle" if format is None else format
+            if effective_format not in ("pickle", "json"):
+                raise ValueError(f"Unsupported `format`: {format!r}. Expected 'pickle' or 'json'.")
             if path.suffix:
                 raise ValueError(
                     f"`path` must point to a directory without a suffix when `save_program=True`, but received: {path}"
@@ -208,11 +224,39 @@ class BaseModule:
             if path.exists() and not path.is_dir():
                 raise NotADirectoryError(f"The path '{path}' exists but is not a directory.")
 
+            if effective_format == "json":
+                if modules_to_serialize is not None:
+                    raise ValueError(
+                        "`modules_to_serialize` is only supported when `format='pickle'`. "
+                        "For `format='json'`, pass custom module classes via `safe_modules` when calling `dspy.load()`."
+                    )
+
+                from dspy.utils.program_serialization import PROGRAM_SCHEMA_VERSION, serialize_program
+
+                program_payload = serialize_program(self)
+                program_bytes = orjson.dumps(program_payload, option=orjson.OPT_INDENT_2 | orjson.OPT_APPEND_NEWLINE)
+                json_metadata = {
+                    "format": "json",
+                    "schema_version": PROGRAM_SCHEMA_VERSION,
+                    "dependency_versions": metadata["dependency_versions"],
+                }
+                metadata_bytes = orjson.dumps(json_metadata, option=orjson.OPT_INDENT_2 | orjson.OPT_APPEND_NEWLINE)
+                if not path.exists():
+                    path.mkdir(parents=True)
+                with open(path / "program.json", "wb") as f:
+                    f.write(program_bytes)
+                with open(path / "metadata.json", "wb") as f:
+                    f.write(metadata_bytes)
+                return
+
             if not path.exists():
                 # Create the directory (and any parent directories)
                 path.mkdir(parents=True)
-            logger.warning("Loading untrusted .pkl files can run arbitrary code, which may be dangerous. To avoid "
-                          'this, prefer saving using json format using module.save("module.json").')
+            logger.warning(
+                "Loading untrusted .pkl files can run arbitrary code, which may be dangerous. To avoid "
+                'this, prefer saving using json format using module.save("module.json") or '
+                'module.save("program_dir", save_program=True, format="json").'
+            )
             try:
                 with serialize_by_value(modules_to_serialize), open(path / "program.pkl", "wb") as f:
                     cloudpickle.dump(self, f)

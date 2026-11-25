@@ -21,8 +21,13 @@ def check_saving_contracts() -> None:
     assert_type(load("path/to/model"), Module)
     assert_type(load(Path("path/to/model")), Module)
     assert_type(load("path/to/model", allow_pickle=True), Module)
+    assert_type(
+        load("path/to/model", allow_unsafe_lm_state=False, safe_modules=[Module], tools={}),
+        Module,
+    )
 
     # 3. Invalid calls are rejected
     load(123)  # ty: ignore[invalid-argument-type]
     load()  # ty: ignore[missing-argument]
     load("path/to/model", allow_pickle="yes")  # ty: ignore[invalid-argument-type]
+    load("path/to/model", allow_unsafe_lm_state="yes")  # ty: ignore[invalid-argument-type]

@@ -21,7 +21,7 @@ from dspy.utils.constants import IS_TYPE_UNDEFINED
 
 logger = logging.getLogger(__name__)
 
-UNSAFE_LM_STATE_KEYS = {"api_base", "base_url", "model_list"}
+UNSAFE_LM_STATE_KEYS = {"api_base", "api_key", "base_url", "model_list"}
 
 
 def _sanitize_lm_state(lm_state: dict, allow_unsafe_lm_state: bool) -> dict:
