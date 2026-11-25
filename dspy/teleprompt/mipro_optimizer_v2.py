@@ -38,6 +38,38 @@ def _import_optuna():
     return optuna
 
 
+def _has_multimodal_inputs(program: Any, trainset: list | None = None) -> bool:
+    """Check if any predictor in program or example in trainset uses custom types."""
+    try:
+        from dspy.adapters.types.base_type import Type as DspyType
+    except ImportError:
+        return False
+
+    for predictor in getattr(program, "predictors", lambda: [])():
+        sig = get_signature(predictor)
+        if sig is None:
+            continue
+        for field in getattr(sig, "input_fields", {}).values():
+            annotation = getattr(field, "annotation", None)
+            if annotation is not None:
+                try:
+                    if DspyType.extract_custom_type_from_annotation(annotation):
+                        return True
+                except Exception:
+                    pass
+
+    if trainset:
+        for ex in trainset[:5]:
+            store = getattr(ex, "_store", ex if isinstance(ex, dict) else {})
+            for v in store.values():
+                if isinstance(v, DspyType) or (
+                    isinstance(v, list)
+                    and any(isinstance(item, DspyType) for item in v)
+                ):
+                    return True
+    return False
+
+
 # Constants
 BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT = 3
 LABELED_FEWSHOT_EXAMPLES_IN_CONTEXT = 0
@@ -412,6 +444,18 @@ class MIPROv2(Teleprompter):
         metric_threshold: float | None,
     ) -> list | None:
         logger.info("\n==> STEP 1: BOOTSTRAP FEWSHOT EXAMPLES <==")
+        if _has_multimodal_inputs(program, trainset):
+            logger.info(
+                "Multimodal inputs detected. Demonstrations will be sanitized "
+                "during instruction proposal to prevent context window overflow."
+            )
+            if max_bootstrapped_demos > 4:
+                logger.warning(
+                    f"Large max_bootstrapped_demos ({max_bootstrapped_demos}) "
+                    "with multimodal inputs may exceed model context windows "
+                    "during trial evaluation."
+                )
+
         if max_bootstrapped_demos > 0:
             logger.info(
                 "These will be used as few-shot example candidates for our program and for creating instructions.\n"
