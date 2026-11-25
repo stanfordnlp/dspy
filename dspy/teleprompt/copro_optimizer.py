@@ -135,6 +135,12 @@ class COPRO(Teleprompter):
         """
         eval_kwargs = eval_kwargs or {}
         module = student.deepcopy()
+
+        # Separate constructor-only kwargs from call-compatible kwargs so that
+        # passing e.g. max_errors doesn't crash Evaluate.__call__().
+        _call_keys = {"num_threads", "display_progress", "display_table", "save_as_csv", "save_as_json"}
+        call_kwargs = {k: v for k, v in eval_kwargs.items() if k in _call_keys}
+
         evaluate = Evaluate(devset=trainset, metric=self.metric, **eval_kwargs)
         total_calls = 0
         results_best = {
@@ -224,7 +230,7 @@ class COPRO(Teleprompter):
                         f"At Depth {d+1}/{self.depth}, Evaluating Prompt Candidate #{c_i+1}/{len(candidates_)} for "
                         f"Predictor {p_i+1} of {len(module.predictors())}.",
                     )
-                    score = evaluate(module_clone, devset=trainset, **eval_kwargs).score
+                    score = evaluate(module_clone, devset=trainset, **call_kwargs).score
                     if self.prompt_model:
                         logger.debug(f"prompt_model.inspect_history(n=1) {self.prompt_model.inspect_history(n=1)}")
                     total_calls += 1
