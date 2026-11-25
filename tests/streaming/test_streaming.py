@@ -2715,3 +2715,32 @@ async def test_streamify_preserves_nonstreaming_responses_calls(asynchronous, mo
     assert len(calls) == 1
     assert lm.history[0]["usage"]["total_tokens"] == 13
     assert lm.history[1]["usage"] == {}
+
+
+def test_sync_send_to_stream_works_from_plain_thread():
+    import threading
+
+    from dspy.streaming.messages import sync_send_to_stream
+
+    class FakeStream:
+        def __init__(self):
+            self.messages = []
+
+        async def send(self, message):
+            await asyncio.sleep(0)
+            self.messages.append(message)
+
+    stream = FakeStream()
+    errors = []
+
+    def worker():
+        try:
+            sync_send_to_stream(stream, "hello")
+        except Exception as exc:
+            errors.append(exc)
+
+    t = threading.Thread(target=worker)
+    t.start()
+    t.join(timeout=5)
+    assert not errors
+    assert stream.messages == ["hello"]
