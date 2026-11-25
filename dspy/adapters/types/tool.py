@@ -104,6 +104,7 @@ class Tool(Type):
     arg_types: dict[str, Any] | None = None
     arg_desc: dict[str, str] | None = None
     has_kwargs: bool = False
+    _positional_only_params: tuple[inspect.Parameter, ...] = pydantic.PrivateAttr(default=())
 
     def __init__(
         self,
@@ -159,6 +160,9 @@ class Tool(Type):
 
         # Use inspect.signature to get all arg names
         sig = inspect.signature(annotations_func)
+        self._positional_only_params = tuple(
+            param for param in sig.parameters.values() if param.kind == inspect.Parameter.POSITIONAL_ONLY
+        )
         # Get available type hints
         available_hints = get_type_hints(annotations_func)
         # Build a dictionary of arg name -> type (defaulting to Any when missing)
@@ -280,10 +284,22 @@ class Tool(Type):
             "`await tool.acall(...)` instead."
         )
 
+    def _prepare_call_args(self, parsed_kwargs: dict[str, Any]) -> tuple[list[Any], dict[str, Any]]:
+        positional_args = []
+        for param in self._positional_only_params:
+            if param.name in parsed_kwargs:
+                positional_args.append(parsed_kwargs.pop(param.name))
+            elif param.default is not inspect.Parameter.empty:
+                positional_args.append(param.default)
+            else:
+                break
+        return positional_args, parsed_kwargs
+
     @with_callbacks
     def __call__(self, **kwargs):
         parsed_kwargs = self._validate_and_parse_args(**kwargs)
-        result = self.func(**parsed_kwargs)
+        positional_args, keyword_args = self._prepare_call_args(parsed_kwargs)
+        result = self.func(*positional_args, **keyword_args)
         if asyncio.iscoroutine(result):
             if settings.allow_tool_async_sync_conversion:
                 return self._run_async_in_sync(result)
@@ -298,7 +314,8 @@ class Tool(Type):
     @with_callbacks
     async def acall(self, **kwargs):
         parsed_kwargs = self._validate_and_parse_args(**kwargs)
-        result = self.func(**parsed_kwargs)
+        positional_args, keyword_args = self._prepare_call_args(parsed_kwargs)
+        result = self.func(*positional_args, **keyword_args)
         if asyncio.iscoroutine(result):
             return await result
         else:

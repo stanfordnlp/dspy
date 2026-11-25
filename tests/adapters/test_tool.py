@@ -1129,3 +1129,66 @@ def test_tool_calls_none_reaches_empty_tool_calls_semantics():
             raised = e
     assert raised is not None
     assert "empty_tool_calls" in str(raised), f"expected empty_tool_calls semantics, got: {raised}"
+
+
+class TestPositionalOnlyTool:
+    @pytest.mark.parametrize(
+        ("arguments", "expected"),
+        [({"left": 2}, 12), ({"left": 2, "right": 0}, 2), ({"left": 2, "right": 3, "scale": 4}, 20)],
+    )
+    def test_named_arguments_follow_the_published_schema(self, arguments: dict[str, int], expected: int):
+        def add(left: int, right: int = 10, /, *, scale: int = 1) -> int:
+            return (left + right) * scale
+
+        tool = Tool(add)
+        validate(arguments, tool.as_function_tool().parameters)
+
+        assert tool(**arguments) == expected
+
+    @pytest.mark.parametrize(
+        ("arguments", "expected"),
+        [({}, 3), ({"right": 5}, 6), ({"left": 4}, 6), ({"left": 0, "right": 0}, 0)],
+    )
+    def test_omitted_positional_only_defaults(self, arguments: dict[str, int], expected: int):
+        def add(left: int = 1, right: int = 2, /) -> int:
+            return left + right
+
+        assert Tool(add)(**arguments) == expected
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("async_function", [False, True])
+    async def test_acall_with_positional_only_parameters(self, async_function: bool):
+        def add(value: int, /, increment: int = 1) -> int:
+            return value + increment
+
+        async def async_add(value: int, /, increment: int = 1) -> int:
+            return value + increment
+
+        tool = Tool(async_add if async_function else add)
+
+        assert await tool.acall(value=2, increment=3) == 5
+
+    def test_bound_method(self):
+        class Calculator:
+            def add(self, left: int, /, *, right: int = 4) -> int:
+                return left + right
+
+        assert Tool(Calculator().add)(left=3, right=5) == 8
+
+    def test_extra_keywords_are_preserved(self):
+        def add(value: int, /, **increments: int) -> int:
+            return value + sum(increments.values())
+
+        assert Tool(add)(value=2, bonus=3, extra=4) == 9
+
+    def test_later_argument_does_not_fill_a_missing_required_argument(self):
+        calls = []
+
+        def add(left: int, right: int = 2, /) -> int:
+            calls.append((left, right))
+            return left + right
+
+        with pytest.raises(TypeError):
+            Tool(add)(right=5)
+
+        assert calls == []
