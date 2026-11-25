@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 from typing import TYPE_CHECKING, Any, Callable, get_args
 
@@ -242,7 +243,10 @@ class ReAct(Module):
                 continue
 
             try:
-                value = self.tools[tool_call.name](**(tool_call.args or {}))
+                # The tool gets its own copy of the arguments: queue-style tools pop from the
+                # lists they are given, and the call we keep in history has to stay the one the
+                # model asked for so the next turn replays the same action.
+                value = self.tools[tool_call.name](**copy.deepcopy(tool_call.args or {}))
                 values.append(value)
                 is_errors.append(False)
                 if tool_call.name == "submit" and isinstance(value, dict):
@@ -265,7 +269,7 @@ class ReAct(Module):
                 continue
 
             try:
-                value = await self.tools[tool_call.name].acall(**(tool_call.args or {}))
+                value = await self.tools[tool_call.name].acall(**copy.deepcopy(tool_call.args or {}))
                 values.append(value)
                 is_errors.append(False)
                 if tool_call.name == "submit" and isinstance(value, dict):
