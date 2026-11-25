@@ -2918,6 +2918,22 @@ In adhering to this structure, your objective is:\x20
     assert system_message == expected_system_message
 
 
+@pytest.mark.parametrize(
+    "completion",
+    [
+        "[[ ## answer ## ]]\n0.9\n\n[[ ## completed ##]]",
+        "[[ ## answer ##]]\n0.9\n\n[[ ## completed ## ]]",
+        "[[## answer ##]]\n0.9\n\n[[##completed##]]",
+    ],
+)
+def test_chat_adapter_parses_headers_with_loose_spacing(completion):
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: float = dspy.OutputField()
+
+    assert dspy.ChatAdapter().parse(MySignature, completion) == {"answer": 0.9}
+
+
 def test_null_content_raises_adapter_parse_error():
     """When the LM returns content=None with no tool calls (e.g. content filter),
     the adapter should raise AdapterParseError instead of silently returning None fields."""
