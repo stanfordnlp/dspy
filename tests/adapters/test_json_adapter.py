@@ -1783,3 +1783,33 @@ def test_missing_optional_output_fields_fall_back_to_defaults():
 
     with pytest.raises(AdapterParseError):
         adapter.parse(OptionalOutputSignature, '{"note": "present"}')
+
+
+def test_json_adapter_parse_unwraps_function_call_envelope():
+    class RefineSignature(dspy.Signature):
+        discussion: str = dspy.OutputField()
+        advice: str = dspy.OutputField()
+
+    adapter = dspy.JSONAdapter()
+    parsed = adapter.parse(
+        RefineSignature,
+        '{"type": "function", "name": "json_tool_call", "parameters": '
+        '{"discussion": "The predict module is to blame.", "advice": "Preserve the content."}}',
+    )
+    assert parsed == {
+        "discussion": "The predict module is to blame.",
+        "advice": "Preserve the content.",
+    }
+
+
+def test_json_adapter_parse_does_not_unwrap_when_top_level_has_output_fields():
+    class ParametersSignature(dspy.Signature):
+        parameters: dict = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    adapter = dspy.JSONAdapter()
+    parsed = adapter.parse(
+        ParametersSignature,
+        '{"parameters": {"discussion": "not the answer"}, "answer": "42"}',
+    )
+    assert parsed == {"parameters": {"discussion": "not the answer"}, "answer": "42"}
