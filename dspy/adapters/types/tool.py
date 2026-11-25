@@ -448,7 +448,7 @@ class ToolCalls(Type):
             elif isinstance(functions, list):
                 for tool in functions:
                     if tool.name == self.name:
-                        func = tool.func
+                        func = tool
                         break
 
             if func is None:

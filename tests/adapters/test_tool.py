@@ -1145,6 +1145,19 @@ class TestPositionalOnlyTool:
 
         assert tool(**arguments) == expected
 
+    @pytest.mark.parametrize("as_list", [False, True], ids=["dict", "list"])
+    def test_tool_call_execute_with_positional_only_parameters(self, as_list: bool):
+        def add(left: int = 1, right: int = 2, /, *, scale: int = 1) -> int:
+            return (left + right) * scale
+
+        tool = Tool(add, name="custom_add")
+        arguments = {"scale": 4, "right": 5}
+        validate(arguments, tool.as_function_tool().parameters)
+        tool_call = ToolCalls.ToolCall(name="custom_add", args=arguments)
+        functions = [tool] if as_list else {"custom_add": tool}
+
+        assert tool_call.execute(functions=functions) == 24
+
     @pytest.mark.parametrize(
         ("arguments", "expected"),
         [({}, 3), ({"right": 5}, 6), ({"left": 4}, 6), ({"left": 0, "right": 0}, 0)],
