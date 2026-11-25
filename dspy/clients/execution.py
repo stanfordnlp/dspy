@@ -119,6 +119,17 @@ def prepare(lm, prompt, options, *, cache=None, rollout_id=None, asynchronous=Fa
         return PreparedCall(snapshot_request(prompt), None, options, bool(use_cache), rollout_id, 1, asynchronous)
     if not isinstance(prompt, str):
         raise TypeError("An LM call takes a dspy.lm15.Request or a prompt string")
+    merged = {**lm.kwargs, **options}
+    if merged.get("stream"):
+        if hasattr(lm, "_validate_stream_arg"):
+            lm._validate_stream_arg(merged)
+        else:
+            raise LMUnsupportedFeatureError(
+                "dspy.LM does not support raw 'stream=True'. Use 'dspy.streamify' for streaming responses.",
+                model=getattr(lm, "model", None),
+                provider=getattr(lm, "_provider_name", None),
+                features=["stream"],
+            )
     count = options.pop("n", options.pop("num_generations", None))
     if count is None:
         count = lm.kwargs.get("n") or lm.kwargs.get("num_generations") or 1
