@@ -184,7 +184,7 @@ class Tool(Type):
                 args[k]["description"] = arg_desc[k]
 
         self.name = self.name or name
-        self.desc = self.desc or desc
+        self.desc = self.desc if self.desc is not None else desc
         self.args = self.args if self.args is not None else args
         self.arg_types = self.arg_types if self.arg_types is not None else arg_types
         self.has_kwargs = any(param.kind == param.VAR_KEYWORD for param in sig.parameters.values())
