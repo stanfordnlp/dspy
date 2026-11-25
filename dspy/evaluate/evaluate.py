@@ -13,6 +13,7 @@ import tqdm
 import dspy
 from dspy.primitives.prediction import Prediction
 from dspy.utils.callback import with_callbacks
+from dspy.utils.metric_call import call_metric
 from dspy.utils.parallelizer import ParallelExecutor
 
 try:
@@ -172,7 +173,7 @@ class Evaluate:
 
         def process_item(example):
             prediction = program(**example.inputs())
-            score = metric(example, prediction)
+            score = call_metric(metric, example, prediction)
             return prediction, score
 
         results = executor.execute(process_item, devset)

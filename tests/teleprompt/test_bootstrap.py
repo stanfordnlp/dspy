@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 import dspy
@@ -290,3 +292,20 @@ def test_metric_threshold_none_uses_metric_value_as_success(metric_value, expect
     )
 
     assert len(compiled_student.predictor.demos) == expected_demos
+
+
+def test_bootstrap_supports_async_metric():
+    async def async_metric(example, prediction, trace=None):
+        await asyncio.sleep(0)
+        assert trace is not None
+        return example.output == prediction.output
+
+    dspy.configure(lm=DummyLM([{"output": "blue"}, {"output": "blue"}]))
+    bootstrap = BootstrapFewShot(metric=async_metric, max_bootstrapped_demos=1, max_labeled_demos=0)
+
+    async def main():
+        return bootstrap.compile(
+            SimpleModule("input -> output"), teacher=SimpleModule("input -> output"), trainset=trainset
+        )
+
+    assert len(asyncio.run(main()).predictor.demos) == 1
