@@ -19,7 +19,15 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 from typing import Any, NoReturn
 
-from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.primitives.code_interpreter import (
+    DEFAULT_MAX_MESSAGE_BYTES,
+    CodeExecutionError,
+    CodeInterpreterError,
+    FinalOutput,
+    _MessageSizeLimitError,
+    _read_bounded_line,
+    _validate_max_message_bytes,
+)
 from dspy.utils.callback import BaseCallback, with_callbacks
 
 
@@ -60,6 +68,10 @@ class LocalInterpreter:
             Python cannot forcibly stop a running host callable, so a timed-out
             callable may finish in a detached daemon thread; its result is discarded.
         callbacks: Optional instance-level callback handlers.
+        max_message_bytes: Maximum UTF-8 byte length of a single protocol frame
+            read from the worker subprocess. Defaults to 64 MiB. Pass ``None``
+            to disable the limit. Exceeding it terminates the worker and ends
+            the session with ``CodeInterpreterError``.
     """
 
     execution_instructions = (
@@ -75,9 +87,11 @@ class LocalInterpreter:
         *,
         execution_timeout: float | None = None,
         callbacks: list[BaseCallback] | None = None,
+        max_message_bytes: int | None = DEFAULT_MAX_MESSAGE_BYTES,
     ) -> None:
         if execution_timeout is not None and execution_timeout <= 0:
             raise ValueError("execution_timeout must be positive or None")
+        self.max_message_bytes = _validate_max_message_bytes(max_message_bytes)
         self._validate_tool_names(tools or {})
         self.tools = dict(tools or {})
         fields = None if output_fields is None else [dict(field) for field in output_fields]
@@ -134,6 +148,7 @@ class LocalInterpreter:
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
                 start_new_session=os.name == "posix",
                 text=True,
+                encoding="utf-8",
             )
         except OSError as exc:
             raise CodeInterpreterError(f"Unable to start Python worker: {exc}") from exc
@@ -145,8 +160,17 @@ class LocalInterpreter:
 
     def _read_responses(self, process: subprocess.Popen[str]) -> None:
         assert process.stdout is not None
-        for line in process.stdout:
-            self._responses.put(line)
+        try:
+            while True:
+                line = _read_bounded_line(process.stdout, self.max_message_bytes)
+                if not line:
+                    break
+                self._responses.put(line)
+        except _MessageSizeLimitError as exc:
+            self._responses.put(exc)
+            return
+        except (OSError, ValueError):
+            pass
         self._responses.put(None)
 
     def _send(self, message: dict[str, Any], process: subprocess.Popen[str] | None = None) -> None:
@@ -168,6 +192,12 @@ class LocalInterpreter:
             self._raise_terminal_error(timeout_message)
         if line is None:
             self._raise_terminal_error("Python worker exited unexpectedly.")
+        if isinstance(line, _MessageSizeLimitError):
+            self._raise_terminal_error(
+                f"Python worker message exceeded max_message_bytes ({self.max_message_bytes} bytes); "
+                "session terminated.",
+                line,
+            )
         if isinstance(line, BaseException):
             self.shutdown()
             raise line
@@ -206,7 +236,8 @@ class LocalInterpreter:
             process.wait(timeout=1)
         for stream in (process.stdin, process.stdout):
             if stream is not None:
-                stream.close()
+                with contextlib.suppress(OSError):
+                    stream.close()
 
     @with_callbacks
     def invoke_tool(self, tool_name: str, args: list[Any], kwargs: dict[str, Any]) -> Any:

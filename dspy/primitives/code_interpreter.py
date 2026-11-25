@@ -20,6 +20,9 @@ from dspy.utils.exceptions import DSPyError
 # Types that can be used directly in Python function signatures for SUBMIT()
 SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
 
+DEFAULT_MAX_MESSAGE_BYTES = 64 * 1024 * 1024
+_READ_CHUNK_CHARS = 65536
+
 
 class CodeInterpreterError(DSPyError, RuntimeError):
     """Base class for errors reported by a code interpreter.
@@ -33,6 +36,44 @@ class CodeInterpreterError(DSPyError, RuntimeError):
 
 class CodeExecutionError(CodeInterpreterError):
     """Recoverable error raised by code running in a healthy interpreter."""
+
+
+class _MessageSizeLimitError(CodeInterpreterError):
+    """Internal error raised when a protocol frame exceeds ``max_message_bytes``."""
+
+
+def _validate_max_message_bytes(max_message_bytes: int | None) -> int | None:
+    if max_message_bytes is None:
+        return None
+    if isinstance(max_message_bytes, bool) or not isinstance(max_message_bytes, int) or max_message_bytes <= 0:
+        raise ValueError("max_message_bytes must be a positive integer or None.")
+    return max_message_bytes
+
+
+def _read_bounded_line(stream: Any, max_message_bytes: int | None) -> str:
+    """Read one line from a text stream while bounding accumulated UTF-8 bytes."""
+    if max_message_bytes is None:
+        return stream.readline()
+
+    chunks: list[str] = []
+    total_bytes = 0
+    while True:
+        remaining = max_message_bytes - total_bytes
+        chunk_limit = min(_READ_CHUNK_CHARS, remaining + 1)
+        chunk = stream.readline(chunk_limit)
+        if not chunk:
+            break
+        ended = chunk.endswith("\n")
+        payload = chunk[:-1] if ended else chunk
+        total_bytes += len(payload.encode("utf-8"))
+        if total_bytes > max_message_bytes:
+            raise _MessageSizeLimitError(
+                f"Interpreter protocol message exceeded max_message_bytes ({max_message_bytes} bytes)."
+            )
+        chunks.append(chunk)
+        if ended:
+            break
+    return "".join(chunks)
 
 
 class FinalOutput:

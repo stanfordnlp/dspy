@@ -37,6 +37,7 @@ import logging
 import queue
 import secrets
 import sys
+import threading
 import types
 import typing
 from concurrent.futures import ThreadPoolExecutor
@@ -321,6 +322,8 @@ class _NestedInterpreter:
     def execute(self, code: str, variables: dict, tools: dict[str, dict], output_fields: list | None) -> dict:
         if self._busy:
             raise CodeInterpreterError("This interpreter is already executing code.")
+        if INTERPRETER_TOOL in tools:
+            raise CodeInterpreterError(f"Cannot override reserved tool {INTERPRETER_TOOL!r}.")
         interpreter = self.interpreter
         interpreter.tools.update({
             name: self._host_tools[spec["host"]] if spec.get("host") in self._host_tools else self._parent_call(name, spec)
@@ -412,13 +415,19 @@ def _entrypoint(tool: Any) -> Callable[..., Any]:
     return entrypoint
 
 
+DEFAULT_MAX_NESTED_INTERPRETERS = 8
+DEFAULT_MAX_NESTING_DEPTH = 2
+
+
 class SandboxSession:
     """Host side of one interpreter session that runs the real dspy: one Flex forward, or one RLM call.
 
     Serves the sandbox's LM calls on a ``SandboxLM`` over ``lm`` (``dspy.settings.lm`` at call time when ``None``),
     with ``reserve`` metering every completion, and adds the predictor calls the sandbox records to the host's trace. Each
-    code-executing module built in the sandbox gets a fresh interpreter from ``interpreter_factory``; ``close``
-    shuts down any still open. Values cross to and from the sandbox through ``encode`` and ``decode``.
+    code-executing module built in the sandbox gets a fresh interpreter from ``interpreter_factory``, bounded by
+    ``max_nested_interpreters`` (total nested interpreters created over the session's lifetime) and
+    ``max_nesting_depth`` (maximum recursion depth, where the root sandbox is depth 0); ``close`` shuts down any still
+    open. Values cross to and from the sandbox through ``encode`` and ``decode``.
     """
 
     def __init__(
@@ -429,14 +438,30 @@ class SandboxSession:
         lm: Any = None,
         reserve: Callable[[int], None] | None = None,
         interpreter_factory: Callable[[], Any] | None = None,
+        max_nested_interpreters: int | None = DEFAULT_MAX_NESTED_INTERPRETERS,
+        max_nesting_depth: int | None = DEFAULT_MAX_NESTING_DEPTH,
     ) -> None:
+        if max_nested_interpreters is not None and (
+            isinstance(max_nested_interpreters, bool)
+            or not isinstance(max_nested_interpreters, int)
+            or max_nested_interpreters < 0
+        ):
+            raise ValueError("max_nested_interpreters must be a non-negative integer or None.")
+        if max_nesting_depth is not None and (
+            isinstance(max_nesting_depth, bool) or not isinstance(max_nesting_depth, int) or max_nesting_depth < 0
+        ):
+            raise ValueError("max_nesting_depth must be a non-negative integer or None.")
         self._tools = tools
         self._custom_types = custom_types or {}
         self._values = HostValues(tools)
         self._lm = lm
         self._reserve = reserve
         self._interpreter_factory = interpreter_factory
+        self._max_nested_interpreters = max_nested_interpreters
+        self._max_nesting_depth = max_nesting_depth
+        self._nested_lock = threading.Lock()
         self._nested: dict[str, _NestedInterpreter] = {}
+        self._nested_created = 0
         self._interpreter: Any = None
         self._adapter: Any = None
         self._calls = itertools.count(1)
@@ -457,7 +482,7 @@ class SandboxSession:
         interpreter.tools[CALL_TOOL] = self._serve_tool
         # Inside a sandbox, the host already gave this interpreter the host's own interpreter tool.
         if self._interpreter_factory is not None and not isinstance(interpreter, HostInterpreter):
-            interpreter.tools[INTERPRETER_TOOL] = self._serve_interpreter
+            interpreter.tools[INTERPRETER_TOOL] = self._make_interpreter_tool(0)
         session = self.id = secrets.token_hex(8)
         spec = self._spec(session)
         interpreter.execute(BOOTSTRAP, variables={"__dspy_spec": spec})
@@ -491,12 +516,39 @@ class SandboxSession:
 
     def close(self) -> None:
         """Shut down the interpreters made for code-executing modules in the sandbox that are still open."""
-        nested, self._nested = list(self._nested.values()), {}
+        with self._nested_lock:
+            nested = list(self._nested.values())
+            self._nested.clear()
         for interpreter in nested:
             try:
                 interpreter.close()
             except Exception:
                 logger.warning("Shutting down a nested interpreter failed", exc_info=True)
+
+    def _make_interpreter_tool(self, depth: int) -> Callable[..., Any]:
+        """Return an ``INTERPRETER_TOOL`` entrypoint bound to ``depth`` without exposing depth to the guest."""
+
+        def serve_interpreter(
+            op: str,
+            id: str | None = None,
+            code: str | None = None,
+            variables: dict | None = None,
+            tools: dict | None = None,
+            output_fields: list | None = None,
+            reply: dict | None = None,
+        ) -> Any:
+            return self._serve_interpreter_at_depth(
+                depth,
+                op=op,
+                id=id,
+                code=code,
+                variables=variables,
+                tools=tools,
+                output_fields=output_fields,
+                reply=reply,
+            )
+
+        return serve_interpreter
 
     def _serve_interpreter(
         self,
@@ -509,14 +561,69 @@ class SandboxSession:
         reply: dict | None = None,
     ) -> Any:
         """The ``INTERPRETER_TOOL`` host tool behind ``HostInterpreter``: one fresh interpreter per ``create``."""
+        return self._serve_interpreter_at_depth(
+            0,
+            op=op,
+            id=id,
+            code=code,
+            variables=variables,
+            tools=tools,
+            output_fields=output_fields,
+            reply=reply,
+        )
+
+    def _serve_interpreter_at_depth(
+        self,
+        depth: int,
+        *,
+        op: str,
+        id: str | None = None,
+        code: str | None = None,
+        variables: dict | None = None,
+        tools: dict | None = None,
+        output_fields: list | None = None,
+        reply: dict | None = None,
+    ) -> Any:
         if op == "create":
-            interpreter = _create_interpreter(self._interpreter_factory)
-            interpreter.tools[INTERPRETER_TOOL] = self._serve_interpreter  # for the modules its own code builds
-            handle = secrets.token_hex(8)
-            host_tools = {name: _entrypoint(tool) for name, tool in self._tools.items()}
-            self._nested[handle] = _NestedInterpreter(interpreter, host_tools, self._values)
+            child_depth = depth + 1
+            if self._max_nesting_depth is not None and child_depth > self._max_nesting_depth:
+                raise CodeInterpreterError(
+                    f"Nested interpreter depth limit exceeded: depth {child_depth} exceeds "
+                    f"max_nesting_depth={self._max_nesting_depth}."
+                )
+            with self._nested_lock:
+                if self._max_nested_interpreters is not None and self._nested_created >= self._max_nested_interpreters:
+                    raise CodeInterpreterError(
+                        f"Nested interpreter limit exceeded: cannot create more than "
+                        f"max_nested_interpreters={self._max_nested_interpreters} nested interpreters in a session."
+                    )
+                self._nested_created += 1
+            interpreter = None
+            try:
+                interpreter = _create_interpreter(self._interpreter_factory)
+                interpreter.tools[INTERPRETER_TOOL] = self._make_interpreter_tool(child_depth)
+                handle = secrets.token_hex(8)
+                host_tools = {name: _entrypoint(tool) for name, tool in self._tools.items()}
+                nested_interpreter = _NestedInterpreter(interpreter, host_tools, self._values)
+            except BaseException:
+                with self._nested_lock:
+                    self._nested_created -= 1
+                if interpreter is not None:
+                    with contextlib.suppress(Exception):
+                        interpreter.shutdown()
+                raise
+            with self._nested_lock:
+                self._nested[handle] = nested_interpreter
             return handle
-        nested = self._nested.get(id)
+        if op == "shutdown":
+            with self._nested_lock:
+                nested = self._nested.pop(id, None) if id is not None else None
+            if nested is None:
+                raise CodeInterpreterError(f"Unknown nested interpreter {id!r}")
+            nested.close()
+            return None
+        with self._nested_lock:
+            nested = self._nested.get(id) if id is not None else None
         if nested is None:
             raise CodeInterpreterError(f"Unknown nested interpreter {id!r}")
         if op == "provide":
@@ -528,9 +635,6 @@ class SandboxSession:
             return nested.execute(code or "", self._values.decode(variables or {}), tools or {}, output_fields)
         if op == "resume":
             return nested.resume(reply or {})
-        if op == "shutdown":
-            self._nested.pop(id).close()
-            return None
         raise CodeInterpreterError(f"Unknown nested interpreter operation {op!r}")
 
     def _serve_tool(self, tool: str, arguments: dict | None = None) -> Any:

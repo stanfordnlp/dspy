@@ -351,3 +351,73 @@ class AddModule(dspy.Module):
     program._bind_code(module_src)
     with dspy.context(lm=DummyLM([{"result": 42}])):
         assert program(value=20).result == 42
+
+
+@pytest.mark.parametrize("bad_value", [0, -1, -4096, True, False])
+def test_local_interpreter_rejects_invalid_max_message_bytes(bad_value):
+    with pytest.raises(ValueError, match="max_message_bytes"):
+        dspy.LocalInterpreter(max_message_bytes=bad_value)
+
+
+def test_local_interpreter_allows_messages_below_max_message_bytes():
+    with dspy.LocalInterpreter(max_message_bytes=1024) as interpreter:
+        assert interpreter.execute("'ok' * 100") == "ok" * 100
+        assert interpreter.execute("print('hello')") == "hello"
+
+    with dspy.LocalInterpreter(max_message_bytes=None) as interpreter:
+        assert interpreter.execute("'x' * 5000") == "x" * 5000
+
+
+def test_local_interpreter_kills_worker_on_oversized_output():
+    interpreter = dspy.LocalInterpreter(max_message_bytes=512)
+    interpreter.start()
+    process = interpreter._process
+    assert process is not None
+
+    with pytest.raises(CodeInterpreterError, match=r"max_message_bytes \(512 bytes\)") as exc_info:
+        interpreter.execute("print('x' * 10000)")
+    assert type(exc_info.value) is CodeInterpreterError
+    assert interpreter._process is None
+    assert process.poll() is not None
+    with pytest.raises(CodeInterpreterError, match="shut down"):
+        interpreter.execute("1 + 1")
+
+
+def test_local_interpreter_kills_worker_on_multibyte_utf8_and_no_newline_protocol_flood():
+    # Multi-byte UTF-8 frame written directly to the worker protocol stream (exceeds byte limit despite fewer chars).
+    interpreter = dspy.LocalInterpreter(max_message_bytes=256)
+    interpreter.start()
+    process = interpreter._process
+    assert process is not None
+
+    with pytest.raises(CodeInterpreterError, match=r"max_message_bytes \(256 bytes\)"):
+        interpreter.execute(
+            "import sys\n"
+            "worker = sys.modules['__main__']\n"
+            "worker._protocol_output.write('😀' * 100 + '\\n')\n"
+            "worker._protocol_output.flush()\n"
+        )
+    assert process.poll() is not None
+    with pytest.raises(CodeInterpreterError, match="shut down"):
+        interpreter.execute("1")
+
+    # Continuous flood with no newline must terminate promptly without hanging or OOM.
+    flood_interpreter = dspy.LocalInterpreter(max_message_bytes=1024)
+    flood_interpreter.start()
+    flood_process = flood_interpreter._process
+    assert flood_process is not None
+    started = time.monotonic()
+
+    with pytest.raises(CodeInterpreterError, match=r"max_message_bytes \(1024 bytes\)"):
+        flood_interpreter.execute(
+            "import sys\n"
+            "out = sys.modules['__main__']._protocol_output\n"
+            "chunk = 'A' * 65536\n"
+            "while True:\n"
+            "    out.write(chunk)\n"
+            "    out.flush()\n"
+        )
+    assert time.monotonic() - started < 5
+    assert flood_process.poll() is not None
+    with pytest.raises(CodeInterpreterError, match="shut down"):
+        flood_interpreter.execute("1")

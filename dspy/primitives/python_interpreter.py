@@ -27,7 +27,16 @@ from typing import Any, Callable, NoReturn
 from pydantic import BaseModel
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
-from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.primitives.code_interpreter import (
+    DEFAULT_MAX_MESSAGE_BYTES,
+    SIMPLE_TYPES,
+    CodeExecutionError,
+    CodeInterpreterError,
+    FinalOutput,
+    _MessageSizeLimitError,
+    _read_bounded_line,
+    _validate_max_message_bytes,
+)
 from dspy.primitives.deno_utils import deno_subprocess_env
 from dspy.primitives.local_interpreter import _await_in_sync
 from dspy.primitives.sandbox_bundle import bundle_root, sandbox_cache_env_enabled
@@ -243,6 +252,7 @@ class PythonInterpreter:
         callbacks: list[BaseCallback] | None = None,
         sandbox_cache: bool | None = None,
         sandbox_packages: Sequence[str] = ("pillow",),
+        max_message_bytes: int | None = DEFAULT_MAX_MESSAGE_BYTES,
     ) -> None:
         """
         Args:
@@ -269,9 +279,13 @@ class PythonInterpreter:
                    import them. The default, Pillow, is what ``dspy.Image.to_pil()`` needs. ``()`` leaves it out, for
                    a smaller bundle that starts a little faster; images still pass through the sandbox, and
                    ``to_pil()`` raises ``ImportError``. Each package makes the sandbox start a little slower.
+            max_message_bytes: Maximum UTF-8 byte length of a single protocol frame read from the Deno subprocess.
+                   Defaults to 64 MiB. Pass ``None`` to disable the limit. Exceeding it terminates the subprocess
+                   and ends the session with ``CodeInterpreterError``.
         """
         if isinstance(deno_command, dict):
             raise TypeError("deno_command must be a list of strings, not a dict")
+        self.max_message_bytes = _validate_max_message_bytes(max_message_bytes)
 
         self.enable_read_paths = enable_read_paths or []
         self.enable_write_paths = enable_write_paths or []
@@ -436,12 +450,32 @@ class PythonInterpreter:
     def _raise_terminal_error(self, message: str, cause: Exception | None = None) -> NoReturn:
         """End an unusable interpreter session and report its process/protocol failure."""
         self._session_ended = True
-        if self.deno_process is not None and self.deno_process.poll() is None:
-            try:
-                self.deno_process.terminate()
-            except ProcessLookupError:
-                pass
-            self.deno_process.wait()
+        process = self.deno_process
+        if process is not None:
+            if process.poll() is None:
+                try:
+                    process.terminate()
+                except ProcessLookupError:
+                    pass
+                if process.stdout is not None:
+                    try:
+                        process.stdout.close()
+                    except OSError:
+                        pass
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        pass
+                    process.wait()
+            for stream in (process.stdin, process.stdout, process.stderr):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
 
         error = CodeInterpreterError(message)
         if cause is not None:
@@ -676,7 +710,14 @@ class PythonInterpreter:
 
     def _read_response_line(self, context: str) -> str:
         """Read one stdout line from Deno or raise a process-level error."""
-        response_line = self.deno_process.stdout.readline().strip()
+        try:
+            response_line = _read_bounded_line(self.deno_process.stdout, self.max_message_bytes).strip()
+        except _MessageSizeLimitError as e:
+            self._raise_terminal_error(
+                f"Sandbox response {context} exceeded max_message_bytes ({self.max_message_bytes} bytes); "
+                "session terminated.",
+                e,
+            )
         if response_line:
             return response_line
 
@@ -980,11 +1021,18 @@ class PythonInterpreter:
         self._session_ended = True
         if self.deno_process and self.deno_process.poll() is None:
             if session_was_active:
-                self.deno_process.stdin.write(_jsonrpc_notification("shutdown") + "\n")
-                self.deno_process.stdin.flush()
-                self.deno_process.stdin.close()
+                try:
+                    self.deno_process.stdin.write(_jsonrpc_notification("shutdown") + "\n")
+                    self.deno_process.stdin.flush()
+                    self.deno_process.stdin.close()
+                except OSError:
+                    self.deno_process.terminate()
             else:
                 self.deno_process.terminate()
-            self.deno_process.wait()
+            try:
+                self.deno_process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.deno_process.kill()
+                self.deno_process.wait()
         self.deno_process = None
         self._owner_thread = None
