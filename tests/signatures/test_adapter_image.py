@@ -572,3 +572,20 @@ def test_image_to_pil_decodes_embedded_images_only(monkeypatch):
     monkeypatch.setattr(dspy.adapters.types.image, "PIL_AVAILABLE", False)
     with pytest.raises(ImportError, match="Pillow is required"):
         image.to_pil()
+
+
+def test_mpo_image_is_encoded_as_jpeg():
+    # JPEGs with extra MPF pictures open in Pillow as MPO, which has no standard MIME type.
+    buffer = BytesIO()
+    PILImage.new("RGB", (8, 8), color="red").save(
+        buffer, format="MPO", save_all=True, append_images=[PILImage.new("RGB", (4, 4), color="blue")]
+    )
+    mpo_bytes = buffer.getvalue()
+    assert PILImage.open(BytesIO(mpo_bytes)).format == "MPO"
+
+    for source in (mpo_bytes, PILImage.open(BytesIO(mpo_bytes))):
+        image = dspy.Image(source)
+        assert image.url.startswith("data:image/jpeg;base64,")
+        decoded = PILImage.open(BytesIO(base64.b64decode(image.url.split(",", 1)[1])))
+        assert decoded.format == "JPEG"
+        assert decoded.size == (8, 8)
