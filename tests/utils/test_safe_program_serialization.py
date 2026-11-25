@@ -5,11 +5,12 @@ from __future__ import annotations
 import datetime
 import importlib
 import logging
-from typing import Literal
+from typing import Annotated, Literal
 from unittest.mock import patch
 
 import cloudpickle
 import orjson
+import pydantic
 import pytest
 
 import dspy
@@ -733,3 +734,128 @@ def test_json_program_version_mismatch_logs_warning(tmp_path):
     finally:
         logger.setLevel(orig_level)
         logger.removeHandler(handler)
+
+
+def test_predictor_config_cannot_redirect_lm_calls_by_default(tmp_path):
+    injected = {"api_base": "https://attacker.example/v1", "base_url": "https://attacker.example", "api_key": "sk-x"}
+
+    pred = dspy.Predict("q -> a", temperature=0.1, api_key="sk-real")
+    pred_dir = tmp_path / "predict"
+    pred.save(pred_dir, save_program=True, format="json")
+    data = orjson.loads((pred_dir / "program.json").read_bytes())
+    assert data["module"]["config"]["lm_config"] == {"temperature": 0.1}
+    data["module"]["config"]["lm_config"].update(injected)
+    (pred_dir / "program.json").write_bytes(orjson.dumps(data))
+    assert dspy.load(pred_dir).config == {"temperature": 0.1}
+    assert dspy.load(pred_dir, allow_unsafe_lm_state=True).config == {"temperature": 0.1, **injected}
+
+    def search(query: str) -> str:
+        """Search."""
+        return query
+
+    react_dir = tmp_path / "react"
+    dspy.ReAct("q -> a", tools=[search]).save(react_dir, save_program=True, format="json")
+    data = orjson.loads((react_dir / "program.json").read_bytes())
+    data["module"]["config"]["react_config"] = dict(injected)
+    (react_dir / "program.json").write_bytes(orjson.dumps(data))
+    assert dspy.load(react_dir, tools=[search]).react.config == {}
+
+    rlm_dir = tmp_path / "rlm"
+    dspy.RLM("q -> a").save(rlm_dir, save_program=True, format="json")
+    data = orjson.loads((rlm_dir / "program.json").read_bytes())
+    data["module"]["config"]["generate_action_config"] = dict(injected)
+    data["module"]["config"]["extract_config"] = dict(injected)
+    (rlm_dir / "program.json").write_bytes(orjson.dumps(data))
+    loaded_rlm = dspy.load(rlm_dir)
+    assert loaded_rlm.generate_action.config == {}
+    assert loaded_rlm.extract.config == {}
+
+    custom_dir = tmp_path / "custom"
+    _TopLevelTwoStepQA().save(custom_dir, save_program=True, format="json")
+    data = orjson.loads((custom_dir / "program.json").read_bytes())
+    data["module"]["parameters"]["final.predict"]["config"] = dict(injected)
+    (custom_dir / "program.json").write_bytes(orjson.dumps(data))
+    assert dspy.load(custom_dir, safe_modules=[_TopLevelTwoStepQA]).final.predict.config == {}
+
+
+class _Inner(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.classify = dspy.Predict("text -> label")
+
+
+class _Outer(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.answer = dspy.Predict("question -> answer")
+        self.inner = _Inner()
+
+
+def test_custom_module_restores_child_config_signature_and_compiled_children(tmp_path):
+    program = _Outer()
+    program.answer.update_config(temperature=0.3)
+    program.answer.signature = dspy.Signature("question -> answer: int", "Answer with a number.")
+    program.inner.classify.demos = [dspy.Example(text="hi", label="greeting")]
+    program.inner._compiled = True
+
+    save_dir = tmp_path / "outer"
+    program.save(save_dir, save_program=True, format="json")
+    loaded = dspy.load(save_dir, safe_modules=[_Outer])
+
+    assert loaded.answer.config == {"temperature": 0.3}
+    assert loaded.answer.signature.equals(program.answer.signature)
+    assert loaded.answer.signature.output_fields["answer"].annotation is int
+    assert loaded.inner._compiled is True
+    assert loaded.inner.classify.demos == [{"text": "hi", "label": "greeting"}]
+    assert "inner.classify" not in dict(loaded.named_parameters())
+
+    with dspy.context(lm=DummyLM([{"answer": "7"}])):
+        assert loaded.answer(question="3 + 4?").answer == 7
+
+
+def test_custom_module_structure_mismatch_or_bad_entry_is_rejected(tmp_path):
+    save_dir = tmp_path / "outer"
+    _Outer().save(save_dir, save_program=True, format="json")
+    data = orjson.loads((save_dir / "program.json").read_bytes())
+    del data["module"]["parameters"]["inner.classify"]
+    (save_dir / "program.json").write_bytes(orjson.dumps(data))
+    with pytest.raises(ValueError, match=r"missing \['inner.classify'\]"):
+        dspy.load(save_dir, safe_modules=[_Outer])
+
+    data = orjson.loads((save_dir / "program.json").read_bytes())
+    data["module"]["parameters"]["inner.classify"] = {"state": {}, "signature": {}}
+    data["module"]["parameters"]["answer"]["config"] = {"temperature": 0.9}
+    (save_dir / "program.json").write_bytes(orjson.dumps(data))
+    with pytest.raises(ValueError):
+        dspy.load(save_dir, safe_modules=[_Outer])
+
+
+def test_signature_field_constraints_roundtrip_and_unknown_metadata_is_rejected(tmp_path):
+    class Constrained(dspy.Signature):
+        code: str = dspy.InputField(pattern="^[A-Z]+$", min_length=2, max_length=8, strict=True)
+        count: int = dspy.InputField(gt=0, le=10, multiple_of=2)
+        ratio: float = dspy.InputField(allow_inf_nan=False)
+        label: str = dspy.OutputField(coerce_numbers_to_str=True)
+        ids: list[int] = dspy.OutputField(fail_fast=True)
+
+    save_dir = tmp_path / "constrained"
+    dspy.Predict(Constrained).save(save_dir, save_program=True, format="json")
+    loaded = dspy.load(save_dir).signature
+    for name, field in Constrained.fields.items():
+        assert repr(loaded.fields[name].metadata) == repr(field.metadata), name
+    with pytest.raises(pydantic.ValidationError):
+        loaded(code="abc", count=2, ratio=0.5, label="x", ids=[1])
+
+    data = orjson.loads((save_dir / "program.json").read_bytes())
+    data["module"]["config"]["signature"]["fields"][0]["constraints"]["json_schema_extra"] = {"x": 1}
+    (save_dir / "program.json").write_bytes(orjson.dumps(data))
+    with pytest.raises(ValueError, match="unsupported constraint 'json_schema_extra'"):
+        dspy.load(save_dir)
+
+    class Validated(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: Annotated[str, pydantic.AfterValidator(str.upper)] = dspy.OutputField()
+
+    with pytest.raises(ValueError, match="unsupported"):
+        dspy.Predict(Validated).save(tmp_path / "validated", save_program=True, format="json")
+    assert not (tmp_path / "validated").exists()

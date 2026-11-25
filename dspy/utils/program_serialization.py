@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import collections.abc
+import dataclasses
 import datetime
 import inspect
 import keyword
@@ -37,7 +38,6 @@ from dspy.predict.predict import _sanitize_lm_state
 from dspy.primitives.base_module import BaseModule
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLHistory, REPLVariable
-from dspy.signatures.field import PYDANTIC_CONSTRAINT_MAP
 from dspy.signatures.signature import Signature, make_signature
 from dspy.utils.constants import IS_TYPE_UNDEFINED
 
@@ -63,6 +63,25 @@ _SAFE_EXTRA_METADATA_KEYS = frozenset(
         IS_TYPE_UNDEFINED,
     }
 )
+
+# ``pydantic.Field`` constraints, which pydantic stores in ``FieldInfo.metadata``, and their JSON value types.
+_FIELD_CONSTRAINTS: dict[str, tuple[type, ...]] = {
+    "gt": (int, float),
+    "ge": (int, float),
+    "lt": (int, float),
+    "le": (int, float),
+    "multiple_of": (int, float),
+    "min_length": (int,),
+    "max_length": (int,),
+    "max_digits": (int,),
+    "decimal_places": (int,),
+    "pattern": (str,),
+    "union_mode": (str,),
+    "strict": (bool,),
+    "allow_inf_nan": (bool,),
+    "coerce_numbers_to_str": (bool,),
+    "fail_fast": (bool,),
+}
 
 _SAFE_TYPE_NAMESPACE: dict[str, Any] = {
     "None": type(None),
@@ -186,6 +205,30 @@ _BINARY_GENERIC_ORIGINS = frozenset(
 
 def _is_strict_int(value: Any) -> TypeGuard[int]:
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _check_constraint(key: Any, value: Any, *, context: str) -> None:
+    allowed = _FIELD_CONSTRAINTS.get(key)
+    if allowed is None:
+        raise ValueError(f"{context} uses unsupported constraint {key!r} for JSON program serialization.")
+    if isinstance(value, bool) and bool not in allowed:
+        raise ValueError(f"{context} constraint {key!r} must be {allowed[0].__name__}, got bool.")
+    if not isinstance(value, allowed) or (isinstance(value, float) and not math.isfinite(value)):
+        raise ValueError(f"{context} constraint {key!r}={value!r} cannot be serialized to JSON.")
+
+
+def _metadata_constraints(metadata: Any, *, context: str) -> dict[str, Any]:
+    """Return the ``pydantic.Field`` constraints behind a ``FieldInfo.metadata`` entry, rejecting anything else."""
+    owner = type(metadata).__module__.partition(".")[0]
+    if owner not in ("annotated_types", "pydantic"):
+        raise ValueError(f"{context} uses unsupported metadata {metadata!r} for JSON program serialization.")
+    if dataclasses.is_dataclass(metadata):
+        items = {f.name: getattr(metadata, f.name) for f in dataclasses.fields(metadata)}
+    else:
+        items = dict(vars(metadata))
+    for key, value in items.items():
+        _check_constraint(key, value, context=context)
+    return items
 
 
 def _require_signature(signature: type[Signature] | None, *, context: str) -> type[Signature]:
@@ -444,20 +487,7 @@ def serialize_signature(signature: type[Signature]) -> dict[str, Any]:
 
         constraints: dict[str, Any] = {}
         for meta in field_info.metadata:
-            for constraint_key in PYDANTIC_CONSTRAINT_MAP:
-                val = getattr(meta, constraint_key, None)
-                if val is not None:
-                    if constraint_key == "allow_inf_nan":
-                        if isinstance(val, bool):
-                            constraints[constraint_key] = val
-                        else:
-                            raise ValueError(f"Signature field '{name}' constraint '{constraint_key}' must be bool.")
-                    elif isinstance(val, (int, float)) and not isinstance(val, bool) and math.isfinite(val):
-                        constraints[constraint_key] = val
-                    else:
-                        raise ValueError(
-                            f"Signature field '{name}' constraint '{constraint_key}={val!r}' is not JSON-serializable."
-                        )
+            constraints.update(_metadata_constraints(meta, context=f"Signature field '{name}'"))
 
         field_spec: dict[str, Any] = {
             "name": name,
@@ -570,13 +600,7 @@ def deserialize_signature(spec: Any) -> type[Signature]:
             if not isinstance(raw_constraints, dict):
                 raise ValueError(f"Field '{field_name}' constraints must be a dict.")
             for ckey, cval in raw_constraints.items():
-                if ckey not in PYDANTIC_CONSTRAINT_MAP:
-                    raise ValueError(f"Unsupported constraint '{ckey}' on field '{field_name}'.")
-                if ckey == "allow_inf_nan":
-                    if not isinstance(cval, bool):
-                        raise ValueError(f"Constraint '{ckey}' on field '{field_name}' must be a bool.")
-                elif not (isinstance(cval, (int, float)) and not isinstance(cval, bool) and math.isfinite(cval)):
-                    raise ValueError(f"Constraint '{ckey}' on field '{field_name}' must be a finite number.")
+                _check_constraint(ckey, cval, context=f"Field '{field_name}'")
                 pydantic_kwargs[ckey] = cval
 
         if entry.get("has_default", False):
@@ -666,18 +690,28 @@ def _validate_predict_state(state: Any, *, context: str) -> dict[str, Any]:
     return state
 
 
-def _validate_lm_config(config: Any, *, forbidden_keys: frozenset[str], context: str) -> dict[str, Any]:
+def _dump_predictor_config(config: Any, *, context: str) -> dict[str, Any]:
+    """Return a predictor's config without its API key, as ``BaseLM.dump_state`` does."""
+    return {key: value for key, value in _ensure_json_dict(config, context=context).items() if key != "api_key"}
+
+
+def _load_predictor_config(
+    config: Any,
+    *,
+    allow_unsafe_lm_state: bool,
+    context: str,
+    forbidden_keys: frozenset[str] = frozenset({"signature", "callbacks"}),
+) -> dict[str, Any]:
+    """Validate a saved predictor config and sanitize it like LM state, since it overrides the LM's endpoint."""
     if config is None:
         return {}
     if not isinstance(config, dict):
         raise ValueError(f"{context} must be a dict, got {type(config).__name__}.")
-    for key in config:
-        if not isinstance(key, str):
-            raise ValueError(f"{context} keys must be strings.")
+    _validate_json_value(config, context=context)
     collisions = sorted(forbidden_keys.intersection(config))
     if collisions:
         raise ValueError(f"{context} contains disallowed key(s): {', '.join(collisions)}.")
-    return dict(config)
+    return dict(_sanitize_lm_state(config, allow_unsafe_lm_state))
 
 
 def _builtin_registry() -> dict[tuple[str, str], type[Module]]:
@@ -712,7 +746,7 @@ def _serialize_builtin_module(module: BaseModule) -> dict[str, Any] | None:
     if cls is Predict:
         assert isinstance(module, Predict)
         sig = _require_signature(module.signature, context="Predict")
-        lm_config = _ensure_json_dict(module.config, context="Predict.config")
+        lm_config = _dump_predictor_config(module.config, context="Predict.config")
         state = _ensure_json_dict(module.dump_state(json_mode=True), context="Predict state")
         return {
             "module": cls.__module__,
@@ -728,7 +762,7 @@ def _serialize_builtin_module(module: BaseModule) -> dict[str, Any] | None:
     if cls is ChainOfThought:
         assert isinstance(module, ChainOfThought)
         cot_sig = _require_signature(module.predict.signature, context="ChainOfThought.predict")
-        lm_config = _ensure_json_dict(module.predict.config, context="ChainOfThought.predict.config")
+        lm_config = _dump_predictor_config(module.predict.config, context="ChainOfThought.predict.config")
         state = _ensure_json_dict(module.dump_state(json_mode=True), context="ChainOfThought state")
         return {
             "module": cls.__module__,
@@ -750,7 +784,7 @@ def _serialize_builtin_module(module: BaseModule) -> dict[str, Any] | None:
         for idx in range(module.M):
             base_sig = base_sig.delete(f"reasoning_attempt_{idx + 1}")
         base_sig = base_sig.delete("rationale")
-        lm_config = _ensure_json_dict(module.predict.config, context="MultiChainComparison.predict.config")
+        lm_config = _dump_predictor_config(module.predict.config, context="MultiChainComparison.predict.config")
         state = _ensure_json_dict(module.dump_state(json_mode=True), context="MultiChainComparison state")
         return {
             "module": cls.__module__,
@@ -772,7 +806,7 @@ def _serialize_builtin_module(module: BaseModule) -> dict[str, Any] | None:
             raise ValueError(f"ReAct.max_iters must be a positive int, got {module.max_iters!r}.")
         react_sig = _require_signature(module.signature, context="ReAct")
         tool_names = [name for name in module.tools if name != "submit"]
-        react_config = _ensure_json_dict(module.react.config, context="ReAct.react.config")
+        react_config = _dump_predictor_config(module.react.config, context="ReAct.react.config")
         state = _ensure_json_dict(module.dump_state(json_mode=True), context="ReAct state")
         return {
             "module": cls.__module__,
@@ -808,8 +842,10 @@ def _serialize_builtin_module(module: BaseModule) -> dict[str, Any] | None:
             sub_lm_state = _ensure_json_dict(module.sub_lm.dump_state(), context="RLM.sub_lm state")
 
         rlm_sig = _require_signature(module.signature, context="RLM")
-        generate_action_config = _ensure_json_dict(module.generate_action.config, context="RLM.generate_action.config")
-        extract_config = _ensure_json_dict(module.extract.config, context="RLM.extract.config")
+        generate_action_config = _dump_predictor_config(
+            module.generate_action.config, context="RLM.generate_action.config"
+        )
+        extract_config = _dump_predictor_config(module.extract.config, context="RLM.extract.config")
         state = _ensure_json_dict(module.dump_state(json_mode=True), context="RLM state")
         return {
             "module": cls.__module__,
@@ -874,6 +910,53 @@ def _supports_zero_arg_init(cls: type[BaseModule]) -> bool:
         return False
 
 
+def _all_named_parameters(module: BaseModule) -> list[tuple[str, Parameter]]:
+    """Like ``named_parameters()``, but includes the parameters of compiled sub-modules."""
+    from dspy.primitives.module import Module
+
+    found: list[tuple[str, Parameter]] = []
+    seen: set[int] = set()
+
+    def add(name: str, value: Any) -> None:
+        if isinstance(value, Parameter):
+            if id(value) not in seen:
+                seen.add(id(value))
+                found.append((name, value))
+        elif isinstance(value, Module):
+            walk(f"{name}.", value)
+
+    def walk(prefix: str, owner: BaseModule) -> None:
+        for attr, value in owner.__dict__.items():
+            if isinstance(value, (list, tuple)):
+                for idx, item in enumerate(value):
+                    add(f"{prefix}{attr}[{idx}]", item)
+            elif isinstance(value, dict):
+                for key, item in value.items():
+                    add(f"{prefix}{attr}['{key}']", item)
+            else:
+                add(f"{prefix}{attr}", value)
+
+    if isinstance(module, Parameter):
+        add("self", module)
+    walk("", module)
+    return found
+
+
+def _serialize_parameter(name: str, param: Parameter) -> dict[str, Any]:
+    from dspy.predict.predict import Predict
+
+    entry: dict[str, Any] = {"state": _ensure_json_dict(param.dump_state(json_mode=True), context=f"'{name}' state")}
+    if isinstance(param, Predict):
+        signature = _require_signature(param.signature, context=f"Predictor '{name}'")
+        entry["signature"] = serialize_signature(signature)
+        entry["config"] = _dump_predictor_config(param.config, context=f"Predictor '{name}' config")
+    return entry
+
+
+def _compiled_sub_modules(module: BaseModule) -> list[str]:
+    return [name for name, sub in module.named_sub_modules() if sub is not module and getattr(sub, "_compiled", False)]
+
+
 def _serialize_custom_module(module: BaseModule) -> dict[str, Any]:
     from dspy.primitives.module import Module
 
@@ -894,15 +977,7 @@ def _serialize_custom_module(module: BaseModule) -> dict[str, Any]:
     if has_to_config and has_from_config:
         raw_config = module.to_program_config()  # type: ignore[attr-defined]
         config = _ensure_json_dict(raw_config, context=f"{cls.__qualname__}.to_program_config()")
-        state = _ensure_json_dict(module.dump_state(json_mode=True), context=f"{cls.__qualname__} state")
-        return {
-            "module": cls.__module__,
-            "qualname": cls.__qualname__,
-            "construction_mode": "hooks",
-            "config": config,
-            "state": state,
-            "compiled": bool(getattr(module, "_compiled", False)),
-        }
+        return _custom_module_payload(module, construction_mode="hooks", config=config)
 
     if not _supports_zero_arg_init(cls):
         raise ValueError(
@@ -922,13 +997,18 @@ def _serialize_custom_module(module: BaseModule) -> dict[str, Any]:
             "and `from_program_config(config)` to serialize this module declaratively in JSON format."
         )
 
-    state = _ensure_json_dict(module.dump_state(json_mode=True), context=f"{cls.__qualname__} state")
+    return _custom_module_payload(module, construction_mode="zero_arg", config={})
+
+
+def _custom_module_payload(module: BaseModule, *, construction_mode: str, config: dict[str, Any]) -> dict[str, Any]:
+    cls = type(module)
     return {
         "module": cls.__module__,
         "qualname": cls.__qualname__,
-        "construction_mode": "zero_arg",
-        "config": {},
-        "state": state,
+        "construction_mode": construction_mode,
+        "config": config,
+        "parameters": {name: _serialize_parameter(name, param) for name, param in _all_named_parameters(module)},
+        "compiled_sub_modules": _compiled_sub_modules(module),
         "compiled": bool(getattr(module, "_compiled", False)),
     }
 
@@ -988,9 +1068,9 @@ def _deserialize_builtin_module(
 
     if cls is Predict:
         signature = deserialize_signature(config.get("signature"))
-        lm_config = _validate_lm_config(
+        lm_config = _load_predictor_config(
             config.get("lm_config", {}),
-            forbidden_keys=frozenset({"signature", "callbacks"}),
+            allow_unsafe_lm_state=allow_unsafe_lm_state,
             context="Predict lm_config",
         )
         predict_state = _validate_predict_state(state, context="Predict")
@@ -1000,9 +1080,10 @@ def _deserialize_builtin_module(
 
     if cls is ChainOfThought:
         extended_sig = deserialize_signature(config.get("signature"))
-        lm_config = _validate_lm_config(
+        lm_config = _load_predictor_config(
             config.get("lm_config", {}),
             forbidden_keys=frozenset({"signature", "rationale_field", "rationale_field_type", "callbacks"}),
+            allow_unsafe_lm_state=allow_unsafe_lm_state,
             context="ChainOfThought lm_config",
         )
         if set(state) != {"predict"}:
@@ -1022,9 +1103,10 @@ def _deserialize_builtin_module(
         last_key = config.get("last_key")
         if not isinstance(last_key, str) or last_key not in base_sig.output_fields:
             raise ValueError(f"MultiChainComparison 'last_key' must name an output field, got {last_key!r}.")
-        lm_config = _validate_lm_config(
+        lm_config = _load_predictor_config(
             config.get("lm_config", {}),
             forbidden_keys=frozenset({"signature", "M", "callbacks"}),
+            allow_unsafe_lm_state=allow_unsafe_lm_state,
             context="MultiChainComparison lm_config",
         )
         temperature = lm_config.pop("temperature", 0.7)
@@ -1049,9 +1131,9 @@ def _deserialize_builtin_module(
             module_label="ReAct",
             disallowed_names=frozenset({"submit"}),
         )
-        react_config = _validate_lm_config(
+        react_config = _load_predictor_config(
             config.get("react_config", {}),
-            forbidden_keys=frozenset({"signature", "callbacks"}),
+            allow_unsafe_lm_state=allow_unsafe_lm_state,
             context="ReAct react_config",
         )
         if set(state) != {"react"}:
@@ -1092,14 +1174,14 @@ def _deserialize_builtin_module(
             sanitized_sub_lm = _sanitize_lm_state(raw_sub_lm, allow_unsafe_lm_state)
             sub_lm = BaseLM.load_state(sanitized_sub_lm, allow_custom_lm_class=allow_unsafe_lm_state)
 
-        generate_action_config = _validate_lm_config(
+        generate_action_config = _load_predictor_config(
             config.get("generate_action_config", {}),
-            forbidden_keys=frozenset({"signature", "callbacks"}),
+            allow_unsafe_lm_state=allow_unsafe_lm_state,
             context="RLM generate_action_config",
         )
-        extract_config = _validate_lm_config(
+        extract_config = _load_predictor_config(
             config.get("extract_config", {}),
-            forbidden_keys=frozenset({"signature", "callbacks"}),
+            allow_unsafe_lm_state=allow_unsafe_lm_state,
             context="RLM extract_config",
         )
         if set(state) != {"generate_action", "extract"}:
@@ -1187,10 +1269,6 @@ def deserialize_program(
     if not isinstance(config, dict):
         raise ValueError("Invalid program.json: 'config' must be a JSON object.")
 
-    state = module_data.get("state")
-    if not isinstance(state, dict):
-        raise ValueError("Invalid program.json: 'state' must be a JSON object.")
-
     compiled = module_data.get("compiled", False)
     if not isinstance(compiled, bool):
         raise ValueError("Invalid program.json: 'compiled' must be a bool.")
@@ -1200,6 +1278,9 @@ def deserialize_program(
     class_key = (module_name, qualname)
 
     if class_key in builtins:
+        state = module_data.get("state")
+        if not isinstance(state, dict):
+            raise ValueError("Invalid program.json: 'state' must be a JSON object.")
         instance = _deserialize_builtin_module(
             builtins[class_key],
             config,
@@ -1232,6 +1313,43 @@ def deserialize_program(
     else:
         raise ValueError(f"Unsupported custom module construction_mode: {mode!r}.")
 
-    instance.load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
+    _restore_custom_module(instance, module_data, allow_unsafe_lm_state=allow_unsafe_lm_state)
     instance._compiled = compiled
     return instance
+
+
+def _restore_custom_module(instance: Module, module_data: dict[str, Any], *, allow_unsafe_lm_state: bool) -> None:
+    from dspy.predict.predict import Predict
+
+    saved = module_data.get("parameters")
+    if not isinstance(saved, dict):
+        raise ValueError("Invalid program.json: custom module 'parameters' must be a JSON object.")
+    params = dict(_all_named_parameters(instance))
+    if set(saved) != set(params):
+        missing, unexpected = sorted(set(params) - set(saved)), sorted(set(saved) - set(params))
+        raise ValueError(
+            f"Saved parameters do not match the structure built by {type(instance).__qualname__}: "
+            f"missing {missing}, unexpected {unexpected}. The class may have changed since the program was saved."
+        )
+
+    compiled_names = module_data.get("compiled_sub_modules", [])
+    if not isinstance(compiled_names, list) or not all(isinstance(name, str) for name in compiled_names):
+        raise ValueError("Invalid program.json: 'compiled_sub_modules' must be a list of strings.")
+    sub_modules = dict(instance.named_sub_modules())
+    unknown = sorted(set(compiled_names) - set(sub_modules))
+    if unknown:
+        raise ValueError(f"Invalid program.json: unknown compiled sub-module(s): {', '.join(unknown)}.")
+
+    for name, param in params.items():
+        entry = saved[name]
+        if not isinstance(entry, dict) or not isinstance(entry.get("state"), dict):
+            raise ValueError(f"Invalid program.json: parameter '{name}' must be an object with a 'state' object.")
+        if isinstance(param, Predict):
+            _validate_predict_state(entry["state"], context=f"Predictor '{name}'")
+            param.signature = deserialize_signature(entry.get("signature"))
+            param.config = _load_predictor_config(
+                entry.get("config"), allow_unsafe_lm_state=allow_unsafe_lm_state, context=f"Predictor '{name}' config"
+            )
+        param.load_state(entry["state"], allow_unsafe_lm_state=allow_unsafe_lm_state)
+    for name in compiled_names:
+        sub_modules[name]._compiled = True
