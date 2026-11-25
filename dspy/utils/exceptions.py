@@ -337,3 +337,11 @@ class AdapterParseError(DSPyError):
             message += f"Actual output fields parsed from the LM response: [{', '.join(parsed_result.keys())}] \n\n"
 
         super().__init__(message)
+
+
+class AdapterFieldParseError(AdapterParseError):
+    """Raised when an LM response is well-formed but an output field value fails to parse or validate.
+
+    For example, the field markers are present but the value is not a member of the field's ``Literal`` type.
+    ``ChatAdapter`` does not fall back to ``JSONAdapter`` for this error, since the response format was valid.
+    """

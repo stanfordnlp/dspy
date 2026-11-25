@@ -16,17 +16,22 @@ from dspy.adapters.utils import (
     apply_output_field_defaults,
     format_field_value,
     format_tool_calls,
+    missing_required_output_fields,
     parse_value,
     serialize_for_json,
     translate_field_type,
 )
 from dspy.signatures.signature import Signature
-from dspy.utils.exceptions import AdapterParseError
+from dspy.utils.exceptions import AdapterFieldParseError, AdapterParseError
 
 # Avoid regex's compile/flag dispatch for every leaf and streaming chunk.
 _compile_xml_pattern = lru_cache(maxsize=128)(regex.compile)
 _xml_whitespace = re.compile(r"\s*")
 _xml_newline = re.compile(r"[ \t]*\r?\n")
+
+
+class _XMLStructureError(ValueError):
+    """A field's tags do not fit its schema's shape (a format error, not an invalid value)."""
 
 
 class XMLAdapter(ChatAdapter):
@@ -134,6 +139,7 @@ class XMLAdapter(ChatAdapter):
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         fields = {}
+        field_errors = {}
         context = "Failed to parse XML"
         schemas = {
             name: TypeAdapter(field.annotation).json_schema(by_alias=False)
@@ -160,8 +166,8 @@ class XMLAdapter(ChatAdapter):
             for name, field in signature.output_fields.items():
                 if name not in elements:
                     continue
-                context = f"Failed to parse field {name}"
                 field_schema = schemas[name]
+                structural = True
                 for candidate in [field_schema, *field_schema.get("anyOf", [])]:
                     try:
                         value = self._elements_to_value(elements[name], candidate, field_schema.get("$defs", {}))
@@ -172,8 +178,12 @@ class XMLAdapter(ChatAdapter):
                         break
                     except ValueError as e:
                         error = e
+                        structural &= isinstance(e, _XMLStructureError)
                 else:
-                    raise error
+                    # If no candidate schema fits the tags' shape, the format is broken: raise AdapterParseError.
+                    if structural:
+                        raise error
+                    field_errors[name] = (f"Failed to parse field {name}: {error}", error)
         except (ET.ParseError, ValueError) as e:
             raise AdapterParseError(
                 adapter_name="XMLAdapter",
@@ -181,12 +191,17 @@ class XMLAdapter(ChatAdapter):
                 lm_response=completion,
                 message=f"{context}: {e}",
             ) from e
-        fields = apply_output_field_defaults(signature, fields)
-        if fields.keys() != signature.output_fields.keys():
+        # A missing required field means the format is broken, so it takes precedence over field errors.
+        if missing_required_output_fields(signature, fields.keys() | field_errors.keys()):
             raise AdapterParseError(
                 adapter_name="XMLAdapter", signature=signature, lm_response=completion, parsed_result=fields
             )
-        return fields
+        if field_errors:
+            message, error = next(iter(field_errors.values()))
+            raise AdapterFieldParseError(
+                adapter_name="XMLAdapter", signature=signature, lm_response=completion, message=message
+            ) from error
+        return apply_output_field_defaults(signature, fields)
 
     @classmethod
     def _scalar_boundary(cls, schema: dict, definitions: dict, enclosing: str) -> str:
@@ -299,7 +314,7 @@ class XMLAdapter(ChatAdapter):
             if list(elements[0]):
                 schema = next((choice for choice in choices if choice.get("type") != "string"), schema)
         if len(elements) > 1 and schema.get("type") not in ("array", None):
-            raise ValueError("Repeated elements require a list field")
+            raise _XMLStructureError("Repeated elements require a list field")
         if schema.get("type") == "array":
             if len(elements) == 1 and not list(elements[0]):
                 text = (elements[0].text or "").strip()
@@ -314,7 +329,7 @@ class XMLAdapter(ChatAdapter):
             ]
         element = elements[0]
         if schema.get("type") not in ("object", None) and list(element):
-            raise ValueError("Scalar values cannot contain child fields")
+            raise _XMLStructureError("Scalar values cannot contain child fields")
         children = cls._group_children(element)
         if not children:
             if schema.get("type") == "object" and not (element.text or "").strip():
