@@ -73,7 +73,7 @@ Subclass it once you have more than two or three fields, want a docstring, or ne
 
 **`dspy.InputField(*, desc=None, prefix=None, **pydantic_kwargs)`**  
 **`dspy.OutputField(*, desc=None, prefix=None, **pydantic_kwargs)`**  
-Thin factories over `pydantic.Field`. They accept every pydantic constraint (`gt`, `min_length`, …) plus the DSPy-specific `desc` and `prefix`. `prefix=` overrides the auto-inferred label; omit it and `infer_prefix` derives one from the attribute name. The deprecated `format` and `parser` args still accept values but no longer do anything — they predate the adapter layer.
+Thin factories over `pydantic.Field`. They accept every pydantic constraint (`gt`, `min_length`, …) plus the DSPy-specific `desc`. The deprecated `prefix`, `format`, and `parser` args still accept values but no longer do anything — no adapter renders them, and they predate the adapter layer.
 
 **`dspy.make_signature(signature, instructions=None, signature_name="StringSignature", custom_types=None)`**  
 The actual constructor. Two input shapes: a string (parsed by `_parse_signature`) or a dict of `{name: (type, FieldInfo)}` (used by the mutation methods to rebuild a class from its own pieces). `signature_name` sets the resulting class’s `__name__`, which surfaces in logs and inspection tools.
