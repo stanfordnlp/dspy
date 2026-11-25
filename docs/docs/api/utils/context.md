@@ -97,5 +97,5 @@ tasks.
 
 - [`dspy.configure`](configure.md) — set process-wide defaults.
 - [`dspy.LM`](../models/LM.md) — create the language model you pass as `lm`.
-- [Language Models](../../learn/programming/language_models.md) — overview of LM configuration.
-- [Adapters](../../learn/programming/adapters.md) — how adapters format prompts and parse responses.
+- [Language Models](../../getting-started/installation.md#connecting-to-a-language-model) — overview of LM configuration.
+- [Adapters](../../diving-deeper/adapters.md) — how adapters format prompts and parse responses.
