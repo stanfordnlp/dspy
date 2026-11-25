@@ -18,6 +18,7 @@ For compatibility with the legacy dsp format, you can use the signature_to_templ
 import ast
 import importlib
 import inspect
+import math
 import re
 import sys
 import types
@@ -36,6 +37,46 @@ def _default_instructions(cls) -> str:
     inputs_ = ", ".join([f"`{field}`" for field in cls.input_fields])
     outputs_ = ", ".join([f"`{field}`" for field in cls.output_fields])
     return f"Given the fields {inputs_}, produce the fields {outputs_}."
+
+
+def _safe_equals(val1: Any, val2: Any) -> bool:
+    """Safely compare two values, handling NaN floats, numpy arrays, and non-scalar comparisons."""
+    if val1 is val2:
+        return True
+    if isinstance(val1, float) and isinstance(val2, float) and math.isnan(val1) and math.isnan(val2):
+        return True
+    if hasattr(val1, "equals") and callable(val1.equals):
+        try:
+            return bool(val1.equals(val2))
+        except Exception:
+            pass
+    try:
+        res = val1 == val2
+        if hasattr(res, "__iter__"):
+            try:
+                import numpy as np
+
+                try:
+                    return bool(np.array_equal(val1, val2, equal_nan=True))
+                except TypeError:
+                    return bool(np.array_equal(val1, val2))
+            except Exception:
+                pass
+            try:
+                if hasattr(res, "to_numpy"):
+                    return bool(res.to_numpy().all())
+                if hasattr(res, "values"):
+                    import numpy as np
+
+                    return bool(np.all(res.values))
+                import numpy as np
+
+                return bool(np.all(res))
+            except Exception:
+                return False
+        return bool(res)
+    except Exception:
+        return False
 
 
 class SignatureMeta(type(BaseModel)):
@@ -509,14 +550,21 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     @classmethod
     def equals(cls, other) -> bool:
         """Compare the JSON schema of two Signature classes."""
-        if not isinstance(other, type) or not issubclass(other, BaseModel):
+        if not isinstance(other, type) or not issubclass(other, Signature):
             return False
         if cls.instructions != other.instructions:
             return False
         for name in cls.fields.keys() | other.fields.keys():
             if name not in other.fields or name not in cls.fields:
                 return False
-            if cls.fields[name].json_schema_extra != other.fields[name].json_schema_extra:
+            f1, f2 = cls.fields[name], other.fields[name]
+            if f1.annotation != f2.annotation:
+                return False
+            if not _safe_equals(f1.default, f2.default):
+                return False
+            if f1.default_factory != f2.default_factory:
+                return False
+            if f1.json_schema_extra != f2.json_schema_extra:
                 return False
         return True
 
