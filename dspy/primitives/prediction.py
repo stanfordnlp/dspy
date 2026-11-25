@@ -3,15 +3,15 @@ from dspy.primitives.example import Example
 
 class Prediction(Example):
     """A prediction object that contains the output of a DSPy module.
-    
+
     Prediction inherits from Example.
-    
+
     To allow feedback-augmented scores, Prediction supports comparison operations
     (<, >, <=, >=) for Predictions with a `score` field. The comparison operations
     compare the 'score' values as floats. For equality comparison, Predictions are equal
     if their underlying data stores are equal (inherited from Example).
-    
-    Arithmetic operations (+, /, etc.) are also supported for Predictions with a 'score'
+
+    Arithmetic operations (+, -, *, /, etc.) are also supported for Predictions with a 'score'
     field, operating on the score value.
     """
 
@@ -45,7 +45,7 @@ class Prediction(Example):
             return f"Prediction(\n    {store_repr}\n)"
 
         num_completions = len(self._completions)
-        return f"Prediction(\n    {store_repr},\n    completions=Completions(...)\n) ({num_completions-1} completions omitted)"
+        return f"Prediction(\n    {store_repr},\n    completions=Completions(...)\n) ({num_completions - 1} completions omitted)"
 
     def __str__(self):
         return self.__repr__()
@@ -68,6 +68,43 @@ class Prediction(Example):
         elif isinstance(other, Prediction):
             return float(other) + self.__float__()
         raise TypeError(f"Unsupported type for addition: {type(other)}")
+
+    def __sub__(self, other):
+        if isinstance(other, (float, int)):
+            return self.__float__() - other
+        elif isinstance(other, Prediction):
+            return self.__float__() - float(other)
+        raise TypeError(f"Unsupported type for subtraction: {type(other)}")
+
+    def __rsub__(self, other):
+        if isinstance(other, (float, int)):
+            return other - self.__float__()
+        elif isinstance(other, Prediction):
+            return float(other) - self.__float__()
+        raise TypeError(f"Unsupported type for subtraction: {type(other)}")
+
+    def __mul__(self, other):
+        if isinstance(other, (float, int)):
+            return self.__float__() * other
+        elif isinstance(other, Prediction):
+            return self.__float__() * float(other)
+        raise TypeError(f"Unsupported type for multiplication: {type(other)}")
+
+    def __rmul__(self, other):
+        if isinstance(other, (float, int)):
+            return other * self.__float__()
+        elif isinstance(other, Prediction):
+            return float(other) * self.__float__()
+        raise TypeError(f"Unsupported type for multiplication: {type(other)}")
+
+    def __neg__(self):
+        return -self.__float__()
+
+    def __pos__(self):
+        return +self.__float__()
+
+    def __abs__(self):
+        return abs(self.__float__())
 
     def __truediv__(self, other):
         if isinstance(other, (float, int)):
