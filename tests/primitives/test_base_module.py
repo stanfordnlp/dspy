@@ -245,6 +245,35 @@ def test_load_with_version_mismatch(tmp_path):
         logger.removeHandler(handler)
 
 
+def test_load_warns_about_dependency_versions_unknown_to_this_release(tmp_path, caplog):
+    # A program saved by a release that records one more dependency must still load, and the
+    # untracked dependency must be reported instead of raising KeyError.
+    import json
+
+    untracked = "orjson"
+
+    program_dir = tmp_path / "program"
+    dspy.Predict("question->answer").save(program_dir, save_program=True)
+    metadata_path = program_dir / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["dependency_versions"][untracked] = "3.9.0"
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    state_path = tmp_path / "program.json"
+    dspy.Predict("question->answer").save(state_path)
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["metadata"]["dependency_versions"][untracked] = "3.9.0"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        loaded_program = dspy.load(program_dir, allow_pickle=True)
+        dspy.Predict("question->answer").load(state_path)
+
+    assert isinstance(loaded_program, dspy.Predict)
+    warnings = [record.getMessage() for record in caplog.records]
+    assert any(untracked in message and "does not track" in message for message in warnings), warnings
+
+
 @pytest.mark.llm_call
 def test_single_module_call_with_usage_tracker(lm_for_test):
     dspy.configure(lm=dspy.LM(lm_for_test, cache=False, temperature=0.0), track_usage=True)

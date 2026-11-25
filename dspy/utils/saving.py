@@ -51,12 +51,19 @@ def load(path: str | Path, allow_pickle: bool = False) -> Module:
         metadata = orjson.loads(f.read())
 
     dependency_versions = get_dependency_versions()
-    saved_dependency_versions = metadata["dependency_versions"]
+    saved_dependency_versions = metadata.get("dependency_versions") or {}
     for key, saved_version in saved_dependency_versions.items():
-        if dependency_versions[key] != saved_version:
+        current_version = dependency_versions.get(key)
+        if current_version is None:
+            logger.warning(
+                f"The saved model records `{key}=={saved_version}`, but this environment does not track `{key}`. "
+                "This might cause errors or performance downgrade on the loaded model, please consider loading the "
+                "model in the same environment as the saving environment."
+            )
+        elif current_version != saved_version:
             logger.warning(
                 f"There is a mismatch of {key} version between saved model and current environment. You saved with "
-                f"`{key}=={saved_version}`, but now you have `{key}=={dependency_versions[key]}`. This might cause "
+                f"`{key}=={saved_version}`, but now you have `{key}=={current_version}`. This might cause "
                 "errors or performance downgrade on the loaded model, please consider loading the model in the same "
                 "environment as the saving environment."
             )
