@@ -83,6 +83,17 @@ def test_parse_value_literal_non_string_members():
     assert parse_value('"2"', Literal[1, 2, 3]) == 2
     assert parse_value("True", Literal[True, False]) is True
 
+    # Python's bool/int/float equality (True == 1, False == 0, 1.0 == 1) must not
+    # return a value whose runtime type differs from the declared Literal member type.
+    int_one = parse_value(True, Literal[0, 1])
+    assert int_one == 1 and type(int_one) is int
+    int_zero = parse_value(False, Literal[0, 1])
+    assert int_zero == 0 and type(int_zero) is int
+    bool_true = parse_value(1, Literal[True])
+    assert bool_true is True and type(bool_true) is bool
+    int_from_float = parse_value(1.0, Literal[1])
+    assert int_from_float == 1 and type(int_from_float) is int
+
     with pytest.raises(ValueError):
         parse_value("42", Literal[1, 2, 3])
 
@@ -96,12 +107,50 @@ def test_parse_value_union():
     assert parse_value("text with [placeholder]", Optional[str]) == "text with [placeholder]"
     assert parse_value("text with [placeholder]", str | None) == "text with [placeholder]"
 
-    # Test Union fallback to str
+    # Test Union fallback to str and structured/typed branch resolution
     assert parse_value("fallback", Union[int, str, None]) == "fallback"
     assert parse_value(5, Union[int, str, None]) == 5
+    assert parse_value("5", Union[int, str, None]) == 5
     assert parse_value("fallback", int | str | None) == "fallback"
     assert parse_value(5, int | str | None) == 5
+    assert parse_value("5", int | str | None) == 5
     assert parse_value("text with [placeholder]", Union[int, str, None]) == "text with [placeholder]"
+    assert parse_value("text with [placeholder]", Union[int, str]) == "text with [placeholder]"
+    assert parse_value("text with [placeholder]", Union[list[str], str, None]) == "text with [placeholder]"
+
+    # Nullable multi-member unions containing str must still parse structured JSON/Python literals and null/None
+    assert parse_value('{"a": 1}', Optional[Union[dict[str, int], str]]) == {"a": 1}  # noqa: UP045
+    assert parse_value("{'a': 1}", dict[str, int] | str | None) == {"a": 1}
+    assert parse_value("[1, 2, 3]", list[int] | str | None) == [1, 2, 3]
+    assert parse_value("null", dict[str, int] | str | None) is None
+    assert parse_value("None", dict[str, int] | str | None) is None
+    profile_val = parse_value('{"name": "John", "age": 30}', Profile | str | None)
+    assert isinstance(profile_val, Profile) and profile_val.name == "John" and profile_val.age == 30
+    assert parse_value('{"name": "John"}', Profile | str | None) == '{"name": "John"}'
+
+    # Fenced JSON / repaired JSON structured values in unions containing str must parse to structured types,
+    # while fenced non-JSON text/code falls back to the original string intact.
+    assert parse_value('```json\n{"a": 1}\n```', dict[str, int] | str) == {"a": 1}
+    assert parse_value('```json\n{"a": 1,}\n```', dict[str, int] | str | None) == {"a": 1}
+    assert parse_value('```{"a": 1}```', dict[str, int] | str) == {"a": 1}
+    assert parse_value('````json\n{"a": "```"}\n````', dict[str, str] | str) == {"a": "```"}
+    assert parse_value("```\n[1, 2, 3]\n```", list[int] | str) == [1, 2, 3]
+    fenced_code = "```python\ndef f():\n    return [1]\n```"
+    assert parse_value(fenced_code, list[int] | str) == fenced_code
+    two_blocks = '```json\n{"a": 1}\n```\n```json\n{"b": 2}\n```'
+    assert parse_value(two_blocks, dict[str, int] | str) == two_blocks
+    # Long unclosed backtick runs must finish in linear time without regex backtracking.
+    long_backticks = "`" * 50_000 + "x"
+    assert parse_value(long_backticks, dict[str, int] | str) == long_backticks
+
+    import dspy
+
+    class FencedUnionSig(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: dict[str, int] | str = dspy.OutputField()
+
+    parsed = dspy.ChatAdapter().parse(FencedUnionSig, '[[ ## answer ## ]]\n```json\n{"a": 1,}\n```')
+    assert parsed["answer"] == {"a": 1}
 
 
 def test_parse_value_json_repair():

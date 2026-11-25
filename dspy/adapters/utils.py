@@ -213,6 +213,60 @@ def find_enum_member(enum, identifier):
     raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
 
 
+def _unwrap_markdown_fence(value: str) -> str:
+    stripped = value.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    fence_len = len(stripped) - len(stripped.lstrip("`"))
+    if len(stripped) < 2 * fence_len:
+        return stripped
+    fence = "`" * fence_len
+    if not stripped.endswith(fence):
+        return stripped
+    if len(stripped) > 2 * fence_len and stripped[-fence_len - 1] == "`":
+        return stripped
+    body = stripped[fence_len:-fence_len]
+    newline_idx = body.find("\n")
+    if newline_idx != -1:
+        first_line = body[:newline_idx].lstrip()
+        if not first_line.startswith(("{", "[")):
+            body = body[newline_idx + 1 :]
+    if any(line.strip() == fence for line in body.splitlines()):
+        return stripped
+    return body.strip()
+
+
+def _try_parse_union_with_str(value: str, annotation: Any, non_str_args: tuple[Any, ...]) -> tuple[bool, Any]:
+    non_str_annotation: Any = non_str_args[0] if len(non_str_args) == 1 else Union.__getitem__(non_str_args)
+    target = _unwrap_markdown_fence(value)
+    has_candidate = False
+    candidate: Any = None
+
+    try:
+        candidate = json.loads(target)
+        has_candidate = True
+    except (json.JSONDecodeError, ValueError):
+        try:
+            candidate = ast.literal_eval(target)
+            has_candidate = True
+        except (ValueError, SyntaxError):
+            if (target.startswith("{") and target.endswith("}")) or (target.startswith("[") and target.endswith("]")):
+                repaired = json_repair.loads(target)
+                if repaired != "":
+                    candidate = repaired
+                    has_candidate = True
+
+    if has_candidate:
+        if isinstance(candidate, str):
+            return True, TypeAdapter(annotation).validate_python(candidate)
+        try:
+            return True, TypeAdapter(non_str_annotation).validate_python(candidate)
+        except pydantic.ValidationError:
+            pass
+
+    return False, None
+
+
 def parse_value(value, annotation):
     if annotation is str:
         return str(value)
@@ -224,8 +278,9 @@ def parse_value(value, annotation):
 
     if origin is Literal:
         allowed = get_args(annotation)
-        if value in allowed:
-            return value
+        for member in allowed:
+            if type(member) is type(value) and member == value:
+                return member
 
         if isinstance(value, str):
             v = value.strip()
@@ -234,8 +289,9 @@ def parse_value(value, annotation):
             if len(v) > 1 and v[0] == v[-1] and v[0] in "\"'":
                 v = v[1:-1]
 
-            if v in allowed:
-                return v
+            for member in allowed:
+                if type(member) is str and member == v:
+                    return member
 
             # Coerce string forms of non-string members (e.g. "2" for Literal[1, 2, 3]) below.
             value = v
@@ -243,8 +299,13 @@ def parse_value(value, annotation):
     if not isinstance(value, str):
         return TypeAdapter(annotation).validate_python(value)
 
-    if origin in (Union, types.UnionType) and type(None) in get_args(annotation) and str in get_args(annotation):
-        # Handle union annotations, e.g., `str | None`, `Optional[str]`, `Union[str, int, None]`, etc.
+    if origin in (Union, types.UnionType) and str in get_args(annotation):
+        non_str_args = tuple(arg for arg in get_args(annotation) if arg is not str)
+        if not non_str_args or non_str_args == (type(None),):
+            return TypeAdapter(annotation).validate_python(value)
+        matched, parsed = _try_parse_union_with_str(value, annotation, non_str_args)
+        if matched:
+            return parsed
         return TypeAdapter(annotation).validate_python(value)
 
     candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
