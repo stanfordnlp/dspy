@@ -2,6 +2,8 @@
 
 import pyodideModule from "npm:pyodide@0.29.4/pyodide.js";
 import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
+import { Buffer } from "node:buffer";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 const JSON = Object.freeze(globalThis.JSON), console = Object.freeze(globalThis.console);
 // =============================================================================
@@ -151,8 +153,12 @@ const snapshot = argValue("--dspy-snapshot");
 const buildTarget = argValue("--dspy-build");
 const buildSource = argValue("--dspy-build-from");
 const snapshotTarget = argValue("--dspy-build-snapshot");
+// A snapshot of a session (PythonInterpreter(snapshot=...)), sent on the first line of stdin, replaces the dspy one.
+const restore = Deno.args.includes("--dspy-restore");
 // The host starts the sandbox again without its snapshot when it exits with this.
 const SNAPSHOT_REFUSED = 70;
+const stdlibSize = (FS) => FS.stat(`/lib/${FS.readdir("/lib").find((name) => name.endsWith(".zip"))}`).size;
+const bundleName = bundle?.split(/[\\/]/).pop() ?? null; // its digest of dspy's sources
 
 // The bundle's files are written into Pyodide's file system before Python starts. A snapshot holds the memory of the
 // bundle's compiled extension modules but not their code: they are loaded right after the C runtime starts and before
@@ -177,13 +183,13 @@ if (bundle) {
         for (const path of extensions) {
           settings.loadDynamicLibrary(path, { global: true, nodelete: true, allowUndefined: true });
         }
-        const zip = settings.FS.readdir("/lib").find((name) => name.endsWith(".zip")); // the standard library
         layout = JSON.stringify([
-          settings.FS.stat(`/lib/${zip}`).size,
+          stdlibSize(settings.FS),
           settings.wasmTable.length,
           ...extensions.map((path) =>
             Object.values(settings.LDSO.loadedLibsByName[path].exports).find((value) => typeof value === "number")
           ),
+          bundleName,
         ]);
       };
     }
@@ -213,21 +219,39 @@ function writeArchive(FS, root, data) {
   return files;
 }
 
+// The stdin reader is shared so tool_call can read responses during execution
+const stdinReader = readLines(Deno.stdin);
+// Python reaches the tool bridge through `js`, by a path a snapshot records and a restore resolves in its own process.
+globalThis._dspy_bridge = { toolCall: toolCallBridge };
+
 let pyodide;
 try {
+  const memory = restore ? gunzipSync(Buffer.from((await stdinReader.next()).value ?? "", "base64")) : null;
   pyodide = await pyodideModule.loadPyodide({
     ...(stdlib ? { stdLibURL: stdlib } : {}),
-    ...(snapshot ? { _loadSnapshot: Deno.readFileSync(snapshot) } : {}),
-    ...(snapshotTarget ? { _makeSnapshot: true } : {}),
+    ...(memory || snapshot ? { _loadSnapshot: memory ?? Deno.readFileSync(snapshot) } : {}),
+    _makeSnapshot: true, // so that any sandbox can be snapshotted
   });
 } catch (e) {
-  if (!snapshot) throw e;
-  console.error(`The dspy snapshot could not be restored: ${e?.message ?? e}`);
-  Deno.exit(SNAPSHOT_REFUSED);
+  if (!snapshot && !restore) throw e;
+  console.error(`The ${restore ? "interpreter" : "dspy"} snapshot could not be restored: ${e?.message ?? e}`);
+  Deno.exit(restore ? 1 : SNAPSHOT_REFUSED);
 }
 const denoDir = argValue("--dspy-deno-dir");
 if (denoDir) await Deno.permissions.revoke({ name: "read", path: denoDir });
 if (stdlib) await Deno.permissions.revoke({ name: "read", path: stdlib });
+layout ??= JSON.stringify([stdlibSize(pyodide.FS), bundleName]);
+if (snapshot || restore) {
+  // Reading a str runs no extension code, so this is safe even when they landed elsewhere.
+  if (pyodide.runPython("import sys; getattr(sys, '__dspy_layout', None)") !== layout) {
+    console.error(restore
+      ? "The interpreter snapshot was made by a sandbox that started differently: from another standard library or dspy bundle."
+      : "The dspy snapshot does not match where this sandbox loaded its extension modules.");
+    Deno.exit(restore ? 1 : SNAPSHOT_REFUSED);
+  }
+  // Sandboxes restored from one snapshot would otherwise all draw the same random numbers.
+  pyodide.runPython("import random; random.seed()");
+}
 
 // Build mode runs no sandboxed code: it byte-compiles an archive (by default the standard library), writes it, and
 // exits.
@@ -256,13 +280,6 @@ if (bundle) {
   await Deno.permissions.revoke({ name: "read", path: bundle });
   if (snapshot) {
     await Deno.permissions.revoke({ name: "read", path: snapshot });
-    // Reading a str runs no extension code, so this is safe even when they landed elsewhere.
-    if (pyodide.runPython("import sys; getattr(sys, '__dspy_layout', None)") !== layout) {
-      console.error("The dspy snapshot does not match where this sandbox loaded its extension modules.");
-      Deno.exit(SNAPSHOT_REFUSED);
-    }
-    // Sandboxes restored from one snapshot would otherwise all draw the same random numbers.
-    pyodide.runPython("import random; random.seed()");
   } else {
     // A snapshot has this already.
     pyodide.runPython(`
@@ -301,9 +318,11 @@ del InlineExecutor
   }
 }
 
+// Packages and extension modules loaded after this are not in a snapshot: their files are not in its memory.
+const loaded = () => Object.keys(pyodide._module.LDSO.loadedLibsByName).length + Object.keys(pyodide.loadedPackages).length;
+const loadedAtStart = loaded();
+
 // Tool call support: allows Python code to call host-side functions
-// The stdin reader is shared so tool_call can read responses during execution
-const stdinReader = readLines(Deno.stdin);
 let requestIdCounter = 0;
 
 const TOOL_BRIDGE_ERROR_KEY = "__dspy_tool_bridge_error__";
@@ -359,8 +378,7 @@ async function toolCallBridge(name, argsJson) {
   }
 }
 
-// Expose the bridge to Python
-pyodide.globals.set("_js_tool_call", toolCallBridge);
+pyodide.runPython("from js import _dspy_bridge\n_js_tool_call = _dspy_bridge.toolCall\ndel _dspy_bridge");
 
 try {
   const env_vars = (Deno.args[0] ?? "").split(",").filter(Boolean);
@@ -478,6 +496,28 @@ while (true) {
       console.log(jsonrpcResult({ injected: name }, requestId));
     } catch (e) {
       console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to inject var: ${e.message}`, requestId));
+    }
+    continue;
+  }
+
+  if (method === "snapshot") {
+    if (loaded() !== loadedAtStart) {
+      console.log(jsonrpcResult({ refused: "its code loaded packages or extension modules after it started" }, requestId));
+      continue;
+    }
+    // Both lists of loaded packages must be empty in it: this one and Python's, which a restored sandbox has apart.
+    const loader = pyodide.pyimport("pyodide._package_loader");
+    const lists = [pyodide.loadedPackages, loader.loadedPackages], saved = lists.map((list) => ({ ...list }));
+    loader.destroy();
+    for (const list of lists) for (const key of Object.keys(list)) delete list[key];
+    try {
+      pyodide.runPython(`import sys; sys.__dspy_layout = ${JSON.stringify(layout)}`);
+      const memory = pyodide.makeMemorySnapshot();
+      console.log(jsonrpcResult({ snapshot: gzipSync(memory).toString("base64") }, requestId));
+    } catch (e) {
+      console.log(jsonrpcResult({ refused: `its Python holds JavaScript objects (${e?.message ?? e})` }, requestId));
+    } finally {
+      lists.forEach((list, i) => Object.assign(list, saved[i]));
     }
     continue;
   }

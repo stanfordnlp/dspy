@@ -340,6 +340,27 @@ async def process():
 answer = asyncio.run(process())
 ```
 
+### Conversations
+
+Pass a call's `history` back as `history=` to continue the conversation. The next call sees the earlier REPL steps
+and, with `PythonInterpreter`, starts its REPL where the last of them left it, so the variables they made are still
+there:
+
+```python
+rlm = dspy.RLM("question -> answer")
+
+first = rlm(question="Compute the first 50 primes and keep them in a variable.")
+second = rlm(question="What is the sum of the ones above 100?", history=first.history)  # the primes are still there
+```
+
+Each call records the interpreter's state on its last history step, as the hash of a
+[snapshot](../tools/PythonInterpreter.md#snapshots) it saves in DSPy's sandbox cache (`$DSPY_CACHEDIR/sandbox`,
+readable only by you). A call continuing from any earlier history, including one saved as JSON and loaded in another
+process on the same machine, starts from the state that step left. A state takes about 15 MB, more when the variables
+are large; the most recently used are kept within 1 GB. Where a state is gone, the call starts a fresh REPL and logs a
+warning. With `DSPY_SANDBOX_CACHE=0`, or `PythonInterpreter(sandbox_cache=False)`, states are saved in a temporary
+directory of the process instead, removed when it exits.
+
 ### Inspecting the Trajectory
 
 ```python
