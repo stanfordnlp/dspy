@@ -3134,3 +3134,25 @@ def test_chat_adapter_formats_pep604_union_like_typing_union():
     assert "1. `answer` (Union[int, NoneType])" in messages.system
     assert "must be formatted as a valid Python Union[int, NoneType]" in messages.messages[-1].text
     assert "UnionType" not in messages.system + messages.messages[-1].text
+
+
+def test_chat_adapter_parses_header_with_spacing_variations():
+    class QA(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    variations = [
+        "[[ ## answer ## ]]\nParis\n\n[[ ## completed ##]]",
+        "[[ ## answer ## ]]\nParis\n\n[[## completed ##]]",
+        "[[ ## answer ## ]]\nParis\n\n[[ ## completed## ]]",
+        "[[ ## answer ## ]]\nParis\n\n[[##completed##]]",
+        "[[## answer ##]]\nParis\n\n[[ ## completed ## ]]",
+        "[[ ## answer ##]]\nParis\n\n[[ ## completed ## ]]",
+        "   [[ ## answer ## ]]   \nParis\n\n[[ ## completed ## ]]",
+    ]
+
+    adapter = dspy.ChatAdapter()
+    for var in variations:
+        result = adapter.parse(QA, var)
+        assert result == {"answer": "Paris"}
+
