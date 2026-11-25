@@ -1129,3 +1129,139 @@ def test_tool_calls_none_reaches_empty_tool_calls_semantics():
             raised = e
     assert raised is not None
     assert "empty_tool_calls" in str(raised), f"expected empty_tool_calls semantics, got: {raised}"
+
+
+def test_tool_from_function_with_self_referential_pydantic_model():
+    class TreeNode(BaseModel):
+        value: int
+        children: list["TreeNode"] = []
+
+    TreeNode.model_rebuild(_types_namespace={"TreeNode": TreeNode})
+
+    def sum_tree(tree: TreeNode) -> int:
+        return tree.value + sum(sum_tree(child) for child in tree.children)
+
+    tool = Tool(sum_tree)
+    payload = {"value": 1, "children": [{"value": 2}, {"value": 3, "children": [{"value": 4}]}]}
+    assert tool(tree=payload) == 10
+    with pytest.raises(ValueError):
+        tool(tree={"value": 1, "children": [{"value": "bad"}]})
+
+    parameters = tool.as_function_tool().parameters
+    validate({"tree": payload}, parameters)
+    with pytest.raises(ValidationError):
+        validate({"tree": {"value": 1, "children": [{"value": "bad"}]}}, parameters)
+
+
+def test_tool_from_function_with_mutually_recursive_pydantic_models():
+    class NodeA(BaseModel):
+        label: str
+        child: "NodeB | None" = None
+
+    class NodeB(BaseModel):
+        count: int
+        next_node: "NodeA | None" = None
+
+    ns = {"NodeA": NodeA, "NodeB": NodeB}
+    NodeA.model_rebuild(_types_namespace=ns)
+    NodeB.model_rebuild(_types_namespace=ns)
+
+    def walk(root: NodeA, items: list[NodeA]) -> tuple[str, int]:
+        return root.label, len(items)
+
+    tool = Tool(walk)
+    payload = {"label": "a", "child": {"count": 2, "next_node": {"label": "b"}}}
+    assert tool(root=payload, items=[payload]) == ("a", 1)
+    with pytest.raises(ValueError):
+        tool(root={"label": "a", "child": {"count": "bad"}}, items=[])
+
+    parameters = tool.as_function_tool().parameters
+    validate({"root": payload, "items": [payload]}, parameters)
+    with pytest.raises(ValidationError):
+        validate({"root": {"label": "a", "child": {"count": "bad"}}, "items": []}, parameters)
+
+
+def test_convert_input_schema_to_tool_args_with_draft07_definitions():
+    schema = {
+        "type": "object",
+        "definitions": {
+            "Item": {
+                "type": "object",
+                "properties": {"id": {"type": "integer"}},
+                "required": ["id"],
+            },
+            "RecursiveNode": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "child": {"$ref": "#/definitions/RecursiveNode"},
+                },
+                "required": ["name"],
+            },
+        },
+        "properties": {
+            "item": {"$ref": "#/definitions/Item"},
+            "node": {"$ref": "#/definitions/RecursiveNode"},
+        },
+        "required": ["item"],
+    }
+
+    args, arg_types, arg_desc = convert_input_schema_to_tool_args(schema)
+
+    assert "definitions" not in args["item"]
+    assert args["item"]["type"] == "object"
+    assert args["item"]["properties"]["id"]["type"] == "integer"
+    assert arg_types["item"] is dict
+    assert arg_desc["item"] == "No description provided. (Required)"
+
+    validate({"name": "root", "child": {"name": "leaf"}}, args["node"])
+    with pytest.raises(ValidationError):
+        validate({"name": "root", "child": {"name": 123}}, args["node"])
+
+
+def test_convert_input_schema_to_tool_args_with_boolean_definitions():
+    schema = {
+        "type": "object",
+        "definitions": {
+            "AllowAny": True,
+            "RejectAll": False,
+        },
+        "properties": {
+            "allow": {"$ref": "#/definitions/AllowAny"},
+            "reject": {"$ref": "#/definitions/RejectAll"},
+        },
+    }
+
+    args, arg_types, arg_desc = convert_input_schema_to_tool_args(schema)
+
+    assert args["allow"] == {}
+    assert args["reject"] == {"not": {}}
+    assert arg_types["allow"] is Any
+    assert arg_types["reject"] is Any
+    assert arg_desc["allow"] == "No description provided."
+    assert arg_desc["reject"] == "No description provided."
+
+    validate("anything", args["allow"])
+    with pytest.raises(ValidationError):
+        validate("anything", args["reject"])
+
+    allow_tool = Tool(lambda **kwargs: kwargs, args={"allow": args["allow"]})
+    assert allow_tool(allow="anything") == {"allow": "anything"}
+    validate({"allow": "anything"}, allow_tool.as_function_tool().parameters)
+
+    reject_tool = Tool(lambda **kwargs: kwargs, args={"reject": args["reject"]})
+    with pytest.raises(ValueError, match="Arg reject is invalid"):
+        reject_tool(reject="anything")
+    with pytest.raises(ValidationError):
+        validate({"reject": "anything"}, reject_tool.as_function_tool().parameters)
+
+
+def test_tool_optional_date_argument_still_accepts_date_instance():
+    import datetime
+
+    def format_day(day: datetime.date | None = None) -> str | None:
+        return day.isoformat() if day is not None else None
+
+    tool = Tool(format_day)
+    assert tool(day=datetime.date(2026, 1, 2)) == "2026-01-02"
+    assert tool(day=None) is None
