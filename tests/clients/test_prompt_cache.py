@@ -151,3 +151,29 @@ def test_native_anthropic_marks_system_prefix(monkeypatch):
         assert lm.history[-1]["usage"]["prompt_tokens_details"]["cache_creation_tokens"] == 100
     finally:
         lm.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("model, key", [("openai-chat:gpt-5.6-sol", "messages"), ("openai:gpt-5.6-sol", "input")])
+@pytest.mark.parametrize("prefix", [(), (Message.user("reusable prefix"),)])
+async def test_native_empty_cache_boundary_moves_back_or_drops(asynchronous, model, key, prefix, monkeypatch):
+    from tests.clients.test_lm import responses_wire
+    from tests.clients.test_lm_engine_execution import native_transport, wire
+
+    transport = native_transport(monkeypatch, [wire("ok") if key == "messages" else responses_wire()])
+    lm = dspy.LM(model, engine="lm15", api_key="fake", cache=False, num_retries=0)
+    request = Request(model=model, messages=prefix + (Message.user(""), Message.user("question")),
+                      config=Config(cache=CacheConfig(prefix_until_index=len(prefix))))
+    try:
+        result = await lm.acall(request) if asynchronous else lm(request)
+        rows = json.loads(transport.requests[0].body)[key]
+        assert result.text and len(transport.requests) == 1
+        assert len(rows) == len(prefix) + 1
+        assert ("prompt_cache_breakpoint" in json.dumps(rows[0])) == bool(prefix)
+        assert "prompt_cache_breakpoint" not in json.dumps(rows[-1])
+        change = next(a for a in result.adaptations if a.field == "config.cache.prefix_until_index")
+        assert change.action == ("substituted" if prefix else "dropped")
+        assert request.messages[len(prefix)].text == ""
+    finally:
+        await lm.aclose()

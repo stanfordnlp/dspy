@@ -70,13 +70,19 @@ def _settings_of(msg: JsonObject) -> dict[str, str] | None:
     return {str(k): str(v) for k, v in settings.items()} if isinstance(settings, dict) else None
 
 
+def _base_models_of(msg: JsonObject) -> dict[str, str] | None:
+    base_models = msg.get("base_models")
+    return {str(k): str(v) for k, v in base_models.items()} if isinstance(base_models, dict) else None
+
+
 def _adapter(msg: JsonObject) -> BaseProviderLM:
     return adapter_for_provider(str(msg["provider"]), _credential_of(msg), _base_url(msg),
-                                settings=_settings_of(msg), clock=_clock_of(msg))
+                                settings=_settings_of(msg), clock=_clock_of(msg), base_models=_base_models_of(msg))
 
 
 def adapter_for_provider(provider: str, api_key: Any, base_url: str | None = None, *,
-                         settings: dict[str, str] | None = None, clock: Any = None) -> BaseProviderLM:
+                         settings: dict[str, str] | None = None, clock: Any = None,
+                         base_models: dict[str, str] | None = None) -> BaseProviderLM:
     """The LM a contract case's ``provider`` string names, from the registry.
 
     A chat-bound provider (groq, deepseek, …) is the chat dialect with that
@@ -104,6 +110,10 @@ def adapter_for_provider(provider: str, api_key: Any, base_url: str | None = Non
         kwargs["settings"] = settings
     if clock is not None:
         kwargs["clock"] = clock
+    if base_models:
+        # PROTOCOL.md (2026-11-09): a fine-tune's base model, as
+        # RouterConfig(base_models=...) hands it to the chat dialect.
+        kwargs["base_models"] = base_models
     if definition.id == "openai-codex":
         # PROTOCOL.md pins the harness account id: the ctor cannot derive one
         # from a non-JWT injected key, and the wire header must be exact.

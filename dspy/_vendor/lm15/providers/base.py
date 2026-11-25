@@ -414,9 +414,11 @@ class BaseProviderLM:
 
         Keep the caller request in drivers so subsequent build/parse boundaries
         each see the original spelling; other colon-bearing IDs are opaque.
+        A URI (``tinker://…``: the first ``:`` followed by ``//``) is one
+        name and never a prefix, whatever its scheme (2026-11-09).
         """
         head, sep, model = request.model.partition(":")
-        if sep and model and head.replace("_", "-") == self.provider.replace("_", "-"):
+        if sep and model and not model.startswith("//") and head.replace("_", "-") == self.provider.replace("_", "-"):
             from dataclasses import replace
 
             return replace(request, model=model)
@@ -723,9 +725,15 @@ class BaseProviderLM:
         it: the sync and async streams and the vet shim. The default maps
         each event on its own with ``parse_stream_events``; a dialect whose
         stream restates items in final copies returns a reader that
-        completes fragments from them.
+        completes fragments from them.  A server that returns the matched
+        stop sequence (MAP-22) gets a reader that cuts the text there.
         """
-        return StatelessStreamReader(self, request)
+        reader = StatelessStreamReader(self, request)
+        if self._stop_returned_in_text(request):
+            from ..result import StopCuttingReader
+
+            return StopCuttingReader(reader, request.config.stop)
+        return reader
 
     @operation
     def stream(self, request: Request) -> Iterator[StreamEvent]:
@@ -739,6 +747,26 @@ class BaseProviderLM:
         if _client_side_stop(adaptations):
             events = truncate_stream_at_stop(events, request.config.stop)
         return events
+
+    def _stop_returned_in_text(self, request: Request) -> bool:
+        """MAP-22: the server stops at ``Config.stop`` but returns the
+        matched sequence in the text (compat ``stop_in_text="included"``);
+        lm15 cuts it as for a client-side stop.  Nothing is recorded: the
+        reply is made to mean what ``Config.stop`` means everywhere.  Applied
+        where replies become canonical (``parse_response``, the stream
+        reader), so every path and the harness see the cut."""
+        return bool(request.config.stop) and self._stop_in_text(request) == "included"
+
+    def _cut_returned_stop(self, request: Request, response: Response) -> Response:
+        if not self._stop_returned_in_text(request):
+            return response
+        from ..result import apply_client_side_stop
+
+        return apply_client_side_stop(response, request.config.stop)
+
+    def _stop_in_text(self, request: Request) -> str:
+        """The dialect's MAP-22 policy for this request; the rule by default."""
+        return "excluded"
 
     def _stream_raw(self, request: Request, req: "TransportRequest | None" = None) -> Iterator[StreamEvent]:
         if req is None:

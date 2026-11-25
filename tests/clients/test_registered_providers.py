@@ -472,14 +472,24 @@ def test_a_snapshot_entry_is_more_specific_than_a_statement(server):
     assert not dspy.LM("private-fireworks/private-v9", api_key="k").supports_function_calling
 
 
-def test_compat_object_shapes_capabilities(server):
-    base, _ = server
-    register_provider(_definition(base, json_schema="reject", thinking_format="none"),
+@pytest.mark.parametrize("json_schema", ["reject", "none"])
+def test_compat_object_shapes_capabilities(server, json_schema):
+    base, seen = server
+    register_provider(_definition(base, json_schema=json_schema, thinking_format="none"),
                       supports=ModelSupport(function_calling=True, reasoning=True, response_schema=True))
-    lm = dspy.LM(f"private-fireworks/{MODEL}", api_key="k")
+    lm = dspy.LM("private-fireworks/private-v9", engine="lm15", api_key="k", cache=False)
     assert lm.supports_function_calling
     assert not lm.supports_response_schema and not lm.supports_reasoning  # the wire cannot carry them
     assert "reasoning_effort" not in lm.supported_params
+    assert ("response_format" in lm.supported_params) == (json_schema == "reject")
+    try:
+        assert lm("hi", response_format={"type": "json_object"}) == ["Paris"]
+        assert ("response_format" in seen[-1]["body"]) == (json_schema == "reject")
+        if json_schema == "none":
+            assert any(a.field == "config.response_format" and a.action == "dropped"
+                       for a in lm.history[-1]["response"].adaptations)
+    finally:
+        lm.close()
 
 
 # ─── state ────────────────────────────────────────────────────────────

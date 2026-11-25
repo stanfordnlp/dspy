@@ -457,3 +457,110 @@ async def test_stream_final_argument_contradictions_reach_public_error(asynchron
         assert len(transport.requests) == 1
     finally:
         await lm.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("provider, model_type", [
+    ("anthropic", "auto"), ("gemini", "auto"), ("openai-chat", "chat"), ("openai", "responses"),
+])
+async def test_native_history_preserves_data_without_foreign_empty_thinking(asynchronous, provider, model_type, monkeypatch):
+    from tests.clients.test_lm import responses_wire
+
+    hidden = lm15.ThinkingPart(text="", continuation=(lm15.ContinuationState(
+        provider="openai", kind="reasoning_item", data={"id": "rs_1", "encrypted_content": "offline-state"},
+    ),))
+    messages = (
+        lm15.Message.user("first"), lm15.Message(role="assistant", parts=(hidden,)),
+        lm15.Message.user("second"), lm15.Message(role="assistant", parts=(
+            lm15.TextPart(text=""), lm15.DataPart(value={"answer": 7}), lm15.TextPart(text=""),
+        )), lm15.Message.user("third"),
+    )
+    replies = {
+        "anthropic": {"model": "test", "role": "assistant", "content": [{"type": "text", "text": "ok"}],
+                      "stop_reason": "end_turn", "usage": {"input_tokens": 3, "output_tokens": 2}},
+        "gemini": {"candidates": [{"content": {"parts": [{"text": "ok"}]}, "finishReason": "STOP"}]},
+    }
+    reply = (DualResponse(200, json.dumps(replies[provider]).encode()) if provider in replies
+             else wire("ok") if model_type == "chat" else responses_wire())
+    transport = native_transport(monkeypatch, [reply, responses_wire()])
+    lm = dspy.LM(f"{provider}:test", model_type=model_type, engine="lm15", api_key="fake", cache=False)
+    back = dspy.LM("openai:test", model_type="responses", engine="lm15", api_key="fake", cache=False)
+    request = lm15.Request(model=lm.model, messages=messages)
+    before = copy.deepcopy(messages)
+    try:
+        result = await invoke(lm, asynchronous, request)
+        body = json.loads(transport.requests[0].body)
+        rows = body.get("messages", body.get("contents", body.get("input")))
+        encoded = json.dumps(rows)
+        assert '"text": ""' not in encoded and '"content": ""' not in encoded
+        assert '{\\"answer\\":7}' in encoded
+        assert not any(a.field.startswith("messages") for a in result.adaptations)
+        if provider != "openai" or model_type == "chat":
+            assert len(rows) == 4 and "offline-state" not in encoded
+        assert request.messages == before and request.messages[1].parts[0] is hidden
+        await invoke(back, asynchronous, lm15.Request(model=back.model, messages=messages))
+        items = json.loads(transport.requests[1].body)["input"]
+        assert next(item for item in items if item.get("type") == "reasoning")["encrypted_content"] == "offline-state"
+    finally:
+        await lm.aclose()
+        await back.aclose()
+
+
+@pytest.mark.parametrize("model_type", ["auto", "chat"])
+@pytest.mark.parametrize("model, wire_model", [
+    ("thinkingmachines/Qwen/Qwen3.5-4B", "Qwen/Qwen3.5-4B"),
+    ("tinker:Qwen/Qwen3.5-4B", "Qwen/Qwen3.5-4B"),
+    ("tinker://offline:train:0/sampler_weights/test", "tinker://offline:train:0/sampler_weights/test"),
+])
+def test_native_tinker_route_and_reasoning_switch(model_type, model, wire_model, monkeypatch):
+    transport = native_transport(monkeypatch, [wire("ok")])
+    lm = dspy.LM(model, model_type=model_type, engine="lm15", api_key="fake", cache=False, num_retries=0)
+    try:
+        assert lm("hello", reasoning_effort="off") == ["ok"]
+        body = json.loads(transport.requests[0].body)
+        assert body["model"] == wire_model and body["reasoning_effort"] is False
+        assert transport.requests[0].url == "https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1/chat/completions"
+    finally:
+        lm.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("stop, expected", [("STOP", "alpha "), ("STORK", "alpha STOP")])
+async def test_native_tinker_stop_keeps_late_usage(asynchronous, streaming, stop, expected, monkeypatch):
+    payloads = [{"choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}]}
+                for text in ("alpha S", "TO", "P")]
+    payloads.append({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                     "usage": {"prompt_tokens": 3, "completion_tokens": 7, "total_tokens": 10}})
+    reply = DualResponse(200, b"", chunks=[("data: " + json.dumps(p) + "\n\n").encode() for p in payloads],
+                         headers=[("content-type", "text/event-stream")]) if streaming else wire("alpha STOP")
+    transport = native_transport(monkeypatch, [reply])
+    lm = dspy.LM("tinker:thinkingmachines/Inkling-Small", engine="lm15", api_key="fake", cache=False, num_retries=0)
+    request = lm15.Request(model=lm.model, messages=(lm15.Message.user("hello"),), config=lm15.Config(stop=(stop,)))
+    try:
+        with dspy.context(send_stream=Sink() if streaming else None):
+            result = await invoke(lm, asynchronous, request)
+        assert result.text == expected and result.adaptations == ()
+        assert result.usage.total_tokens == (10 if streaming else 3)
+        assert lm.history[-1]["usage"]["total_tokens"] == (10 if streaming else 3)
+        assert len(transport.requests) == 1 and json.loads(transport.requests[0].body)["stop"] == [stop]
+    finally:
+        await lm.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("model, model_type", [("openai-chat:test", "chat"), ("openai:test", "responses"), ("anthropic:test", "auto")])
+async def test_native_fastapi_detail_reaches_public_error(asynchronous, model, model_type, monkeypatch):
+    transport = native_transport(monkeypatch, [DualResponse(422, json.dumps({
+        "detail": "Invalid input", "errors": [{"loc": ["body", "messages", 1], "msg": "expected content"}],
+    }).encode())])
+    lm = dspy.LM(model, model_type=model_type, engine="lm15", api_key="fake", cache=False, num_retries=0)
+    try:
+        with pytest.raises(dspy.LMInvalidRequestError, match="Invalid input: body -> messages -> 1: expected content"):
+            await invoke(lm, asynchronous, "hello")
+        assert len(transport.requests) == 1 and not lm.history
+    finally:
+        await lm.aclose()

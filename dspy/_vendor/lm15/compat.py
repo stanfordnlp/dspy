@@ -339,6 +339,7 @@ _CHAT_OVERRIDABLE: frozenset[str] = frozenset({
     "instruction_role", "max_tokens_field", "stream_usage", "thinking_format", "thinking_replay",
     "assistant_reasoning_content", "strict_tools", "cache_control", "user_field",
     "forced_tool_choice", "json_schema", "reasoning_efforts", "tool_result_media", "reasoning_off", "reasoning_usage",
+    "stop_in_text",
 })
 
 OpenAIChatInstructionRole = Literal["auto", "developer", "system"]
@@ -366,7 +367,14 @@ OpenAIChatThinkingFormat = Literal[
     "kimi",
     "qwen",
     "qwen_chat_template",
+    "reasoning_effort_switch",
 ]
+# "reasoning_effort_switch": the `reasoning_effort` field is an on/off
+# switch, `true` or `false`, with no levels (Tinker's Qwen 3/3.5/3.6, Kimi
+# K2.6 and Nemotron families: "This model accepts true or false.", live
+# 2026-11-09, research/providers/tinker/reasoning_survey.py).  Off goes out
+# as `false`; an effort word goes out as `true`, recorded as substituted
+# (MAP-13: the nearest value to a level is "on").
 # BuiltinTool policy for the chat dialect. The base Chat Completions wire
 # carries function/custom tools ONLY (doc: chat--create.md), and some
 # compat servers silently IGNORE unknown tool types (OpenRouter, verified
@@ -398,12 +406,31 @@ OpenAIChatForcedToolChoice = Literal["auto", "send", "reject"]
 # instead (the first of reasoning_efforts, else "low") and records the
 # substitution (MAP-13 decision 2026-09-14 §4.2, xAI's rule).  A server that
 # refuses the off word loudly needs nothing here.
-OpenAIChatReasoningOff = Literal["auto", "send", "lowest"]
+# "switch" is for a server whose `reasoning_effort` takes effort words AND a
+# boolean, where `false` is the off switch and the off word is refused
+# (Tinker's Qwen 3.8 and DeepSeek V4.1: "accepts one of: low, medium,
+# xhigh; or true or false", live 2026-11-09): off goes out as
+# `reasoning_effort: false`.  Meaningful with thinking_format
+# "reasoning_effort" only.
+OpenAIChatReasoningOff = Literal["auto", "send", "lowest", "switch"]
 # Whether the server honours response_format.type=json_schema.  "reject"
 # raises before the wire.  DeepSeek answers 400 (loud, nothing to do); Z.AI
 # answers 200 with free-form, fenced JSON that ignores the schema (live
 # 2026-09-03) — silent, so the adapter must refuse.
-OpenAIChatJsonSchema = Literal["auto", "send", "reject"]
+# "none": the server applies no response_format at all — json_schema and
+# json_object both answered 200 with free text on every Tinker family
+# (live 2026-11-09, receipts/2026-11-09-tinker-survey/): either type is
+# dropped and recorded, never sent to be silently ignored (MAP-8).
+OpenAIChatJsonSchema = Literal["auto", "send", "reject", "none"]
+# MAP-22: whether the server's text includes the stop sequence it stopped
+# at.  "excluded" is the dialects' own rule (OpenAI, Anthropic: the matched
+# sequence is not returned).  "included": the server stops at the sequence
+# but returns it at the end of the text (Tinker, both doors, live
+# 2026-11-09: stop [" 7"] → "1 2 3 4 5 6 7"); lm15 cuts the text at the
+# first stop sequence, as for a client-side stop, so `Config.stop` means one
+# thing everywhere.  Nothing changes on the wire and nothing is recorded:
+# the reply is made to say what the provider's own contract says.
+StopInText = Literal["auto", "excluded", "included"]
 # MAP-14 §4: can the server score named tokens (``logprob_token_ids`` on
 # the completions endpoint) so lm15 can deliver a distribution over
 # declared keys?  Receipted on vLLM 0.29.0 (honoured) and 0.25.1 (200,
@@ -456,6 +483,7 @@ class OpenAIChatCompat:
     token_scoring: OpenAIChatTokenScoring | None = field(default=None, kw_only=True)
     reasoning_efforts: OpenAIChatReasoningEfforts | None = field(default=None, kw_only=True)
     reasoning_usage: OpenAIChatReasoningUsage | None = field(default=None, kw_only=True)
+    stop_in_text: StopInText | None = field(default=None, kw_only=True)
     routing: JsonObject | None = None
     extensions: JsonObject | None = None
     # Per-model-family overrides on a door that forwards knobs to many
@@ -493,6 +521,7 @@ class OpenAIChatCompat:
             token_scoring: OpenAIChatTokenScoring | None = ...,
             reasoning_efforts: OpenAIChatReasoningEfforts | None = ...,
             reasoning_usage: OpenAIChatReasoningUsage | None = ...,
+            stop_in_text: StopInText | None = ...,
             model_overrides: Sequence[tuple[str, Mapping[str, str | Sequence[str]]]] = ...,
         ) -> None: ...
     # END generated
@@ -534,6 +563,7 @@ class OpenAIChatCompat:
         _check_literal_or_none(self.reasoning_off, OpenAIChatReasoningOff, "reasoning_off")
         _check_literal_or_none(self.json_schema, OpenAIChatJsonSchema, "json_schema")
         _check_literal_or_none(self.reasoning_usage, OpenAIChatReasoningUsage, "reasoning_usage")
+        _check_literal_or_none(self.stop_in_text, StopInText, "stop_in_text")
         if self.reasoning_efforts is not None:
             from .types import REASONING_EFFORTS
 
@@ -546,14 +576,21 @@ class OpenAIChatCompat:
         _check_json_object_or_none(self.extensions, "extensions")
 
 
-    def for_model(self, model: str) -> "OpenAIChatCompat":
-        """This compat with the first matching ``model_overrides`` entry applied."""
-        for prefix, knobs in self.model_overrides:
-            if model.startswith(prefix):
-                # Each knob was checked against _CHAT_OVERRIDABLE and its own
-                # literal (or tuple) at construction.
-                changes: dict[str, Any] = dict(knobs)
-                return dataclasses.replace(self, model_overrides=(), **changes)
+    def for_model(self, model: str, base_model: str | None = None) -> "OpenAIChatCompat":
+        """This compat with the first matching ``model_overrides`` entry applied.
+
+        ``base_model`` is what ``model`` was fine-tuned from, when the caller
+        declared it (``RouterConfig(base_models=...)``): a fine-tune whose
+        name matches no entry follows its base model's entry (a Tinker
+        checkpoint ``tinker://…`` takes the reasoning switch of the
+        ``Qwen/Qwen3.5-4B`` it was trained from)."""
+        for name in (model, base_model) if base_model else (model,):
+            for prefix, knobs in self.model_overrides:
+                if name.startswith(prefix):
+                    # Each knob was checked against _CHAT_OVERRIDABLE and its
+                    # own literal (or tuple) at construction.
+                    changes: dict[str, Any] = dict(knobs)
+                    return dataclasses.replace(self, model_overrides=(), **changes)
         return self
 
     @classmethod
@@ -1010,6 +1047,51 @@ OPENAI_CHAT_PRESETS: dict[str, OpenAIChatCompat] = {
         cache_control="none",
         tool_result_media="images",
     ),
+    # Tinker (Thinking Machines), the OpenAI-compatible door (beta).  Survey
+    # 2026-11-09: research/providers/tinker/{README,SURVEY}.md,
+    # receipts/2026-11-09-tinker-survey/.  Every chat model reasons by
+    # default; the server takes `reasoning_effort` and answers PER BASE
+    # FAMILY, loudly (400 "This model accepts …") for anything else
+    # (reasoning_survey.py, 23 models x 12 values, both doors):
+    # - Inkling: none|minimal|low|medium|high|xhigh|max or a float; `none` is off;
+    # - Qwen 3/3.5/3.6, Kimi K2.6, Nemotron 3/3.5: true|false only (a switch);
+    # - Qwen 3.8 (low|medium|xhigh), DeepSeek V4.1 (low|high|max): words or
+    #   true|false — `false` is off, `none` is refused;
+    # - gpt-oss (low|medium|high), Kimi K3.1 (low|medium|high|max), GLM 5.3
+    #   (low|high|max): words only, no off (the server refuses `false` loudly).
+    # A checkpoint (tinker://…) answers as its base model's family; its name
+    # does not say which, so RouterConfig(base_models=...) names it, and the
+    # host default (words, off as `false`) serves the most families when it
+    # is not named.  Also live: response_format of both types is ignored
+    # (200, free text: json_schema "none"); a forced tool choice is checked
+    # AFTER sampling (422 "model returned no tool call when tool_choice
+    # required one"), loud, so it is sent; the stop sequence is returned in
+    # the text; `developer` is a 422; reasoning replays through
+    # reasoning_content (3/3); cached tokens are counted
+    # (prompt_tokens_details.cached_tokens); images in tool results are
+    # received, a PDF is a 422.
+    "tinker": OpenAIChatCompat(
+        instruction_role="system",
+        max_tokens_field="max_completion_tokens",
+        stream_usage="include",
+        thinking_format="reasoning_effort",
+        reasoning_off="switch",
+        thinking_replay="native",
+        json_schema="none",
+        tool_result_name="omit",
+        strict_tools="omit",
+        cache_control="none",
+        tool_result_media="images",
+        stop_in_text="included",
+        model_overrides=(
+            ("thinkingmachines/", {"reasoning_off": "send"}),
+            ("Qwen/Qwen3-", {"thinking_format": "reasoning_effort_switch"}),
+            ("Qwen/Qwen3.5-", {"thinking_format": "reasoning_effort_switch"}),
+            ("Qwen/Qwen3.6-", {"thinking_format": "reasoning_effort_switch"}),
+            ("moonshotai/Kimi-K2", {"thinking_format": "reasoning_effort_switch"}),
+            ("nvidia/NVIDIA-Nemotron-3", {"thinking_format": "reasoning_effort_switch"}),
+        ),
+    ),
 }
 
 
@@ -1047,6 +1129,9 @@ OPENAI_CHAT_PRESET_BASE_URLS: dict[str, str] = {
     "together": "https://api.together.ai/v1",
     "fireworks": "https://api.fireworks.ai/inference/v1",
     "parasail": "https://api.parasail.io/v1",
+    # tinker-docs.thinkingmachines.ai compatible-apis/openai: the OpenAI-
+    # compatible root of Tinker's inference (beta).
+    "tinker": "https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1",
 }
 
 
@@ -1084,6 +1169,7 @@ class ResolvedOpenAIChatCompat:
     token_scoring: Literal["none", "logprob_token_ids"] = field(default="none", kw_only=True)
     reasoning_efforts: tuple[str, ...] | None = field(default=None, kw_only=True)
     reasoning_usage: Literal["in_completion", "separate"] = field(default="in_completion", kw_only=True)
+    stop_in_text: Literal["excluded", "included"] = field(default="excluded", kw_only=True)
     routing: JsonObject | None = None
     extensions: JsonObject | None = None
 
@@ -1107,6 +1193,7 @@ _CHAT_AUTO_DEFAULTS: dict[str, str] = {
     "token_scoring": "none",
     "reasoning_off": "send",
     "reasoning_usage": "in_completion",
+    "stop_in_text": "excluded",
 }
 
 
@@ -1216,6 +1303,7 @@ class AnthropicCompat:
     sampling_params: AnthropicSamplingParams | None = field(default=None, kw_only=True)
     tool_result_media: ToolResultMedia | None = field(default=None, kw_only=True)
     reasoning_efforts: tuple[str, ...] | None = field(default=None, kw_only=True)
+    stop_in_text: StopInText | None = field(default=None, kw_only=True)
     model_prefixes: tuple[str, ...] | None = None
     extensions: JsonObject | None = None
 
@@ -1234,10 +1322,12 @@ class AnthropicCompat:
             sampling_params: AnthropicSamplingParams | None = ...,
             tool_result_media: ToolResultMedia | None = ...,
             reasoning_efforts: tuple[str, ...] | None = ...,
+            stop_in_text: StopInText | None = ...,
         ) -> None: ...
     # END generated
 
     def __post_init__(self) -> None:
+        _check_literal_or_none(self.stop_in_text, StopInText, "stop_in_text")
         _check_literal_or_none(self.tool_result_media, ToolResultMedia, "tool_result_media")
         _check_literal_or_none(self.thinking_format, AnthropicThinkingFormat, "thinking_format")
         _check_literal_or_none(self.thinking_replay, AnthropicThinkingReplay, "thinking_replay")
@@ -1321,6 +1411,30 @@ ANTHROPIC_PRESETS: dict[str, AnthropicCompat] = {
         model_prefixes=("kimi-",),
         tool_result_media="images",  # MAP-10: images received (kimi-k3); document block 400 "unsupported content type"
     ),
+    # Tinker over the Anthropic wire (beta; compatible-apis/anthropic.md,
+    # live 2026-11-09, receipts/2026-11-09-tinker-survey/probe-anth-*):
+    # `output_config.effort` low|medium|high|xhigh|max goes out alone (the
+    # docs: budget_tokens is accepted and unused) and off is
+    # thinking.type=disabled — honoured by Inkling; the Qwen 3/3.5/3.6, Kimi
+    # K2.6 and Nemotron families refuse both loudly (400 "accepts true or
+    # false", which this wire cannot spell; `tinker` can).  Caching is
+    # automatic and counted (cache_read_input_tokens 512 on a repeat;
+    # cache_creation_input_tokens is the uncached prompt, billed at the
+    # input rate); cache_control is ignored.  output_config.format is
+    # ignored (200, free text): reject.  disable_parallel_tool_use honoured
+    # (one call of two).  Thinking blocks come back with signature "" and an
+    # unsigned block is read (code word 3/3).  Images in tool results are
+    # received; a PDF is accepted and NOT received (silent): images only.
+    # The matched stop sequence is returned in the text.
+    "tinker": AnthropicCompat(
+        thinking_format="effort",
+        thinking_replay="unsigned",
+        cache_control="none",
+        structured_output="reject",
+        parallel_tool_calls="send",
+        tool_result_media="images",
+        stop_in_text="included",
+    ),
 }
 
 # Default base URLs for the Anthropic presets that name a server.
@@ -1336,6 +1450,9 @@ ANTHROPIC_PRESET_BASE_URLS: dict[str, str] = {
     # platform.kimi.ai api--overview.md: base_url https://api.moonshot.ai/anthropic,
     # endpoint /anthropic/v1/messages — so the /anthropic/v1 root.
     "moonshotai": "https://api.moonshot.ai/anthropic/v1",
+    # tinker-docs.thinkingmachines.ai compatible-apis/anthropic: base URL
+    # .../anthropic/api, the SDK appends /v1/messages — so the /api/v1 root.
+    "tinker": "https://tinker.thinkingmachines.dev/services/tinker-prod/anthropic/api/v1",
 }
 
 
@@ -1353,6 +1470,7 @@ class ResolvedAnthropicCompat:
     # anthropic/claude-code exact 2026-09-07): native unless a server proved otherwise.
     tool_result_media: Literal["native", "images", "reject"] = field(default="native", kw_only=True)
     reasoning_efforts: tuple[str, ...] | None = field(default=None, kw_only=True)
+    stop_in_text: Literal["excluded", "included"] = field(default="excluded", kw_only=True)
     model_prefixes: tuple[str, ...] | None = None
     extensions: JsonObject | None = None
 
@@ -1365,6 +1483,7 @@ _ANTHROPIC_AUTO_DEFAULTS: dict[str, str] = {
     "parallel_tool_calls": "send",
     "sampling_params": "send",
     "tool_result_media": "native",
+    "stop_in_text": "excluded",
 }
 
 
