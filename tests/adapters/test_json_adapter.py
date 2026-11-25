@@ -472,10 +472,10 @@ def test_json_adapter_format_exact_messages_with_nested_pydantic_output():
                  '{\\"type\\": \\"object\\", \\"properties\\": {\\"city\\": {\\"type\\": \\"string\\", '
                  '\\"title\\": \\"City\\"}, \\"country\\": {\\"type\\": \\"string\\", \\"title\\": '
                  '\\"Country\\"}}, \\"required\\": [\\"city\\", \\"country\\"], \\"title\\": '
-                 '\\"JsonNestedAddress\\"}}, \\"properties\\": {\\"address\\": {\\"$ref\\": '
+                 '\\"JsonNestedAddress\\"}}, \\"properties\\": {\\"title\\": '
+                 '{\\"type\\": \\"string\\", \\"title\\": \\"Title\\"}, \\"address\\": {\\"$ref\\": '
                  '\\"#/$defs/JsonNestedAddress\\"}, \\"scores\\": {\\"type\\": \\"array\\", '
-                 '\\"items\\": {\\"type\\": \\"number\\"}, \\"title\\": \\"Scores\\"}, \\"title\\": '
-                 '{\\"type\\": \\"string\\", \\"title\\": \\"Title\\"}}, \\"required\\": [\\"title\\", '
+                 '\\"items\\": {\\"type\\": \\"number\\"}, \\"title\\": \\"Scores\\"}}, \\"required\\": [\\"title\\", '
                  '\\"address\\", \\"scores\\"], \\"title\\": \\"JsonNestedSummary\\"}"\n'
                  '}\n'
                  'In adhering to this structure, your objective is: \n'
@@ -489,6 +489,44 @@ def test_json_adapter_format_exact_messages_with_nested_pydantic_output():
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
+
+
+def test_json_schema_preserves_property_declaration_order():
+    """Test that _get_json_schema preserves Pydantic field declaration order.
+
+    Regression test for https://github.com/stanfordnlp/dspy/issues/10876:
+    move_type_to_front() was alphabetizing all dict keys, not just moving
+    'type' to the front. This caused properties to appear in alphabetical
+    order rather than declaration order, contradicting the required list
+    and the structured-output schema.
+    """
+    from dspy.adapters.utils import _get_json_schema
+
+    class Item(pydantic.BaseModel):
+        zeta: int
+        alpha: str
+
+    class Result(pydantic.BaseModel):
+        total: int
+        items: list[Item]
+
+    schema = _get_json_schema(Result)
+
+    # Top-level properties should be in declaration order: total, items
+    top_props = list(schema["properties"].keys())
+    assert top_props == ["total", "items"], f"Expected ['total', 'items'], got {top_props}"
+
+    # Nested Item properties should be in declaration order: zeta, alpha
+    item_def = schema.get("$defs", {}).get("Item", {})
+    nested_props = list(item_def["properties"].keys())
+    assert nested_props == ["zeta", "alpha"], f"Expected ['zeta', 'alpha'], got {nested_props}"
+
+    # 'type' should still appear first in each object schema
+    top_keys = list(schema.keys())
+    assert top_keys[0] == "type", f"Expected 'type' first at top level, got {top_keys[0]}"
+
+    item_keys = list(item_def.keys())
+    assert item_keys[0] == "type", f"Expected 'type' first in Item def, got {item_keys[0]}"
 
 
 def test_json_adapter_format_exact_messages_with_incomplete_demo():
@@ -791,9 +829,9 @@ def test_json_adapter_format_exact_messages_with_tool_calls_output_demo():
                  '{\n'
                  '  "tool_calls": "{tool_calls}        # note: the value you produce must adhere to '
                  'the JSON schema: {\\"type\\": \\"object\\", \\"$defs\\": {\\"ToolCall\\": '
-                 '{\\"type\\": \\"object\\", \\"properties\\": {\\"args\\": {\\"type\\": \\"object\\", '
-                 '\\"additionalProperties\\": true, \\"title\\": \\"Args\\"}, \\"name\\": {\\"type\\": '
-                 '\\"string\\", \\"title\\": \\"Name\\"}}, \\"required\\": [\\"name\\", \\"args\\"], '
+                 '{\\"type\\": \\"object\\", \\"properties\\": {\\"name\\": {\\"type\\": '
+                 '\\"string\\", \\"title\\": \\"Name\\"}, \\"args\\": {\\"type\\": \\"object\\", '
+                 '\\"additionalProperties\\": true, \\"title\\": \\"Args\\"}}, \\"required\\": [\\"name\\", \\"args\\"], '
                  '\\"title\\": \\"ToolCall\\"}}, \\"properties\\": {\\"tool_calls\\": {\\"type\\": '
                  '\\"array\\", \\"items\\": {\\"$ref\\": \\"#/$defs/ToolCall\\"}, \\"title\\": \\"Tool '
                  'Calls\\"}}, \\"required\\": [\\"tool_calls\\"], \\"title\\": \\"ToolCalls\\"}"\n'
