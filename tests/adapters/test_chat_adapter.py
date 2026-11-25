@@ -1533,6 +1533,99 @@ def test_chat_adapter_native_tool_history_skips_unmatched_tool_calls(tool_call_i
     assert "I should search." in messages[2]["content"]
 
 
+@pytest.mark.parametrize(
+    "adapter",
+    [
+        dspy.ChatAdapter(use_native_function_calling=True),
+        dspy.JSONAdapter(use_native_function_calling=True),
+        dspy.XMLAdapter(use_native_function_calling=True),
+    ],
+)
+@pytest.mark.parametrize("supports_function_calling", [False, True])
+def test_native_tool_history_follows_whether_the_call_sends_native_tools(adapter, supports_function_calling):
+    class LM(dspy.utils.DummyLM):
+        @property
+        def supports_function_calling(self):
+            return supports_function_calling
+
+    def search(query: str) -> str:
+        return query
+
+    class NativeToolHistorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        next_thought: str = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    tool_call = dspy.ToolCalls.ToolCall(id="call_1", name="search", args={"query": "cats"})
+    tool_call_results = dspy.ToolCallResults.from_tool_calls_and_values([tool_call], ["cat result"])
+    history = dspy.History(
+        messages=[
+            {
+                "question": "Q1",
+                "next_thought": "I should search.",
+                "tool_calls": dspy.ToolCalls(tool_calls=[tool_call], tool_call_results=tool_call_results),
+            }
+        ]
+    )
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        adapter,
+        NativeToolHistorySignature,
+        [],
+        {"question": "Q2", "history": history, "tools": [dspy.Tool(search)]},
+        lm=LM([{}]),
+    )
+
+    if supports_function_calling:
+        assert "tools" in lm_kwargs
+        assert [message["role"] for message in messages] == ["system", "user", "assistant", "tool", "user"]
+        assert messages[2]["tool_calls"][0]["id"] == "call_1"
+        assert messages[3]["content"] == "cat result"
+    else:
+        # The call asks for tool calls as text, so the history must not replay native tool turns.
+        assert "tools" not in lm_kwargs
+        assert [message["role"] for message in messages] == ["system", "user", "assistant", "user", "user"]
+        assert "tool_calls" not in messages[2]
+        assert "I should search." in messages[2]["content"]
+        assert '"query": "cats"' in messages[2]["content"]
+        assert "cat result" in messages[3]["content"]
+
+
+def test_tool_history_is_text_when_the_request_sends_no_tools():
+    class LM(dspy.utils.DummyLM):
+        @property
+        def supports_function_calling(self):
+            return True
+
+    tool_call = dspy.ToolCalls.ToolCall(id="call_1", name="search", args={"query": "cats"})
+    tool_call_results = dspy.ToolCallResults.from_tool_calls_and_values([tool_call], ["cat result"])
+    history = dspy.History(
+        messages=[
+            {
+                "question": "Q1",
+                "next_thought": "I should search.",
+                "tool_calls": dspy.ToolCalls(tool_calls=[tool_call], tool_call_results=tool_call_results),
+            }
+        ]
+    )
+
+    # The signature takes no tools, so the request sends none, even though the LM supports function calling.
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=True),
+        dspy.Signature("question, history: dspy.History -> answer"),
+        [],
+        {"question": "Q2", "history": history},
+        lm=LM([{}]),
+    )
+
+    assert "tools" not in lm_kwargs
+    assert [message["role"] for message in messages] == ["system", "user", "assistant", "user", "user"]
+    assert "tool_calls" not in messages[2]
+    assert "cat result" in messages[3]["content"]
+
+
 def test_chat_adapter_format_exact_messages_with_non_native_tool_history():
     def search(query: str) -> str:
         return query

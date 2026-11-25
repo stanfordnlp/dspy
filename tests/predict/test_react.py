@@ -374,6 +374,43 @@ def test_react_forced_submit_with_native_flag_but_unsupported_lm(adapter):
     assert "tools" not in lm.history[1]["kwargs"]
 
 
+@pytest.mark.parametrize(
+    "adapter",
+    [None, dspy.ChatAdapter(use_native_function_calling=True), dspy.JSONAdapter()],
+    ids=["default", "chat", "json"],
+)
+def test_react_replays_tool_turns_as_text_with_native_flag_but_unsupported_lm(adapter):
+    def lookup(query: str) -> str:
+        return f"tool-evidence-{query}"
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "Look it up.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": "cats"}}]),
+            },
+            {
+                "next_thought": "Done.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found"}}]),
+            },
+        ],
+        adapter=adapter,
+    )
+    assert lm.supports_function_calling is False
+
+    with dspy.context(lm=lm, adapter=adapter):
+        pred = dspy.ReAct("question -> answer", tools=[lookup])(question="cats")
+
+    assert pred.answer == "found"
+    request = lm.history[1]["request"]
+    assert not request.tools
+    assert [message.role for message in request.messages] == ["user", "assistant", "user", "user"]
+    assert not any(isinstance(part, ToolCallPart) for message in request.messages for part in message.parts)
+    # The earlier tool call and its result stay in the conversation as text.
+    assert '"query": "cats"' in request.messages[1].text
+    assert "tool-evidence-cats" in request.messages[2].text
+
+
 class _ToolCallEngine:
     """Answer the first request with the given tool calls, then submit."""
 

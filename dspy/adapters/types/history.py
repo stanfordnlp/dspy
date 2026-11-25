@@ -100,7 +100,7 @@ class History(pydantic.BaseModel):
         """
         from dspy._vendor.lm15.serde import continuation_from_dict
         from dspy._vendor.lm15.types import tool_result
-        from dspy.adapters.base import _tool_result_content, user_message
+        from dspy.adapters.base import _sends_native_tools, _tool_result_content, user_message
         from dspy.adapters.types.tool import ToolCallResults, ToolCalls
         from dspy.adapters.utils import serialize_for_json
         from dspy.lm15 import Message, TextPart, ToolCallPart
@@ -109,6 +109,10 @@ class History(pydantic.BaseModel):
         from dspy.signatures.signature import Signature
 
         results_signature = Signature({"tool_call_results": (ToolCallResults, InputField())})
+        # Replay earlier tool turns as native tool calls only when the request being formatted sends native tools.
+        # Otherwise replay them as text: the prompt asks for tool calls as text, and some providers reject
+        # tool-role messages in a request that carries no tools.
+        native_tool_turns = _sends_native_tools.get()
         messages = []
         for message in self.messages:
             # Recognize structured REPL events before tool-shaped application data inside their inputs.
@@ -130,7 +134,7 @@ class History(pydantic.BaseModel):
             if user_content:
                 messages.append(user_message(user_content))
 
-            if adapter.use_native_function_calling and tool_calls is not None:
+            if native_tool_turns and tool_calls is not None:
                 content_signature = signature
                 for name, field in signature.output_fields.items():
                     if field.annotation == ToolCalls or message.get(name) is None:
