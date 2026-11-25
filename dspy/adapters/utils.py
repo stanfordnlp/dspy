@@ -218,7 +218,11 @@ def parse_value(value, annotation):
         return str(value)
 
     if isinstance(annotation, enum.EnumMeta):
-        return find_enum_member(annotation, value)
+        try:
+            return find_enum_member(annotation, value)
+        except ValueError:
+            # Coerce string forms of non-string members (e.g. "2" for an int-valued enum) below.
+            pass
 
     origin = get_origin(annotation)
 
