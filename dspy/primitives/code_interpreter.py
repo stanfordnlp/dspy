@@ -12,13 +12,16 @@ It also resolves which implementation a module gets: a module's own
 ``PythonInterpreter``. See :func:`resolve_interpreter_factory`.
 """
 
-from typing import Any, Callable, Protocol, runtime_checkable
+from typing import Any, BinaryIO, Callable, Protocol, runtime_checkable
 
 from dspy.dsp.utils.settings import settings
 from dspy.utils.exceptions import DSPyError
 
 # Types that can be used directly in Python function signatures for SUBMIT()
 SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
+
+DEFAULT_MAX_MESSAGE_BYTES = 64 * 1024 * 1024
+_READ_CHUNK_BYTES = 65536
 
 
 class CodeInterpreterError(DSPyError, RuntimeError):
@@ -33,6 +36,41 @@ class CodeInterpreterError(DSPyError, RuntimeError):
 
 class CodeExecutionError(CodeInterpreterError):
     """Recoverable error raised by code running in a healthy interpreter."""
+
+
+class _MessageSizeLimitError(CodeInterpreterError):
+    """Internal error raised when a protocol frame exceeds ``max_message_bytes``."""
+
+
+def _validate_max_message_bytes(max_message_bytes: int | None) -> int | None:
+    if max_message_bytes is None:
+        return None
+    if isinstance(max_message_bytes, bool) or not isinstance(max_message_bytes, int) or max_message_bytes <= 0:
+        raise ValueError("max_message_bytes must be a positive integer or None.")
+    return max_message_bytes
+
+
+def _read_bounded_line(stream: BinaryIO, max_message_bytes: int | None) -> str:
+    """Read one UTF-8 line from a binary stream, failing once it exceeds ``max_message_bytes`` bytes."""
+    if max_message_bytes is None:
+        return stream.readline().decode("utf-8")
+
+    chunks: list[bytes] = []
+    payload_bytes = 0
+    while True:
+        chunk = stream.readline(min(_READ_CHUNK_BYTES, max_message_bytes - payload_bytes + 1))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        ended = chunk.endswith(b"\n")
+        payload_bytes += len(chunk) - ended
+        if payload_bytes > max_message_bytes:
+            raise _MessageSizeLimitError(
+                f"Interpreter protocol message exceeded max_message_bytes ({max_message_bytes} bytes)."
+            )
+        if ended:
+            break
+    return b"".join(chunks).decode("utf-8")
 
 
 class FinalOutput:

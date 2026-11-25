@@ -1810,7 +1810,7 @@ def test_unsolicited_error_line_is_not_consumed_as_the_response(monkeypatch):
     class FakeDeno:
         def __init__(self, lines):
             self.stdin = io.StringIO()
-            self.stdout = io.StringIO("".join(line + "\n" for line in lines))
+            self.stdout = io.TextIOWrapper(io.BytesIO("".join(line + "\n" for line in lines).encode()), encoding="utf-8")
             self.stderr = io.StringIO()
 
         def poll(self):
@@ -2096,3 +2096,67 @@ def test_sandbox_packages_choose_the_pyodide_packages_in_the_dspy_bundle(monkeyp
             PythonInterpreter(sandbox_packages="numpy")
     finally:
         sandbox_bundle._plan.cache_clear()
+
+
+def test_max_message_bytes_allows_normal_output_and_can_be_disabled():
+    with PythonInterpreter(max_message_bytes=4096) as interpreter:
+        assert interpreter.execute("print('hello')") == "hello\n"
+        assert interpreter.execute("'a' * 1000") == "a" * 1000
+
+    with PythonInterpreter(max_message_bytes=None) as interpreter:
+        assert interpreter.execute("'b' * 2000") == "b" * 2000
+
+
+def test_max_message_bytes_kills_deno_on_oversized_ascii_and_multibyte_utf8():
+    # Oversized ASCII output terminates Deno and ends the session.
+    interpreter = PythonInterpreter(max_message_bytes=512)
+    try:
+        interpreter.start()
+        process = interpreter.deno_process
+        assert process is not None
+        with pytest.raises(CodeInterpreterError, match=r"max_message_bytes \(512 bytes\)") as exc_info:
+            interpreter.execute("print('x' * 5000)")
+        assert type(exc_info.value) is CodeInterpreterError
+        assert process.poll() is not None
+        with pytest.raises(CodeInterpreterError, match="session has ended"):
+            interpreter.execute("1 + 1")
+    finally:
+        interpreter.shutdown()
+
+    # Multi-byte UTF-8 (4 bytes per emoji): 100 emojis = 400 UTF-8 bytes > 256 byte cap, even though < 256 chars.
+    utf8_interpreter = PythonInterpreter(max_message_bytes=256)
+    try:
+        utf8_interpreter.start()
+        utf8_process = utf8_interpreter.deno_process
+        assert utf8_process is not None
+        with pytest.raises(CodeInterpreterError, match=r"max_message_bytes \(256 bytes\)") as exc_info:
+            utf8_interpreter.execute("print('😀' * 100)")
+        assert type(exc_info.value) is CodeInterpreterError
+        assert utf8_process.poll() is not None
+        with pytest.raises(CodeInterpreterError, match="session has ended"):
+            utf8_interpreter.execute("1 + 1")
+    finally:
+        utf8_interpreter.shutdown()
+
+
+def test_max_message_bytes_kills_no_newline_flood_without_hanging():
+    # A rogue subprocess writing megabytes without newlines must fail closed promptly.
+    flood_cmd = [
+        sys.executable,
+        "-u",
+        "-c",
+        "import sys\nwhile True:\n    sys.stdout.write('A' * 65536)\n    sys.stdout.flush()\n",
+    ]
+    interpreter = PythonInterpreter(deno_command=flood_cmd, max_message_bytes=1024)
+    started = time.monotonic()
+    try:
+        with pytest.raises(CodeInterpreterError, match=r"max_message_bytes \(1024 bytes\)") as exc_info:
+            interpreter.start()
+        assert type(exc_info.value) is CodeInterpreterError
+        assert time.monotonic() - started < 5
+        assert interpreter.deno_process is not None
+        assert interpreter.deno_process.poll() is not None
+        with pytest.raises(CodeInterpreterError, match="session has ended"):
+            interpreter.execute("1 + 1")
+    finally:
+        interpreter.shutdown()

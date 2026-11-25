@@ -875,3 +875,248 @@ def test_sandboxed_requests_cannot_have_the_host_read_its_files(tmp_path, where)
         else:
             host(Request(model=lm.model, messages=(Message.user((TextPart(text="read this"), document)),)))
     assert lm.history == []
+
+
+# -- nested interpreter count and recursion depth confinement ---------------------------------------------------------
+
+
+class _CountingInterpreter:
+    """Minimal CodeInterpreter double tracking creation and shutdown without spawning subprocesses."""
+
+    def __init__(self, created: list["_CountingInterpreter"], shutdowns: list["_CountingInterpreter"]):
+        self.tools: dict = {}
+        self.output_fields = None
+        self.started = False
+        self.closed = False
+        self._created = created
+        self._shutdowns = shutdowns
+        created.append(self)
+
+    def start(self) -> None:
+        self.started = True
+
+    def execute(self, code: str, variables: dict | None = None):
+        return code
+
+    def shutdown(self) -> None:
+        if not self.closed:
+            self.closed = True
+            self._shutdowns.append(self)
+
+
+def _counting_factory():
+    created: list[_CountingInterpreter] = []
+    shutdowns: list[_CountingInterpreter] = []
+    return (lambda: _CountingInterpreter(created, shutdowns)), created, shutdowns
+
+
+@pytest.mark.parametrize("bad_value", [-1, -100, True, False])
+def test_sandbox_session_rejects_invalid_nesting_limits(bad_value):
+    with pytest.raises(ValueError, match="max_nested_interpreters"):
+        SandboxSession({}, max_nested_interpreters=bad_value)
+    with pytest.raises(ValueError, match="max_nesting_depth"):
+        SandboxSession({}, max_nesting_depth=bad_value)
+
+
+def test_sandbox_session_defaults_and_zero_limit_disallow_nested_interpreters():
+    from dspy.primitives.facade import DEFAULT_MAX_NESTED_INTERPRETERS, DEFAULT_MAX_NESTING_DEPTH
+
+    default_session = SandboxSession({})
+    assert default_session._max_nested_interpreters == DEFAULT_MAX_NESTED_INTERPRETERS == 8
+    assert default_session._max_nesting_depth == DEFAULT_MAX_NESTING_DEPTH == 2
+
+    factory, created, shutdowns = _counting_factory()
+    session = SandboxSession({}, interpreter_factory=factory, max_nested_interpreters=0)
+    with pytest.raises(CodeInterpreterError, match="max_nested_interpreters=0"):
+        session._serve_interpreter(op="create")
+    assert created == [] and shutdowns == []
+
+    session_depth_zero = SandboxSession({}, interpreter_factory=factory, max_nesting_depth=0)
+    with pytest.raises(CodeInterpreterError, match="max_nesting_depth=0"):
+        session_depth_zero._serve_interpreter(op="create")
+    assert created == [] and shutdowns == []
+
+
+def test_sandbox_session_blocks_fork_bomb_and_leaks_nothing():
+    factory, created, shutdowns = _counting_factory()
+    session = SandboxSession({}, interpreter_factory=factory, max_nested_interpreters=3, max_nesting_depth=2)
+    try:
+        handles = [session._serve_interpreter(op="create") for _ in range(3)]
+        assert len(handles) == 3
+        assert len(created) == 3
+
+        with pytest.raises(CodeInterpreterError, match="max_nested_interpreters=3"):
+            session._serve_interpreter(op="create")
+        assert len(created) == 3
+    finally:
+        session.close()
+    assert len(shutdowns) == 3
+    assert session._nested == {}
+
+
+def test_sandbox_session_blocks_create_shutdown_churn_loop():
+    factory, created, shutdowns = _counting_factory()
+    session = SandboxSession({}, interpreter_factory=factory, max_nested_interpreters=3, max_nesting_depth=2)
+    try:
+        for _ in range(3):
+            handle = session._serve_interpreter(op="create")
+            session._serve_interpreter(op="shutdown", id=handle)
+        assert len(created) == 3 and len(shutdowns) == 3
+        assert session._nested == {}
+
+        with pytest.raises(CodeInterpreterError, match="max_nested_interpreters=3"):
+            session._serve_interpreter(op="create")
+        assert len(created) == 3
+    finally:
+        session.close()
+
+
+def test_sandbox_session_nested_limit_is_thread_safe():
+    from concurrent.futures import ThreadPoolExecutor
+
+    factory, created, shutdowns = _counting_factory()
+    session = SandboxSession({}, interpreter_factory=factory, max_nested_interpreters=4, max_nesting_depth=2)
+    try:
+
+        def attempt():
+            try:
+                return ("ok", session._serve_interpreter(op="create"))
+            except CodeInterpreterError as e:
+                return ("err", str(e))
+
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            results = [future.result() for future in [pool.submit(attempt) for _ in range(16)]]
+
+        successes = [r for r in results if r[0] == "ok"]
+        errors = [r for r in results if r[0] == "err"]
+        assert len(successes) == 4
+        assert len(errors) == 12
+        assert all("max_nested_interpreters=4" in msg for _, msg in errors)
+        assert len(created) == 4
+    finally:
+        session.close()
+    assert len(shutdowns) == 4
+
+
+@pytest.mark.parametrize("max_depth", [0, 1, 2, None])
+def test_sandbox_session_enforces_recursion_depth_bounds(max_depth):
+    from dspy.primitives.sandbox_guest import INTERPRETER_TOOL
+
+    factory, created, shutdowns = _counting_factory()
+    session = SandboxSession(
+        {},
+        interpreter_factory=factory,
+        max_nested_interpreters=None,
+        max_nesting_depth=max_depth,
+    )
+    try:
+        tool = session._make_interpreter_tool(0)
+        assert "depth" not in inspect.signature(tool).parameters
+
+        target_levels = 4 if max_depth is None else max_depth
+        for level in range(1, target_levels + 1):
+            handle = tool(op="create")
+            assert len(created) == level
+            child = session._nested[handle].interpreter
+            tool = child.tools[INTERPRETER_TOOL]
+            assert "depth" not in inspect.signature(tool).parameters
+
+        if max_depth is not None:
+            with pytest.raises(CodeInterpreterError, match=f"max_nesting_depth={max_depth}"):
+                tool(op="create")
+            assert len(created) == max_depth
+        else:
+            assert len(created) == 4
+    finally:
+        session.close()
+    assert len(shutdowns) == len(created)
+
+
+def test_nested_interpreter_cannot_override_reserved_interpreter_tool():
+    from dspy.primitives.facade import _NestedInterpreter
+    from dspy.primitives.sandbox_guest import INTERPRETER_TOOL
+
+    factory, created, shutdowns = _counting_factory()
+    nested = _NestedInterpreter(factory(), {}, HostValues())
+    try:
+        with pytest.raises(CodeInterpreterError, match=INTERPRETER_TOOL):
+            nested.execute("1 + 1", {}, {INTERPRETER_TOOL: {"parameters": []}}, None)
+    finally:
+        nested.close()
+    assert len(created) == 1 and len(shutdowns) == 1
+
+
+def test_real_local_interpreter_confinement_blocks_churn_and_deep_recursion():
+    from dspy.primitives.sandbox_guest import INTERPRETER_TOOL
+
+    made: list[dspy.LocalInterpreter] = []
+    shut: list[dspy.LocalInterpreter] = []
+
+    class TrackedLocal(dspy.LocalInterpreter):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            made.append(self)
+
+        def shutdown(self) -> None:
+            if self not in shut:
+                shut.append(self)
+            super().shutdown()
+
+    # 1. Churn loop from inside a real LocalInterpreter subprocess is stopped at max_nested_interpreters=2.
+    session = SandboxSession({}, interpreter_factory=TrackedLocal, max_nested_interpreters=2, max_nesting_depth=2)
+    root = TrackedLocal()
+    try:
+        session.install(root, import_dspy=False)
+        result = root.execute(
+            f"h1 = {INTERPRETER_TOOL}(op='create')\n"
+            f"{INTERPRETER_TOOL}(op='shutdown', id=h1)\n"
+            f"h2 = {INTERPRETER_TOOL}(op='create')\n"
+            f"{INTERPRETER_TOOL}(op='shutdown', id=h2)\n"
+            "try:\n"
+            f"    {INTERPRETER_TOOL}(op='create')\n"
+            "    out = 'escaped'\n"
+            "except Exception as e:\n"
+            "    out = str(e)\n"
+            "out"
+        )
+        assert "max_nested_interpreters=2" in result
+        assert len(made) == 3  # root + 2 nested
+    finally:
+        session.close()
+        root.shutdown()
+    assert len(shut) == 3
+
+    # 2. Recursive nesting across real LocalInterpreter subprocesses stops at depth 2.
+    made.clear()
+    shut.clear()
+    session = SandboxSession({}, interpreter_factory=TrackedLocal, max_nested_interpreters=8, max_nesting_depth=2)
+    root = TrackedLocal()
+    try:
+        session.install(root, import_dspy=False)
+        depth2_code = (
+            "try:\n"
+            f"    {INTERPRETER_TOOL}(op='create')\n"
+            "    out = 'escaped'\n"
+            "except Exception as e:\n"
+            "    out = str(e)\n"
+            "out"
+        )
+        depth1_code = (
+            f"h2 = {INTERPRETER_TOOL}(op='create')\n"
+            f"res = {INTERPRETER_TOOL}(op='execute', id=h2, code={depth2_code!r})\n"
+            f"{INTERPRETER_TOOL}(op='shutdown', id=h2)\n"
+            "res['output']"
+        )
+        root_code = (
+            f"h1 = {INTERPRETER_TOOL}(op='create')\n"
+            f"res = {INTERPRETER_TOOL}(op='execute', id=h1, code={depth1_code!r})\n"
+            f"{INTERPRETER_TOOL}(op='shutdown', id=h1)\n"
+            "res['output']"
+        )
+        result = root.execute(root_code)
+        assert "max_nesting_depth=2" in result
+        assert len(made) == 3  # root (depth 0) + depth 1 + depth 2; depth 3 never created
+    finally:
+        session.close()
+        root.shutdown()
+    assert len(shut) == 3
