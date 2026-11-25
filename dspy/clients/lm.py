@@ -269,6 +269,7 @@ class LM(BaseLM):
         self.use_developer_role = use_developer_role
 
         self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
+        self._validate_stream_arg(self.kwargs)
 
     @property
     def _provider_name(self) -> str:
@@ -329,6 +330,15 @@ class LM(BaseLM):
                 stacklevel=3,
             )
             self._warned_zero_temp_rollout = True
+
+    def _validate_stream_arg(self, kwargs: dict[str, Any]):
+        if kwargs.get("stream"):
+            raise LMUnsupportedFeatureError(
+                "dspy.LM does not support raw 'stream=True'. Use 'dspy.streamify' for streaming responses.",
+                model=self.model,
+                provider=self._provider_name,
+                features=["stream"],
+            )
 
     def _reap_closed_loops(self):
         """Drop async pools whose event loop has closed (under the engine lock).
