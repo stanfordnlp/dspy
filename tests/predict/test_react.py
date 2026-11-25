@@ -803,3 +803,49 @@ def test_tool_observation_preserves_custom_type():
     ]
     assert len(images) == 2
     assert result.answer == "done"
+
+
+def test_react_tool_that_mutates_args_does_not_corrupt_history():
+    """A tool that consumes its input (e.g. list.pop) must not alter the args recorded in history.
+
+    Regression test for https://github.com/stanfordnlp/dspy/issues/10891
+    """
+
+    def pack_order(items: list) -> str:
+        packed = []
+        while items:
+            packed.append(items.pop(0))
+        return f"Packed {len(packed)} items."
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "I should pack the items.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "pack_order", "args": {"items": ["notebooks", "folders"]}}]
+                ),
+            },
+            {
+                "next_thought": "Done packing.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"answer": "Packed notebooks and folders."}}]
+                ),
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReAct("request -> answer", tools=[pack_order])(request="Pack notebooks and folders.")
+
+    assert pred.answer == "Packed notebooks and folders."
+
+    # The first history event should contain the pack_order call with the ORIGINAL args.
+    pack_call = [
+        call
+        for event in pred.history.messages
+        for call in getattr(event.get("tool_calls"), "tool_calls", [])
+        if call.name == "pack_order"
+    ][-1]
+    assert pack_call.args["items"] == ["notebooks", "folders"], (
+        "The completed packing call lost the items it packed"
+    )
