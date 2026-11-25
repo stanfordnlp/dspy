@@ -18,7 +18,9 @@ unregistered.
 """
 
 import threading
+from collections.abc import Generator, Iterable
 from contextlib import contextmanager
+from types import ModuleType
 
 import cloudpickle
 
@@ -27,9 +29,9 @@ _active: dict[str, int] = {}  # module name -> saves currently relying on DSPy's
 
 
 @contextmanager
-def serialize_by_value(modules):
+def serialize_by_value(modules: Iterable[ModuleType] | None) -> Generator[None, None, None]:
     modules = list(modules or [])
-    owned: list = []
+    owned: list[ModuleType] = []
     with _lock:
         registry = set(cloudpickle.list_registry_pickle_by_value())
         for module in modules:
