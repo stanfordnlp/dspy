@@ -481,6 +481,35 @@ def test_evaluate_save_as_csv_with_history():
             os.unlink(temp_csv)
 
 
+def test_evaluate_saves_non_ascii_results_as_utf8(tmp_path, monkeypatch):
+    """Results are written as UTF-8 even where the locale default (e.g. cp1252 on Windows) can't encode them."""
+    real_open = open
+
+    def cp1252_default(file, mode="r", *args, encoding=None, **kwargs):
+        if "b" not in mode and encoding is None:
+            encoding = "cp1252"
+        return real_open(file, mode, *args, encoding=encoding, **kwargs)
+
+    monkeypatch.setattr("dspy.evaluate.evaluate.open", cp1252_default, raising=False)
+    dspy.settings.configure(lm=DummyLM({"中国的首都是哪里": {"answer": "北京"}}))
+    devset = [dspy.Example(question="中国的首都是哪里", answer="北京").with_inputs("question")]
+    csv_path, json_path = tmp_path / "results.csv", tmp_path / "results.json"
+
+    Evaluate(
+        devset=devset,
+        metric=answer_exact_match,
+        display_progress=False,
+        save_as_csv=str(csv_path),
+        save_as_json=str(json_path),
+    )(Predict("question -> answer"))
+
+    with open(csv_path, encoding="utf-8", newline="") as f:
+        row = next(csv.DictReader(f))
+    assert row["question"] == "中国的首都是哪里"
+    assert "北京" in row.values()
+    assert json.loads(json_path.read_text(encoding="utf-8"))[0]["question"] == "中国的首都是哪里"
+
+
 @pytest.mark.parametrize("example_order", [(0, 1), (1, 0)])
 @pytest.mark.parametrize("num_threads", [1, 2])
 @pytest.mark.parametrize("failure_score", [0.0, 0.25])
