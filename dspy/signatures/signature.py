@@ -633,12 +633,15 @@ def make_signature(
         sig = Signature(signature, "", custom_types=custom_types)  # Simple way to parse input/output fields
         instructions = _default_instructions(sig)
 
-    return create_model(
+    signature_class = create_model(
         signature_name,
         __base__=Signature,
         __doc__=instructions,
         **fixed_fields,
     )
+    # Pydantic drops an empty `__doc__`, which would make empty instructions fall back to the default ones.
+    signature_class.instructions = instructions
+    return signature_class
 
 
 def _parse_signature(signature: str, names=None) -> dict[str, tuple[type, Any]]:

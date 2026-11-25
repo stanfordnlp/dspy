@@ -132,6 +132,12 @@ def test_signature_instructions_none():
     assert sig1.instructions == "Given the fields `a`, `b`, produce the fields `c`."
 
 
+def test_signature_instructions_empty():
+    sig = Signature("a, b -> c", "")
+    assert sig.instructions == ""
+    assert sig.with_instructions("").instructions == ""
+
+
 def test_signature_from_dict():
     signature = Signature(
         {"input1": InputField(), "input2": InputField(), "output": OutputField()})
