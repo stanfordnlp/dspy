@@ -101,6 +101,34 @@ print(f"  value:  {result.category.value}")    # e.g. "account"
 Behind the scenes, DSPy asks the LM to produce probability evidence (not just a label) and derives
 the final value locally using thresholds, cuts, and weights.
 
+## Run with OpenAI Decisions
+
+Set `OPENAI_API_KEY` and select the native Decisions endpoint explicitly:
+
+```python
+lm = dspy.LM("openai-decisions/gpt-6-luna")
+triage = dspy.Predict(TriageTicket)
+triage.set_lm(lm)
+result = triage(ticket="My invoice has a duplicate charge. Service works normally.")
+# Async: result = await triage.acall(ticket="...")
+```
+
+This sends one `/v1/decisions` request containing all output questions. `Noul`
+(or `bool`) becomes a predicate, `Choice` (or `Literal`) becomes a choice, and
+`Score` becomes an ordered rubric. DSPy applies thresholds, weights, and cuts
+locally to the returned probabilities. Demos, caching, usage tracking, and
+saving/loading use the normal DSPy path; no optional SDK extra is required.
+
+Text, structured inputs, and `dspy.Image` inputs are supported. Free-form
+outputs, `ChainOfThought` reasoning fields, bounding boxes, streaming, and
+sampling controls are not supported. A provider refusal raises
+`AdapterParseError`; it is never converted to `False` or a zero score.
+Unsupported requests do not fall back to chat or LiteLLM. The ordinary
+`openai/gpt-6-luna` spelling continues to use the Responses API.
+
+See the [OpenAI Decisions guide](https://developers.openai.com/api/docs/guides/decisions)
+for endpoint availability and limitations.
+
 ## Tune Decision Boundaries
 
 The default threshold for `Noul` is 0.5 — if P(True) ≥ 0.5, the result is `True`. But what if your

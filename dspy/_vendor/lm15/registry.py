@@ -75,6 +75,8 @@ from .providers import (
     OpenAICodexLM,
     OpenAILM,
     TypeSafeLM,
+    OpenAIDecisionsLM,
+    AsyncOpenAIDecisionsLM,
     XaiLM,
 )
 
@@ -89,7 +91,7 @@ __all__ = [
 
 # The wire formats lm15 speaks.  A dialect is a class; a provider is a
 # dialect plus an access policy (plus a compat preset for the chat dialect).
-Dialect = Literal["openai-responses", "openai-chat", "anthropic", "gemini", "typesafe"]
+Dialect = Literal["openai-responses", "openai-chat", "anthropic", "gemini", "typesafe", "openai-decisions"]
 
 # A compat value: a preset name for a registry entry (validated against
 # the dialect's table below), or the object itself for a declared entry.
@@ -394,6 +396,11 @@ _DEFINITIONS: tuple[ProviderDefinition, ...] = (
         "openai", "openai-responses", OpenAILM, AsyncOpenAILM,
         console_url="https://platform.openai.com/api-keys",
         note="OpenAI Responses API",
+    ),
+    _adapter_owned(
+        "openai-decisions", "openai-decisions", OpenAIDecisionsLM, AsyncOpenAIDecisionsLM,
+        console_url="https://platform.openai.com/api-keys",
+        note="OpenAI Decisions API: predicates, choices, and scores; no text generation",
     ),
     _adapter_owned(
         "openai-chat", "openai-chat", OpenAIChatLM, AsyncOpenAIChatLM,

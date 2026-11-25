@@ -88,8 +88,16 @@ class DecisionAdapter:
             name: self.state._question(name, signature.output_fields[name], kind) for name, kind in types.items()
         }
         if self.system_one:
+            if isinstance(getattr(lm, "engine", None), str):
+                from dspy.clients.capabilities import resolve
+                from dspy.clients.requests import generation_options
+
+                if resolve(lm).provider == "openai-decisions":
+                    # Explicit Requests bypass LM defaults. Refuse unsupported
+                    # defaults here instead of silently losing caller settings.
+                    lm_kwargs = {**generation_options(lm), **lm_kwargs}
             if lm_kwargs:
-                raise ValueError(f"Unsupported TypeSafe generation settings: {sorted(lm_kwargs)}.")
+                raise ValueError(f"Unsupported native decision generation settings: {sorted(lm_kwargs)}.")
             state = {
                 "instructions": signature.instructions,
                 "input_fields": get_field_description_string(signature.input_fields),
@@ -181,12 +189,24 @@ class DecisionAdapter:
 
     def __call__(self, lm, lm_kwargs, signature, demos, inputs):
         request = self._prepare(lm, signature, demos, inputs, lm_kwargs)
-        completions = ([lm(request).provider_data["typesafe"]["answers"]] if self.system_one
+        completions = ([self._native_answers(lm(request))] if self.system_one
                        else self.adapter(lm, **request))
         return self._decode(completions)
 
     async def acall(self, lm, lm_kwargs, signature, demos, inputs):
         request = self._prepare(lm, signature, demos, inputs, lm_kwargs)
-        completions = ([(await lm.acall(request)).provider_data["typesafe"]["answers"]] if self.system_one
+        completions = ([self._native_answers(await lm.acall(request))] if self.system_one
                        else await self.adapter.acall(lm, **request))
         return self._decode(completions)
+
+    def _native_answers(self, response):
+        # New native decision providers share an evidence envelope. Keep the
+        # original TypeSafe/custom-engine envelope backward compatible.
+        evidence = response.provider_data.get("decisions", response.provider_data.get("typesafe", {}))
+        if evidence.get("refusals"):
+            raise AdapterParseError(
+                adapter_name="DecisionAdapter", signature=self.state.signature,
+                lm_response=json.dumps(response.provider_data),
+                message=f"Decision provider refused outputs: {evidence['refusals']}",
+            )
+        return evidence["answers"]
