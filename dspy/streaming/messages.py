@@ -58,8 +58,12 @@ def sync_send_to_stream(stream, message):
             future = executor.submit(run_in_new_loop)
             return future.result()
     except RuntimeError:
-        # Not in an event loop, safe to use a new event loop in this thread
-        return anyio.from_thread.run(_send)
+        try:
+            return anyio.from_thread.run(_send)
+        except RuntimeError:
+            # We are not on an AnyIO worker thread (e.g. a ThreadPoolExecutor
+            # used by dspy.Parallel), so run the coroutine directly.
+            return asyncio.run(_send())
 
 
 class StatusMessageProvider:
