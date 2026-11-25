@@ -37,6 +37,8 @@ class KNN:
             similar_examples = knn(input="hello")
             ```
         """
+        if k is not None and k < 0:
+            raise ValueError(f"k must be a non-negative integer, got {k}")
         self.k = k
         self.trainset = trainset
         self.embedding = vectorizer
@@ -47,6 +49,8 @@ class KNN:
         self.trainset_vectors = self.embedding(trainset_casted_to_vectorize).astype(np.float32)
 
     def __call__(self, **kwargs) -> list:
+        if not self.trainset or self.k is None or self.k <= 0:
+            return []
         input_example_vector = self.embedding([" | ".join([f"{key}: {val}" for key, val in kwargs.items()])])
         scores = np.dot(self.trainset_vectors, input_example_vector.T).squeeze()
         nearest_samples_idxs = scores.argsort()[-self.k :][::-1]
