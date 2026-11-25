@@ -1076,6 +1076,62 @@ def test_tool_call_execute():
     assert "not found" in str(exc_info.value)
 
 
+@pytest.mark.parametrize("as_list", [False, True], ids=["dict", "list"])
+def test_tool_call_execute_with_parameter_named_self(as_list: bool):
+    def echo(self: str) -> str:
+        return self + "!"
+
+    tool = Tool(echo)
+    arguments = {"self": "ok"}
+    validate(arguments, tool.as_function_tool().parameters)
+    tool_call = ToolCalls.ToolCall(name="echo", args=arguments)
+    functions = [tool] if as_list else {"echo": echo}
+
+    assert tool_call.execute(functions=functions) == "ok!"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("convert_async", [False, True])
+@pytest.mark.parametrize(
+    "function_kind",
+    ["async_function", "positional_async_function", "async_callable", "coroutine_factory", "future_factory"],
+)
+async def test_tool_call_execute_preserves_awaitable_result(function_kind: str, convert_async: bool):
+    async def add(value: int, increment: int = 1) -> int:
+        return value + increment
+
+    async def positional_add(value: int, /, increment: int = 1) -> int:
+        return value + increment
+
+    class AsyncAdder:
+        async def __call__(self, value: int, /, increment: int = 1) -> int:
+            return value + increment
+
+    def coroutine_factory(value: int, /, increment: int = 1):
+        return add(value, increment)
+
+    def future_factory(value: int, /, increment: int = 1):
+        future = asyncio.get_running_loop().create_future()
+        future.set_result(value + increment)
+        return future
+
+    function = {
+        "async_function": add,
+        "positional_async_function": positional_add,
+        "async_callable": AsyncAdder(),
+        "coroutine_factory": coroutine_factory,
+        "future_factory": future_factory,
+    }[function_kind]
+    tool = Tool(function, name="custom_add")
+    arguments = {"increment": 3, "value": 2}
+    validate(arguments, tool.as_function_tool().parameters)
+    tool_call = ToolCalls.ToolCall(name="custom_add", args=arguments)
+
+    with dspy.context(allow_tool_async_sync_conversion=convert_async):
+        result = tool_call.execute(functions=[tool])
+        assert await result == 5
+
+
 def test_tool_call_execute_with_local_functions():
     def main():
         def local_add(a: int, b: int) -> int:
@@ -1129,3 +1185,79 @@ def test_tool_calls_none_reaches_empty_tool_calls_semantics():
             raised = e
     assert raised is not None
     assert "empty_tool_calls" in str(raised), f"expected empty_tool_calls semantics, got: {raised}"
+
+
+class TestPositionalOnlyTool:
+    @pytest.mark.parametrize(
+        ("arguments", "expected"),
+        [({"left": 2}, 12), ({"left": 2, "right": 0}, 2), ({"left": 2, "right": 3, "scale": 4}, 20)],
+    )
+    def test_named_arguments_follow_the_published_schema(self, arguments: dict[str, int], expected: int):
+        def add(left: int, right: int = 10, /, *, scale: int = 1) -> int:
+            return (left + right) * scale
+
+        tool = Tool(add)
+        validate(arguments, tool.as_function_tool().parameters)
+
+        assert tool(**arguments) == expected
+
+    @pytest.mark.parametrize("as_list", [False, True], ids=["dict", "list"])
+    def test_tool_call_execute_with_positional_only_parameters(self, as_list: bool):
+        def add(left: int = 1, right: int = 2, /, *, scale: int = 1) -> int:
+            return (left + right) * scale
+
+        tool = Tool(add, name="custom_add")
+        arguments = {"scale": 4, "right": 5}
+        validate(arguments, tool.as_function_tool().parameters)
+        tool_call = ToolCalls.ToolCall(name="custom_add", args=arguments)
+        functions = [tool] if as_list else {"custom_add": tool}
+
+        assert tool_call.execute(functions=functions) == 24
+
+    @pytest.mark.parametrize(
+        ("arguments", "expected"),
+        [({}, 3), ({"right": 5}, 6), ({"left": 4}, 6), ({"left": 0, "right": 0}, 0)],
+    )
+    def test_omitted_positional_only_defaults(self, arguments: dict[str, int], expected: int):
+        def add(left: int = 1, right: int = 2, /) -> int:
+            return left + right
+
+        assert Tool(add)(**arguments) == expected
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("async_function", [False, True])
+    async def test_acall_with_positional_only_parameters(self, async_function: bool):
+        def add(value: int, /, increment: int = 1) -> int:
+            return value + increment
+
+        async def async_add(value: int, /, increment: int = 1) -> int:
+            return value + increment
+
+        tool = Tool(async_add if async_function else add)
+
+        assert await tool.acall(value=2, increment=3) == 5
+
+    def test_bound_method(self):
+        class Calculator:
+            def add(self, left: int, /, *, right: int = 4) -> int:
+                return left + right
+
+        assert Tool(Calculator().add)(left=3, right=5) == 8
+
+    def test_extra_keywords_are_preserved(self):
+        def add(value: int, /, **increments: int) -> int:
+            return value + sum(increments.values())
+
+        assert Tool(add)(value=2, bonus=3, extra=4) == 9
+
+    def test_later_argument_does_not_fill_a_missing_required_argument(self):
+        calls = []
+
+        def add(left: int, right: int = 2, /) -> int:
+            calls.append((left, right))
+            return left + right
+
+        with pytest.raises(TypeError):
+            Tool(add)(right=5)
+
+        assert calls == []
