@@ -1,17 +1,23 @@
+from __future__ import annotations
+
 import queue
 import threading
 import time
 from concurrent.futures import Future
-from typing import Any, Callable
+from types import TracebackType
+from typing import Callable, Generic, TypeVar
+
+InputT = TypeVar("InputT")
+OutputT = TypeVar("OutputT")
 
 
-class Unbatchify:
+class Unbatchify(Generic[InputT, OutputT]):
     def __init__(
         self,
-        batch_fn: Callable[[list[Any]], list[Any]],
+        batch_fn: Callable[[list[InputT]], list[OutputT]],
         max_batch_size: int = 32,
         max_wait_time: float = 0.1
-    ):
+    ) -> None:
         """
         Initializes the Unbatchify.
 
@@ -24,13 +30,13 @@ class Unbatchify:
         self.batch_fn = batch_fn
         self.max_batch_size = max_batch_size
         self.max_wait_time = max_wait_time
-        self.input_queue = queue.Queue()
+        self.input_queue: queue.Queue[tuple[InputT, Future[OutputT]]] = queue.Queue()
         self.stop_event = threading.Event()
         self.worker_thread = threading.Thread(target=self._worker)
         self.worker_thread.daemon = True  # Ensures thread exits when main program exits
         self.worker_thread.start()
 
-    def __call__(self, input_item: Any) -> Any:
+    def __call__(self, input_item: InputT) -> OutputT:
         """
         Thread-safe function that accepts a single input and returns the corresponding output.
 
@@ -40,7 +46,7 @@ class Unbatchify:
         Returns:
             The output corresponding to the input_item after processing through batch_fn.
         """
-        future = Future()
+        future: Future[OutputT] = Future()
         self.input_queue.put((input_item, future))
         try:
             result = future.result()
@@ -48,13 +54,13 @@ class Unbatchify:
             raise e
         return result
 
-    def _worker(self):
+    def _worker(self) -> None:
         """
         Worker thread that batches inputs and processes them using batch_fn.
         """
         while not self.stop_event.is_set():
-            batch = []
-            futures = []
+            batch: list[InputT] = []
+            futures: list[Future[OutputT]] = []
             start_time = time.time()
             while len(batch) < self.max_batch_size and (time.time() - start_time) < self.max_wait_time:
                 remaining_time = self.max_wait_time - (time.time() - start_time)
@@ -86,7 +92,7 @@ class Unbatchify:
 
         print("Worker thread has been terminated.")
 
-    def close(self):
+    def close(self) -> None:
         """
         Stops the worker thread and cleans up resources.
         """
@@ -94,19 +100,24 @@ class Unbatchify:
             self.stop_event.set()
             self.worker_thread.join()
 
-    def __enter__(self):
+    def __enter__(self) -> Unbatchify[InputT, OutputT]:
         """
         Enables use as a context manager.
         """
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         """
         Ensures resources are cleaned up when exiting context.
         """
         self.close()
 
-    def __del__(self):
+    def __del__(self) -> None:
         """
         Ensures the worker thread is terminated when the object is garbage collected.
         """
