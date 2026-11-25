@@ -20,7 +20,7 @@ from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError
 
-field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
+field_header_pattern = re.compile(r"\[\[\s*##\s*(\w+)\s*##\s*\]\]")
 
 
 class FieldInfoWithName(NamedTuple):

@@ -104,6 +104,28 @@ async def test_chat_adapter_async_call():
     assert result == [{"answer": "Paris"}]
 
 
+@pytest.mark.parametrize(
+    "completed_marker",
+    [
+        "[[ ## completed ## ]]",
+        "[[ ## completed ##]]",
+        "[[## completed ##]]",
+        "[[##completed##]]",
+    ],
+    ids=["standard", "no-trailing-space", "no-leading-space", "no-spaces"],
+)
+def test_chat_adapter_parse_loose_completed_spacing(completed_marker):
+    from dspy.adapters.chat_adapter import field_header_pattern
+
+    assert field_header_pattern.match(completed_marker)
+
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter()
+    completion = f"[[ ## answer ## ]]\nParis\n\n{completed_marker}"
+    result = adapter.parse(signature, completion)
+    assert result["answer"] == "Paris"
+
+
 def test_chat_adapter_format_exact_messages_for_simple_signature():
     class QA(dspy.Signature):
         """Answer the question."""
