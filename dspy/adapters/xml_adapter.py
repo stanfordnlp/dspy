@@ -327,6 +327,9 @@ class XMLAdapter(ChatAdapter):
                 except ValueError:
                     pass  # Enum member names need the original annotation during field validation.
             return values[0] if len(values) == 1 else values
+        if not schema and all(child.tag == "item" for child in element):
+            # Untyped values have no schema to say "array", so read lists the way `_value_to_xml` writes them.
+            return [cls._elements_to_value([child], {}, definitions) for child in element]
         properties = schema.get("properties", {})
         child_schema = schema.get("additionalProperties", {})
         if not isinstance(child_schema, dict):
