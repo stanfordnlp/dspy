@@ -1,5 +1,6 @@
 # ruff: noqa: UP007
 
+import enum
 from typing import Literal, Optional, Union
 
 import pytest
@@ -85,6 +86,27 @@ def test_parse_value_literal_non_string_members():
 
     with pytest.raises(ValueError):
         parse_value("42", Literal[1, 2, 3])
+
+
+def test_parse_value_enum_non_string_members():
+    # Text adapters yield enum values as strings; coerce them to the member type.
+    class Rating(enum.Enum):
+        POOR = 1
+        GOOD = 2
+
+    class AutoValued(enum.Enum):
+        RED = enum.auto()
+        GREEN = enum.auto()
+
+    assert parse_value("2", Rating) is Rating.GOOD
+    assert parse_value(2, Rating) is Rating.GOOD
+    assert parse_value("2", AutoValued) is AutoValued.GREEN
+
+    # Member names and string values still resolve
+    assert parse_value("POOR", Rating) is Rating.POOR
+
+    with pytest.raises(ValueError):
+        parse_value("42", Rating)
 
 
 def test_parse_value_union():
