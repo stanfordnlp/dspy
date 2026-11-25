@@ -1,4 +1,7 @@
+import inspect
 import warnings
+from collections.abc import Mapping
+from copy import deepcopy
 
 import pydantic
 
@@ -36,6 +39,77 @@ PYDANTIC_CONSTRAINT_MAP = {
 }
 
 
+class _SchemaExtraCallable(Mapping):
+    """Wraps a callable json_schema_extra so Pydantic executes it while DSPy can index metadata."""
+
+    def __init__(self, extra_dict: dict, fn):
+        self._extra_dict = dict(extra_dict)
+        self._fn = fn
+        try:
+            self.__signature__ = inspect.signature(fn)
+        except (ValueError, TypeError):
+            pass
+
+    def __call__(self, schema: dict, *args, **call_kwargs) -> None:
+        schema.update(self._extra_dict)
+        try:
+            sig = getattr(self, "__signature__", None) or inspect.signature(self._fn)
+        except (ValueError, TypeError):
+            # Pydantic's documented callback accepts one argument. If the
+            # callable cannot be inspected, use that contract rather than
+            # retrying it after a callback error.
+            self._fn(schema)
+            return
+
+        try:
+            sig.bind(schema, *args, **call_kwargs)
+        except TypeError:
+            self._fn(schema)
+        else:
+            self._fn(schema, *args, **call_kwargs)
+
+    def __getitem__(self, item):
+        return self._extra_dict[item]
+
+    def __setitem__(self, key, value):
+        self._extra_dict[key] = value
+
+    def __iter__(self):
+        return iter(self._extra_dict)
+
+    def __len__(self):
+        return len(self._extra_dict)
+
+    def __contains__(self, item):
+        return item in self._extra_dict
+
+    def get(self, key, default=None):
+        return self._extra_dict.get(key, default)
+
+    def keys(self):
+        return self._extra_dict.keys()
+
+    def values(self):
+        return self._extra_dict.values()
+
+    def items(self):
+        return self._extra_dict.items()
+
+    def copy(self):
+        return _SchemaExtraCallable(self._extra_dict.copy(), self._fn)
+
+    def __deepcopy__(self, memo):
+        return _SchemaExtraCallable(deepcopy(self._extra_dict, memo), self._fn)
+
+    def __eq__(self, other):
+        if isinstance(other, _SchemaExtraCallable):
+            return self._extra_dict == other._extra_dict and self._fn == other._fn
+        return self._extra_dict == other
+
+    def __repr__(self):
+        return repr(self._extra_dict)
+
+
 def move_kwargs(**kwargs):
     # Pydantic doesn't allow arbitrary arguments to be given to fields,
     # but asks that
@@ -43,7 +117,12 @@ def move_kwargs(**kwargs):
     # > as a dictionary to the json_schema_extra keyword argument.
     # See: https://docs.pydantic.dev/2.6/migration/#changes-to-pydanticfield
     pydantic_kwargs = {}
-    json_schema_extra = {}
+    user_schema_extra = kwargs.pop("json_schema_extra", None)
+    if isinstance(user_schema_extra, dict):
+        json_schema_extra = dict(user_schema_extra)
+    else:
+        json_schema_extra = {}
+
     for k, v in kwargs.items():
         if k in DSPY_FIELD_ARG_NAMES:
             json_schema_extra[k] = v
@@ -55,7 +134,12 @@ def move_kwargs(**kwargs):
     constraints = _translate_pydantic_field_constraints(**kwargs)
     if constraints:
         json_schema_extra["constraints"] = constraints
-    pydantic_kwargs["json_schema_extra"] = json_schema_extra
+
+    if callable(user_schema_extra):
+        pydantic_kwargs["json_schema_extra"] = _SchemaExtraCallable(json_schema_extra, user_schema_extra)
+    else:
+        pydantic_kwargs["json_schema_extra"] = json_schema_extra
+
     return pydantic_kwargs
 
 
@@ -76,12 +160,12 @@ def _warn_deprecated_field_args(**kwargs):
             warnings.warn(message, DeprecationWarning, stacklevel=3)
 
 
-def InputField(**kwargs): # noqa: N802
+def InputField(**kwargs):  # noqa: N802
     _warn_deprecated_field_args(**kwargs)
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="input"))
 
 
-def OutputField(**kwargs): # noqa: N802
+def OutputField(**kwargs):  # noqa: N802
     _warn_deprecated_field_args(**kwargs)
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="output"))
 
