@@ -5,7 +5,7 @@ from typing import Literal, Optional, Union
 import pytest
 from pydantic import BaseModel
 
-from dspy.adapters.utils import get_annotation_name, parse_value
+from dspy.adapters.utils import _get_json_schema, get_annotation_name, parse_value
 
 
 class Profile(BaseModel):
@@ -130,3 +130,39 @@ def test_parse_value_json_repair():
 def test_get_annotation_name_pep604_union_matches_typing_union(pep604_annotation, typing_annotation, expected):
     assert get_annotation_name(typing_annotation) == expected
     assert get_annotation_name(pep604_annotation) == expected
+
+
+def test_get_json_schema_preserves_property_declaration_order():
+    class Item(BaseModel):
+        zeta: int
+        alpha: str
+
+    class Result(BaseModel):
+        total: int
+        items: list[Item]
+
+    schema = _get_json_schema(Result)
+    # 'type' is placed at the front of the object
+    assert next(iter(schema.keys())) == "type"
+    assert schema["type"] == "object"
+
+    # Properties retain declaration order, matching model_json_schema() and required list
+    assert list(schema["properties"].keys()) == ["total", "items"]
+    assert schema["required"] == ["total", "items"]
+
+    item_schema = schema["$defs"]["Item"]
+    assert next(iter(item_schema.keys())) == "type"
+    assert list(item_schema["properties"].keys()) == ["zeta", "alpha"]
+    assert item_schema["required"] == ["zeta", "alpha"]
+
+
+def test_get_json_schema_preserves_field_named_type_order():
+    class ModelWithType(BaseModel):
+        name: str
+        type: str
+
+    schema = _get_json_schema(ModelWithType)
+    assert next(iter(schema.keys())) == "type"
+    assert list(schema["properties"].keys()) == ["name", "type"]
+    assert schema["required"] == ["name", "type"]
+    assert schema["properties"]["type"]["type"] == "string"
