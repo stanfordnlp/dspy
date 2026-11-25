@@ -84,6 +84,22 @@ def test_save_and_load_with_json(tmp_path):
     assert new_model.predict.demos[1] == model.predict.demos[1].toDict()
 
 
+def test_save_and_load_module_with_retrieve(tmp_path):
+    class RAG(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.retrieve = dspy.Retrieve(k=3)
+            self.answer = dspy.Predict("context, question -> answer")
+
+    model = RAG()
+    model.retrieve.k = 5
+    model.save(tmp_path / "rag.json")
+
+    new_model = RAG()
+    new_model.load(tmp_path / "rag.json")
+    assert new_model.retrieve.k == 5
+
+
 @pytest.mark.extra
 def test_save_and_load_with_pkl(tmp_path):
     import datetime

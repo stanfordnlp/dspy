@@ -914,3 +914,25 @@ def test_custom_module_state_cannot_reintroduce_predictor_config(tmp_path):
     (outer_dir / "program.json").write_bytes(orjson.dumps(data))
     with pytest.raises(ValueError, match="only saved for modules that override"):
         dspy.load(outer_dir, safe_modules=[_Outer])
+
+
+class _RetrieveThenAnswer(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.retrieve = dspy.Retrieve(k=3)
+        self.answer = dspy.Predict("context, question -> answer")
+
+
+def test_custom_module_with_retrieve_roundtrips_and_rejects_extra_state(tmp_path):
+    program = _RetrieveThenAnswer()
+    program.retrieve.k = 5
+
+    save_dir = tmp_path / "rag"
+    program.save(save_dir, save_program=True, format="json")
+    assert dspy.load(save_dir, safe_modules=[_RetrieveThenAnswer]).retrieve.k == 5
+
+    data = orjson.loads((save_dir / "program.json").read_bytes())
+    data["module"]["parameters"]["retrieve"]["state"]["forward"] = "x"
+    (save_dir / "program.json").write_bytes(orjson.dumps(data))
+    with pytest.raises(ValueError, match="unexpected key\\(s\\): forward"):
+        dspy.load(save_dir, safe_modules=[_RetrieveThenAnswer])

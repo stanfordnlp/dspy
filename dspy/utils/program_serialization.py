@@ -944,8 +944,10 @@ def _all_named_parameters(module: BaseModule) -> list[tuple[str, Parameter]]:
 
 def _serialize_parameter(name: str, param: Parameter) -> dict[str, Any]:
     from dspy.predict.predict import Predict
+    from dspy.primitives.module import Module
 
-    entry: dict[str, Any] = {"state": _ensure_json_dict(param.dump_state(json_mode=True), context=f"'{name}' state")}
+    state = param.dump_state(json_mode=True) if isinstance(param, Module) else param.dump_state()
+    entry: dict[str, Any] = {"state": _ensure_json_dict(state, context=f"'{name}' state")}
     if isinstance(param, Predict):
         signature = _require_signature(param.signature, context=f"Predictor '{name}'")
         entry["signature"] = serialize_signature(signature)
@@ -1327,6 +1329,7 @@ def deserialize_program(
 
 def _restore_custom_module(instance: Module, module_data: dict[str, Any], *, allow_unsafe_lm_state: bool) -> None:
     from dspy.predict.predict import Predict
+    from dspy.primitives.module import Module
 
     saved = module_data.get("parameters")
     if not isinstance(saved, dict):
@@ -1357,7 +1360,13 @@ def _restore_custom_module(instance: Module, module_data: dict[str, Any], *, all
             param.config = _load_predictor_config(
                 entry.get("config"), allow_unsafe_lm_state=allow_unsafe_lm_state, context=f"Predictor '{name}' config"
             )
-        param.load_state(entry["state"], allow_unsafe_lm_state=allow_unsafe_lm_state)
+        if isinstance(param, Module):
+            param.load_state(entry["state"], allow_unsafe_lm_state=allow_unsafe_lm_state)
+        else:
+            unexpected = sorted(set(entry["state"]) - set(param.dump_state()))
+            if unexpected:
+                raise ValueError(f"Parameter '{name}' state contains unexpected key(s): {', '.join(unexpected)}.")
+            param.load_state(entry["state"])
     for name in compiled_names:
         sub_modules[name]._compiled = True
 
