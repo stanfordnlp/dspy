@@ -360,10 +360,12 @@ def with_callbacks(fn: F) -> F:
         callbacks: list[BaseCallback] = dspy.settings.get("callbacks", []) + getattr(instance, "callbacks", [])
         return callbacks
 
+    # Both wrappers take `instance` positional-only, so that the wrapped method can still
+    # receive a keyword argument named `instance`, e.g. an input field or a tool argument.
     if inspect.iscoroutinefunction(fn):
 
         @functools.wraps(fn)
-        async def async_wrapper(instance: object, *args: Any, **kwargs: Any) -> object:
+        async def async_wrapper(instance: object, /, *args: Any, **kwargs: Any) -> object:
             callbacks = _get_active_callbacks(instance)
             if not callbacks:
                 return await fn(instance, *args, **kwargs)
@@ -396,7 +398,7 @@ def with_callbacks(fn: F) -> F:
     else:
 
         @functools.wraps(fn)
-        def sync_wrapper(instance: object, *args: Any, **kwargs: Any) -> object:
+        def sync_wrapper(instance: object, /, *args: Any, **kwargs: Any) -> object:
             callbacks = _get_active_callbacks(instance)
             if not callbacks:
                 return fn(instance, *args, **kwargs)
