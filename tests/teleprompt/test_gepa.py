@@ -884,3 +884,62 @@ def test_batch_evaluate_is_parallel_and_preserves_context():
     assert trace_modes == [True, True, False, False, False, False]
     assert sorted(thread_budgets[-3:]) == [2, 3, 3]
     assert sum(thread_budgets[-3:]) == 8
+
+
+def _auto_gepa(**kwargs):
+    return dspy.GEPA(metric=simple_metric, reflection_lm=DummyLM([]), auto="light", **kwargs)
+
+
+def test_auto_budget_counts_parent_and_child_minibatches():
+    # Two predictors at "light" budget 20 proposals, and one child in five is fully validated.
+    budget = _auto_gepa(use_merge=False).auto_budget(num_preds=2, num_candidates=6, valset_size=100)
+    assert budget == 100 + 20 * 2 * 3 + 4 * 100
+
+
+def test_auto_budget_scales_with_reflection_minibatch_size():
+    small = _auto_gepa(reflection_minibatch_size=3).auto_budget(num_preds=2, num_candidates=6, valset_size=100)
+    large = _auto_gepa(reflection_minibatch_size=10).auto_budget(num_preds=2, num_candidates=6, valset_size=100)
+    assert large - small == 20 * 2 * (10 - 3)
+
+    explicit = _auto_gepa(reflection_minibatch_size=3).auto_budget(
+        num_preds=2, num_candidates=6, valset_size=100, minibatch_size=10
+    )
+    assert explicit == large
+
+
+def test_auto_budget_counts_merges_for_multi_predictor_programs():
+    def merge_cost(num_preds, **kwargs):
+        with_merge = _auto_gepa(use_merge=True, **kwargs).auto_budget(
+            num_preds=num_preds, num_candidates=6, valset_size=100
+        )
+        without_merge = _auto_gepa(use_merge=False).auto_budget(num_preds=num_preds, num_candidates=6, valset_size=100)
+        return with_merge - without_merge
+
+    # A single predictor has nothing to merge.
+    assert merge_cost(1) == 0
+    # Each of the four validated children can lead to a merge, screened on 5 examples and then validated.
+    assert merge_cost(2) == 4 * (5 + 100)
+    assert merge_cost(2, max_merge_invocations=2) == 2 * (5 + 100)
+
+
+def test_compile_auto_budget_uses_reflection_minibatch_size(monkeypatch):
+    import gepa
+
+    class OptimizeCalledError(Exception):
+        pass
+
+    captured = {}
+
+    def fake_optimize(**kwargs):
+        captured["max_metric_calls"] = kwargs["max_metric_calls"]
+        raise OptimizeCalledError
+
+    monkeypatch.setattr(gepa, "optimize", fake_optimize)
+    trainset = [Example(input=f"question {i}", output="answer").with_inputs("input") for i in range(4)]
+    optimizer = _auto_gepa(reflection_minibatch_size=10, use_merge=False)
+
+    with pytest.raises(OptimizeCalledError):
+        optimizer.compile(SimpleModule("input -> output"), trainset=trainset, valset=trainset)
+
+    # One predictor at "light" budgets 10 proposals, two of them fully validated.
+    assert captured["max_metric_calls"] == 4 + 10 * 2 * 10 + 2 * 4

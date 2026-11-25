@@ -28,6 +28,9 @@ AUTO_RUN_SETTINGS = {
     "heavy": {"n": 18},
 }
 
+# GEPA's merge proposer screens a merged candidate on this many validation examples.
+_MERGE_SUBSAMPLE_SIZE = 5
+
 
 class GEPAFeedbackMetric(Protocol):
     def __call__(
@@ -508,35 +511,54 @@ class GEPA(Teleprompter):
             )
 
     def auto_budget(
-        self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5
+        self,
+        num_preds,
+        num_candidates,
+        valset_size: int,
+        minibatch_size: int | None = None,
+        full_eval_steps: int = 5,
     ) -> int:
+        """Estimate the metric calls needed for an `auto` run.
+
+        The budget covers a number of reflective proposals derived from `num_preds` and
+        `num_candidates`. Each proposal scores the parent and the child on the same minibatch,
+        and a child that passes that check is scored on the full valset. With merging enabled on
+        a program with two or more predictors, each validated child can lead to a merge, which is
+        screened on a few validation examples and then fully validated. Proposals that are skipped
+        or rejected cost less, so the result is an allocation rather than an exact prediction.
+
+        Args:
+            num_preds: Number of components being optimized.
+            num_candidates: The `n` value of the chosen `AUTO_RUN_SETTINGS` level.
+            valset_size: Number of validation examples.
+            minibatch_size: Examples per reflection minibatch. Defaults to `reflection_minibatch_size`.
+            full_eval_steps: One child in this many proposals is assumed to pass the minibatch
+                check and be fully validated.
+
+        Returns:
+            The number of metric calls to budget.
+        """
         num_trials = int(max(2 * (num_preds * 2) * math.log2(num_candidates), 1.5 * num_candidates))
+        if minibatch_size is None:
+            minibatch_size = self.reflection_minibatch_size or 3
         if num_trials < 0 or valset_size < 0 or minibatch_size < 0:
             raise ValueError("num_trials, valset_size, and minibatch_size must be >= 0.")
         if full_eval_steps < 1:
             raise ValueError("full_eval_steps must be >= 1.")
 
-        V = valset_size
-        N = num_trials
-        M = minibatch_size
-        m = full_eval_steps
+        # The seed candidate is scored on the full valset.
+        total = valset_size
+        # Each proposal scores the parent and the child on the same minibatch.
+        total += num_trials * 2 * minibatch_size
+        validated_children = math.ceil(num_trials / full_eval_steps)
+        total += validated_children * valset_size
 
-        # Initial full evaluation on the default program
-        total = V
-
-        # Assume upto 5 trials for bootstrapping each candidate
-        total += num_candidates * 5
-
-        # N minibatch evaluations
-        total += N * M
-        if N == 0:
-            return total  # no periodic/full evals inside the loop
-        # Periodic full evals occur when trial_num % (m+1) == 0, where trial_num runs 2..N+1
-        periodic_fulls = (N + 1) // (m) + 1
-        # If 1 <= N < m, the code triggers one final full eval at the end
-        extra_final = 1 if N < m else 0
-
-        total += (periodic_fulls + extra_final) * V
+        # A merge combines components changed in two candidates, so it needs at least two predictors.
+        if self.use_merge and num_preds >= 2:
+            merges = validated_children
+            if self.max_merge_invocations is not None:
+                merges = min(merges, self.max_merge_invocations)
+            total += merges * (_MERGE_SUBSAMPLE_SIZE + valset_size)
         return total
 
     def compile(
@@ -589,9 +611,6 @@ class GEPA(Teleprompter):
                 "No valset provided; Using trainset as valset. This is useful as an inference-time scaling strategy where you want GEPA to find the best solutions for the provided tasks in the trainset, as it makes GEPA overfit prompts to the provided trainset. In order to ensure generalization and perform well on unseen tasks, please provide separate trainset and valset. Provide the smallest valset that is just large enough to match the downstream task distribution, while keeping trainset as large as possible."
             )
         valset = valset or trainset
-        # 35 matches the default minibatch_size in auto_budget(); when the valset is
-        # at or below this size, suggesting further reduction is unhelpful since GEPA
-        # would already evaluate the full valset per step.
         if len(valset) > 35:
             logger.info(
                 f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a smaller sample of the valset to allow GEPA to explore more diverse solutions within the same budget. GEPA requires you to provide the smallest valset that is just large enough to match your downstream task distribution, while providing as large trainset as possible."
