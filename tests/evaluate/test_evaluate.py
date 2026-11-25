@@ -577,3 +577,66 @@ def test_evaluate_raises_on_empty_devset():
     )
     with pytest.raises(ValueError, match="devset"):
         ev(program)
+
+
+def test_evaluate_passes_timeout_and_straggler_limit_to_executor():
+    """Evaluate should forward timeout/straggler_limit to ParallelExecutor (regression for #9574)."""
+    recorded = []
+
+    class RecordingExecutor:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            recorded.append(self)
+
+        def execute(self, function, data):
+            return [function(item) for item in data]
+
+    devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
+    program = Predict("question -> answer")
+
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
+
+    ev = Evaluate(
+        devset=devset,
+        metric=answer_exact_match,
+        display_progress=False,
+        timeout=0,
+        straggler_limit=5,
+    )
+    assert ev.timeout == 0
+    assert ev.straggler_limit == 5
+
+    with patch("dspy.evaluate.evaluate.ParallelExecutor", RecordingExecutor):
+        ev(program)
+        init_kwargs = recorded[-1].kwargs
+        assert init_kwargs["timeout"] == 0
+        assert init_kwargs["straggler_limit"] == 5
+
+        ev(program, timeout=0.5, straggler_limit=1)
+        override_kwargs = recorded[-1].kwargs
+        assert override_kwargs["timeout"] == 0.5
+        assert override_kwargs["straggler_limit"] == 1
+
+
+def test_evaluate_with_small_timeout_completes_slow_items():
+    """Slow items under the straggler timeout must still complete without 'cannot schedule new futures after shutdown' errors (issue #9574)."""
+    import time
+
+    class SlowProgram(dspy.Module):
+        def forward(self, question):
+            time.sleep(1.0)
+            return dspy.Prediction(answer=question)
+
+    def metric(example, prediction):
+        return 1.0 if prediction.answer == example.question else 0.0
+
+    devset = [new_example("q1", "q1"), new_example("q2", "q2"), new_example("q3", "q3")]
+    ev = Evaluate(
+        devset=devset,
+        metric=metric,
+        display_progress=False,
+        num_threads=2,
+        timeout=0.1,
+    )
+    result = ev(SlowProgram())
+    assert result.score == 100.0
