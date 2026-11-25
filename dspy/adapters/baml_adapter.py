@@ -3,19 +3,98 @@ Custom adapter for improving structured outputs using the information from Pydan
 Based on the format used by BAML: https://github.com/BoundaryML/baml
 """
 
+import collections.abc
+import functools
 import inspect
+import operator
+import re
 import types
 from typing import Any, Literal, Union, get_args, get_origin
 
-from pydantic import BaseModel
+import json_repair
+from pydantic import AliasChoices, AliasPath, BaseModel, TypeAdapter
 
-from dspy.adapters.json_adapter import JSONAdapter
+from dspy.adapters.json_adapter import JSONAdapter, parse_value
+from dspy.adapters.utils import apply_output_field_defaults
 from dspy.adapters.utils import format_field_value as original_format_field_value
 from dspy.signatures.signature import Signature
+from dspy.utils.exceptions import AdapterParseError
 
 # Changing the comment symbol to Python's # rather than other languages' // seems to help
 COMMENT_SYMBOL = "#"
 INDENTATION = "  "
+
+
+def _iter_union_args(annotation: Any) -> tuple[Any, ...]:
+    origin = get_origin(annotation)
+    if origin in (Union, types.UnionType):
+        return get_args(annotation)
+    return (annotation,)
+
+
+def _is_none_allowed(annotation: Any) -> bool:
+    return type(None) in _iter_union_args(annotation)
+
+
+def _extract_validation_alias_keys(alias: Any) -> set[str]:
+    if isinstance(alias, str):
+        return {alias}
+    if isinstance(alias, AliasChoices):
+        res: set[str] = set()
+        for choice in alias.choices:
+            res.update(_extract_validation_alias_keys(choice))
+        return res
+    if isinstance(alias, AliasPath):
+        if alias.path and isinstance(alias.path[0], str):
+            return {alias.path[0]}
+    return set()
+
+
+def _model_accepted_keys(model: type[BaseModel]) -> set[str]:
+    keys = set(model.model_fields.keys())
+    for field in model.model_fields.values():
+        if field.alias:
+            keys.add(field.alias)
+        if field.validation_alias:
+            keys.update(_extract_validation_alias_keys(field.validation_alias))
+    return keys
+
+
+def _dict_branch_accepts(annotation: Any, value: Any) -> bool:
+    for arg in _iter_union_args(annotation):
+        origin = get_origin(arg)
+        if origin is not None:
+            if isinstance(origin, type) and issubclass(origin, (dict, collections.abc.Mapping)):
+                try:
+                    TypeAdapter(arg).validate_python(value)
+                    return True
+                except Exception:
+                    continue
+        elif isinstance(arg, type) and issubclass(arg, (dict, collections.abc.Mapping)):
+            return True
+    return False
+
+
+def _unwrap_model_branches(annotation: Any, field_name: str, obj: Any) -> list[type[BaseModel]]:
+    if not (isinstance(obj, dict) and set(obj.keys()) == {field_name} and isinstance(obj[field_name], dict)):
+        return []
+    if _dict_branch_accepts(annotation, obj):
+        return []
+
+    candidate_models: list[type[BaseModel]] = []
+    for arg in _iter_union_args(annotation):
+        origin = get_origin(arg)
+        target = origin if origin is not None else arg
+        if isinstance(target, type) and issubclass(target, BaseModel):
+            if field_name in _model_accepted_keys(target):
+                try:
+                    TypeAdapter(arg).validate_python(obj)
+                    return []
+                except Exception:
+                    candidate_models.append(target)
+            else:
+                candidate_models.append(target)
+    return candidate_models
 
 
 def _render_literal_member(member: Any) -> str:
@@ -279,3 +358,89 @@ class BAMLAdapter(JSONAdapter):
 
         messages.append(suffix)
         return "\n\n".join(m for m in messages if m).strip()
+
+    def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
+        """Parse completions generated with BAMLAdapter's delimiter syntax."""
+        sections: dict[str, list[str]] = {}
+        current_field: str | None = None
+
+        for line in completion.splitlines():
+            match = re.match(r"^\s*\[\[\s*##\s*(\w+)\s*##\s*\]\]\s*(.*)$", line)
+            if match:
+                header, inline_rest = match.group(1), match.group(2).strip()
+                if header == "completed":
+                    break
+                if header in signature.output_fields and header not in sections:
+                    current_field = header
+                    sections[current_field] = [inline_rest] if inline_rest else []
+                else:
+                    current_field = None
+                continue
+            if current_field is not None:
+                sections[current_field].append(line)
+
+        # 1. If output-field delimiters are not present, try standard JSONAdapter parsing first
+        if not sections:
+            try:
+                return super().parse(signature, completion)
+            except AdapterParseError:
+                # Support bare Pydantic JSON when signature has a single BaseModel output field
+                if len(signature.output_fields) == 1:
+                    field_name, field_info = next(iter(signature.output_fields.items()))
+                    annotation = field_info.annotation
+                    if inspect.isclass(annotation) and issubclass(annotation, BaseModel):
+                        cleaned = re.sub(r"(?m)^\s*\[\[\s*##\s*completed\s*##\s*\]\].*$", "", completion).strip()
+                        obj = json_repair.loads(cleaned)
+                        is_wrapper = bool(_unwrap_model_branches(annotation, field_name, obj))
+                        if isinstance(obj, dict) and not is_wrapper:
+                            try:
+                                return {field_name: parse_value(obj, annotation)}
+                            except Exception as exc:
+                                raise AdapterParseError(
+                                    adapter_name=type(self).__name__,
+                                    signature=signature,
+                                    lm_response=completion,
+                                    message=f"Failed to parse field '{field_name}': {exc}",
+                                ) from exc
+                raise
+
+        # 2. Parse extracted sections field-by-field
+        result: dict[str, Any] = {}
+        for field_name, lines in sections.items():
+            field_info = signature.output_fields[field_name]
+            raw_val = "\n".join(lines).strip()
+
+            if raw_val == "null" and _is_none_allowed(field_info.annotation):
+                result[field_name] = None
+                continue
+
+            try:
+                obj = json_repair.loads(raw_val)
+                unwrap_models = _unwrap_model_branches(field_info.annotation, field_name, obj)
+                if unwrap_models:
+                    target_type = functools.reduce(operator.or_, unwrap_models)
+                    result[field_name] = parse_value(obj[field_name], target_type)
+                else:
+                    try:
+                        result[field_name] = parse_value(raw_val, field_info.annotation)
+                    except Exception:
+                        result[field_name] = parse_value(obj, field_info.annotation)
+            except Exception as exc:
+                raise AdapterParseError(
+                    adapter_name=type(self).__name__,
+                    signature=signature,
+                    lm_response=completion,
+                    message=f"Failed to parse field '{field_name}': {exc}",
+                    parsed_result=result,
+                ) from exc
+
+        result = apply_output_field_defaults(signature, result)
+        if result.keys() != signature.output_fields.keys():
+            raise AdapterParseError(
+                adapter_name=type(self).__name__,
+                signature=signature,
+                lm_response=completion,
+                parsed_result=result,
+            )
+
+        return result
