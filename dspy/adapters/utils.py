@@ -142,11 +142,18 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> s
 
 
 def _get_json_schema(field_type):
-    def move_type_to_front(d):
-        # Move the 'type' key to the front of the dictionary, recursively, for LLM readability/adherence.
+    def move_type_to_front(d, is_named_map: bool = False):
+        # Move the 'type' key to the front of schema dictionaries for LLM
+        # readability/adherence, while preserving declaration order of property
+        # and definition names.
         if isinstance(d, Mapping):
+            if is_named_map:
+                return {k: move_type_to_front(v) for k, v in d.items()}
             return {
-                k: move_type_to_front(v) for k, v in sorted(d.items(), key=lambda item: (item[0] != "type", item[0]))
+                k: move_type_to_front(
+                    v, is_named_map=(k in ("properties", "$defs", "definitions"))
+                )
+                for k, v in sorted(d.items(), key=lambda item: item[0] != "type")
             }
         elif isinstance(d, list):
             return [move_type_to_front(item) for item in d]
