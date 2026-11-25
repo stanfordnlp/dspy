@@ -2338,6 +2338,22 @@ def test_chat_adapter_exception_raised_on_failure():
         adapter.parse(signature, invalid_completion)
 
 
+@pytest.mark.parametrize(
+    "completion",
+    [
+        "  [[ ## answer ## ]] 42",
+        "    [[ ## answer ## ]] 42",
+        "\t[[ ## answer ## ]] 42",
+        "  [[ ## answer ## ]]\n  42",
+    ],
+)
+def test_chat_adapter_parse_indented_field_header(completion):
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter()
+
+    assert adapter.parse(signature, completion) == {"answer": "42"}
+
+
 def test_chat_adapter_formats_image():
     # Test basic image formatting
     image = dspy.Image(url="https://example.com/image.jpg")
