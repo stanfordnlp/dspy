@@ -43,6 +43,20 @@ class DummyModel(BaseModel):
     field2: int
 
 
+@pytest.mark.parametrize("description", ["", "Custom tool description."])
+def test_tool_preserves_explicit_description(description):
+    tool = Tool(dummy_function, desc=description)
+
+    assert tool.desc == description
+    assert tool(x=2) == "hello 2"
+
+
+def test_tool_infers_description_when_none():
+    tool = Tool(dummy_function, desc=None)
+
+    assert tool.desc == dummy_function.__doc__
+
+
 def dummy_with_pydantic(model: DummyModel) -> str:
     """A dummy function that accepts a Pydantic model."""
     return f"{model.field1} {model.field2}"
