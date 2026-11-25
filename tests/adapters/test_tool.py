@@ -1076,6 +1076,62 @@ def test_tool_call_execute():
     assert "not found" in str(exc_info.value)
 
 
+@pytest.mark.parametrize("as_list", [False, True], ids=["dict", "list"])
+def test_tool_call_execute_with_parameter_named_self(as_list: bool):
+    def echo(self: str) -> str:
+        return self + "!"
+
+    tool = Tool(echo)
+    arguments = {"self": "ok"}
+    validate(arguments, tool.as_function_tool().parameters)
+    tool_call = ToolCalls.ToolCall(name="echo", args=arguments)
+    functions = [tool] if as_list else {"echo": echo}
+
+    assert tool_call.execute(functions=functions) == "ok!"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("convert_async", [False, True])
+@pytest.mark.parametrize(
+    "function_kind",
+    ["async_function", "positional_async_function", "async_callable", "coroutine_factory", "future_factory"],
+)
+async def test_tool_call_execute_preserves_awaitable_result(function_kind: str, convert_async: bool):
+    async def add(value: int, increment: int = 1) -> int:
+        return value + increment
+
+    async def positional_add(value: int, /, increment: int = 1) -> int:
+        return value + increment
+
+    class AsyncAdder:
+        async def __call__(self, value: int, /, increment: int = 1) -> int:
+            return value + increment
+
+    def coroutine_factory(value: int, /, increment: int = 1):
+        return add(value, increment)
+
+    def future_factory(value: int, /, increment: int = 1):
+        future = asyncio.get_running_loop().create_future()
+        future.set_result(value + increment)
+        return future
+
+    function = {
+        "async_function": add,
+        "positional_async_function": positional_add,
+        "async_callable": AsyncAdder(),
+        "coroutine_factory": coroutine_factory,
+        "future_factory": future_factory,
+    }[function_kind]
+    tool = Tool(function, name="custom_add")
+    arguments = {"increment": 3, "value": 2}
+    validate(arguments, tool.as_function_tool().parameters)
+    tool_call = ToolCalls.ToolCall(name="custom_add", args=arguments)
+
+    with dspy.context(allow_tool_async_sync_conversion=convert_async):
+        result = tool_call.execute(functions=[tool])
+        assert await result == 5
+
+
 def test_tool_call_execute_with_local_functions():
     def main():
         def local_add(a: int, b: int) -> int:

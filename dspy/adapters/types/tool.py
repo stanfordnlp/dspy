@@ -193,7 +193,7 @@ class Tool(Type):
         self.arg_types = self.arg_types if self.arg_types is not None else arg_types
         self.has_kwargs = any(param.kind == param.VAR_KEYWORD for param in sig.parameters.values())
 
-    def _validate_and_parse_args(self, **kwargs):
+    def _validate_and_parse_args(self, /, **kwargs):
         # Validate the args value comply to the json schema.
         for k, v in kwargs.items():
             if k not in self.args:
@@ -295,11 +295,15 @@ class Tool(Type):
                 break
         return positional_args, parsed_kwargs
 
-    @with_callbacks
-    def __call__(self, **kwargs):
+    def _invoke(self, /, **kwargs):
+        """Validate and bind arguments, preserving the function's return value."""
         parsed_kwargs = self._validate_and_parse_args(**kwargs)
         positional_args, keyword_args = self._prepare_call_args(parsed_kwargs)
-        result = self.func(*positional_args, **keyword_args)
+        return self.func(*positional_args, **keyword_args)
+
+    @with_callbacks
+    def __call__(self, **kwargs):
+        result = self._invoke(**kwargs)
         if asyncio.iscoroutine(result):
             if settings.allow_tool_async_sync_conversion:
                 return self._run_async_in_sync(result)
@@ -313,9 +317,7 @@ class Tool(Type):
 
     @with_callbacks
     async def acall(self, **kwargs):
-        parsed_kwargs = self._validate_and_parse_args(**kwargs)
-        positional_args, keyword_args = self._prepare_call_args(parsed_kwargs)
-        result = self.func(*positional_args, **keyword_args)
+        result = self._invoke(**kwargs)
         if asyncio.iscoroutine(result):
             return await result
         else:
@@ -448,7 +450,7 @@ class ToolCalls(Type):
             elif isinstance(functions, list):
                 for tool in functions:
                     if tool.name == self.name:
-                        func = tool
+                        func = tool._invoke
                         break
 
             if func is None:
