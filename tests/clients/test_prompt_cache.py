@@ -113,6 +113,32 @@ def test_provider_cache_options_cannot_conflict():
         build_request(lm, "hello", {"prompt_cache_key": "other"})
 
 
+@pytest.mark.parametrize(
+    ("model", "expected"),
+    [
+        ("gpt-5.6-luna", {"mode": "explicit"}),
+        ("gpt-6-luna", {"mode": "explicit"}),
+        ("gpt-6-sol", {"mode": "explicit"}),
+        ("gpt-7", {"mode": "explicit"}),
+        ("gpt-5", None),
+        ("gpt-4o", None),
+    ],
+)
+def test_openai_responses_explicit_cache_mode_for_gpt6(model, expected):
+    from dspy._vendor.lm15.providers.openai import OpenAILM, openai_model_has_cache_options
+
+    assert openai_model_has_cache_options(model) is (expected is not None)
+
+    request = Request(
+        model=model,
+        system="rules",
+        messages=(Message.user("question"),),
+        config=Config(cache=CacheConfig(prefix="stable")),
+    )
+    body = json.loads(OpenAILM(api_key="x").build_request(request, stream=False).body)
+    assert body.get("prompt_cache_options") == expected
+
+
 def test_none_is_not_forwarded_to_native_engine(monkeypatch):
     from dspy.clients.engines import LM15Engine
 

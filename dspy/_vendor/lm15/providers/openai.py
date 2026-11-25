@@ -173,7 +173,7 @@ def _attach_unmapped(provider_data: dict[str, Any], unmapped: list[dict[str, str
     return out
 
 
-_GPT_VERSION_RE = re.compile(r"^gpt-(\d+)\.(\d+)")
+_GPT_VERSION_RE = re.compile(r"^gpt-(\d+)(?:\.(\d+))?")
 
 
 def openai_model_has_cache_options(model: str) -> bool:
@@ -182,13 +182,17 @@ def openai_model_has_cache_options(model: str) -> bool:
     The off switch for cache WRITES is ``prompt_cache_options`` and only
     that class accepts it (older models reject it with HTTP 400, and their
     writes are free anyway).  Deciding client-side needs a model check —
-    a table that rots.  Stated trade-off: a future family whose name does
-    not match ``gpt-<major>.<minor>`` keeps the provider's implicit writes
-    on ``mode="off"``; ``extensions={"prompt_cache_options": ...}`` is the
-    override.
+    a table that rots.  GPT-6-and-later ids drop the minor segment
+    (``gpt-6-luna``), so the major version alone is enough for them; the
+    5.x class still needs 5.6 or newer.  ``extensions={"prompt_cache_options": ...}``
+    remains the override for any future family this check misses.
     """
     m = _GPT_VERSION_RE.match(model.lower())
-    return bool(m) and (int(m.group(1)), int(m.group(2))) >= (5, 6)
+    if not m:
+        return False
+    major = int(m.group(1))
+    minor = int(m.group(2)) if m.group(2) is not None else None
+    return major >= 6 or (major == 5 and minor is not None and minor >= 6)
 
 
 def _cache_breakpoint_index(request: Request, cache_control: str) -> int | None:
