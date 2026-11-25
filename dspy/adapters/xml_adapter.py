@@ -30,6 +30,10 @@ _xml_whitespace = re.compile(r"\s*")
 _xml_newline = re.compile(r"[ \t]*\r?\n")
 
 
+class _XMLStructureError(ValueError):
+    """A field's tags do not fit its schema's shape (a format error, not an invalid value)."""
+
+
 class XMLAdapter(ChatAdapter):
     """Formats and parses typed outputs using XML tags as field delimiters.
 
@@ -163,6 +167,7 @@ class XMLAdapter(ChatAdapter):
                 if name not in elements:
                     continue
                 field_schema = schemas[name]
+                structural = True
                 for candidate in [field_schema, *field_schema.get("anyOf", [])]:
                     try:
                         value = self._elements_to_value(elements[name], candidate, field_schema.get("$defs", {}))
@@ -173,7 +178,11 @@ class XMLAdapter(ChatAdapter):
                         break
                     except ValueError as e:
                         error = e
+                        structural &= isinstance(e, _XMLStructureError)
                 else:
+                    # If no candidate schema fits the tags' shape, the format is broken: raise AdapterParseError.
+                    if structural:
+                        raise error
                     field_errors[name] = (f"Failed to parse field {name}: {error}", error)
         except (ET.ParseError, ValueError) as e:
             raise AdapterParseError(
@@ -305,7 +314,7 @@ class XMLAdapter(ChatAdapter):
             if list(elements[0]):
                 schema = next((choice for choice in choices if choice.get("type") != "string"), schema)
         if len(elements) > 1 and schema.get("type") not in ("array", None):
-            raise ValueError("Repeated elements require a list field")
+            raise _XMLStructureError("Repeated elements require a list field")
         if schema.get("type") == "array":
             if len(elements) == 1 and not list(elements[0]):
                 text = (elements[0].text or "").strip()
@@ -320,7 +329,7 @@ class XMLAdapter(ChatAdapter):
             ]
         element = elements[0]
         if schema.get("type") not in ("object", None) and list(element):
-            raise ValueError("Scalar values cannot contain child fields")
+            raise _XMLStructureError("Scalar values cannot contain child fields")
         children = cls._group_children(element)
         if not children:
             if schema.get("type") == "object" and not (element.text or "").strip():

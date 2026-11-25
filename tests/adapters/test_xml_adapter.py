@@ -592,6 +592,34 @@ def test_xml_adapter_parse_does_not_run_default_factory_of_invalid_field():
         XMLAdapter().parse(TestSignature, "<number>not_a_number</number>")
 
 
+def test_xml_adapter_parse_treats_repeated_scalar_tags_as_format_error():
+    class TestSignature(dspy.Signature):
+        code: str = dspy.OutputField()
+
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError) as e:
+        XMLAdapter().parse(TestSignature, "<code>x</code><code>y</code>")
+    assert not isinstance(e.value, dspy.AdapterFieldParseError)
+    assert "Repeated elements require a list field" in str(e.value)
+
+
+def test_xml_adapter_falls_back_to_json_on_repeated_scalar_tags():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        code: str = dspy.OutputField()
+
+    with mock.patch("dspy.clients.engines.LM15Engine.complete") as mock_completion:
+        mock_completion.return_value = make_response("<code>x</code><code>y</code>", model="openai/gpt-4o-mini")
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with mock.patch(
+            "dspy.adapters.json_adapter.JSONAdapter.__call__", return_value=[{"code": "x"}]
+        ) as mock_json_adapter_call:
+            result = XMLAdapter()(lm, {}, TestSignature, [], {"question": "Write code."})
+
+    mock_json_adapter_call.assert_called_once()
+    assert result == [{"code": "x"}]
+
+
 def test_xml_adapter_repeated_dict_elements_and_empty_lists():
     class TestSignature(dspy.Signature):
         counts: dict[str, list[int]] = dspy.OutputField()
