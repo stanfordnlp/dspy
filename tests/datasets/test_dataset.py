@@ -72,3 +72,35 @@ def test_input_keys(csv_file):
         assert "content" in inputs
         assert "question" in inputs
         assert set(example._input_keys) == {"content", "question"}
+
+
+class OptionDataset(Dataset):
+    """A dataset class that takes an option of its own, like `Colors(sort_by_suffix=...)`."""
+
+    def __init__(self, prefix="row", **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.prefix = prefix
+        self._train = [{"value": f"{prefix}-{index}"} for index in range(4)]
+        self._dev = [{"value": f"dev-{index}"} for index in range(6)]
+
+
+def test_prepare_by_seed_accepts_options_of_the_dataset_class():
+    # `**kwargs` configure the dataset class, so they must reach `cls(...)` and must not be
+    # forwarded to `reset_seeds`, which only takes seed/size settings.
+    result = OptionDataset.prepare_by_seed(
+        train_size=2,
+        dev_size=6,
+        train_seeds=[1, 2],
+        prefix="row",
+        input_keys=["value"],
+    )
+
+    assert len(result.train_sets) == len(result.eval_sets) == 2
+    assert [len(train_set) for train_set in result.train_sets] == [2, 2]
+    assert [len(eval_set) for eval_set in result.eval_sets] == [3, 3]
+
+    # The options are applied, not merely tolerated.
+    first_train = result.train_sets[0][0]
+    assert first_train.value.startswith("row-")
+    assert first_train.inputs().keys() == ["value"]
+    assert result.eval_sets[0][0].inputs().keys() == ["value"]
