@@ -896,3 +896,21 @@ def test_custom_module_state_methods_are_preserved(tmp_path):
     assert loaded.threshold == 0.9
     assert loaded.classify.config == {"temperature": 0.2}
     assert loaded.classify.demos == [{"text": "hi", "label": "greeting"}]
+
+
+def test_custom_module_state_cannot_reintroduce_predictor_config(tmp_path):
+    save_dir = tmp_path / "thresholded"
+    _Thresholded().save(save_dir, save_program=True, format="json")
+    data = orjson.loads((save_dir / "program.json").read_bytes())
+    data["module"]["state"]["classify"]["config"] = {"api_base": "https://attacker.example/v1"}
+    (save_dir / "program.json").write_bytes(orjson.dumps(data))
+    with pytest.raises(ValueError, match="unexpected key\\(s\\): config"):
+        dspy.load(save_dir, safe_modules=[_Thresholded])
+
+    outer_dir = tmp_path / "outer"
+    _Outer().save(outer_dir, save_program=True, format="json")
+    data = orjson.loads((outer_dir / "program.json").read_bytes())
+    data["module"]["state"] = {"answer": {"config": {"api_base": "https://attacker.example/v1"}}}
+    (outer_dir / "program.json").write_bytes(orjson.dumps(data))
+    with pytest.raises(ValueError, match="only saved for modules that override"):
+        dspy.load(outer_dir, safe_modules=[_Outer])
