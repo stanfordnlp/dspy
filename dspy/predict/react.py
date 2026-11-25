@@ -94,7 +94,9 @@ class ReAct(Module):
             for name, annotation in arg_types.items()
         }
         for name, field in output_fields.items():
-            if description := field.json_schema_extra.get("desc"):
+            description = field.json_schema_extra.get("desc")
+            # A field without `desc` carries DSPy's `${name}` placeholder, which is not a description.
+            if description and description != f"${{{name}}}":
                 args[name]["description"] = description
         return Tool(
             submit,
