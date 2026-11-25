@@ -5,7 +5,20 @@ from typing import Literal, Optional, Union
 import pytest
 from pydantic import BaseModel
 
-from dspy.adapters.utils import get_annotation_name, parse_value
+import dspy
+from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value
+
+
+class _StringFieldSignature(dspy.Signature):
+    note: str = dspy.OutputField(desc="a note")
+
+
+def test_format_field_value_renders_a_list_of_non_strings_in_a_str_field():
+    """A str field can be handed a list of non-strings; formatting it must not raise."""
+    field_info = _StringFieldSignature.output_fields["note"]
+
+    assert format_field_value(field_info, [1, 2]) == "[1] «1»\n[2] «2»"
+    assert format_field_value(field_info, [42]) == "«42»"
 
 
 class Profile(BaseModel):
