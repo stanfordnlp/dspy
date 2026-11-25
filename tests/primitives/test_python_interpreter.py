@@ -1810,7 +1810,7 @@ def test_unsolicited_error_line_is_not_consumed_as_the_response(monkeypatch):
     class FakeDeno:
         def __init__(self, lines):
             self.stdin = io.StringIO()
-            self.stdout = io.StringIO("".join(line + "\n" for line in lines))
+            self.stdout = io.TextIOWrapper(io.BytesIO("".join(line + "\n" for line in lines).encode()), encoding="utf-8")
             self.stderr = io.StringIO()
 
         def poll(self):

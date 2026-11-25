@@ -162,7 +162,7 @@ class LocalInterpreter:
         assert process.stdout is not None
         try:
             while True:
-                line = _read_bounded_line(process.stdout, self.max_message_bytes)
+                line = _read_bounded_line(process.stdout.buffer, self.max_message_bytes)
                 if not line:
                     break
                 self._responses.put(line)

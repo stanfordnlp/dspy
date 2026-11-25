@@ -711,7 +711,7 @@ class PythonInterpreter:
     def _read_response_line(self, context: str) -> str:
         """Read one stdout line from Deno or raise a process-level error."""
         try:
-            response_line = _read_bounded_line(self.deno_process.stdout, self.max_message_bytes).strip()
+            response_line = _read_bounded_line(self.deno_process.stdout.buffer, self.max_message_bytes).strip()
         except _MessageSizeLimitError as e:
             self._raise_terminal_error(
                 f"Sandbox response {context} exceeded max_message_bytes ({self.max_message_bytes} bytes); "
