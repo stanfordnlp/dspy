@@ -164,6 +164,8 @@ class SignatureMeta(type(BaseModel)):
         for name, field in namespace.items():
             if not isinstance(field, FieldInfo):
                 continue  # Don't add types to non-field attributes
+            if field.json_schema_extra is None:
+                field.json_schema_extra = {}
             if not name.startswith("__") and name not in raw_annotations:
                 raw_annotations[name] = str
                 field.json_schema_extra[IS_TYPE_UNDEFINED] = True  # Mark that the type was originally undefined in the signature
@@ -184,6 +186,9 @@ class SignatureMeta(type(BaseModel)):
         # Let Pydantic do its thing
         cls = super().__new__(mcs, signature_name, bases, namespace, **kwargs)
 
+        # Ensure all fields are declared with InputField or OutputField before generating instructions
+        cls._validate_fields()
+
         # If we don't have instructions, it might be because we are a derived generic type.
         # In that case, we should inherit the instructions from the base class.
         if cls.__doc__ is None:
@@ -197,9 +202,6 @@ class SignatureMeta(type(BaseModel)):
         # In that case, we should default to the input/output format.
         if cls.__doc__ is None:
             cls.__doc__ = _default_instructions(cls)
-
-        # Ensure all fields are declared with InputField or OutputField
-        cls._validate_fields()
 
         # Ensure all fields have a prefix
         for name, field in cls.model_fields.items():
@@ -249,7 +251,11 @@ class SignatureMeta(type(BaseModel)):
         return f"{input_fields} -> {output_fields}"
 
     def _get_fields_with_type(cls, field_type) -> dict[str, FieldInfo]:
-        return {k: v for k, v in cls.model_fields.items() if v.json_schema_extra["__dspy_field_type"] == field_type}
+        return {
+            k: v
+            for k, v in cls.model_fields.items()
+            if isinstance(v.json_schema_extra, dict) and v.json_schema_extra.get("__dspy_field_type") == field_type
+        }
 
     def __repr__(cls):
         """Output a representation of the signature.
@@ -481,6 +487,14 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             print(list(NewSig2.fields.keys()))
             ```
         """
+        # Validate field type before accessing attributes like field.annotation
+        if (
+            not isinstance(field, FieldInfo)
+            or not isinstance(field.json_schema_extra, dict)
+            or field.json_schema_extra.get("__dspy_field_type") not in ("input", "output")
+        ):
+            raise TypeError(f"Field `{name}` must be declared with InputField or OutputField")
+
         # It's possible to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
         if type_ is None:
@@ -488,18 +502,20 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         if type_ is None:
             type_ = str
 
+        field_type = field.json_schema_extra["__dspy_field_type"]
         input_fields = list(cls.input_fields.items())
         output_fields = list(cls.output_fields.items())
 
         # Choose the list to insert into based on the field type
-        lst = input_fields if field.json_schema_extra["__dspy_field_type"] == "input" else output_fields
+        lst = input_fields if field_type == "input" else output_fields
         # We support negative insert indices
+        orig_index = index
         if index < 0:
             index += len(lst) + 1
         if index < 0 or index > len(lst):
             raise ValueError(
-                f"Invalid index to insert: {index}, index must be in the range of [{len(lst) - 1}, {len(lst)}] for "
-                f"{field.json_schema_extra['__dspy_field_type']} fields, but received: {index}.",
+                f"Invalid index to insert: {orig_index}, index must be in the range of [{-len(lst) - 1}, {len(lst)}] for "
+                f"{field_type} fields, but received: {orig_index}.",
             )
         lst.insert(index, (name, (type_, field)))
 
@@ -524,10 +540,11 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     def dump_state(cls):
         state = {"instructions": cls.instructions, "fields": []}
         for field in cls.fields:
+            extra = cls.fields[field].json_schema_extra or {}
             state["fields"].append(
                 {
-                    "prefix": cls.fields[field].json_schema_extra["prefix"],
-                    "description": cls.fields[field].json_schema_extra["desc"],
+                    "prefix": extra.get("prefix", infer_prefix(field) + ":"),
+                    "description": extra.get("desc", f"${{{field}}}"),
                 }
             )
 
