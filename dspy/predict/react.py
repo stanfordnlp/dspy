@@ -71,7 +71,19 @@ class ReAct(Module):
             )
 
         user_tools = [tool if isinstance(tool, Tool) else Tool(tool) for tool in tools]
-        self.tools = {tool.name: tool for tool in user_tools}
+        self.tools = {}
+        duplicates = set()
+        for tool in user_tools:
+            # Passing the exact same tool twice is harmless, so keep the first copy instead of raising.
+            # If the settings differ (e.g. custom `args`), keeping one would silently drop the other's settings.
+            if tool.name in self.tools and not _same_tool(self.tools[tool.name], tool):
+                duplicates.add(tool.name)
+            self.tools.setdefault(tool.name, tool)
+        if duplicates:
+            raise ValueError(
+                f"Tool names must be unique, got more than one tool named {', '.join(f'`{n}`' for n in sorted(duplicates))}. "
+                "Use `dspy.Tool(func, name=...)` to rename one of them."
+            )
         if "submit" in self.tools:
             raise ValueError("`submit` is reserved by ReAct as the final-output tool.")
         self.tools["submit"] = self._make_submit_tool()
@@ -373,6 +385,11 @@ class ReAct(Module):
         raise ValueError(
             f"ReAct failed to produce final outputs after {break_reason}: submit failed.\n{errors}"
         )
+
+
+def _same_tool(a: Tool, b: Tool) -> bool:
+    fields = ("func", "name", "desc", "args", "arg_types", "arg_desc", "has_kwargs")
+    return a is b or all(getattr(a, f) == getattr(b, f) for f in fields)
 
 
 def _json_schema_for_annotation(annotation: Any) -> dict[str, Any]:
