@@ -75,6 +75,7 @@ nav:
             - Overview: tutorials/core_development/index.md
             - Use MCP in DSPy: tutorials/mcp/index.md
             - Custom LM Engines: tutorials/custom_lm_engines/index.md
+            - Tinker Models: tutorials/tinker/index.md
             - Output Refinement: tutorials/output_refinement/best-of-n-and-refine.md
             - Saving and Loading: tutorials/saving/index.md
             - Cache: tutorials/cache/index.md
@@ -119,6 +120,7 @@ nav:
             - BaseLM: api/models/BaseLM.md
             - Embedder: api/models/Embedder.md
             - LM: api/models/LM.md
+            - TinkerLM: api/models/TinkerLM.md
         - Modules:
             - api/modules/index.md
             - BestOfN: api/modules/BestOfN.md
