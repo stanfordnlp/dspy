@@ -215,3 +215,33 @@ def test_example_to_dict_with_history():
     json_str = json.dumps(result)
     restored = json.loads(json_str)
     assert restored["history"]["messages"] == result["history"]["messages"]
+
+
+def test_method_named_field_write_stays_in_store():
+    """A field named like a dict-API method keeps attribute and item access in sync.
+
+    Regression test for https://github.com/stanfordnlp/dspy/issues/10497:
+    `ex.items = value` used to create an instance attribute that shadowed the
+    `items` method while `ex["items"]` kept the stale stored value.
+    """
+    ex = Example(items=["a"])
+    ex.items = ["b"]
+    assert ex["items"] == ["b"]
+    assert "items" not in vars(ex)  # no shadowing instance attribute
+
+
+def test_method_named_field_write_on_prediction_stays_in_store():
+    """Prediction inherits the same sync rule for method-named fields."""
+    pred = dspy.Prediction(items=["x"])
+    pred.items = ["y"]
+    assert pred["items"] == ["y"]
+    assert "items" not in vars(pred)
+
+
+def test_property_named_field_write_keeps_previous_routing():
+    """Names that are data descriptors on the class (e.g. Prediction.completions)
+    keep the existing routing: the write is not redirected into the store."""
+    pred = dspy.Prediction(answer="a")
+    with pytest.raises(AttributeError):
+        pred.completions = object()  # property has no setter; unchanged behavior
+    assert "completions" not in pred._store
