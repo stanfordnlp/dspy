@@ -199,6 +199,8 @@ def has_answer(tokenized_answers, text):
     text = DPR_normalize(text)
 
     for single_answer in tokenized_answers:
+        if not single_answer:
+            continue
         for i in range(0, len(text) - len(single_answer) + 1):
             if single_answer == text[i : i + len(single_answer)]:
                 return True
