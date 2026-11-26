@@ -95,7 +95,7 @@ def normalize_text(s):
         5) whitespace collapse
 
     Args:
-        s (str): Input string.
+        s: Input text. Non-string values are converted with `str`, and `None` becomes an empty string.
 
     Returns:
         str: Normalized string.
@@ -105,7 +105,7 @@ def normalize_text(s):
         normalize_text("The,  Eiffel  Tower!")  # "eiffel tower"
         ```
     """
-    s = unicodedata.normalize("NFD", s)
+    s = unicodedata.normalize("NFD", "" if s is None else str(s))
 
     def remove_articles(text):
         return re.sub(r"\b(a|an|the)\b", " ", text)
@@ -285,13 +285,13 @@ def _answer_match(prediction, answers, frac=1.0):
 def answer_exact_match(example, pred, trace=None, frac=1.0):
     """Evaluate exact match or F1-thresholded match for an example/prediction pair.
 
-    If `example.answer` is a string, compare `pred.answer` against it. If it's a list,
+    If `example.answer` is a string or number, compare `pred.answer` against it. If it's a list,
     compare against any of the references. When `frac >= 1.0` (default), use EM;
     otherwise require that the maximum F1 across references is at least `frac`.
 
     Args:
-        example: `dspy.Example` object with field `answer` (str or list[str]).
-        pred: `dspy.Prediction` object with field `answer` (str).
+        example: `dspy.Example` object with field `answer` (str, int, float, or list).
+        pred: `dspy.Prediction` object with field `answer`.
         trace: Unused; reserved for compatibility.
         frac (float, optional): Threshold in [0.0, 1.0]. `1.0` means EM.
 
@@ -309,7 +309,7 @@ def answer_exact_match(example, pred, trace=None, frac=1.0):
         answer_exact_match(example, pred, frac=0.5)  # True
         ```
     """
-    if isinstance(example.answer, str):
+    if isinstance(example.answer, (str, int, float)):
         return _answer_match(pred.answer, [example.answer], frac=frac)
     elif isinstance(example.answer, list):
         return _answer_match(pred.answer, example.answer, frac=frac)
