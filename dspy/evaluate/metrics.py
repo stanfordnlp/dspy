@@ -95,7 +95,7 @@ def normalize_text(s):
         5) whitespace collapse
 
     Args:
-        s: Input text. Non-string values are converted with `str`.
+        s: Input text. Non-string values are converted with `str`, and `None` becomes an empty string.
 
     Returns:
         str: Normalized string.
@@ -105,7 +105,7 @@ def normalize_text(s):
         normalize_text("The,  Eiffel  Tower!")  # "eiffel tower"
         ```
     """
-    s = unicodedata.normalize("NFD", str(s))
+    s = unicodedata.normalize("NFD", "" if s is None else str(s))
 
     def remove_articles(text):
         return re.sub(r"\b(a|an|the)\b", " ", text)

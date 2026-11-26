@@ -47,6 +47,7 @@ def test_answer_exact_match_no_match():
         (True, True, True),
         ([42, "forty two"], 42, True),
         (42, 43, False),
+        ("None", None, False),
     ],
 )
 def test_answer_exact_match_non_string_answers(answer, pred_answer, expected):
