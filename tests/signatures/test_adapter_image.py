@@ -3,6 +3,7 @@ import os
 import tempfile
 import warnings
 from io import BytesIO
+from pathlib import Path
 
 import pydantic
 import pytest
@@ -175,10 +176,13 @@ def test_predictor_save_load(sample_url, sample_pil_image):
     optimizer = dspy.teleprompt.LabeledFewShot(k=1)
     compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
 
-    with tempfile.NamedTemporaryFile(mode="w+", delete=True, suffix=".json") as temp_file:
-        compiled_predictor.save(temp_file.name)
+    # `NamedTemporaryFile` keeps its handle open, and on Windows the `save()` below
+    # cannot write over a file another handle holds open.
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir) / "compiled.json"
+        compiled_predictor.save(temp_path)
         loaded_predictor = dspy.Predict(signature)
-        loaded_predictor.load(temp_file.name)
+        loaded_predictor.load(temp_path)
 
     loaded_predictor(image=dspy.Image("https://example.com/dog.jpg"))
     assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 2
@@ -205,10 +209,13 @@ def test_save_load_complex_default_types():
     optimizer = dspy.teleprompt.LabeledFewShot(k=1)
     compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
 
-    with tempfile.NamedTemporaryFile(mode="w+", delete=True, suffix=".json") as temp_file:
-        compiled_predictor.save(temp_file.name)
+    # `NamedTemporaryFile` keeps its handle open, and on Windows the `save()` below
+    # cannot write over a file another handle holds open.
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir) / "compiled.json"
+        compiled_predictor.save(temp_path)
         loaded_predictor = dspy.Predict(ComplexTypeSignature)
-        loaded_predictor.load(temp_file.name)
+        loaded_predictor.load(temp_path)
 
     result = loaded_predictor(**examples[0].inputs())
     assert result.caption == "A list of images"
@@ -271,10 +278,13 @@ def test_save_load_complex_types(test_case):
     compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
 
     # Test save and load
-    with tempfile.NamedTemporaryFile(mode="w+", delete=True, suffix=".json") as temp_file:
-        compiled_predictor.save(temp_file.name)
+    # `NamedTemporaryFile` keeps its handle open, and on Windows the `save()` below
+    # cannot write over a file another handle holds open.
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir) / "compiled.json"
+        compiled_predictor.save(temp_path)
         loaded_predictor = dspy.Predict(signature_cls)
-        loaded_predictor.load(temp_file.name)
+        loaded_predictor.load(temp_path)
 
     # Run prediction
     result = loaded_predictor(**processed_input)
@@ -315,10 +325,13 @@ def test_save_load_pydantic_model():
     compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
 
     # Test save and load
-    with tempfile.NamedTemporaryFile(mode="w+", delete=True, suffix=".json") as temp_file:
-        compiled_predictor.save(temp_file.name)
+    # `NamedTemporaryFile` keeps its handle open, and on Windows the `save()` below
+    # cannot write over a file another handle holds open.
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir) / "compiled.json"
+        compiled_predictor.save(temp_path)
         loaded_predictor = dspy.Predict(PydanticSignature)
-        loaded_predictor.load(temp_file.name)
+        loaded_predictor.load(temp_path)
 
     # Run prediction
     result = loaded_predictor(model_input=model_input)
@@ -461,7 +474,9 @@ def test_image_repr():
 
     sample_pil = PILImage.new("RGB", (60, 30), color="red")
     pil_image = dspy.Image(sample_pil)
-    assert str(pil_image).startswith('<<CUSTOM-TYPE-START-IDENTIFIER>>[{"type": "image", "media_type": "image/png", "data": "')
+    assert str(pil_image).startswith(
+        '<<CUSTOM-TYPE-START-IDENTIFIER>>[{"type": "image", "media_type": "image/png", "data": "'
+    )
     assert str(pil_image).endswith("<<CUSTOM-TYPE-END-IDENTIFIER>>")
     assert '"data": "' in str(pil_image)
 

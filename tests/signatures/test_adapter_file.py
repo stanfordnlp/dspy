@@ -1,5 +1,6 @@
 import os
 import tempfile
+from pathlib import Path
 
 import pydantic
 import pytest
@@ -238,10 +239,13 @@ def test_save_load_file_signature(sample_text_file):
     optimizer = dspy.teleprompt.LabeledFewShot(k=1)
     compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
 
-    with tempfile.NamedTemporaryFile(mode="w+", delete=True, suffix=".json") as temp_file:
-        compiled_predictor.save(temp_file.name)
+    # `NamedTemporaryFile` keeps its handle open, and on Windows the `save()` below
+    # cannot write over a file another handle holds open.
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir) / "compiled.json"
+        compiled_predictor.save(temp_path)
         loaded_predictor = dspy.Predict(signature)
-        loaded_predictor.load(temp_file.name)
+        loaded_predictor.load(temp_path)
 
     loaded_predictor(document=dspy.File.from_file_id("file-test"))
     assert count_messages_with_file_pattern(lm.history[-1]["messages"]) == 2
