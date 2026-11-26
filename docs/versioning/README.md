@@ -46,6 +46,13 @@ retry optimistic Git pushes; every release rechecks the Zensical promotion
 marker after refetching, and a delayed older patch cannot move an `/X.Y/` alias
 backward.
 
+Publishing stable `X.Y.Z` removes only its exact `X.Y.ZaN`, `X.Y.ZbN`, and
+`X.Y.ZrcN` prereleases, including their routes and picker entries. The stable
+snapshot, minor alias, and cleanup share one Git commit. Other releases remain
+unchanged. An identical stable snapshot can still clean up retained prereleases
+without rewriting its content; once cleanup is complete, an identical retry is
+a no-op. Missing or malformed deployment inventory fails before cleanup.
+
 Corrections and rollbacks use reviewed pull requests in the deployment
 repository. Restore a known-good tree with a new commit rather than rewriting
 production history.
