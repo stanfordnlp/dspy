@@ -255,6 +255,24 @@ def test_evaluate_display_table(program_with_example, display_table, is_in_ipyth
             assert example_input in out
 
 
+@pytest.mark.extra
+def test_evaluate_display_table_truncation_message_is_plain_text_in_console(capfd):
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}}))
+    ev = Evaluate(
+        devset=[new_example("What is 1+1?", "2")] * 3,
+        metric=answer_exact_match,
+        display_progress=False,
+        display_table=1,
+    )
+
+    with patch("dspy.evaluate.evaluate.is_in_ipython_notebook_environment", return_value=False):
+        ev(Predict("question -> answer"))
+    out, _ = capfd.readouterr()
+
+    assert "... 2 more rows not displayed ..." in out
+    assert "<div" not in out
+
+
 def test_evaluate_callback():
     class TestCallback(BaseCallback):
         def __init__(self):
