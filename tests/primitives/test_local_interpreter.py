@@ -40,6 +40,22 @@ def test_python_stdout_reassignment_does_not_break_later_capture():
         assert interpreter.execute("print('captured')") == "captured"
 
 
+def test_guest_stdin_reads_eof():
+    with dspy.LocalInterpreter() as interpreter:
+        assert interpreter.execute("import sys\nsys.stdin.read()") == ""
+        # A spawned child inherits the guest's stdin and must see EOF as well,
+        # not block on the protocol pipe.
+        output = interpreter.execute(
+            "import subprocess, sys\n"
+            "c = subprocess.run([sys.executable, '-c', 'import sys; print(repr(sys.stdin.read()))'], "
+            "capture_output=True, text=True)\n"
+            "c.stdout.strip()"
+        )
+        assert output == "''"
+        # The protocol channel is unaffected by stdin reads.
+        assert interpreter.execute("6 * 7") == 42
+
+
 def test_background_thread_is_terminal_before_it_can_cross_executions():
     calls = []
     interpreter = dspy.LocalInterpreter(tools={"record": lambda *, value: calls.append(value)})
