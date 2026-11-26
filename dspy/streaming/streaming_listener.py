@@ -57,10 +57,10 @@ class StreamListener:
         self.adapter_identifiers = {
             "ChatAdapter": {
                 "start_identifier": f"[[ ## {self.signature_field_name} ## ]]",
-                "end_identifier": re.compile(r"\[\[ ## (\w+) ## \]\]"),
+                "end_identifier": re.compile(r"\[\[\s*##\s*(\w+)\s*##\s*\]\]"),
                 "start_indicator": "[",
-                "end_pattern_prefixes": ["[", "[[", "[[ ", "[[ #", "[[ ##"],
-                "end_pattern_contains": "[[ ##",
+                "end_pattern_prefixes": ["[", "[[", "[[ ", "[[#", "[[ #", "[[ ##", "[[##"],
+                "end_pattern_contains": "##",
             },
             "JSONAdapter": {
                 "start_identifier": f'"{self.signature_field_name}":',
