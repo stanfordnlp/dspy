@@ -46,7 +46,37 @@ async def test_convert_custom_tool_with_custom_class():
     tool = convert_langchain_tool(get_age)
     assert tool.name == "get_age"
     assert tool.desc == "Get the age of the profile."
-    assert tool.args == {"profile": {"title": "Profile", "type": "object", "properties": {"name": {"title": "Name", "type": "string"}, "age": {"title": "Age", "type": "integer"}}, "required": ["name", "age"]}}
+    assert tool.args == {
+        "profile": {
+            "title": "Profile",
+            "type": "object",
+            "properties": {"name": {"title": "Name", "type": "string"}, "age": {"title": "Age", "type": "integer"}},
+            "required": ["name", "age"],
+        }
+    }
     assert tool.arg_types == {"profile": Profile}
     assert tool.arg_desc == {"profile": "No description provided. (Required)"}
     assert await tool.acall(profile=Profile(name="John", age=20)) == 20
+
+
+@pytest.mark.asyncio
+@pytest.mark.extra
+async def test_from_langchain_hides_injected_tool_arg():
+    from typing import Annotated
+
+    from langchain_core.tools import InjectedToolArg, tool
+
+    @tool
+    def get_orders(status: str, user_id: Annotated[str, InjectedToolArg]) -> str:
+        """List the orders of the signed-in user."""
+        return f"orders of {user_id} with status {status}"
+
+    converted = convert_langchain_tool(get_orders)
+    assert list(converted.args) == ["status"]
+    assert list(converted.arg_types) == ["status"]
+    assert converted.as_function_tool().parameters["required"] == ["status"]
+    # The wrapper accepts the extra key because it is defined as **kwargs, then
+    # drops it. The forged user id must not reach the tool.
+    with pytest.raises(RuntimeError, match="user_id") as raised:
+        await converted.acall(status="open", user_id="u-2")
+    assert "u-2" not in str(raised.value)
