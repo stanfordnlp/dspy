@@ -18,6 +18,7 @@ from dspy.teleprompt.gepa.gepa_utils import (
     PredictorFeedbackFn,
     ScoreWithFeedback,
 )
+from dspy.teleprompt.gepa.signature_components import field_components, field_values
 from dspy.teleprompt.teleprompt import Teleprompter
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,8 @@ class DspyGEPAResult:
     per_objective_best_candidates: dict[str, set[int]] | None = None
     objective_pareto_front: dict[str, float] | None = None
 
+    optimize_field_descriptions: bool = False
+
     @property
     def best_idx(self) -> int:
         scores = self.val_aggregate_scores
@@ -129,7 +132,7 @@ class DspyGEPAResult:
         }
 
     @staticmethod
-    def _candidate_components(cand: Module) -> dict[str, str]:
+    def _candidate_components(cand: Module, optimize_field_descriptions: bool = False) -> dict[str, str]:
         """The candidate's optimized components. It can be either instruction text per predictor, or
         the full `module_src` of each `dspy.Flex` submodule under its parameter path."""
         from dspy.teleprompt.gepa.gepa_flex_utils import enumerate_flex_submodules
@@ -137,10 +140,12 @@ class DspyGEPAResult:
         components = {name: pred.signature.instructions for name, pred in cand.named_predictors()}
         for path, flex in enumerate_flex_submodules(cand).items():
             components[path] = flex.module_src
+        if optimize_field_descriptions:
+            components.update(field_values(cand, field_components(cand, components)))
         return components
 
     def to_dict(self) -> dict[str, Any]:
-        cands = [self._candidate_components(cand) for cand in self.candidates]
+        cands = [self._candidate_components(cand, self.optimize_field_descriptions) for cand in self.candidates]
 
         return dict(
             candidates=cands,
@@ -170,6 +175,7 @@ class DspyGEPAResult:
     def from_gepa_result(gepa_result: "GEPAResult", adapter: "DspyAdapter") -> "DspyGEPAResult":
         return DspyGEPAResult(
             candidates=[adapter.build_program(c) for c in gepa_result.candidates],
+            optimize_field_descriptions=adapter.optimize_field_descriptions,
             parents=gepa_result.parents,
             val_aggregate_scores=gepa_result.val_aggregate_scores,
             best_outputs_valset=gepa_result.best_outputs_valset,
@@ -310,6 +316,11 @@ class GEPA(Teleprompter):
             using LLM-driven selection logic based on optimization state and trajectories.
             See [gepa component selectors](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/component_selector.py)
             for available built-in selectors and the ReflectionComponentSelector protocol for implementing custom selectors.
+        optimize_field_descriptions: Opt in to optimizing top-level input/output field descriptions.
+            Field names, types, defaults, nested Pydantic schemas, and tool objects are unchanged.
+            Custom proposers and selectors receive opaque `@field:` JSON-tuple component IDs as
+            well as the legacy predictor instruction IDs. Use a separate log_dir from runs with
+            a different component configuration.
         add_format_failure_as_feedback: Whether to add format failures as feedback. Default is False.
         use_merge: Whether to use merge-based optimization. Default is True.
         max_merge_invocations: The maximum number of merge invocations to perform. Default is 5.
@@ -410,6 +421,7 @@ class GEPA(Teleprompter):
         instruction_proposer: "ProposalFn | None" = None,
         code_proposer: "CodeProposalFn | None" = None,
         component_selector: "ReflectionComponentSelector | str" = "round_robin",
+        optimize_field_descriptions: bool = False,
         # Merge-based configuration
         use_merge: bool = True,
         max_merge_invocations: int | None = 5,
@@ -494,6 +506,7 @@ class GEPA(Teleprompter):
         self.custom_instruction_proposer = instruction_proposer
         self.custom_code_proposer = code_proposer
         self.component_selector = component_selector
+        self.optimize_field_descriptions = optimize_field_descriptions
         self.gepa_kwargs = gepa_kwargs or {}
 
         if self.gepa_kwargs.get("max_reflection_cost") is not None:
@@ -568,7 +581,8 @@ class GEPA(Teleprompter):
         flex_submodules = enumerate_flex_submodules(student)
         instruction_predictors = list(student.named_predictors())
 
-        num_components = len(instruction_predictors) + len(flex_submodules)
+        description_components = field_components(student, flex_submodules) if self.optimize_field_descriptions else {}
+        num_components = len(instruction_predictors) + len(flex_submodules) + len(description_components)
         if self.auto is not None:
             self.max_metric_calls = self.auto_budget(
                 num_preds=max(num_components, 1),
@@ -642,6 +656,7 @@ class GEPA(Teleprompter):
             custom_code_proposer=self.custom_code_proposer,
             warn_on_score_mismatch=self.warn_on_score_mismatch,
             reflection_minibatch_size=self.reflection_minibatch_size,
+            optimize_field_descriptions=self.optimize_field_descriptions,
         )
 
         # Seed candidate: instruction text per non-flex predictor, plus the current module_src of
@@ -649,6 +664,7 @@ class GEPA(Teleprompter):
         seed_candidate = {name: pred.signature.instructions for name, pred in instruction_predictors}
         for path, flex in flex_submodules.items():
             seed_candidate[path] = flex.module_src
+        seed_candidate.update(field_values(student, description_components))
 
         gepa_result: GEPAResult = optimize(
             seed_candidate=seed_candidate,
