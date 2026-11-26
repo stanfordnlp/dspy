@@ -30,13 +30,8 @@ def _convert_mcp_tool_result(
 ) -> Any:
     from mcp.types import TextContent
 
-    text_contents: list[TextContent] = []
-    non_text_contents = []
-    for content in call_tool_result.content:
-        if isinstance(content, TextContent):
-            text_contents.append(content)
-        else:
-            non_text_contents.append(content)
+    contents = list(call_tool_result.content)
+    text_contents = [content for content in contents if isinstance(content, TextContent)]
 
     tool_content = [content.text for content in text_contents]
     if len(text_contents) == 1:
@@ -48,7 +43,15 @@ def _convert_mcp_tool_result(
     if result_mode == "structured" and _field_is_set(call_tool_result, "structured_content", "structuredContent"):
         return _get_field(call_tool_result, "structured_content", "structuredContent")
 
-    return tool_content or non_text_contents
+    if not text_contents:
+        return [content for content in contents if not isinstance(content, TextContent)]
+
+    if len(contents) == 1:
+        return text_contents[0].text or []
+
+    # Interleave non-text blocks back into their original positions, so two
+    # different tool results can never collapse to the same value.
+    return [content.text if isinstance(content, TextContent) else content for content in contents]
 
 
 def convert_mcp_tool(
@@ -65,9 +68,12 @@ def convert_mcp_tool(
     Args:
         session: An MCP client or session with an async ``call_tool`` method.
         tool: The MCP tool to convert.
-        result_mode: ``"text"`` preserves DSPy's existing text/non-text
-            conversion. ``"structured"`` returns MCP structured content
-            exactly when present, with the existing conversion as fallback.
+        result_mode: ``"text"`` converts content blocks in their original
+            order: text blocks become strings and non-text blocks stay as
+            native MCP objects, keeping mixed results distinct from
+            text-only ones. A single text block returns its text (or ``[]``
+            if empty). ``"structured"`` returns MCP structured content
+            when present, with the text conversion as fallback.
 
     Returns:
         A dspy Tool object.
