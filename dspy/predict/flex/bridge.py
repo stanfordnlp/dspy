@@ -6,8 +6,8 @@ every ``forward``:
 1. creates a fresh interpreter from the Flex's ``interpreter_factory``, or from
    ``dspy.settings.interpreter_factory`` when Flex uses its default (``BridgeRuntime.forward``);
 2. imports the real dspy there, wired to the host by a ``SandboxSession`` (``dspy.primitives.facade``) over the
-   Flex's tools, custom types and LM-call budget;
-3. executes ``module_src`` and drives its ``forward`` with the call's inputs.
+   Flex's tools, custom types and LM-call budget, with the Flex's libraries importable;
+3. imports the program's files (``module_src``) as a package and drives its ``forward`` with the call's inputs.
 
 User tools passed to ``dspy.Flex(tools=...)`` are bound by name so sandbox code can call them
 directly; the callables themselves stay on the host. The inputs are read as the Flex signature's
@@ -26,26 +26,24 @@ from pydantic import TypeAdapter
 
 import dspy
 from dspy.adapters.utils import annotation_allows_none
+from dspy.predict.flex import program
 from dspy.primitives.code_interpreter import CodeInterpreterError, _create_interpreter
 from dspy.primitives.facade import SandboxSession, _typed, from_wire
+from dspy.primitives.sandbox_guest import CALL_TOOL
 
 logger = logging.getLogger(__name__)
 
-# The per-forward inputs in the sandbox (namespaced to avoid clashing with whatever the module uses).
+# The per-forward inputs and the program's files in the sandbox (namespaced to avoid clashing with whatever the
+# module uses).
 _INPUTS_VAR = "__dspy_flex_inputs"
+_FILES_VAR = "__dspy_flex_files"
 
 
-def parse_module_class_name(module_src: str) -> str:
-    """Return the name of the generated ``dspy.Module`` subclass in ``module_src``."""
-    tree = ast.parse(module_src)
-    classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
-    with_forward = [
-        c for c in classes if any(isinstance(b, ast.FunctionDef) and b.name == "forward" for b in c.body)
-    ]
-    chosen = with_forward or classes
-    if not chosen:
-        raise CodeInterpreterError("module_src must define a dspy.Module subclass with a `forward` method")
-    return chosen[0].name
+def _refuse(what: str) -> Callable[..., Any]:
+    def refuse(*args: Any, **kwargs: Any) -> Any:
+        raise CodeInterpreterError(f"A test may not {what}: test the program's deterministic code.")
+
+    return refuse
 
 
 class _Budget:
@@ -81,15 +79,18 @@ class BridgeRuntime:
         self._flex = flex
         self._factory = factory
         self._max_predictor_calls = max_predictor_calls
-        self._module_src: str | None = None
+        self._files: dict[str, str] = {}
         self._class_name: str | None = None
 
-    def bind(self, module_src: str) -> None:
-        """Record new source; it runs at the next ``forward``."""
-        self._module_src = module_src
-        self._class_name = parse_module_class_name(module_src)
+    def bind(self, module_src: str, class_name: str) -> None:
+        """Record a new program, whose ``program.py`` defines ``class_name``; it runs at the next ``forward``."""
+        files = program.parse(module_src)
+        for path, source in files.items():
+            ast.parse(source, filename=path)
+        self._class_name = program.entry(files, class_name)
+        self._files = {path: source for path, source in files.items() if not program.is_test(path)}
 
-    def session(self) -> SandboxSession:
+    def session(self, tool_calls: list[dict[str, Any]] | None = None) -> SandboxSession:
         """A fresh per-forward session over tools, custom types, and the LM-call budget."""
         ctx = self._flex._flex_ctx
         return SandboxSession(
@@ -97,22 +98,69 @@ class BridgeRuntime:
             custom_types=ctx.custom_types(),
             reserve=_Budget(self._max_predictor_calls).reserve,
             interpreter_factory=self._factory,
+            libraries=ctx.library_modules(),
+            tool_calls=tool_calls,
         )
+
+    def run(self, code: str, variables: dict[str, Any]) -> Any:
+        """Run ``code`` in a fresh interpreter set up as a forward's, with dspy and the libraries importable, and
+        return what it evaluates to."""
+        session = self.session()
+        interp = _create_interpreter(self._factory, self._flex._flex_ctx.library_modules())
+        try:
+            session.install(interp, import_dspy=True)
+            return interp.execute(code, variables=variables)
+        finally:
+            self._close(session, interp)
+
+    def test(self, module_src: str) -> dict[str, Any]:
+        """Import the program ``module_src`` and run its tests in a fresh interpreter set up as a forward's, where
+        an LM or tool call fails the test that makes it: ``{"passed": [names], "failed": {name: error}}``."""
+        ctx = self._flex._flex_ctx
+        session = SandboxSession(
+            ctx.context_names(),
+            custom_types=ctx.custom_types(),
+            reserve=_refuse("call the LM"),
+            interpreter_factory=self._factory,
+            libraries=ctx.library_modules(),
+        )
+        interp = _create_interpreter(self._factory, ctx.library_modules())
+        try:
+            session.install(interp, import_dspy=True)
+            interp.tools[CALL_TOOL] = _refuse("call a tool")
+            code = (
+                "from dspy.primitives.sandbox_guest import run_tests as __dspy_run_tests\n"
+                f"__dspy_run_tests(globals(), {_FILES_VAR}, {program.ENTRY!r})"
+            )
+            with session.scope():  # code in the host's memory would otherwise reach the host's LM
+                result = interp.execute(code, variables={_FILES_VAR: program.parse(module_src)})
+        finally:
+            self._close(session, interp)
+        return json.loads(result) if isinstance(result, str) else result
+
+    @staticmethod
+    def _close(session: SandboxSession, interp: Any) -> None:
+        session.close()
+        try:
+            interp.shutdown()
+        except Exception:
+            logger.warning("dspy.Flex: interpreter.shutdown() raised after forward", exc_info=True)
 
     def forward(self, inputs: dict[str, Any]) -> Any:
         fields = self._flex.signature.input_fields
         inputs = {name: _typed(value, fields.get(name)) for name, value in inputs.items()}
-        session = self.session()
-        interp = _create_interpreter(self._factory)
+        tool_calls: list[dict[str, Any]] = []
+        session = self.session(tool_calls)
+        interp = _create_interpreter(self._factory, self._flex._flex_ctx.library_modules())
         try:
             session.install(interp, import_dspy=True)
-            interp.execute(self._module_src)  # defines the class in the sandbox
+            self._flex._check_environment_once(interp)
             code = (
                 "from dspy.primitives.sandbox_guest import run_forward as __dspy_run_forward\n"
-                f"__dspy_run_forward(globals(), {self._class_name!r}, {_INPUTS_VAR})"
+                f"__dspy_run_forward(globals(), {_FILES_VAR}, {[program.ENTRY, self._class_name]!r}, {_INPUTS_VAR})"
             )
             with session.scope():
-                result = interp.execute(code, variables={_INPUTS_VAR: session.encode(inputs)})
+                result = interp.execute(code, variables={_INPUTS_VAR: session.encode(inputs), _FILES_VAR: self._files})
         except CodeInterpreterError as e:
             if session.lm_error is not None:
                 lm_error, tag = session.lm_error
@@ -120,11 +168,7 @@ class BridgeRuntime:
                     raise lm_error from e
             raise
         finally:
-            session.close()
-            try:
-                interp.shutdown()
-            except Exception:
-                logger.warning("dspy.Flex: interpreter.shutdown() raised after forward", exc_info=True)
+            self._close(session, interp)
         if isinstance(result, str) and result:
             result = json.loads(result)
         if not isinstance(result, dict) or "fields" not in result:  # an in-process forward's fields are as they are
@@ -132,7 +176,11 @@ class BridgeRuntime:
                 "Sandboxed forward returned no serializable result; the generated forward must return "
                 f"a dspy.Prediction (got {result!r})"
             )
-        return self._to_prediction(result["fields"], session.decode)
+        prediction = self._to_prediction(result["fields"], session.decode)
+        if "tool_calls" not in self._flex.signature.output_fields:
+            # Not an output: what the forward did with the provided tools, for a metric that scores side effects.
+            object.__setattr__(prediction, "tool_calls", tool_calls)
+        return prediction
 
     def _to_prediction(self, fields: dict[str, Any], read: Callable[[Any], Any] = lambda value: value) -> Any:
         """The output ``fields`` as the signature's types, each first ``read`` off the wire. A field the types refuse,

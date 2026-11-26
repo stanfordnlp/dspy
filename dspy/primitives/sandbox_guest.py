@@ -30,11 +30,16 @@ import decimal
 import enum
 import functools
 import importlib
+import importlib.abc
+import importlib.util
 import inspect
 import json
+import linecache
 import math
 import secrets
 import sys
+import traceback
+import types
 import uuid
 from typing import Any, Callable, ClassVar, Literal, Union
 
@@ -685,12 +690,26 @@ def install(namespace: dict[str, Any], spec: dict[str, Any]) -> None:
     settings["trace"] = HostTrace(namespace[TRACE_TOOL]) if spec.get("trace") and TRACE_TOOL in namespace else None
     dspy.configure(**settings)
     namespace["__dspy_values"] = _wire
-    namespace["__dspy_types"] = {
-        name: _import(entry["import"]) if "import" in entry else _host_type(name, entry.get("schema") or {})
-        for name, entry in spec["types"].items()
-    }
+    _library_types.clear()
+    namespace["__dspy_types"] = {name: _bound_type(name, entry) for name, entry in spec["types"].items()}
     namespace["__dspy_guest_spec"] = spec
     bind(namespace)
+
+
+# The host's custom types that this sandbox imports from the session's libraries, by the name the host knows each by.
+_library_types: dict[str, type] = {}
+
+
+def _bound_type(name: str, entry: dict[str, Any]) -> Any:
+    """What the custom type ``name`` is here: imported, if the host says where from, or else a ``HostType`` with the
+    schema it sent. One of the session's libraries comes with both: it is imported if the libraries reach it here."""
+    if "import" in entry and "schema" not in entry:
+        return _import(entry["import"])
+    if "import" in entry:
+        with contextlib.suppress(Exception):
+            _library_types[name] = _import(entry["import"])
+            return _library_types[name]
+    return _host_type(name, entry.get("schema") or {})
 
 
 def bind(namespace: dict[str, Any]) -> None:
@@ -734,12 +753,119 @@ def _wire_call(function: Callable[..., Any], wire: Wire, session: str) -> Callab
     return wire_call
 
 
-def run_forward(namespace: dict[str, Any], class_name: str, inputs: dict[str, Any]) -> Any:
-    """Run one Flex forward in the sandbox; return its output fields as JSON, or as they are in the host's memory."""
+class Program(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    """A Flex program's files, by name, as a package of their own while in use (``with``): each file is a module of
+    it, which imports the others relatively, and starts with ``names`` bound, which the code has without importing
+    them. Errors name the file and line."""
+
+    def __init__(self, files: dict[str, str], names: dict[str, Any]) -> None:
+        self.package = f"__dspy_program_{secrets.token_hex(6)}"
+        self._files = files
+        self._names = names
+
+    def __enter__(self) -> Program:
+        sys.meta_path.insert(0, self)
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        sys.meta_path.remove(self)
+        for name in [name for name in list(sys.modules) if name.partition(".")[0] == self.package]:
+            del sys.modules[name]
+        for path in self._files:
+            linecache.cache.pop(self.filename(path), None)
+
+    def filename(self, path: str) -> str:
+        return f"<{self.package}>/{path}"
+
+    def load(self, path: str) -> Any:
+        return importlib.import_module(f"{self.package}.{path.removesuffix('.py')}")
+
+    def where(self, error: BaseException) -> str:
+        """Where in the program's files ``error`` was raised, innermost last; empty if not in them."""
+        inside = f"<{self.package}>/"
+        frames = [frame for frame in traceback.extract_tb(error.__traceback__) if frame.filename.startswith(inside)]
+        lines = [f"  {f.filename}, line {f.lineno}, in {f.name}\n    {(f.line or '').strip()}" for f in frames[-6:]]
+        return "\n".join(lines).replace(inside, "")
+
+    def describe(self, error: BaseException) -> str:
+        """``error`` and where in the program's files it was raised."""
+        message = "".join(traceback.format_exception_only(type(error), error)).strip()
+        return "\n".join(filter(None, [self.where(error), message.replace(f"<{self.package}>/", "")]))
+
+    def find_spec(self, fullname: str, path: Any = None, target: Any = None) -> Any:
+        if fullname == self.package:
+            return importlib.util.spec_from_loader(fullname, self, is_package=True)
+        package, _, module = fullname.rpartition(".")
+        if package == self.package and f"{module}.py" in self._files:
+            return importlib.util.spec_from_loader(fullname, self)
+        return None
+
+    def create_module(self, spec: Any) -> None:
+        return None
+
+    def exec_module(self, module: Any) -> None:
+        if module.__name__ == self.package:
+            return
+        path = module.__name__.rpartition(".")[2] + ".py"
+        source, filename = self._files[path], self.filename(path)
+        linecache.cache[filename] = (len(source), None, source.splitlines(True), filename)
+        vars(module).update(self._names)
+        exec(compile(source, filename, "exec", dont_inherit=True), vars(module))
+
+
+def program_names(namespace: dict[str, Any]) -> dict[str, Any]:
+    """What a Flex program's code has without importing it: the modules the interpreter has imported, as code run in
+    its globals had them, dspy, the provided tools, and the custom types."""
+    modules = {name: value for name, value in namespace.items() if isinstance(value, types.ModuleType)}
+    names = {**{k: v for k, v in modules.items() if not k.startswith("_")}, "dspy": namespace["dspy"], **TYPING_NAMES}
+    names.update(namespace["__dspy_types"])
+    names.update({name: namespace[name] for name in namespace["__dspy_guest_spec"]["tools"] if name in namespace})
+    return names
+
+
+def run_tests(namespace: dict[str, Any], files: dict[str, str], entry: str) -> str:
+    """Import a Flex program's ``entry`` file and run each ``test_*`` function of its ``test_*.py`` files: those that
+    passed, and what each failure raised and where, by name, as JSON."""
+    bind(namespace)
+    passed, failed = [], {}
+    with Program(files, program_names(namespace)) as program:
+        for path in [entry, *sorted(path for path in files if path.startswith("test_"))]:
+            try:
+                module = program.load(path)
+            except Exception as e:
+                failed[path] = program.describe(e)
+                continue
+            if path == entry:  # imported for its errors; its functions are code, not tests
+                continue
+            for name, test in list(vars(module).items()):  # a test may add a global
+                if name.startswith("test_") and inspect.isfunction(test) and test.__module__ == module.__name__:
+                    if inspect.iscoroutinefunction(test):
+                        failed[f"{path}::{name}"] = "An async test is not run: write it as a plain def."
+                        continue
+                    try:
+                        test()
+                        passed.append(f"{path}::{name}")
+                    except Exception as e:
+                        failed[f"{path}::{name}"] = program.describe(e)
+    return json.dumps({"passed": passed, "failed": failed})
+
+
+def run_forward(namespace: dict[str, Any], files: dict[str, str], entry: list[str], inputs: dict[str, Any]) -> Any:
+    """Run one Flex forward in the sandbox: the class ``entry`` names, a file and a class in it, of the program
+    ``files``. Return its output fields as JSON, or as they are in the host's memory."""
     bind(namespace)
     wire = namespace["__dspy_values"]
-    prediction = namespace[class_name]().forward(**wire.decode(inputs))
-    fields = {"fields": wire.encode(dict(getattr(prediction, "_store", prediction)))}
+    path, class_name = entry
+    with Program(files, program_names(namespace)) as program:
+        try:
+            prediction = getattr(program.load(path), class_name)().forward(**wire.decode(inputs))
+        except Exception as e:
+            # An interpreter reports an error as its type and arguments: say where in the program it was raised. In
+            # the host's memory, the error keeps its own traceback.
+            if not isinstance(wire, InMemory) and (where := program.where(e)):
+                e.args = (*e.args, f"Raised in the program at:\n{where}")
+            raise
+        fields = {"fields": wire.encode(dict(getattr(prediction, "_store", prediction)))}
     return fields if isinstance(wire, InMemory) else json.dumps(fields)
 
 
@@ -754,6 +880,8 @@ def signature_spec(signature: Any) -> dict[str, Any]:
     for name, t in ctx.custom_types().items():
         if isinstance(t, type) and issubclass(t, HostType):
             types[name] = {"host": t.__name__}
+        elif _library_types.get(name) is t:  # a library's, which the host knows by this name and reads as its own
+            types[name] = {"host": name}
         elif t.__module__.split(".")[0] == "dspy" or t.__module__.split(".")[0] in sys.stdlib_module_names:
             types[name] = {"import": f"{t.__module__}.{t.__qualname__}"}
     extra = {name: {key: value for key, value in (field.json_schema_extra or {}).items() if _is_json(value)}

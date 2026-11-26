@@ -1,6 +1,7 @@
 PRIMITIVES_CATALOG: str = """\
-You are authoring ONE Python source string: a single `dspy.Module` subclass that
-implements the user's signature. It has exactly two methods:
+You are authoring a Python program that implements the user's signature: a package of one
+or more files. `program.py` defines the class that runs, a `dspy.Module` subclass with two
+methods:
 
 1) `def __init__(self):` — calls `super().__init__()` and assigns each predictor it
    needs to an attribute, e.g. `self.classify = dspy.Predict("text -> label")`.
@@ -13,14 +14,14 @@ implements the user's signature. It has exactly two methods:
    matching the declared signature. The body may call the predictors
    (`self.<name>(...)`) AND/OR run arbitrary deterministic Python — parsing,
    arithmetic, regex, string and data-structure manipulation, control flow, and
-   small helper functions defined *inside* `forward`. A module may be fully
+   the functions and classes the program defines. A module may be fully
    deterministic (no predictors), fully LM-driven, or a mix. Prefer plain Python
    for anything that doesn't require an LM's judgment.
 
-The whole class is one optimizable unit — `__init__` and `forward` are rewritten
-together, so a predictor renamed in one place must be updated in the other.
+The whole program is one optimizable unit — rewritten together, so a predictor or
+function renamed in one place must be updated everywhere it is used.
 
-Skeleton (the shape of every module you write):
+Skeleton (the smallest program: `program.py` alone):
 
 ```
 class SolveModule(dspy.Module):
@@ -33,10 +34,52 @@ class SolveModule(dspy.Module):
         return dspy.Prediction(total_cents=int(e.qty) * int(e.unit_price_cents))
 ```
 
-`dspy` is already in scope — do NOT add `import` statements at module scope (import
-stdlib modules like `re` *inside* `forward` if you need them). Python and standard-library
-availability is defined by this Flex's configured interpreter; candidates are evaluated in that
-interpreter and should not assume host-Python access.
+Structure a larger program the way a good engineer would: the rules of the task as
+functions, classes and constants, one concern per file once the code grows, each file
+importing the others relatively. A program of several files is written with each file after
+a line `# === <name>.py ===`:
+
+```
+# === program.py ===
+from .totals import line_total
+
+
+class SolveModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.extract = dspy.Predict("invoice: str -> lines: list[str]")
+
+    def forward(self, **inputs):
+        lines = self.extract(invoice=inputs["invoice"]).lines
+        return dspy.Prediction(total_cents=sum(line_total(line) for line in lines))
+
+
+# === totals.py ===
+import re
+
+
+def line_total(line: str) -> int:
+    \"\"\"The cents a line like '2 x 350' costs.\"\"\"
+    qty, price = map(int, re.findall(r"\\d+", line)[:2])
+    return qty * price
+
+
+# === test_totals.py ===
+from .totals import line_total
+
+
+def test_line_total_multiplies_quantity_by_price():
+    assert line_total("2 x 350") == 700
+```
+
+Tests live in `test_*.py` files: `test_*` functions that check the deterministic code with
+`assert`, never calling a predictor or a tool. A forward never imports them.
+
+`dspy` is already in scope in every file, and so are the provided tools and the
+signature's custom types. Import the standard library, and the libraries the available
+context lists, at the top of a file. Python and standard-library availability is defined by
+this Flex's configured interpreter; candidates are evaluated in that interpreter and should
+not assume host-Python access.
 
 Available DSPy primitives:
 
@@ -71,7 +114,7 @@ Available DSPy primitives:
   (1) any tools listed in the available context, in scope by name; and (2) helpers you AUTHOR
   yourself — when a sub-step needs a capability the provided tools don't cover (deterministic
   lookups, parsing/formatting, calculators, validators, retrieval helpers, etc.), define a plain
-  function (with a docstring and type hints) nested inside `forward`. Either kind can be called
+  function (with a docstring and type hints) in the program. Either kind can be called
   directly or handed to a sub-predictor via `dspy.ReAct(..., tools=[...])` /
   `dspy.RLM(..., tools=[...])`.
 
@@ -118,10 +161,8 @@ Rules you MUST follow:
   validation, control flow — in plain Python. When no step needs an LM, write a
   pure-Python `forward` and define no predictors in `__init__`.
 
-- Define any helper functions NESTED inside `forward` (not at module scope), and
-  add no module-scope code other than the module class and any signature classes it
-  uses, defined above it, so the persisted
-  module file and the live module execute identically.
+- Module-scope code runs when the program is imported: keep it to imports and
+  definitions (functions, classes, constants), with no LM or tool calls.
 
 - Keep the design composable: prefer two short predictors with clear signatures
   over one all-knowing prompt.
@@ -205,7 +246,7 @@ Common patterns (study these before writing `forward`):
    to do both at once.
 
 5) A fully-deterministic task needs no LM: define no predictors and implement
-   `forward` in plain Python, with any helpers nested inside it.
+   `forward` in plain Python, with helper functions where they help.
 
    ```
    class SlugifyModule(dspy.Module):

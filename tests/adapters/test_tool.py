@@ -1129,3 +1129,57 @@ def test_tool_calls_none_reaches_empty_tool_calls_semantics():
             raised = e
     assert raised is not None
     assert "empty_tool_calls" in str(raised), f"expected empty_tool_calls semantics, got: {raised}"
+
+
+def _lookup_order(order_id: int, include_items: bool = False) -> dict:
+    """Look up an order by its id."""
+    return {"id": order_id, "items": ["mug"] if include_items else []}
+
+
+def test_a_tool_as_a_function_has_its_name_description_and_typed_arguments():
+    import inspect
+
+    function = Tool(_lookup_order).as_function()
+
+    assert function.__name__ == "_lookup_order"
+    assert function.__doc__ == "Look up an order by its id."
+    assert str(inspect.signature(function)) == "(*, order_id: int, include_items: bool = False)"
+    assert function(order_id=7, include_items=True) == {"id": 7, "items": ["mug"]}
+    with pytest.raises(TypeError):  # keyword arguments only, as its signature says: nothing is matched by position
+        function(8)
+    with pytest.raises(TypeError):
+        function(8, True, "extra")
+    with pytest.raises(ValueError, match="order_id is invalid"):  # validated like the tool
+        function(order_id="7")
+
+
+def test_a_tool_known_only_by_its_schema_gets_types_from_it():
+    import inspect
+
+    tool = Tool(lambda **kwargs: kwargs, name="ping", desc="Ping.", args={"n": {"type": "integer"},
+                "tag": {"type": "string", "default": "x"}}, arg_types={"n": Any, "tag": Any})
+    assert str(inspect.signature(tool.as_function())) == "(*, n: int, tag: str = 'x')"
+
+
+def test_an_async_tool_as_a_function_is_async():
+    async def fetch(url: str) -> str:
+        """Fetch a page."""
+        return f"<{url}>"
+
+    function = Tool(fetch).as_function()
+    assert asyncio.iscoroutinefunction(function)
+    assert asyncio.run(function(url="a")) == "<a>"
+
+
+def test_agent_sdks_build_their_tools_from_a_tool_as_a_function():
+    tools = pytest.importorskip("langchain_core.tools")
+    structured = tools.StructuredTool.from_function(Tool(_lookup_order).as_function())
+    assert structured.args["order_id"]["type"] == "integer"
+    assert structured.invoke({"order_id": 3}) == {"id": 3, "items": []}
+
+    fastmcp = pytest.importorskip("mcp.server.fastmcp")
+    server = fastmcp.FastMCP("demo")
+    server.add_tool(Tool(_lookup_order).as_function())
+    (listed,) = asyncio.run(server.list_tools())
+    assert listed.inputSchema["required"] == ["order_id"]
+    assert '"mug"' in asyncio.run(server.call_tool("_lookup_order", {"order_id": 5, "include_items": True}))[0].text

@@ -8,7 +8,7 @@
 
 ### 1. A Flex is a module whose source code is the optimizable parameter
 
-An ordinary module's tunable surface is its predictors' instructions. A `Flex`'s tunable surface is a whole `dspy.Module` subclass, held as a source string and exposed as `module_src`. That class has the usual two methods: `__init__` constructs whatever predictors it needs, and `forward` calls them and returns a `dspy.Prediction`. Optimizing the module means replacing that source with a better version — different predictors, different control flow, more or less Python. The prompt is no longer the unit of optimization; the program code is.
+An ordinary module's tunable surface is its predictors' instructions. A `Flex`'s tunable surface is a whole program, held as a source string and exposed as `module_src`: `program.py`, whose `dspy.Module` subclass has the usual two methods (`__init__` constructs whatever predictors it needs, and `forward` calls them and returns a `dspy.Prediction`), plus any other files the code is organized into and the program's tests (`test_*.py`). Each file follows a line `# === name.py ===`; a program of one file is just its source, as every program written before files were possible is. Optimizing the module means replacing that source with a better version — different predictors, different control flow, more or less Python. The prompt is no longer the unit of optimization; the program code is.
 
 ### 2. It drops into any signature and starts from a simple baseline
 
@@ -20,7 +20,7 @@ When GEPA compiles a program, it enumerates the `Flex` submodules and splits its
 
 ### 4. The code proposer reflects on whole-program behavior
 
-Instruction optimization in GEPA is per-predictor: it looks at one predictor's inputs, outputs, and feedback. Code optimization can't work that way, because the predictors *are* part of what's being rewritten — they may not exist in the next candidate. So a code component reflects on the whole program's I/O instead: the module's inputs, its final prediction, and the metric's feedback per example. The proposer is given the signature, any available tools, a catalog of allowed primitives, the current source, and a batch of failing examples, and asked to return a full revised module class.
+Instruction optimization in GEPA is per-predictor: it looks at one predictor's inputs, outputs, and feedback. Code optimization can't work that way, because the predictors *are* part of what's being rewritten — they may not exist in the next candidate. So a code component reflects on the whole program's I/O instead: the module's inputs, its final prediction, and the metric's feedback per example. The proposer is given the signature, any available tools, a catalog of allowed primitives, the current source, and a batch of failing examples, and asked to write the files it adds or changes.
 
 ### 5. Predictors inside a Flex are owned by its code, not tuned in parallel
 
@@ -55,7 +55,13 @@ Parses the signature and binds the baseline source — a single `dspy.Predict` o
 Runs the currently bound source inside the interpreter, where every LM call goes to the host. Returns a `dspy.Prediction` over the signature's output fields, and accepts keyword inputs only.
 
 **`module_src`**
-A read-only property holding the current implementation as source — one `dspy.Module` subclass. This is the value GEPA reads as the seed and overwrites with each accepted candidate.
+A read-only property holding the current implementation as source: the program's files, each after a line `# === name.py ===`, or `program.py` alone. This is the value GEPA reads as the seed and overwrites with each accepted candidate.
+
+**`files`**
+The same program by file name. A forward imports the files as a package of their own, with `dspy`, the tools and the signature's custom types in scope in each, and runs the class named for the `Flex` in `program.py` (or its only class with `forward`). It never imports the tests.
+
+**`run_tests()`**
+Runs the program's tests (`test_*` functions of `test_*.py` files) in its interpreter, with LM and tool calls refused, and returns each failure in words: the test, the file and line, and the error.
 
 ### Optimizing with GEPA
 
@@ -91,7 +97,7 @@ The optimizer-authored code runs against the real `dspy` package, the same sourc
 The code should build its modules from the primitives the proposer is told about (`dspy.Predict`, `dspy.ChainOfThought`, `dspy.ReAct`, `dspy.RLM`, string or class-based `dspy.Signature`s, `dspy.Tool`, `dspy.Prediction`) and the Python standard library, imported *inside* `forward`. It should not construct LMs or change settings, since the host owns the LM. `dspy.PythonInterpreter` has no filesystem, network, or threads, so `dspy.Parallel` and batched calls run one after another there. Anything that fails when the candidate runs is scored at the failure score, so a mistake costs a search step rather than crashing the run. The proposer-facing version of this list is `dspy/predict/flex/primitives_doc.py`.
 
 **The sandbox bundle**
-The first time a machine runs a `Flex` forward (or a `dspy.RLM` call) on `dspy.PythonInterpreter`, the host reads dspy's dependencies from its installed metadata, takes Pyodide's builds of those Pyodide ships (from the Pyodide CDN, checked against Pyodide's lock file) and this environment's copies of the other pure-Python ones, and byte-compiles them together with dspy's own source into `$DSPY_CACHEDIR/sandbox` (`~/.dspy_cache/sandbox` by default). It also records the memory of a sandbox that has imported dspy. That takes a few seconds, once, and again whenever the dspy source changes. After that, each sandbox restores that snapshot, so it starts with dspy already imported in about a quarter of a second.
+The first time a machine runs a `Flex` forward (or a `dspy.RLM` call) on `dspy.PythonInterpreter`, the host reads dspy's dependencies from its installed metadata, takes this environment's copy of each pure-Python one whose own dependencies have the same version in the sandbox, and Pyodide's builds of the others (from the Pyodide CDN, checked against Pyodide's lock file), and byte-compiles them together with dspy's own source into `$DSPY_CACHEDIR/sandbox` (`~/.dspy_cache/sandbox` by default). It also records the memory of a sandbox that has imported dspy. That takes a few seconds, once, and again whenever the dspy source changes. After that, each sandbox restores that snapshot, so it starts with dspy already imported in about a quarter of a second.
 
 ### Saving and loading
 

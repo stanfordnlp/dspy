@@ -293,8 +293,8 @@ class GEPA(Teleprompter):
             A custom code proposer is called once per reflection round with the code components to
             update, the current candidate, the reflective dataset, and per-component task
             descriptions (the rendered Flex signature) and context blurbs (available tools and
-            style notes). It must return a complete replacement `dspy.Module` subclass source per
-            component. It is invoked inside the reflection_lm context, so predictors it creates
+            style notes). It must return the complete revised program per component, as
+            `dspy.Flex.module_src` holds it (one file's source, or files after `# === name.py ===` lines). It is invoked inside the reflection_lm context, so predictors it creates
             use the reflection LM unless it selects a different one with `dspy.context(lm=...)`.
             Unlike instruction_proposer, it does not satisfy the requirement for a reflection
             provider: GEPA still requires reflection_lm or instruction_proposer to be set.
@@ -558,7 +558,11 @@ class GEPA(Teleprompter):
         """
         from gepa import GEPAResult, optimize
 
-        from dspy.teleprompt.gepa.gepa_flex_utils import enumerate_flex_submodules
+        from dspy.teleprompt.gepa.gepa_flex_utils import (
+            enumerate_flex_submodules,
+            flex_environments,
+            pin_flex_environments,
+        )
         from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, LoggerAdapter
 
         assert trainset is not None and len(trainset) > 0, "Trainset must be provided and non-empty"
@@ -644,6 +648,9 @@ class GEPA(Teleprompter):
             reflection_minibatch_size=self.reflection_minibatch_size,
         )
 
+        # What each dspy.Flex submodule's code runs against as the run starts, to record with the code it returns.
+        environments = flex_environments(student)
+
         # Seed candidate: instruction text per non-flex predictor, plus the current module_src of
         # each dspy.Flex submodule as its code component.
         seed_candidate = {name: pred.signature.instructions for name, pred in instruction_predictors}
@@ -683,6 +690,7 @@ class GEPA(Teleprompter):
         )
 
         new_prog = adapter.build_program(gepa_result.best_candidate)
+        pin_flex_environments(new_prog, environments)
 
         if self.track_stats:
             dspy_gepa_result = DspyGEPAResult.from_gepa_result(gepa_result, adapter)
