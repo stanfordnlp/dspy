@@ -166,9 +166,7 @@ class ReAct(Module):
 
             tool_calls = _ensure_tool_call_ids(tool_calls, turn_index)
             tool_call_results, final_outputs = self._execute_tool_calls(tool_calls)
-            event = self._history_event(turn_inputs, pred, tool_calls, tool_call_results)
-            if final_outputs is not None:
-                event.update(final_outputs)
+            event = self._history_event(turn_inputs, pred, tool_calls, tool_call_results, final_outputs)
             _append_history_event(history, event)
             pending_inputs = {}
 
@@ -207,9 +205,7 @@ class ReAct(Module):
 
             tool_calls = _ensure_tool_call_ids(tool_calls, turn_index)
             tool_call_results, final_outputs = await self._aexecute_tool_calls(tool_calls)
-            event = self._history_event(turn_inputs, pred, tool_calls, tool_call_results)
-            if final_outputs is not None:
-                event.update(final_outputs)
+            event = self._history_event(turn_inputs, pred, tool_calls, tool_call_results, final_outputs)
             _append_history_event(history, event)
             pending_inputs = {}
 
@@ -282,6 +278,7 @@ class ReAct(Module):
         pred: Prediction,
         tool_calls: ToolCalls,
         tool_call_results: ToolCallResults,
+        final_outputs: dict[str, Any] | None,
     ) -> dict[str, Any]:
         event = dict(pending_inputs)
         if hasattr(pred, "next_thought") and pred.next_thought is not None:
@@ -290,6 +287,10 @@ class ReAct(Module):
             if tool_call_results.tool_call_results:
                 tool_calls = tool_calls.model_copy(update={"tool_call_results": tool_call_results})
             event["tool_calls"] = tool_calls
+        if final_outputs:
+            # The submit result already carries outputs whose names the predictor uses for replay.
+            predictor_fields = self.react.signature.fields
+            event.update((name, value) for name, value in final_outputs.items() if name not in predictor_fields)
         return event
 
     def _forced_submit(
@@ -320,9 +321,7 @@ class ReAct(Module):
             raise ValueError(f"ReAct failed to produce final outputs after {break_reason}: no submit call.")
 
         tool_call_results, final_outputs = self._execute_tool_calls(submit_calls)
-        event = self._history_event(turn_inputs, pred, submit_calls, tool_call_results)
-        if final_outputs is not None:
-            event.update(final_outputs)
+        event = self._history_event(turn_inputs, pred, submit_calls, tool_call_results, final_outputs)
         _append_history_event(history, event)
 
         if final_outputs is not None:
@@ -361,9 +360,7 @@ class ReAct(Module):
             raise ValueError(f"ReAct failed to produce final outputs after {break_reason}: no submit call.")
 
         tool_call_results, final_outputs = await self._aexecute_tool_calls(submit_calls)
-        event = self._history_event(turn_inputs, pred, submit_calls, tool_call_results)
-        if final_outputs is not None:
-            event.update(final_outputs)
+        event = self._history_event(turn_inputs, pred, submit_calls, tool_call_results, final_outputs)
         _append_history_event(history, event)
 
         if final_outputs is not None:
