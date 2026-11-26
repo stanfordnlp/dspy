@@ -54,7 +54,7 @@ class _SDKChatLM(OpenAIChatLM):
                     if part.type == "audio":
                         if part.url is not None or part.file_id is not None:
                             raise UnsupportedFeatureError("Chat input_audio requires inline data or a local path")
-                        format_ = part.media_type.split("/", 1)[-1].removeprefix("x-")
+                        format_ = part.media_type.split(";", 1)[0].strip().lower().split("/", 1)[-1].removeprefix("x-")
                         format_ = "mp3" if format_ == "mpeg" else format_
                         content.append({"type": "input_audio", "input_audio": {"data": media_base64(part), "format": format_}})
                     elif part.type == "document":
