@@ -9,7 +9,7 @@ class GSM8K:
 
         from datasets import load_dataset
 
-        dataset = load_dataset("gsm8k", "main")
+        dataset = load_dataset("openai/gsm8k", "main")
 
         hf_official_train = dataset["train"]
         hf_official_test = dataset["test"]
