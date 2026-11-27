@@ -103,6 +103,7 @@ class Tool(Type):
     args: dict[str, Any] | None = None
     arg_types: dict[str, Any] | None = None
     arg_desc: dict[str, str] | None = None
+    required_args: list[str] | None = None
     has_kwargs: bool = False
 
     def __init__(
@@ -113,6 +114,7 @@ class Tool(Type):
         args: dict[str, Any] | None = None,
         arg_types: dict[str, Any] | None = None,
         arg_desc: dict[str, str] | None = None,
+        required_args: list[str] | None = None,
     ):
         """Initialize the Tool class.
 
@@ -130,6 +132,10 @@ class Tool(Type):
                 from arg name to the type of the argument. Defaults to None.
             arg_desc (Optional[dict[str, str]], optional): Descriptions for each arg, represented as a
                 dictionary from arg name to description string. Defaults to None.
+            required_args (Optional[list[str]], optional): The names of the args that are required, when the
+                caller knows them from an external schema (e.g. the `required` list of a JSON schema). When
+                specified, `as_function_tool` declares exactly these args as required instead of inferring
+                required args from which args lack defaults. Defaults to None.
 
         Examples:
 
@@ -142,7 +148,15 @@ class Tool(Type):
         # Expected output: {'x': {'type': 'integer'}, 'y': {'type': 'string', 'default': 'hello'}}
         ```
         """
-        super().__init__(func=func, name=name, desc=desc, args=args, arg_types=arg_types, arg_desc=arg_desc)
+        super().__init__(
+            func=func,
+            name=name,
+            desc=desc,
+            args=args,
+            arg_types=arg_types,
+            arg_desc=arg_desc,
+            required_args=required_args,
+        )
         self._parse_function(func, arg_desc)
 
     def _parse_function(self, func: Callable, arg_desc: dict[str, str] | None = None):
@@ -259,7 +273,11 @@ class Tool(Type):
             parameters={
                 "type": "object",
                 "properties": properties,
-                "required": [k for k in self.args if "default" not in self.args[k]],
+                "required": (
+                    self.required_args
+                    if self.required_args is not None
+                    else [k for k in self.args if "default" not in self.args[k]]
+                ),
             },
         )
 

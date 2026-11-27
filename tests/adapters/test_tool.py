@@ -272,6 +272,22 @@ def test_as_function_tool_excludes_defaulted_args_from_required():
     assert parameters["properties"]["y"]["default"] == "hello"
 
 
+def test_as_function_tool_uses_explicit_required_args():
+    # Args converted from an external schema (e.g. an MCP tool's input schema) may
+    # lack defaults without being required. An explicit `required_args` must win
+    # over the default-based inference.
+    args = {
+        "x": {"type": "integer"},
+        "state": {"type": "string"},
+    }
+    tool = Tool(lambda **kwargs: kwargs, args=args, required_args=["x"])
+
+    parameters = tool.as_function_tool().parameters
+    assert parameters["required"] == ["x"]
+    assert "state" in parameters["properties"]
+    assert "state" not in parameters["required"]
+
+
 @pytest.mark.parametrize("resource_id", [None, "https://example.invalid/argument"])
 def test_as_function_tool_preserves_schema_scopes_and_literals(resource_id):
     literal = {"$ref": "#/literal"}

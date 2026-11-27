@@ -109,6 +109,28 @@ def test_convert_mcp_tool_rejects_unknown_result_mode():
         convert_mcp_tool(SimpleNamespace(), tool, result_mode="invalid")
 
 
+@pytest.mark.extra
+def test_convert_mcp_tool_preserves_schema_required_args():
+    # `state` is optional in the MCP input schema but has no default; it must not
+    # be declared required in the native function-calling schema.
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "x": {"type": "integer", "description": "The x value."},
+            "state": {"type": "string", "description": "Optional state."},
+        },
+        "required": ["x"],
+    }
+    tool = SimpleNamespace(name="test", description="test", input_schema=input_schema)
+
+    converted = convert_mcp_tool(SimpleNamespace(), tool)
+    parameters = converted.as_function_tool().parameters
+
+    assert parameters["required"] == ["x"]
+    assert "state" in parameters["properties"]
+    assert "state" not in parameters["required"]
+
+
 @pytest.mark.asyncio
 @pytest.mark.extra
 async def test_convert_mcp_tool_with_v2_client():
