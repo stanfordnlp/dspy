@@ -29,7 +29,8 @@ def convert_langchain_tool(tool: "BaseTool") -> Tool:
     # Get args_schema from the tool
     # https://python.langchain.com/api_reference/core/tools/langchain_core.tools.base.BaseTool.html#langchain_core.tools.base.BaseTool.args_schema
     args_schema = tool.args_schema
-    args, _, arg_desc = convert_input_schema_to_tool_args(args_schema.model_json_schema())
+    input_schema = args_schema.model_json_schema()
+    args, _, arg_desc = convert_input_schema_to_tool_args(input_schema)
 
     # The args_schema of Langchain tool is a pydantic model, so we can get the type hints from the model fields
     arg_types = {
@@ -43,5 +44,6 @@ def convert_langchain_tool(tool: "BaseTool") -> Tool:
         desc=tool.description,
         args=args,
         arg_types=arg_types,
-        arg_desc=arg_desc
+        arg_desc=arg_desc,
+        required_args=list(input_schema.get("required", [])),
     )

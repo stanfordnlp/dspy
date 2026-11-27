@@ -83,4 +83,12 @@ def convert_mcp_tool(
         result = await session.call_tool(tool.name, arguments=kwargs)
         return _convert_mcp_tool_result(result, result_mode=result_mode)
 
-    return Tool(func=func, name=tool.name, desc=tool.description, args=args, arg_types=arg_types, arg_desc=arg_desc)
+    return Tool(
+        func=func,
+        name=tool.name,
+        desc=tool.description,
+        args=args,
+        arg_types=arg_types,
+        arg_desc=arg_desc,
+        required_args=list(input_schema.get("required", [])),
+    )
