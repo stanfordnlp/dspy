@@ -95,7 +95,8 @@ class ReAct(Module):
         }
         for name, field in output_fields.items():
             if description := field.json_schema_extra.get("desc"):
-                args[name]["description"] = description
+                if description != f"${{{name}}}":
+                    args[name]["description"] = description
         return Tool(
             submit,
             name="submit",
