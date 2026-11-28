@@ -99,7 +99,11 @@ class CapturedOutput:
         os.close(self.saved[0])
         os.close(self.saved[1])
         self.file.seek(0)
-        self.value = self.file.read().decode(errors="replace").rstrip("\n")
+        # Captured stdout is read as bytes, so Windows line breaks arrive as "\r\n"
+        # and would reach `trajectory[...]["output"]` verbatim - on every line, not
+        # only the last one. Normalize the same way text mode would, then drop the
+        # trailing break.
+        self.value = self.file.read().decode(errors="replace").replace("\r\n", "\n").rstrip("\n")
         self.file.close()
 
 
@@ -167,7 +171,9 @@ class Session:
                 # dont_inherit: submitted code gets default semantics, not this module's __future__ imports.
                 exec(compile(tree, "<interpreter>", "exec", dont_inherit=True), self.namespace)
                 value = (
-                    eval(compile(ast.Expression(last.value), "<interpreter>", "eval", dont_inherit=True), self.namespace)
+                    eval(
+                        compile(ast.Expression(last.value), "<interpreter>", "eval", dont_inherit=True), self.namespace
+                    )
                     if last
                     else None
                 )

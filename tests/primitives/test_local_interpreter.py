@@ -351,3 +351,19 @@ class AddModule(dspy.Module):
     program._bind_code(module_src)
     with dspy.context(lm=DummyLM([{"result": 42}])):
         assert program(value=20).result == 42
+
+
+def test_captured_stdout_has_no_carriage_returns() -> None:
+    """Captured stdout is read as bytes, so Windows line breaks must be normalized.
+
+    Otherwise every line ending arrives as "\r\n" in the interpreter output, and from
+    there in an `RLM` run's `trajectory[...]["output"]`.
+    """
+    interpreter = dspy.LocalInterpreter()
+    try:
+        output = interpreter.execute("print('one')\nprint('two')")
+    finally:
+        interpreter.shutdown()
+
+    assert "\r" not in output
+    assert output.splitlines() == ["one", "two"]
